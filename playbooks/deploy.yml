@@ -2,23 +2,23 @@
 - name: Prepare Sopnodes
   hosts: local
   roles:
-    - pos
+    - role: pos
 
 - name: Setup Sopnodes
   hosts: sopnodes
   roles:
-    - setup/optimization
-    - setup/commmon
-    - setup/containerd
-    - setup/k8s/k8s_setup
-    - setup/ovs
+    - role: setup/optimization
+    - role: setup/commmon
+    - role: setup/containerd
+    - role: setup/k8s/k8s_setup
+    - role: setup/ovs
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: sopnode-f3
   roles:
-    - setup/k8s/cluster_create
-    - setup/cni
-    - setup/storage
+    - role: setup/k8s/cluster_create
+    - role: setup/cni
+    - role: setup/storage
 
 - name: Join Cluster on Worker
   hosts: sopnode-f1
@@ -27,20 +27,20 @@
     kubeadm_token: "{{ hostvars['sopnode-f3'].kubeadm_token }}"
     discovery_token_ca_cert_hash: "{{ hostvars['sopnode-f3'].ca_hash }}"
   roles:
-    - setup/k8s/cluster_join
-    - setup/netplan
+    - role: setup/k8s/cluster_join
+    - role: setup/netplan
 
 - name: Deploy Open5gs Core
   hosts: sopnode-f3
   roles:
-    - 5g/core
+    - role: 5g/core
 
 - name: Deploy OAI RAN
   hosts: sopnode-f1
   roles:
-    - 5g/ran
+    - role: 5g/ran
 
 - name: Setup and connect UE on R2Lab
   hosts: faraday
   roles:
-    - r2lab
+    - role: r2lab
