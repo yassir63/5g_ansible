@@ -37,29 +37,11 @@
     wait_timeout: 300s
   become: true
 
-- name: Retrieve Multus
-  ansible.builtin.git:
-    repo: https://github.com/k8snetworkplumbingwg/multus-cni.git
-    dest: multus-cni
-    version: v4.0.1
-    force: yes
-
-- name: Patch Multus DaemonSet manifest resource requests/limits
-  ansible.builtin.replace:
-    path: multus-cni/deployments/multus-daemonset.yml
-    regexp: 'requests:\n\s{6}cpu: "100m"\n\s{6}memory: "50Mi"\n\s{4}limits:\n\s{6}cpu: "100m"\n\s{6}memory: "50Mi"'
-    replace: |
-      requests:
-        cpu: "300m"
-        memory: "300Mi"
-      limits:
-        cpu: "500m"
-        memory: "500Mi"
-
 - name: Install Multus DaemonSet with patched resources
   kubernetes.core.k8s:
     state: present
-    src: multus-cni/deployments/multus-daemonset.yml
+    src: ./multus-daemonset.yml
+  become: true
 
 - name: Wait for Multus DaemonSet to be ready
   kubernetes.core.k8s_info:
@@ -70,3 +52,4 @@
   until: multus_ds_info.resources[0].status.desiredNumberScheduled == multus_ds_info.resources[0].status.numberReady
   retries: 20
   delay: 15
+  become: true
