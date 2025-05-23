@@ -1,0 +1,35 @@
+---
+- name: Copy netplan config from localhost to remote
+  copy:
+    src: "../{{ inventory_hostname }}.netplan.yaml"
+    dest: /etc/netplan/50-radio.yaml
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+
+- name: Generate netplan config
+  command: netplan generate
+  become: true
+
+- name: Apply netplan config
+  command: netplan apply
+  become: true
+
+- name: Append hosts entries to /etc/hosts
+  become: true
+  block:
+    - name: Read local hosts file
+      delegate_to: localhost
+      run_once: true
+      slurp:
+        src: "../hosts"
+      register: hosts_content
+
+    - name: Append hosts content to remote /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ item }}"
+        create: yes
+        state: present
+      loop: "{{ hosts_content['content'] | b64decode | splitlines() }}"

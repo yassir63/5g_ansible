@@ -1,0 +1,46 @@
+---
+- name: Prepare Sopnodes
+  hosts: local
+  roles:
+    - pos
+
+- name: Setup Sopnodes
+  hosts: sopnodes
+  roles:
+    - setup/optimization
+    - setup/commmon
+    - setup/containerd
+    - setup/k8s/k8s_setup
+    - setup/ovs
+
+- name: Create and Setup Kubernetes Cluster On Master
+  hosts: sopnode-f3
+  roles:
+    - setup/k8s/cluster_create
+    - setup/cni
+    - setup/storage
+
+- name: Join Cluster on Worker
+  hosts: sopnode-f1
+  vars:
+    control_plane_endpoint: "{{ hostvars['sopnode-f3'].ansible_default_ipv4.address }}:6443"
+    kubeadm_token: "{{ hostvars['sopnode-f3'].kubeadm_token }}"
+    discovery_token_ca_cert_hash: "{{ hostvars['sopnode-f3'].ca_hash }}"
+  roles:
+    - setup/k8s/cluster_join
+    - setup/netplan
+
+- name: Deploy Open5gs Core
+  hosts: sopnode-f3
+  roles:
+    - 5g/core
+
+- name: Deploy OAI RAN
+  hosts: sopnode-f1
+  roles:
+    - 5g/ran
+
+- name: Setup and connect UE on R2Lab
+  hosts: faraday
+  roles:
+    - r2lab

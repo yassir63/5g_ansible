@@ -1,0 +1,43 @@
+---
+- name: Clone (or update) open5gs-k8s repository
+  git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: main
+    update: yes
+
+- name: Ensure namespace {{ namespace }} exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ namespace }}"
+    state: present
+
+- name: Deploy common Open5GS NFs
+  kubernetes.core.k8s:
+    apply: yes
+    state: present
+    src: "{{ repo_dest }}/open5gs/common/{{ item }}"
+    namespace: "{{ namespace }}"
+  loop: "{{ common_nfs }}"
+  register: nf_apply_results
+
+- name: Deploy slice-specific SMF and UPF
+  vars:
+    smf_path: "{{ repo_dest }}/open5gs/slices/{{ item.slice_name }}/{{ item.smf_folder }}"
+    upf_path: "{{ repo_dest }}/open5gs/slices/{{ item.slice_name }}/{{ item.upf_folder }}"
+  block:
+    - name: Apply {{ item.slice_name }} -> {{ item.smf_folder }}
+      kubernetes.core.k8s:
+        apply: yes
+        state: present
+        src: "{{ smf_path }}"
+        namespace: "{{ namespace }}"
+
+    - name: Apply {{ item.slice_name }} -> {{ item.upf_folder }}
+      kubernetes.core.k8s:
+        apply: yes
+        state: present
+        src: "{{ upf_path }}"
+        namespace: "{{ namespace }}"
+  loop: "{{ slice_defs }}"

@@ -1,0 +1,19 @@
+---
+- name: (POS) Free any existing allocation
+  shell: pos allocations free -k {{ node_name }}
+
+- name: (POS) Allocate the node
+  shell: pos allocations allocate {{ node_name }}
+
+- name: (POS) Flash image to node
+  shell: >
+    pos nodes image --staging {{ node_name }} {{ pos_image }}
+
+- name: (POS) Reset the node
+  shell: pos nodes reset {{ node_name }}
+
+- name: (POS) Wait for SSH to be available
+  wait_for:
+    host: "{{ node_name }}"
+    port: 22
+    timeout: 300

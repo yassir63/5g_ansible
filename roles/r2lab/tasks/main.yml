@@ -1,0 +1,47 @@
+---
+- name: Power ON {{ ue }} PDU outlet
+  shell: rhubarbe pdu on {{ ue }}
+
+- name: Verify PDU status
+  shell: rhubarbe pdu status {{ ue }}
+  register: pdu_status
+
+- name: Show PDU status
+  debug:
+    var: pdu_status.stdout
+
+- name: Wait for {{ ue }} SSH
+  wait_for:
+    host: {{ ue }}
+    port: 22
+    timeout: 180
+    sleep: 5
+  vars:
+    ansible_user: root
+    ansible_ssh_common_args: "-o ProxyJump={{ r2lab_slice }}@faraday.inria.fr"
+
+- name: Reboot UE
+  ansible.builtin.shell: reboot
+  delegate_to: "{{ ue }}"
+
+- name: Wait for {{ ue }} SSH after reboot
+  wait_for:
+    host: {{ ue }}
+    port: 22
+    timeout: 180
+    sleep: 5
+  vars:
+    ansible_user: root
+    ansible_ssh_common_args: "-o ProxyJump={{ r2lab_slice }}@faraday.inria.fr"
+
+- name: Configure UE 
+  ansible.builtin.shell: config-ue
+  delegate_to: "{{ ue }}"
+
+- name: Prepare UE
+  ansible.builtin.shell: prepare-ue --dnn={{ dnn }}
+  delegate_to: "{{ ue }}"
+
+- name: Start UE
+  ansible.builtin.shell: start.sh -F {{ dnn }}
+  delegate_to: "{{ ue }}"

@@ -1,0 +1,58 @@
+---
+- name: Add Docker's official GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+  become: true
+
+- name: Add Docker repository
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+  become: true
+
+- name: Install containerd and dependencies
+  apt:
+    name:
+      - containerd.io
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create containerd configuration directory
+  file:
+    path: /etc/containerd
+    state: directory
+  become: true
+
+- name: Generate default containerd configuration
+  command: containerd config default
+  register: containerd_config
+  become: true
+
+- name: Write containerd configuration to file
+  copy:
+    dest: /etc/containerd/config.toml
+    content: "{{ containerd_config.stdout }}"
+  become: true
+
+- name: Set SystemdCgroup to true in containerd config
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup = false'
+    replace: 'SystemdCgroup = true'
+  become: true
+
+- name: Set snapshotter to native instead of overlayfs in containerd config
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: 'snapshotter = "overlayfs"'
+    replace: 'SystemdCgroup = "native"'
+  become: true
+
+- name: Restart and enable containerd service
+  systemd:
+    name: containerd
+    enabled: yes
+    state: restarted
+  become: true

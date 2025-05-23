@@ -1,0 +1,57 @@
+---
+- name: Install cpufrequtils and tuned
+  apt:
+    name:
+      - cpufrequtils
+      - ethtool
+      - tuned
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Set CPU governor to performance on every core
+  shell: cpufreq-set -c {{ item }} -r -g performance
+  args:
+    warn: false
+  loop: "{{ query('ansible.builtin.sequence', start=0, end=ansible_processor_vcpus | int - 1) }}"
+  become: true
+
+- name: Apply sysctl tuning parameters
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.val }}"
+    sysctl_set: yes
+    state: present
+    reload: yes
+  loop:
+    - { key: net.core.rmem_default,        val: '134217728' }
+    - { key: net.core.rmem_max,            val: '134217728' }
+    - { key: net.core.wmem_default,        val: '134217728' }
+    - { key: net.core.wmem_max,            val: '134217728' }
+    - { key: net.core.rmem_default,        val: '62500000'  }
+    - { key: net.core.netdev_max_backlog,  val: '5000'      }
+    - { key: net.core.optmem_max,          val: '524288'    }
+    - { key: kernel.sched_rt_runtime_us,   val: '-1'        }
+    - { key: kernel.timer_migration,       val: '0'         }
+  become: true
+
+- name: Increase NIC ring buffers on {{ nic_interface }}
+  command: ethtool -G {{ nic_interface }} tx 8192 rx 8192
+  args:
+    warn: false
+  become: true
+
+- name: Activate throughput-performance tuned profile
+  command: tuned-adm profile throughput-performance
+  args:
+    warn: false
+  become: true
+
+- name: Show active tuned profile
+  command: tuned-adm active
+  register: tuned_status
+  changed_when: false
+  become: true
+
+- debug:
+    msg: "{{ tuned_status.stdout }}"

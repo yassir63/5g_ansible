@@ -1,0 +1,16 @@
+---
+- name: Install Open vSwitch
+  apt:
+    name: openvswitch-switch
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create OVS bridges
+  shell: |
+    ovs-vsctl --may-exist add-br n2br
+    ovs-vsctl --may-exist add-br n3br
+    ovs-vsctl --may-exist add-br n4br
+  args:
+    warn: false
+  become: true

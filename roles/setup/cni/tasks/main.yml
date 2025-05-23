@@ -1,0 +1,47 @@
+---
+- name: Create kube-flannel namespace 
+  kubernetes.core.k8s:
+    name: kube-flannel
+    api_version: v1
+    kind: Namespace
+    state: present
+  become: true
+
+- name: Set kube-flannel privileges
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: kube-flannel
+    labels:
+      pod-security.kubernetes.io/enforce: privileged
+    state: present
+  become: true
+
+- name: Add Flannel Helm repo
+  community.kubernetes.helm_repository:
+    name: flannel
+    repo_url: https://flannel-io.github.io/flannel/
+  become: true
+
+- name: Install Flannel via Helm
+  community.kubernetes.helm:
+    name: flannel
+    chart_ref: flannel/flannel
+    release_namespace: kube-flannel
+    create_namespace: false
+    state: present
+    wait: true
+    wait_timeout: 300
+  become: true
+
+- name: Retrieve Multus
+  ansible.builtin.git:
+    repo: https://github.com/k8snetworkplumbingwg/multus-cni.git
+    dest: multus-cni
+    version: v4.0.1
+    force: yes
+
+- name: Install Multus DaemonSet
+  kubernetes.core.k8s:
+    state: present
+    src: multus-cni/deployments/multus-daemonset.yml

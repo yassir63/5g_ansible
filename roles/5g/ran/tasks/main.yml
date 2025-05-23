@@ -1,0 +1,40 @@
+---
+- name: (POST5G) power-on USRP {{ rru }} from localhost
+  ansible.builtin.shell: post5g nodes start {{ rru }}
+  delegate_to: localhost
+  run_once: true
+
+- name: Run prepare-demo-oai.sh to pull & configure OAI RAN charts
+  ansible.builtin.command: "{{ script_path }} -a -R {{ rru }}"
+  args:
+    chdir: "{{ repo_dest }}/oai-ran"
+  register: ran_script
+  changed_when: "'OAI5G charts are now configured' in ran_script.stdout"
+
+- name: Install OAI FlexRIC chart using Helm
+  community.kubernetes.helm:
+    name: oai-flexric
+    chart_ref: "{{ charts_base }}/oai-flexric"
+    release_namespace: "{{ namespace }}"
+    create_namespace: true
+    state: present
+    update_repo_cache: true
+    wait: true
+  register: helm_flex
+
+- name: Install OAI gNB chart using Helm
+  community.kubernetes.helm:
+    name: oai-gnb
+    chart_ref: "{{ charts_base }}/oai-gnb"
+    release_namespace: "{{ namespace }}"
+    create_namespace: true
+    state: present
+    update_repo_cache: true
+    wait: true
+  register: helm_gnb
+
+- name: Show Helm deployment outputs
+  ansible.builtin.debug:
+    msg:
+      - "FlexRIC Helm output: {{ helm_flex.release_status }}"
+      - "gNB Helm output: {{ helm_gnb.release_status }}"

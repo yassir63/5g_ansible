@@ -1,0 +1,19 @@
+---
+- name: Check whether the node is already part of a cluster
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Join the node to the cluster
+  command: >
+    kubeadm join {{ control_plane_endpoint }}
+    --token {{ kubeadm_token }}
+    --discovery-token-ca-cert-hash {{ discovery_token_ca_cert_hash }}
+  when: not kubelet_conf.stat.exists
+  register: join_out
+  changed_when: join_out.rc == 0
+
+- name: Wait until kubelet has started
+  pause:
+    seconds: 10
+  when: join_out is changed

@@ -1,0 +1,6 @@
+---
+repo_dest: /opt/open5gs-k8s
+namespace: open5gs
+rru: n300
+script_path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+charts_base: "{{ repo_dest }}/oai-ran/oai-cn5g-fed/charts/oai-5g-ran"

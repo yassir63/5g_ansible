@@ -1,0 +1,25 @@
+---
+- name: Add OpenEBS Helm repository
+  helm_repository:
+    name: openebs
+    repo_url: https://openebs.github.io/charts
+  become: true
+
+- name: Update Helm repositories
+  command: helm repo update
+  become: true
+
+- name: Install OpenEBS using Helm
+  helm:
+    name: openebs
+    chart: openebs/openebs
+    namespace: openebs
+    create_namespace: true
+  become: true
+
+- name: Patch OpenEBS storage class to be default
+  shell: >
+    kubectl patch storageclass openebs-hostpath -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+  args:
+    warn: false
+  become: true
