@@ -23,21 +23,7 @@
   register: nf_apply_results
 
 - name: Deploy slice-specific SMF and UPF
-  vars:
-    smf_path: "{{ repo_dest }}/open5gs/slices/{{ item.slice_name }}/{{ item.smf_folder }}"
-    upf_path: "{{ repo_dest }}/open5gs/slices/{{ item.slice_name }}/{{ item.upf_folder }}"
-  block:
-    - name: Apply {{ item.slice_name }} -> {{ item.smf_folder }}
-      kubernetes.core.k8s:
-        apply: yes
-        state: present
-        src: "{{ smf_path }}"
-        namespace: "{{ namespace }}"
-
-    - name: Apply {{ item.slice_name }} -> {{ item.upf_folder }}
-      kubernetes.core.k8s:
-        apply: yes
-        state: present
-        src: "{{ upf_path }}"
-        namespace: "{{ namespace }}"
+  include_tasks: deploy_slice.yml
   loop: "{{ slice_defs }}"
+  loop_control:
+    loop_var: item

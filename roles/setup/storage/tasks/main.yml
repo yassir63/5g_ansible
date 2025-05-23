@@ -1,6 +1,6 @@
 ---
 - name: Add OpenEBS Helm repository
-  helm_repository:
+  kubernetes.core.helm_repository:
     name: openebs
     repo_url: https://openebs.github.io/charts
   become: true
@@ -10,7 +10,7 @@
   become: true
 
 - name: Install OpenEBS using Helm
-  helm:
+  kubernetes.core.helm:
     name: openebs
     chart: openebs/openebs
     namespace: openebs

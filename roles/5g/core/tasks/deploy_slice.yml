@@ -1,0 +1,14 @@
+---
+- name: Apply {{ item.slice_name }} -> {{ item.smf_folder }}
+  kubernetes.core.k8s:
+    apply: yes
+    state: present
+    src: "{{ repo_dest }}/open5gs/slices/{{ item.slice_name }}/{{ item.smf_folder }}"
+    namespace: "{{ namespace }}"
+
+- name: Apply {{ item.slice_name }} -> {{ item.upf_folder }}
+  kubernetes.core.k8s:
+    apply: yes
+    state: present
+    src: "{{ repo_dest }}/open5gs/slices/{{ item.slice_name }}/{{ item.upf_folder }}"
+    namespace: "{{ namespace }}"
