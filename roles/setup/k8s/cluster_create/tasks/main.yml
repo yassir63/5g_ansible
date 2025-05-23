@@ -1,4 +1,12 @@
 ---
+- name: Upload kubeadm config to the master node
+  copy:
+    src: kubeadm-config.yaml
+    dest: /root/kubeadm-config.yaml
+    mode: '0644'
+  when: not admin_conf.stat.exists
+  become: true
+  
 - name: Initialize Kubernetes cluster with kubeadm config
   command: kubeadm init --config kubeadm-config.yaml
   register: kubeadm_init
