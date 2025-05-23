@@ -8,7 +8,7 @@
   hosts: sopnodes
   roles:
     - role: setup/optimization
-    - role: setup/commmon
+    - role: setup/common
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
