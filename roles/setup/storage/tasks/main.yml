@@ -12,7 +12,7 @@
 - name: Install OpenEBS using Helm
   kubernetes.core.helm:
     name: openebs
-    chart: openebs/openebs
+    chart_ref: openebs/openebs
     namespace: openebs
     create_namespace: true
   become: true

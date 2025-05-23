@@ -7,14 +7,17 @@
     state: present
   become: true
 
-- name: Set kube-flannel privileges
+- name: Apply namespace with pod-security label
   kubernetes.core.k8s:
-    api_version: v1
-    kind: Namespace
-    name: kube-flannel
-    labels:
-      pod-security.kubernetes.io/enforce: privileged
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: kube-flannel
+        labels:
+          pod-security.kubernetes.io/enforce: privileged
     state: present
+    apply: yes
   become: true
 
 - name: Add Flannel Helm repo
@@ -31,7 +34,7 @@
     create_namespace: false
     state: present
     wait: true
-    wait_timeout: 300
+    wait_timeout: 300s
   become: true
 
 - name: Retrieve Multus
@@ -41,7 +44,29 @@
     version: v4.0.1
     force: yes
 
-- name: Install Multus DaemonSet
+- name: Patch Multus DaemonSet manifest resource requests/limits
+  ansible.builtin.replace:
+    path: multus-cni/deployments/multus-daemonset.yml
+    regexp: 'requests:\n\s{6}cpu: "100m"\n\s{6}memory: "50Mi"\n\s{4}limits:\n\s{6}cpu: "100m"\n\s{6}memory: "50Mi"'
+    replace: |
+      requests:
+        cpu: "300m"
+        memory: "300Mi"
+      limits:
+        cpu: "500m"
+        memory: "500Mi"
+
+- name: Install Multus DaemonSet with patched resources
   kubernetes.core.k8s:
     state: present
     src: multus-cni/deployments/multus-daemonset.yml
+
+- name: Wait for Multus DaemonSet to be ready
+  kubernetes.core.k8s_info:
+    kind: DaemonSet
+    namespace: kube-system
+    name: kube-multus-ds
+  register: multus_ds_info
+  until: multus_ds_info.resources[0].status.desiredNumberScheduled == multus_ds_info.resources[0].status.numberReady
+  retries: 20
+  delay: 15

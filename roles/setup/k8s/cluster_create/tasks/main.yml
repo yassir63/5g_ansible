@@ -4,9 +4,8 @@
     src: kubeadm-config.yaml
     dest: /root/kubeadm-config.yaml
     mode: '0644'
-  when: not admin_conf.stat.exists
   become: true
-  
+
 - name: Initialize Kubernetes cluster with kubeadm config
   command: kubeadm init --config kubeadm-config.yaml
   register: kubeadm_init
@@ -23,8 +22,7 @@
   copy:
     src: /etc/kubernetes/admin.conf
     dest: "{{ ansible_env.HOME }}/.kube/config"
-    owner: "{{ ansible_uid }}"
-    group: "{{ ansible_gid }}"
+    remote_src: yes
     mode: '0600'
 
 - name: Wait 10 seconds for cluster to be ready
