@@ -9,25 +9,39 @@
     update_cache: yes
   become: true
 
-- name: Ensure keyring directory exists
+- name: Make keyring dir
   file:
     path: /etc/apt/keyrings
     state: directory
-    mode: "0755"
+    mode: '0755'
   become: true
 
-- name: Download Docker GPG key (idempotent)
-  get_url:
-    url: https://download.docker.com/linux/ubuntu/gpg
-    dest: /etc/apt/keyrings/docker.gpg
-    mode: "0644"
+- name: Download & de-armor Docker GPG key
+  shell: |
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg |
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  args:
+    creates: /etc/apt/keyrings/docker.gpg
+  register: docker_key
+  changed_when: docker_key.stdout is not defined
   become: true
 
-- name: Add Docker repository
+- name: Ensure key readable
+  file:
+    path: /etc/apt/keyrings/docker.gpg
+    mode: '0644'
+  become: true
+
+- name: Add Docker repo
   apt_repository:
-    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    repo: "deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu jammy stable"
     filename: docker
     state: present
+  become: true
+
+- name: Refresh apt cache
+  apt:
+    update_cache: yes
   become: true
 
 - name: Install containerd

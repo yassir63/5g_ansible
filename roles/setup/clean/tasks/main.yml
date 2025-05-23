@@ -8,6 +8,7 @@
     - kubelet
     - containerd
     - docker
+  ignore_errors: true
 
 - name: Reset kubeadm (if previously initialized)
   ansible.builtin.command: kubeadm reset -f
@@ -24,6 +25,7 @@
     purge: true
     autoremove: true
     update_cache: yes
+  ignore_errors: true
 
 - name: Remove container runtimes (containerd, Docker)
   ansible.builtin.apt:
@@ -37,6 +39,7 @@
     state: absent
     purge: true
     autoremove: true
+  ignore_errors: true
 
 - name: Remove CNI plugins and residual network config
   ansible.builtin.file:
@@ -56,6 +59,7 @@
     - /var/lib/containerd
     - /var/run/containerd
     - /etc/systemd/system/kubelet.service.d
+  ignore_errors: true
 
 - name: Remove Kubernetes-related iptables rules
   ansible.builtin.shell: |
@@ -63,8 +67,18 @@
     iptables -t nat -F
     iptables -t mangle -F
     iptables -X
-  args:
-    warn: false
+  ignore_errors: true
+
+- name: Remove every old Docker repo/key that might confuse apt
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - /etc/apt/sources.list.d/docker.list       
+    - /etc/apt/trusted.gpg.d/docker.gpg        
+    - /usr/share/keyrings/docker-archive-keyring.gpg
+    - /etc/apt/keyrings/docker.gpg
+  become: true
 
 - name: Reload systemd daemon
   ansible.builtin.systemd:
