@@ -9,7 +9,6 @@
 - name: Setup Sopnodes
   hosts: sopnodes
   roles:
-    - role: setup/clean
     - role: setup/common
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
