@@ -37,20 +37,15 @@
 
 - name: Increase NIC ring buffers on {{ nic_interface }}
   command: ethtool -G {{ nic_interface }} tx 8192 rx 8192
-  args:
-    warn: false
   become: true
 
 - name: Activate throughput-performance tuned profile
   command: tuned-adm profile throughput-performance
-  args:
-    warn: false
   become: true
 
 - name: Show active tuned profile
   command: tuned-adm active
   register: tuned_status
-  changed_when: false
   become: true
 
 - debug:

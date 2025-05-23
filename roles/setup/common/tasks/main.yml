@@ -25,11 +25,6 @@
     sed -i.bak '/ swap / s/^/#/' /etc/fstab
   become: true
 
-- name: Disable UFW firewall
-  ufw:
-    state: disabled
-  become: true
-
 - name: Load kernel modules for Kubernetes networking
   modprobe:
     name: "{{ item }}"

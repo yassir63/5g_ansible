@@ -9,7 +9,6 @@
 - name: Setup Sopnodes
   hosts: sopnodes
   roles:
-    - role: setup/optimization
     - role: setup/common
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
@@ -31,6 +30,7 @@
   roles:
     - role: setup/k8s/cluster_join
     - role: setup/netplan
+    - role: setup/optimization
 
 - name: Deploy Open5gs Core
   hosts: sopnode-f3

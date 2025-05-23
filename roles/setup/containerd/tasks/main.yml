@@ -1,56 +1,81 @@
 ---
-- name: Add Docker's official GPG key
-  apt_key:
-    url: https://download.docker.com/linux/ubuntu/gpg
-    state: present
-  become: true
-
-- name: Add Docker repository
-  apt_repository:
-    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
-    state: present
-  become: true
-
-- name: Install containerd and dependencies
+- name: Install prerequisites
   apt:
     name:
-      - containerd.io
+      - ca-certificates
+      - curl
+      - gnupg
     state: present
     update_cache: yes
   become: true
 
-- name: Create containerd configuration directory
+- name: Ensure keyring directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Download Docker GPG key (idempotent)
+  get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.gpg
+    mode: "0644"
+  become: true
+
+- name: Remove any old Docker apt source lines
+  file:
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
+  become: true
+
+- name: Add Docker repository
+  apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    filename: docker
+    state: present
+  become: true
+
+- name: Install containerd
+  apt:
+    name: containerd.io
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create /etc/containerd
   file:
     path: /etc/containerd
     state: directory
   become: true
 
-- name: Generate default containerd configuration
+- name: Generate default containerd config
   command: containerd config default
-  register: containerd_config
+  register: containerd_cfg
+  changed_when: false
   become: true
 
-- name: Write containerd configuration to file
+- name: Write config.toml
   copy:
     dest: /etc/containerd/config.toml
-    content: "{{ containerd_config.stdout }}"
+    content: "{{ containerd_cfg.stdout }}"
   become: true
 
-- name: Set SystemdCgroup to true in containerd config
+- name: Enable systemd-cgroup
   replace:
     path: /etc/containerd/config.toml
     regexp: 'SystemdCgroup = false'
     replace: 'SystemdCgroup = true'
   become: true
 
-- name: Set snapshotter to native instead of overlayfs in containerd config
+- name: Switch snapshotter to native
   replace:
     path: /etc/containerd/config.toml
-    regexp: 'snapshotter = "overlayfs"'
-    replace: 'SystemdCgroup = "native"'
+    regexp: 'snapshotter = \"overlayfs\"'
+    replace: 'snapshotter = \"native\"'
   become: true
 
-- name: Restart and enable containerd service
+- name: Restart & enable containerd
   systemd:
     name: containerd
     enabled: yes
