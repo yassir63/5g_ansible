@@ -1,0 +1,76 @@
+---
+- name: Stop kubelet and containerd services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - kubelet
+    - containerd
+    - docker
+
+- name: Reset kubeadm (if previously initialized)
+  ansible.builtin.command: kubeadm reset -f
+  ignore_errors: true
+
+- name: Remove Kubernetes packages
+  ansible.builtin.apt:
+    name:
+      - kubeadm
+      - kubelet
+      - kubectl
+      - kubernetes-cni
+    state: absent
+    purge: true
+    autoremove: true
+    update_cache: yes
+
+- name: Remove container runtimes (containerd, Docker)
+  ansible.builtin.apt:
+    name:
+      - containerd
+      - docker-ce
+      - docker-ce-cli
+      - docker.io
+      - cri-tools
+      - runc
+    state: absent
+    purge: true
+    autoremove: true
+
+- name: Remove CNI plugins and residual network config
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/cni
+    - /opt/cni
+    - /etc/containerd
+    - /etc/kubernetes
+    - /var/lib/etcd
+    - /var/lib/kubelet
+    - /var/lib/cni
+    - /run/flannel
+    - /etc/docker
+    - /var/lib/docker
+    - /var/lib/containerd
+    - /var/run/containerd
+    - /etc/systemd/system/kubelet.service.d
+
+- name: Remove Kubernetes-related iptables rules
+  ansible.builtin.shell: |
+    iptables -F
+    iptables -t nat -F
+    iptables -t mangle -F
+    iptables -X
+  args:
+    warn: false
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Clean apt cache
+  ansible.builtin.apt:
+    autoclean: yes
+    autoremove: yes
