@@ -1,6 +1,8 @@
 ---
-- name: Prepare Sopnodes
-  hosts: local
+- name: Prepare Sopnodes 
+  hosts: localhost
+  vars:
+    nodes: "{{ groups['sopnodes'] }}"
   roles:
     - role: pos
 
