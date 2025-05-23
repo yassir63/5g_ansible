@@ -1,18 +1,19 @@
----
-- name: Add Kubernetes apt key
-  apt_key:
+- name: Add Kubernetes APT key
+  ansible.builtin.get_url:
     url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    dest: /usr/share/keyrings/kubernetes-archive-keyring.gpg
+    mode: '0644'
+  become: true
+
+- name: Add Kubernetes APT repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
+    filename: kubernetes
     state: present
   become: true
 
-- name: Add Kubernetes apt repository
-  apt_repository:
-    repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
-    state: present
-  become: true
-
-- name: Install Kubernetes components
-  apt:
+- name: Update apt cache and install Kubernetes components
+  ansible.builtin.apt:
     name:
       - kubelet
       - kubeadm
@@ -22,7 +23,7 @@
   become: true
 
 - name: Hold Kubernetes packages at current version
-  apt:
+  ansible.builtin.apt:
     name:
       - kubelet
       - kubeadm

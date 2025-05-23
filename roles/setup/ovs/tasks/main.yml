@@ -11,6 +11,4 @@
     ovs-vsctl --may-exist add-br n2br
     ovs-vsctl --may-exist add-br n3br
     ovs-vsctl --may-exist add-br n4br
-  args:
-    warn: false
   become: true

@@ -23,15 +23,27 @@
     mode: "0644"
   become: true
 
-- name: Remove any old Docker apt source lines
+- name: Remove old docker.list file (if any)
   file:
     path: /etc/apt/sources.list.d/docker.list
     state: absent
   become: true
 
+- name: Comment old Docker entries in /etc/apt/sources.list
+  lineinfile:
+    path: /etc/apt/sources.list
+    regexp: '^deb .*download\.docker\.com/linux/ubuntu'
+    state: absent
+  become: true
+
+- name: Purge stray Docker repo snippets
+  shell: |
+    grep -rlE '^deb .*download\.docker\.com/linux/ubuntu' /etc/apt/sources.list.d | xargs -r rm -f
+  become: true
+
 - name: Add Docker repository
   apt_repository:
-    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
     filename: docker
     state: present
   become: true
@@ -43,7 +55,7 @@
     update_cache: yes
   become: true
 
-- name: Create /etc/containerd
+- name: Create /etc/containerd directory
   file:
     path: /etc/containerd
     state: directory
@@ -71,8 +83,8 @@
 - name: Switch snapshotter to native
   replace:
     path: /etc/containerd/config.toml
-    regexp: 'snapshotter = \"overlayfs\"'
-    replace: 'snapshotter = \"native\"'
+    regexp: 'snapshotter = "overlayfs"'
+    replace: 'snapshotter = "native"'
   become: true
 
 - name: Restart & enable containerd

@@ -20,6 +20,4 @@
 - name: Patch OpenEBS storage class to be default
   shell: >
     kubectl patch storageclass openebs-hostpath -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-  args:
-    warn: false
   become: true
