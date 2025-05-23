@@ -1,30 +1,29 @@
 ---
-- name: Check whether the cluster already exists
-  stat:
-    path: /etc/kubernetes/admin.conf
-  register: admin_conf
+- name: Initialize Kubernetes cluster with kubeadm config
+  command: kubeadm init --config kubeadm-config.yaml
+  register: kubeadm_init
+  failed_when: kubeadm_init.rc != 0
+  changed_when: kubeadm_init.rc == 0
 
-- name: Initialise the Kubernetes control plane
-  command: kubeadm init --config /root/kubeadm-config.yaml
-  when: not admin_conf.stat.exists
-  register: init_out
-  changed_when: init_out.rc == 0
+- name: Create .kube directory in user's home
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: '0700'
 
-- name: Copy admin.conf to the invoking user's kubeconfig
+- name: Copy admin.conf to user's kube config
   copy:
     src: /etc/kubernetes/admin.conf
     dest: "{{ ansible_env.HOME }}/.kube/config"
-    remote_src: yes
     owner: "{{ ansible_uid }}"
     group: "{{ ansible_gid }}"
     mode: '0600'
-  when: not admin_conf.stat.exists
 
-- name: Wait a few seconds for the control-plane components to settle
+- name: Wait 10 seconds for cluster to be ready
   pause:
-    seconds: 20
-  when: not admin_conf.stat.exists
+    seconds: 10
 
-- name: Allow scheduling on the control-plane node (remove NoSchedule taint)
+- name: Remove NoSchedule taint from master node
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
-  when: not admin_conf.stat.exists
+  register: taint_out
+  failed_when: false

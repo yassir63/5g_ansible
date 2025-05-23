@@ -7,13 +7,3 @@
     state: present
     update_cache: yes
   become: true
-
-- name: Hold Kubernetes packages at current version
-  ansible.builtin.apt:
-    name:
-      - kubelet
-      - kubeadm
-      - kubectl
-    state: present
-    mark: hold
-  become: true
