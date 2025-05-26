@@ -1,29 +1,109 @@
 ---
-- name: Clone (or update) open5gs-k8s repository
-  git:
+- name: Clone open5gs-k8s repo
+  ansible.builtin.git:
     repo: "{{ repo_url }}"
     dest: "{{ repo_dest }}"
     version: main
     update: yes
 
-- name: Ensure namespace {{ namespace }} exists
+- name: Ensure {{ namespace }} namespace exists
   kubernetes.core.k8s:
     api_version: v1
     kind: Namespace
     name: "{{ namespace }}"
     state: present
 
-- name: Deploy common Open5GS NFs
+- name: Apply MongoDB kustomization
   kubernetes.core.k8s:
     apply: yes
     state: present
-    src: "{{ repo_dest }}/open5gs/common/{{ item }}"
+    src: "{{ repo_dest }}/mongodb"
     namespace: "{{ namespace }}"
-  loop: "{{ common_nfs }}"
-  register: nf_apply_results
 
-- name: Deploy slice-specific SMF and UPF
-  include_tasks: deploy_slice.yml
-  loop: "{{ slice_defs }}"
-  loop_control:
-    loop_var: item
+- name: Wait for MongoDB pod to be Ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=mongodb
+  register: mongo_pods
+  until: mongo_pods.resources | length > 0 and
+          mongo_pods.resources[0].status.containerStatuses[0].ready
+  retries: 40
+  delay: 5
+
+- name: Apply NADs
+  kubernetes.core.k8s:
+    apply: yes
+    state: present
+    src: "{{ repo_dest }}/networks5g"
+    namespace: "{{ namespace }}"
+
+- name: Verify required NADs exist
+  kubernetes.core.k8s_info:
+    kind: NetworkAttachmentDefinition
+    namespace: "{{ namespace }}"
+  register: nad_info
+
+- name: Fail if a required NAD is missing
+  ansible.builtin.fail:
+    msg: "NAD {{ item }} is missing in {{ namespace }}"
+  when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
+  loop: "{{ nad_list }}"
+
+- name: Apply Open5GS NFs
+  kubernetes.core.k8s:
+    apply: yes
+    state: present
+    src: "{{ repo_dest }}/{{ deployment_option }}"
+    namespace: "{{ namespace }}"
+
+- name: Wait for {{ item }} pod Ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ namespace }}"
+    label_selectors: [ "nf={{ item }}" ]
+  register: nf_pod
+  until: nf_pod.resources | length > 0 and
+          nf_pod.resources[0].status.containerStatuses[0].ready
+  retries: 40
+  delay: 5
+  loop: "{{ nfs }}"
+
+- name: Install Python requirements for admin script
+  ansible.builtin.pip:
+    requirements: "{{ repo_dest }}/requirements.txt"
+    virtualenv: "{{ repo_dest }}/venv"
+
+- name: Deploy Open5GS Web UI
+  kubernetes.core.k8s:
+    apply: yes
+    state: present
+    src: "{{ repo_dest }}/open5gs-webui"
+    namespace: "{{ namespace }}"
+
+- name: Wait for WebUI pod Ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ namespace }}"
+    label_selectors: [ "nf=webui" ]
+  register: webui_pod
+  until: webui_pod.resources | length > 0 and
+          webui_pod.resources[0].status.containerStatuses[0].ready
+  retries: 40
+  delay: 5
+
+- name: Run add-admin-account.py
+  ansible.builtin.command: >
+    {{ repo_dest }}/venv/bin/python mongo-tools/add-admin-account.py
+  args:
+    chdir: "{{ repo_dest }}"
+
+- name: Add subscribers
+  ansible.builtin.shell: |
+    {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
+    {{ repo_dest }}/venv/bin/python mongo-tools/add-subscribers.py
+  args:
+    chdir: "{{ repo_dest }}"
+  register: sub_out
+  changed_when: false

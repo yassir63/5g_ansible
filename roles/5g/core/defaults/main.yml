@@ -1,23 +1,19 @@
 ---
-repo_url: https://github.com/Ziyad-Mabrouk/open5gs-k8s.git
-repo_dest: /opt/open5gs-k8s
-namespace: open5gs
-
-common_nfs:
-  - amf
-  - ausf
-  - bsf
+repo_url: "https://github.com/Ziyad-Mabrouk/open5gs-k8s.git"
+repo_dest: "~/open5gs-k8s"
+namespace: "open5gs"
+deployment_option: "msd/overlays/open5gs-metrics"
+nfs:
   - nrf
+  - scp
+  - amf
+  - udr
+  - bsf
+  - ausf
   - nssf
   - pcf
-  - scp
   - udm
-  - udr
-
-slice_defs:
-  - slice_name: slice1
-    smf_folder: smf1
-    upf_folder: upf1
-  - slice_name: slice2
-    smf_folder: smf2
-    upf_folder: upf2
+nad_list:
+  - n2network
+  - n3network
+  - n4network
