@@ -13,12 +13,8 @@
     name: "{{ namespace }}"
     state: present
 
-- name: Apply MongoDB kustomization
-  kubernetes.core.k8s:
-    apply: yes
-    state: present
-    src: "{{ repo_dest }}/mongodb"
-    namespace: "{{ namespace }}"
+- name: Apply MongoDB with Kustomization
+  command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ namespace }}
 
 - name: Wait for MongoDB pod to be Ready
   kubernetes.core.k8s_info:
@@ -51,12 +47,8 @@
   when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
   loop: "{{ nad_list }}"
 
-- name: Apply Open5GS NFs
-  kubernetes.core.k8s:
-    apply: yes
-    state: present
-    src: "{{ repo_dest }}/{{ deployment_option }}"
-    namespace: "{{ namespace }}"
+- name: Apply Open5GS NFs with Kustomization 
+  command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ namespace }}
 
 - name: Wait for {{ item }} pod Ready
   kubernetes.core.k8s_info:

@@ -37,10 +37,17 @@
     wait_timeout: 300s
   become: true
 
-- name: Install Multus DaemonSet with patched resources
+- name: Upload Multus DaemonSet manifest with patched resources to the master node
+  copy:
+    src: multus-daemonset.yml
+    dest: /root/multus-daemonset.yml
+    mode: '0644'
+  become: true
+
+- name: Install Multus DaemonSet
   kubernetes.core.k8s:
     state: present
-    src: ./multus-daemonset.yml
+    src: /root/multus-daemonset.yml
   become: true
 
 - name: Wait for Multus DaemonSet to be ready
