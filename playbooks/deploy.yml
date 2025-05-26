@@ -15,25 +15,27 @@
     - role: setup/ovs
 
 - name: Create and Setup Kubernetes Cluster On Master
-  hosts: sopnode-f3
+  hosts: sopnode-f1
   roles:
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
-
-- name: Join Cluster on Worker
-  hosts: sopnode-f1
-  vars:
-    control_plane_endpoint: "{{ hostvars['sopnode-f3'].ansible_default_ipv4.address }}:6443"
-    kubeadm_token: "{{ hostvars['sopnode-f3'].kubeadm_token }}"
-    discovery_token_ca_cert_hash: "{{ hostvars['sopnode-f3'].ca_hash }}"
-  roles:
-    - role: setup/k8s/cluster_join
     - role: setup/netplan
     - role: setup/optimization
 
+# - name: Join Cluster on Worker
+#   hosts: sopnode-f1
+#   vars:
+#     control_plane_endpoint: "{{ hostvars['sopnode-f3'].ansible_default_ipv4.address }}:6443"
+#     kubeadm_token: "{{ hostvars['sopnode-f3'].kubeadm_token }}"
+#     discovery_token_ca_cert_hash: "{{ hostvars['sopnode-f3'].ca_hash }}"
+#   roles:
+#     - role: setup/k8s/cluster_join
+#     - role: setup/netplan
+#     - role: setup/optimization
+
 - name: Deploy Open5gs Core
-  hosts: sopnode-f3
+  hosts: sopnode-f1
   roles:
     - role: 5g/core
 

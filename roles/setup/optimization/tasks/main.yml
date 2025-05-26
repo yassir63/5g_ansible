@@ -34,7 +34,7 @@
   become: true
 
 - name: Increase NIC ring buffers on {{ nic_interface }}
-  command: ethtool -G {{ nic_interface }} tx 8192 rx 8192
+  command: ethtool -G {{ nic_interface }} tx 8160 rx 8160
   become: true
 
 - name: Activate throughput-performance tuned profile

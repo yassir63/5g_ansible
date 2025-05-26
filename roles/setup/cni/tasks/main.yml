@@ -60,3 +60,34 @@
   retries: 20
   delay: 15
   become: true
+
+- name: Ensure Open vSwitch is installed
+  apt:
+    name: openvswitch-switch
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create OVS bridges for ovs-cni
+  command: "ovs-vsctl --may-exist add-br {{ item }}"
+  loop:
+    - n2br
+    - n3br
+    - n4br
+  become: true
+
+- name: Apply Cluster-Network-Addons Operator & OVS-CNI
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item }}"
+    kubeconfig: "{{ kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+  loop:
+    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml"
+    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml"
+    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
+    - "https://gist.githubusercontent.com/niloysh/1f14c473ebc08a18c4b520a868042026/raw/d96f07e241bb18d2f3863423a375510a395be253/network-addons-config.yaml"
+  become: false
+
+- name: Wait 10 seconds for cluster-network-addons Ready
+  pause:
+    seconds: 10
