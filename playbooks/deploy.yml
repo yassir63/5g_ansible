@@ -44,7 +44,23 @@
   roles:
     - role: 5g/ran
 
-- name: Setup and connect UE on R2Lab
+- name: Setup and connect UE1 on R2Lab
   hosts: faraday
   roles:
     - role: r2lab
+  vars:
+    ue: qhat01
+
+- name: Setup and connect UE2 on R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab
+  vars:
+    ue: qhat02
+
+- name: Setup and connect UE3 on R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab
+  vars:
+    ue: qhat03
