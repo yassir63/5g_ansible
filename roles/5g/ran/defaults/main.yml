@@ -1,5 +1,5 @@
 ---
-repo_dest: /opt/open5gs-k8s
+repo_dest: "~/open5gs-k8s"
 namespace: open5gs
 rru: n300
 script_path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"

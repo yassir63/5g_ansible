@@ -13,8 +13,8 @@
     name: "{{ namespace }}"
     state: present
 
-- name: Apply MongoDB with Kustomization
-  command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ namespace }}
+- name: Apply MongoDB with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ namespace }}
 
 - name: Wait for MongoDB pod to be Ready
   kubernetes.core.k8s_info:
@@ -23,17 +23,16 @@
     label_selectors:
       - app.kubernetes.io/name=mongodb
   register: mongo_pods
-  until: mongo_pods.resources | length > 0 and
-          mongo_pods.resources[0].status.containerStatuses[0].ready
+  until: >
+    mongo_pods.resources | length > 0 and
+    (mongo_pods.resources[0].status.containerStatuses is defined) and
+    (mongo_pods.resources[0].status.containerStatuses | length > 0) and
+    (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
 
-- name: Apply NADs
-  kubernetes.core.k8s:
-    apply: yes
-    state: present
-    src: "{{ repo_dest }}/networks5g"
-    namespace: "{{ namespace }}"
+- name: Apply NADs with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ namespace }}
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
@@ -47,41 +46,47 @@
   when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
   loop: "{{ nad_list }}"
 
-- name: Apply Open5GS NFs with Kustomization 
-  command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ namespace }}
+- name: Apply Open5GS NFs with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ namespace }}
 
-- name: Wait for {{ item }} pod Ready
+- name: Wait for Open5GS Core NFs pods Ready
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ namespace }}"
-    label_selectors: [ "nf={{ item }}" ]
+    label_selectors:
+      - "nf={{ item }}"
   register: nf_pod
-  until: nf_pod.resources | length > 0 and
-          nf_pod.resources[0].status.containerStatuses[0].ready
+  until: >
+    nf_pod.resources | length > 0 and
+    (nf_pod.resources[0].status.containerStatuses is defined) and
+    (nf_pod.resources[0].status.containerStatuses | length > 0) and
+    (nf_pod.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
   loop: "{{ nfs }}"
+  loop_control:
+    label: "{{ item }}"
 
 - name: Install Python requirements for admin script
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
     virtualenv: "{{ repo_dest }}/venv"
 
-- name: Deploy Open5GS Web UI
-  kubernetes.core.k8s:
-    apply: yes
-    state: present
-    src: "{{ repo_dest }}/open5gs-webui"
-    namespace: "{{ namespace }}"
+- name: Deploy Open5GS Web UI with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}//open5gs-webui" -n {{ namespace }}
 
 - name: Wait for WebUI pod Ready
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ namespace }}"
-    label_selectors: [ "nf=webui" ]
+    label_selectors:
+      - "nf=webui"
   register: webui_pod
-  until: webui_pod.resources | length > 0 and
-          webui_pod.resources[0].status.containerStatuses[0].ready
+  until: >
+    webui_pod.resources | length > 0 and
+    (webui_pod.resources[0].status.containerStatuses is defined) and
+    (webui_pod.resources[0].status.containerStatuses | length > 0) and
+    (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
 
