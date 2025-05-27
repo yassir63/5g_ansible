@@ -1,0 +1,43 @@
+---
+- name: Power ON "{{ ue }}" PDU outlet
+  shell: rhubarbe pdu on "{{ ue }}"
+  delegate_to: faraday.inria.fr
+
+- name: Verify PDU status
+  shell: rhubarbe pdu status "{{ ue }}"
+  register: pdu_status
+  delegate_to: faraday.inria.fr
+
+- name: Show PDU status
+  debug:
+    var: pdu_status.stdout
+
+- name: Wait for "{{ ue }}" SSH
+  wait_for:
+    host: "{{ ue }}"
+    port: 22
+    timeout: 180
+    sleep: 5
+
+- name: Reboot UE "{{ ue }}" via jump host
+  shell: ssh root@{{ ue }} 'reboot'
+  delegate_to: faraday.inria.fr
+
+- name: Wait for "{{ ue }}" SSH after reboot
+  wait_for:
+    host: "{{ ue }}"
+    port: 22
+    timeout: 180
+    sleep: 5
+
+- name: Configure UE "{{ ue }}" via jump host
+  shell: ssh root@{{ ue }} 'config-ue'
+  delegate_to: faraday.inria.fr
+
+- name: Prepare UE "{{ ue }}" via jump host
+  shell: ssh root@{{ ue }} 'prepare-ue --dnn="{{ dnn }}"'
+  delegate_to: faraday.inria.fr
+
+- name: Start UE "{{ ue }}" via jump host
+  shell: ssh root@{{ ue }} 'start.sh -F "{{ dnn }}"'
+  delegate_to: faraday.inria.fr

@@ -1,10 +1,13 @@
 ---
 - name: Prepare Sopnodes 
   hosts: localhost
-  vars:
-    nodes: "{{ groups['sopnodes'] }}"
-  roles:
-    - role: pos
+  tasks:
+    - name: Prepare {{ item }}
+      include_role:
+        name: pos
+      vars:
+        node: "{{ item }}"
+      loop: "{{ groups['sopnodes'] }}"
 
 - name: Setup Sopnodes
   hosts: sopnodes
@@ -39,17 +42,27 @@
   roles:
     - role: 5g/core
 
+- name: Setup UEs on R2Lab
+  hosts: faraday
+  tasks:
+    - name: Setup {{ item }} on R2Lab
+      include_role:
+        name: r2lab/setup
+      vars:
+        ue: "{{ item }}"
+      loop: "{{ groups['qhats'] }}"
+
 - name: Deploy OAI RAN
   hosts: sopnode-f1
   roles:
     - role: 5g/ran
 
-- name: Setup and connect UEs on R2Lab
+- name: Connect UEs on R2Lab to 5g network
   hosts: faraday
   tasks:
-    - name: Setup and connect {{ item }} on R2Lab
+    - name: Setup {{ item }} on R2Lab
       include_role:
-        name: r2lab
+        name: r2lab/setup
       vars:
         ue: "{{ item }}"
       loop: "{{ groups['qhats'] }}"
