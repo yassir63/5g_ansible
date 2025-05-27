@@ -13,6 +13,7 @@
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
+    - role: setup/optimization
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: sopnode-f1
@@ -21,7 +22,6 @@
     - role: setup/cni
     - role: setup/storage
     - role: setup/netplan
-    - role: setup/optimization
 
 # - name: Join Cluster on Worker
 #   hosts: sopnode-f1
