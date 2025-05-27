@@ -1,0 +1,55 @@
+---
+- name: Clone / update 5G-Monarch repo
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: main
+    update: yes
+
+- name: Get nodes JSON
+  command: kubectl --kubeconfig {{ kubeconfig }} get nodes -o json
+  register: nodes_json
+
+- name: Extract control-plane IP
+  set_fact:
+    monarch_node_ip: "{{ nodes_json.stdout | from_json | json_query('items[0].status.addresses[0].address') }}"
+
+- name: Patch NODE_IP line in .env
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/.env"
+    regexp: '^NODE_IP=.*'
+    line: 'NODE_IP="{{ monarch_node_ip }}"'
+    create: yes
+
+- name: Ensure {{ monarch_ns }} namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ monarch_ns }}"
+    kubeconfig: "{{ kubeconfig }}"
+
+- name: Install Python requirements
+  ansible.builtin.pip:
+    requirements: "{{ repo_dest }}/requirements.txt"
+    executable: pip3
+
+- name: Deploy Monarch External Components (SO, NFVO)
+  ansible.builtin.debug:
+    msg: "Starting deployment of Monarch external components..."
+
+- import_tasks: deploy_external.yml
+
+- name: Deploy Monarch Core Components (Data, Monitoring)"
+  ansible.builtin.debug:
+    msg: "Starting deployment of Monarch core components..."
+
+- import_tasks: deploy_core.yml
+
+- name: Deploy Monarch NSS Components (NSSDC, Prometheus)
+  ansible.builtin.debug:
+    msg: "Starting deployment of Monarch NSS components..."
+
+- import_tasks: deploy_nss.yml

@@ -1,0 +1,10 @@
+---
+- name: Deploy external Monarch components (SO / NFVO)
+  vars:
+    external_dirs:
+      - service_orchestrator
+      - nfv_orchestrator
+  loop: "{{ external_dirs }}"
+  command: ./install.sh
+  args:
+    chdir: "{{ repo_dest }}/{{ item }}"

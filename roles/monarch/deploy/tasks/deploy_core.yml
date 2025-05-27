@@ -1,0 +1,67 @@
+---
+- name: Install data-store stack
+  command: ./install.sh
+  args:
+    chdir: "{{ repo_dest }}/data_store"
+
+- name: Wait for data-store pods
+  vars:
+    pod_labels:
+      - { selector: "app=minio",                       label: "minio" }
+      - { selector: "app.kubernetes.io/name=mongodb", label: "mongodb" }
+  include_tasks: wait_pod.yml
+  loop: "{{ pod_labels }}"
+
+- name: Install MinIO client
+  command: ./install-mc.sh
+  args:
+    chdir: "{{ repo_dest }}/data_store"
+
+- name: Install data-distribution
+  command: ./install.sh
+  args:
+    chdir: "{{ repo_dest }}/data_distribution"
+
+- name: Wait for store-gateway / receive pods
+  vars:
+    pod_labels:
+      - { selector: "app.kubernetes.io/component=storegateway", label: "storegateway" }
+      - { selector: "app.kubernetes.io/component=receive",      label: "receive"      }
+  include_tasks: wait_pod.yml
+  loop: "{{ pod_labels }}"
+
+- name: Install data-visualization
+  command: ./install.sh
+  args:
+    chdir: "{{ repo_dest }}/data_visualization"
+
+- name: Wait for grafana
+  vars:
+    pod_labels:
+      - { selector: "app.kubernetes.io/name=grafana", label: "grafana" }
+  include_tasks: wait_pod.yml
+  loop: "{{ pod_labels }}"
+
+- name: Install monitoring-manager
+  command: ./install.sh
+  args:
+    chdir: "{{ repo_dest }}/monitoring_manager"
+
+- name: Wait for monitoring-manager
+  vars:
+    pod_labels:
+      - { selector: "component=monitoring-manager", label: "monitoring-manager" }
+  include_tasks: wait_pod.yml
+  loop: "{{ pod_labels }}"
+
+- name: Install request-translator
+  command: ./install.sh
+  args:
+    chdir: "{{ repo_dest }}/request_translator"
+
+- name: Wait for request-translator
+  vars:
+    pod_labels:
+      - { selector: "component=request-translator", label: "request-translator" }
+  include_tasks: wait_pod.yml
+  loop: "{{ pod_labels }}"

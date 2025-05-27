@@ -1,0 +1,5 @@
+---
+repo_url: "https://github.com/Ziyad-Mabrouk/5g-monarch.git"
+repo_dest: "~/5g-monarch"
+monarch_ns: "monarch"
+kubeconfig: "/etc/kubernetes/admin.conf"

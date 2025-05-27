@@ -1,0 +1,16 @@
+---
+- name: Submit monitoring requests to Monarch
+  ansible.builtin.shell: cd {{ repo_dest }}/request_translator && \
+    python3 test_api.py --json_file requests/request_slice.json submit && \
+    python3 test_api.py --json_file requests/request_test.json submit
+  args:
+    chdir: "{{ repo_dest }}/request_translator"
+  environment:
+    PYTHONPATH: "{{ repo_dest }}"
+  register: submit_output
+  changed_when: false
+  failed_when: submit_output.rc != 0
+
+- name: Print API submission result
+  ansible.builtin.debug:
+    var: submit_output.stdout_lines

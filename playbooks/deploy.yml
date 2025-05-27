@@ -44,23 +44,21 @@
   roles:
     - role: 5g/ran
 
-- name: Setup and connect UE1 on R2Lab
+- name: Setup and connect UEs on R2Lab
   hosts: faraday
-  roles:
-    - role: r2lab
-  vars:
-    ue: qhat01
+  tasks:
+    - name: Setup and connect {{ item }} on R2Lab
+      include_role:
+        name: r2lab
+      vars:
+        ue: "{{ item }}"
+      loop: "{{ groups['qhats'] }}"
 
-- name: Setup and connect UE2 on R2Lab
-  hosts: faraday
+- name: Deploy 5G-Monarch for monitoting
+  hosts: sopnode-f1
+  vars_files:
+    - vault.yml
   roles:
-    - role: r2lab
-  vars:
-    ue: qhat02
-
-- name: Setup and connect UE3 on R2Lab
-  hosts: faraday
-  roles:
-    - role: r2lab
-  vars:
-    ue: qhat03
+    - role: monarch/deploy
+    - role: monarch/monitoring
+    - role: monarch/expose

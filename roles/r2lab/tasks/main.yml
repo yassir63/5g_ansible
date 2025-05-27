@@ -30,14 +30,14 @@
     timeout: 180
     sleep: 5
 
-- name: Configure UE "{{ ue }}"
-  ansible.builtin.shell: config-ue
-  delegate_to: "{{ ue }}"
+- name: Configure UE "{{ ue }}" via jump host
+  shell: ssh root@{{ ue }} 'config-ue'
+  delegate_to: faraday.inria.fr
 
-- name: Prepare UE "{{ ue }}"
-  ansible.builtin.shell: prepare-ue --dnn="{{ dnn }}"
-  delegate_to: "{{ ue }}"
+- name: Prepare UE "{{ ue }}" via jump host
+  shell: ssh root@{{ ue }} 'prepare-ue --dnn="{{ dnn }}"'
+  delegate_to: faraday.inria.fr
 
-- name: Start UE "{{ ue }}"
-  ansible.builtin.shell: start.sh -F "{{ dnn }}"
-  delegate_to: "{{ ue }}"
+- name: Start UE "{{ ue }}" via jump host
+  shell: ssh root@{{ ue }} 'start.sh -F "{{ dnn }}"'
+  delegate_to: faraday.inria.fr

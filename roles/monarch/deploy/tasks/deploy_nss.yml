@@ -1,0 +1,12 @@
+---
+- name: Install NSSDC
+  command: ./install.sh
+  args:
+    chdir: "{{ repo_dest }}/nssdc"
+
+- name: Wait for prometheus
+  vars:
+    pod_labels:
+      - { selector: "app.kubernetes.io/name=prometheus", label: "prometheus" }
+  include_tasks: wait_pod.yml
+  loop: "{{ pod_labels }}"

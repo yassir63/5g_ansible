@@ -1,0 +1,59 @@
+---
+- name: Ensure unzip is installed
+  apt:
+    name: unzip
+    state: present
+  become: true
+
+- name: Download ngrok if not already installed
+  get_url:
+    url: "{{ ngrok_download_url }}"
+    dest: /tmp/ngrok.zip
+    mode: '0644'
+  when: not ngrok_bin is exists
+  register: ngrok_zip
+
+- name: Unarchive ngrok
+  unarchive:
+    src: /tmp/ngrok.zip
+    dest: /usr/local/bin
+    remote_src: yes
+    mode: '0755'
+  when: ngrok_zip is changed
+  become: true
+
+- name: Add ngrok authtoken
+  command: "{{ ngrok_bin }} config add-authtoken {{ ngrok_authtoken }}"
+  args:
+    creates: ~/.config/ngrok/ngrok.yml
+  when: ngrok_authtoken | length > 0
+
+- name: Start ngrok tunnel to Grafana port
+  shell: |
+    nohup {{ ngrok_bin }} http {{ grafana_port }} --log=stdout > /tmp/ngrok.log 2>&1 &
+  async: 1
+  poll: 0
+  changed_when: false
+
+- name: Wait for ngrok API to respond
+  wait_for:
+    host: 127.0.0.1
+    port: 4040
+    delay: 3
+    timeout: 30
+
+- name: Get public ngrok URL
+  uri:
+    url: http://localhost:4040/api/tunnels
+    return_content: yes
+  register: tunnel_api
+
+- name: Extract public HTTPS URL
+  set_fact:
+    grafana_public_url: "{{ (tunnel_api.json.tunnels | selectattr('proto', 'equalto', 'https') | list | first).public_url }}"
+
+- name: Show Grafana public link
+  debug:
+    msg: |
+      Monarch dashboard is now accessible at: {{ grafana_public_url }}
+      Login: admin / monarch-operator

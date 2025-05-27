@@ -1,0 +1,15 @@
+---
+- name: Wait for {{ item.label }} pod to be Ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ monarch_ns }}"
+    label_selectors:
+      - "{{ item.selector }}"
+    kubeconfig: "{{ kubeconfig }}"
+  register: pod_info
+  until: >
+    pod_info.resources | length > 0 and
+    (pod_info.resources[0].status.containerStatuses is defined) and
+    (pod_info.resources[0].status.containerStatuses[0].ready | default(false))
+  retries: 30
+  delay: 5

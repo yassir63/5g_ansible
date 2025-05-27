@@ -1,0 +1,5 @@
+---
+grafana_port: 32005
+ngrok_download_url: "https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip"
+ngrok_bin: /usr/local/bin/ngrok
+ngrok_authtoken: ""   # Set in vault.yml
