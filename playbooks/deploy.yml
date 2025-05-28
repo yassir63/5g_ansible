@@ -19,26 +19,25 @@
     - role: setup/optimization
 
 - name: Create and Setup Kubernetes Cluster On Master
-  hosts: sopnode-f1
+  hosts: k8s_master
   roles:
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
-    - role: setup/netplan
 
-# - name: Join Cluster on Worker
-#   hosts: sopnode-f1
-#   vars:
-#     control_plane_endpoint: "{{ hostvars['sopnode-f3'].ansible_default_ipv4.address }}:6443"
-#     kubeadm_token: "{{ hostvars['sopnode-f3'].kubeadm_token }}"
-#     discovery_token_ca_cert_hash: "{{ hostvars['sopnode-f3'].ca_hash }}"
-#   roles:
-#     - role: setup/k8s/cluster_join
-#     - role: setup/netplan
-#     - role: setup/optimization
+- name: Join Kubernetes Cluster on Workers
+  hosts: k8s_workers
+  become: true
+  vars:
+    master_host: "{{ groups['k8s_master'][0] }}"
+    control_plane_endpoint: "{{ hostvars[master_host].ansible_default_ipv4.address }}:6443"
+    kubeadm_token: "{{ hostvars[master_host].kubeadm_token }}"
+    discovery_token_ca_cert_hash: "{{ hostvars[master_host].ca_hash }}"
+  roles:
+    - role: setup/k8s/cluster_join
 
 - name: Deploy Open5gs Core
-  hosts: sopnode-f1
+  hosts: core_node
   roles:
     - role: 5g/core
 
@@ -53,8 +52,9 @@
       loop: "{{ groups['qhats'] }}"
 
 - name: Deploy OAI RAN
-  hosts: sopnode-f1
+  hosts: core_ran
   roles:
+    - role: setup/netplan
     - role: 5g/ran
 
 - name: Connect UEs on R2Lab to 5g network
@@ -67,8 +67,8 @@
         ue: "{{ item }}"
       loop: "{{ groups['qhats'] }}"
 
-- name: Deploy 5G-Monarch for monitoting
-  hosts: sopnode-f1
+- name: Deploy 5G-Monarch for monitoring
+  hosts: monitor_node
   vars_files:
     - ../vault.yml
   roles:
