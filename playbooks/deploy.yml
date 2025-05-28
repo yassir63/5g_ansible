@@ -62,7 +62,7 @@
   tasks:
     - name: Setup {{ item }} on R2Lab
       include_role:
-        name: r2lab/setup
+        name: r2lab/connect
       vars:
         ue: "{{ item }}"
       loop: "{{ groups['qhats'] }}"
