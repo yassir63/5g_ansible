@@ -32,9 +32,3 @@
     update_repo_cache: true
     wait: true
   register: helm_gnb
-
-- name: Show Helm deployment outputs
-  ansible.builtin.debug:
-    msg:
-      - "FlexRIC Helm output: {{ helm_flex.release_status }}"
-      - "gNB Helm output: {{ helm_gnb.release_status }}"
