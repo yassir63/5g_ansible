@@ -20,7 +20,7 @@
     sleep: 5
 
 - name: Reboot UE "{{ ue }}" via jump host
-  shell: ssh root@{{ ue }} 'reboot'
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n  root@{{ ue }} 'nohup reboot >/dev/null 2>&1 &'
   delegate_to: faraday.inria.fr
 
 - name: Wait for "{{ ue }}" SSH after reboot
@@ -31,13 +31,9 @@
     sleep: 5
 
 - name: Configure UE "{{ ue }}" via jump host
-  shell: ssh root@{{ ue }} 'config-ue'
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'config-ue'
   delegate_to: faraday.inria.fr
 
 - name: Prepare UE "{{ ue }}" via jump host
-  shell: ssh root@{{ ue }} 'prepare-ue --dnn="{{ dnn }}"'
-  delegate_to: faraday.inria.fr
-
-- name: Start UE "{{ ue }}" via jump host
-  shell: ssh root@{{ ue }} 'start.sh -F "{{ dnn }}"'
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'prepare-ue --dnn="{{ dnn }}"'
   delegate_to: faraday.inria.fr
