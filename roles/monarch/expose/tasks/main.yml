@@ -1,36 +1,32 @@
 ---
-- name: Ensure unzip is installed
-  apt:
-    name: unzip
+- name: Add ngrok GPG key
+  ansible.builtin.apt_key:
+    url: https://ngrok-agent.s3.amazonaws.com/ngrok.asc
     state: present
-  become: true
 
-- name: Download ngrok if not already installed
-  get_url:
-    url: "{{ ngrok_download_url }}"
-    dest: /tmp/ngrok.zip
-    mode: '0644'
-  when: not ngrok_bin is exists
-  register: ngrok_zip
+- name: Add ngrok APT repository
+  ansible.builtin.apt_repository:
+    repo: deb https://ngrok-agent.s3.amazonaws.com buster main
+    state: present
+    filename: ngrok
 
-- name: Unarchive ngrok
-  unarchive:
-    src: /tmp/ngrok.zip
-    dest: /usr/local/bin
-    remote_src: yes
-    mode: '0755'
-  when: ngrok_zip is changed
-  become: true
+- name: Update APT cache
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: Install ngrok
+  ansible.builtin.apt:
+    name: ngrok
+    state: present
 
 - name: Add ngrok authtoken
-  command: "{{ ngrok_bin }} config add-authtoken {{ ngrok_authtoken }}"
+  command: "ngrok config add-authtoken {{ ngrok_authtoken }}"
   args:
     creates: ~/.config/ngrok/ngrok.yml
   when: ngrok_authtoken | length > 0
 
 - name: Start ngrok tunnel to Grafana port
-  shell: |
-    nohup {{ ngrok_bin }} http {{ grafana_port }} --log=stdout > /tmp/ngrok.log 2>&1 &
+  command: "nohup ngrok http {{ grafana_port }}"
   async: 1
   poll: 0
   changed_when: false
@@ -48,12 +44,16 @@
     return_content: yes
   register: tunnel_api
 
-- name: Extract public HTTPS URL
+- name: Extract public HTTPS URL safely
   set_fact:
-    grafana_public_url: "{{ (tunnel_api.json.tunnels | selectattr('proto', 'equalto', 'https') | list | first).public_url }}"
+    grafana_public_url: >-
+      {{
+        (tunnel_api.json.tunnels | selectattr('proto', 'equalto', 'https') | list | first).public_url
+        if (tunnel_api.json.tunnels | selectattr('proto', 'equalto', 'https') | list)
+        else 'NO_HTTPS_TUNNEL_FOUND'
+      }}
 
 - name: Show Grafana public link
   debug:
     msg: |
-      Monarch dashboard is now accessible at: {{ grafana_public_url }}
-      Login: admin / monarch-operator
+      Monarch dashboard is now accessible at: {{ grafana_public_url }}. Login: admin / monarch-operator

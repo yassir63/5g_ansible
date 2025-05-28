@@ -70,7 +70,7 @@
 - name: Deploy 5G-Monarch for monitoting
   hosts: sopnode-f1
   vars_files:
-    - vault.yml
+    - ../vault.yml
   roles:
     - role: monarch/deploy
     - role: monarch/monitoring
