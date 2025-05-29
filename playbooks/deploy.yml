@@ -1,6 +1,7 @@
 ---
 - name: Prepare Sopnodes 
   hosts: localhost
+  strategy: free
   tasks:
     - name: Prepare {{ item }}
       include_role:
@@ -8,9 +9,12 @@
       vars:
         node: "{{ item }}"
       loop: "{{ groups['sopnodes'] }}"
+      loop_control:
+        label: "{{ item }}"
 
 - name: Setup Sopnodes
   hosts: sopnodes
+  strategy: free
   roles:
     - role: setup/common
     - role: setup/containerd
@@ -27,12 +31,8 @@
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
+  strategy: free
   become: true
-  vars:
-    master_host: "{{ groups['k8s_master'][0] }}"
-    control_plane_endpoint: "{{ hostvars[master_host].ansible_default_ipv4.address }}:6443"
-    kubeadm_token: "{{ hostvars[master_host].kubeadm_token }}"
-    discovery_token_ca_cert_hash: "{{ hostvars[master_host].ca_hash }}"
   roles:
     - role: setup/k8s/cluster_join
 
@@ -43,6 +43,7 @@
 
 - name: Setup UEs on R2Lab
   hosts: faraday
+  strategy: free
   tasks:
     - name: Setup {{ item }} on R2Lab
       include_role:
@@ -50,22 +51,27 @@
       vars:
         ue: "{{ item }}"
       loop: "{{ groups['qhats'] }}"
+      loop_control:
+        label: "{{ item }}"
 
 - name: Deploy OAI RAN
-  hosts: core_ran
+  hosts: ran_node
   roles:
     - role: setup/netplan
     - role: 5g/ran
 
 - name: Connect UEs on R2Lab to 5g network
   hosts: faraday
+  strategy: free
   tasks:
-    - name: Setup {{ item }} on R2Lab
+    - name: Connect {{ item }} on R2Lab
       include_role:
         name: r2lab/connect
       vars:
         ue: "{{ item }}"
       loop: "{{ groups['qhats'] }}"
+      loop_control:
+        label: "{{ item }}"
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node

@@ -1,13 +1,30 @@
 ---
 - name: Join the node to the cluster
-  command: >
-    kubeadm join {{ control_plane_endpoint }}
-    --token {{ kubeadm_token }}
-    --discovery-token-ca-cert-hash {{ discovery_token_ca_cert_hash }}
-  register: join_out
-  changed_when: join_out.rc == 0
-  failed_when: join_out.rc != 0
+  command: "{{ hostvars[groups['k8s_master'][0]].kubeadm_join_command }} --v=5"
 
-- name: Wait 10 seconds for kubelet to stabilize
-  pause:
-    seconds: 10
+- name: Create .kube directory on worker node
+  file:
+    path: /root/.kube
+    state: directory
+    mode: '0755'
+
+- name: Fetch admin.conf from master to control machine
+  fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: ./admin.conf
+    flat: yes
+  delegate_to: "{{ groups['k8s_master'][0] }}"
+  run_once: true
+
+- name: Copy admin.conf from control machine to worker node
+  copy:
+    src: ./admin.conf
+    dest: /root/.kube/config
+    mode: '0644'
+  become: true
+
+- name: Wait for kubelet to start and become active
+  systemd:
+    name: kubelet
+    state: started
+    enabled: yes

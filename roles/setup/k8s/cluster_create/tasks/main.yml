@@ -33,3 +33,13 @@
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
   register: taint_out
   failed_when: false
+
+- name: Extract kubeadm join command
+  shell: |
+    kubeadm token create --print-join-command
+  register: join_command
+  changed_when: false
+
+- name: Set join command as fact on master host
+  set_fact:
+    kubeadm_join_command: "{{ join_command.stdout }}"
