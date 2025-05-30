@@ -14,7 +14,6 @@
     dest: ./admin.conf
     flat: yes
   delegate_to: "{{ groups['k8s_master'][0] }}"
-  run_once: true
 
 - name: Copy admin.conf from control machine to worker node
   copy:

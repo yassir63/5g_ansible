@@ -3,8 +3,7 @@
   hosts: localhost
   strategy: free
   tasks:
-    - name: Prepare {{ item }}
-      include_role:
+    - include_role:
         name: pos
       vars:
         node: "{{ item }}"
@@ -45,8 +44,7 @@
   hosts: faraday
   strategy: free
   tasks:
-    - name: Setup {{ item }} on R2Lab
-      include_role:
+    - include_role:
         name: r2lab/setup
       vars:
         ue: "{{ item }}"
@@ -64,8 +62,7 @@
   hosts: faraday
   strategy: free
   tasks:
-    - name: Connect {{ item }} on R2Lab
-      include_role:
+    - include_role:
         name: r2lab/connect
       vars:
         ue: "{{ item }}"
@@ -77,6 +74,8 @@
   hosts: monitor_node
   vars_files:
     - ../vault.yml
+  vars:
+    worker_node_name: "{{ inventory_hostname }}"
   roles:
     - role: monarch/deploy
     - role: monarch/monitoring

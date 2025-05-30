@@ -6,20 +6,20 @@
     version: main
     update: yes
 
-- name: Ensure {{ namespace }} namespace exists
+- name: Ensure {{ open5gs_ns }} namespace exists
   kubernetes.core.k8s:
     api_version: v1
     kind: Namespace
-    name: "{{ namespace }}"
+    name: "{{ open5gs_ns }}"
     state: present
 
 - name: Apply MongoDB with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ namespace }}
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ open5gs_ns }}
 
 - name: Wait for MongoDB pod to be Ready
   kubernetes.core.k8s_info:
     kind: Pod
-    namespace: "{{ namespace }}"
+    namespace: "{{ open5gs_ns }}"
     label_selectors:
       - app.kubernetes.io/name=mongodb
   register: mongo_pods
@@ -32,27 +32,27 @@
   delay: 5
 
 - name: Apply NADs with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ namespace }}
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
     kind: NetworkAttachmentDefinition
-    namespace: "{{ namespace }}"
+    namespace: "{{ open5gs_ns }}"
   register: nad_info
 
 - name: Fail if a required NAD is missing
   ansible.builtin.fail:
-    msg: "NAD {{ item }} is missing in {{ namespace }}"
+    msg: "NAD {{ item }} is missing in {{ open5gs_ns }}"
   when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
   loop: "{{ nad_list }}"
 
 - name: Apply Open5GS NFs with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ namespace }}
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
 
 - name: Wait for Open5GS Core NFs pods Ready
   kubernetes.core.k8s_info:
     kind: Pod
-    namespace: "{{ namespace }}"
+    namespace: "{{ open5gs_ns }}"
     label_selectors:
       - "nf={{ item }}"
   register: nf_pod
@@ -73,12 +73,12 @@
     virtualenv: "{{ repo_dest }}/venv"
 
 - name: Deploy Open5GS Web UI with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}//open5gs-webui" -n {{ namespace }}
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}//open5gs-webui" -n {{ open5gs_ns }}
 
 - name: Wait for WebUI pod Ready
   kubernetes.core.k8s_info:
     kind: Pod
-    namespace: "{{ namespace }}"
+    namespace: "{{ open5gs_ns }}"
     label_selectors:
       - "nf=webui"
   register: webui_pod

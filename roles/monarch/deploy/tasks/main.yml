@@ -1,25 +1,15 @@
 ---
-- name: Clone / update 5G-Monarch repo
-  ansible.builtin.git:
+- name: Clone 5G-Monarch repo
+  git:
     repo: "{{ repo_url }}"
     dest: "{{ repo_dest }}"
     version: main
     update: yes
 
-- name: Get nodes JSON
-  command: kubectl --kubeconfig {{ kubeconfig }} get nodes -o json
-  register: nodes_json
-
-- name: Extract control-plane IP
-  set_fact:
-    monarch_node_ip: "{{ nodes_json.stdout | from_json | json_query('items[0].status.addresses[0].address') }}"
-
-- name: Patch NODE_IP line in .env
-  ansible.builtin.lineinfile:
-    path: "{{ repo_dest }}/.env"
-    regexp: '^NODE_IP=.*'
-    line: 'NODE_IP="{{ monarch_node_ip }}"'
-    create: yes
+- name: Label {{ worker_node_name }} for Monarch scheduling
+  command: kubectl label node {{ worker_node_name }} {{ monarch_label_key }}={{ monarch_label_val }} --overwrite
+  changed_when: "'already has a value' not in label_result.stdout"
+  register: label_result
 
 - name: Ensure {{ monarch_ns }} namespace exists
   kubernetes.core.k8s:
@@ -29,7 +19,37 @@
       kind: Namespace
       metadata:
         name: "{{ monarch_ns }}"
-    kubeconfig: "{{ kubeconfig }}"
+
+- name: Patch namespace with default nodeSelector
+  kubernetes.core.k8s:
+    state: patched
+    kind: Namespace
+    name: "{{ monarch_ns }}"
+    merge_type: merge
+    definition:
+      metadata:
+        annotations:
+          scheduler.kubernetes.io/node-selector: "{{ monarch_label_key }}={{ monarch_label_val }}"
+
+- name: Get nodes JSON
+  command: kubectl get nodes -o json
+  register: nodes_json
+
+- name: Extract worker-node IP
+  set_fact:
+    monarch_node_ip: >-
+      {{
+        (nodes_json.stdout | from_json)
+        | json_query("items[?!(metadata.labels.\"node-role.kubernetes.io/control-plane\")].status.addresses[0].address")
+        | first
+      }}
+
+- name: Patch NODE_IP in .env
+  lineinfile:
+    path: "{{ repo_dest }}/.env"
+    regexp: '^NODE_IP=.*'
+    line: 'NODE_IP="{{ monarch_node_ip }}"'
+    create: yes
 
 - name: Install Python requirements
   ansible.builtin.pip:

@@ -5,7 +5,6 @@
     namespace: "{{ monarch_ns }}"
     label_selectors:
       - "{{ item.selector }}"
-    kubeconfig: "{{ kubeconfig }}"
   register: pod_info
   until: >
     pod_info.resources | length > 0 and
