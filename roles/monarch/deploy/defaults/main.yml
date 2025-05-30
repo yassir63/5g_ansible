@@ -2,8 +2,4 @@
 repo_url: "https://github.com/Ziyad-Mabrouk/5g-monarch.git"
 repo_dest: "~/5g-monarch"
 monarch_ns: "monarch"
-
-# scheduling settings
-monarch_label_key: "monarch"
-monarch_label_val: "worker"
 worker_node_name: ""
