@@ -4,6 +4,20 @@
   delegate_to: localhost
   run_once: true
 
+- name: Update HOST_GNB variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^HOST_GNB='
+    line: "HOST_GNB=\"{{ ansible_hostname }}\""
+    backrefs: true
+
+- name: Update LOCAL_INTERFACE variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^LOCAL_INTERFACE='
+    line: "LOCAL_INTERFACE=\"{{ nic_interface }}\""
+    backrefs: true
+
 - name: Run prepare-demo-oai.sh to pull & configure OAI RAN charts
   ansible.builtin.command: "{{ script_path }} -a -R {{ rru }}"
   args:
