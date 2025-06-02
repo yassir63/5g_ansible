@@ -29,7 +29,7 @@
   kubernetes.core.helm:
     name: oai-flexric
     chart_ref: "{{ charts_base }}/oai-flexric"
-    release_namespace: "{{ namespace }}"
+    release_namespace: "{{ ran_namespace }}"
     create_namespace: true
     state: present
     update_repo_cache: true
@@ -40,7 +40,7 @@
   kubernetes.core.helm:
     name: oai-gnb
     chart_ref: "{{ charts_base }}/oai-gnb"
-    release_namespace: "{{ namespace }}"
+    release_namespace: "{{ ran_namespace }}"
     create_namespace: true
     state: present
     update_repo_cache: true
