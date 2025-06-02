@@ -1,32 +1,9 @@
-- name: Download Cloudflared
-  ansible.builtin.get_url:
-    url: https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-    dest: /usr/local/bin/cloudflared
-    mode: '0755'
+- name: Create reverse SSH tunnel from {{ inventory_hostname }} to Webshell
+  shell: >
+    nohup ssh -N -R {{ grafana_port }}:localhost:{{ grafana_port }}
+    {{ ansible_user }}@{{ duckburg_host }} > /dev/null 2>&1 &
 
-- name: Start Cloudflare tunnel to Grafana using Quick Tunnel
-  command: "nohup cloudflared tunnel --url http://localhost:{{ grafana_port }} > /tmp/cloudflared.log 2>&1 &"
-  async: 1
-  poll: 0
-  changed_when: false
-
-- name: Wait for Cloudflared tunnel to start and log URL
-  wait_for:
-    path: /tmp/cloudflared.log
-    delay: 3
-    timeout: 30
-
-- name: Read Cloudflared log to find public URL
-  shell: grep -oP 'https://\K[\w\-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1
-  register: cloudflare_url
-  failed_when: cloudflare_url.stdout == ""
-  changed_when: false
-
-- name: Set public URL fact
-  set_fact:
-    grafana_public_url: "https://{{ cloudflare_url.stdout }}"
-
-- name: Show Grafana public URL
+- name: Show Grafana public link
   debug:
     msg: |
-      Monarch dashboard is now accessible at: {{ grafana_public_url }} (Login: admin / monarch-operator)
+      Monarch dashboard is now accessible at: {{ duckburg_host }}:{{ grafana_port }}. Login: admin / monarch-operator

@@ -1,3 +1,4 @@
 ---
+duckburg_host: 131.159.15.78
 grafana_port: 32005
-ngrok_authtoken: ""   # Set in vault.yml
+#ngrok_authtoken: ""   # Set in vault.yml
