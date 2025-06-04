@@ -19,7 +19,7 @@
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
-    - role: setup/optimization
+    - role: setup/optimization/cpu
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: k8s_master
@@ -55,6 +55,7 @@
 - name: Deploy OAI RAN
   hosts: ran_node
   roles:
+    - role: setup/optimization/nic
     - role: setup/netplan
     - role: 5g/ran
 

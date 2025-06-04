@@ -3,8 +3,6 @@
   apt:
     name:
       - cpufrequtils
-      - ethtool
-      - tuned
     state: present
     update_cache: yes
   become: true
@@ -32,23 +30,3 @@
     - { key: kernel.sched_rt_runtime_us,   val: '-1'        }
     - { key: kernel.timer_migration,       val: '0'         }
   become: true
-
-- name: Increase NIC ring buffers on ens21f0
-  command: ethtool -G ens21f0 tx 8160 rx 8160
-  become: true
-
-- name: Increase NIC ring buffers on {{ nic_interface }}
-  command: ethtool -G {{ nic_interface }} tx 8160 rx 8160
-  become: true
-
-- name: Activate throughput-performance tuned profile
-  command: tuned-adm profile throughput-performance
-  become: true
-
-- name: Show active tuned profile
-  command: tuned-adm active
-  register: tuned_status
-  become: true
-
-- debug:
-    msg: "{{ tuned_status.stdout }}"
