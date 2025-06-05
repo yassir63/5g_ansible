@@ -1,0 +1,4 @@
+---
+- name: Power OFF R2Lab testbed
+  shell: all-off
+  delegate_to: faraday.inria.fr

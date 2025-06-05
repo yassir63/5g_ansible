@@ -2,4 +2,4 @@
 repo_url: "https://github.com/Ziyad-Mabrouk/5g-monarch.git"
 repo_dest: "~/5g-monarch"
 monarch_ns: "monarch"
-worker_node_name: ""
+worker_node_name: "{{ groups['monitor_node'][0] }}"

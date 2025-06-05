@@ -1,8 +1,10 @@
 ---
-- name: (POST5G) power-on USRP {{ rru }} from localhost
-  ansible.builtin.shell: post5g nodes start {{ rru }}
-  delegate_to: localhost
-  run_once: true
+- name: Clone open5gs-k8s repo
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: main
+    update: yes
 
 - name: Update HOST_GNB variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
@@ -32,7 +34,6 @@
     release_namespace: "{{ ran_ns }}"
     create_namespace: true
     state: present
-    update_repo_cache: true
     wait: true
   register: helm_flex
 
@@ -43,6 +44,5 @@
     release_namespace: "{{ ran_ns }}"
     create_namespace: true
     state: present
-    update_repo_cache: true
     wait: true
   register: helm_gnb

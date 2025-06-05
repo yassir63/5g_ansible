@@ -1,9 +1,8 @@
 ---
-- name: Prepare Sopnodes 
-  hosts: localhost
-  strategy: free
+- hosts: webshell
   tasks:
-    - include_role:
+    - name: Prepare Sopnodes 
+      include_role:
         name: pos
       vars:
         node: "{{ item }}"
@@ -13,7 +12,6 @@
 
 - name: Setup Sopnodes
   hosts: sopnodes
-  strategy: free
   roles:
     - role: setup/common
     - role: setup/containerd
@@ -30,7 +28,6 @@
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
-  strategy: free
   become: true
   roles:
     - role: setup/k8s/cluster_join
@@ -40,17 +37,26 @@
   roles:
     - role: 5g/core
 
-- name: Setup UEs on R2Lab
+- name: Cleanup R2Lab
   hosts: faraday
-  strategy: free
+  roles:
+    - role: r2lab/cleanup
+
+- hosts: faraday
   tasks:
-    - include_role:
-        name: r2lab/setup
+    - name: Setup UEs on R2Lab
+      include_role:
+        name: r2lab/ue/setup
       vars:
         ue: "{{ item }}"
       loop: "{{ groups['qhats'] }}"
       loop_control:
         label: "{{ item }}"
+
+- name: Power ON RRU on R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab/rru
 
 - name: Deploy OAI RAN
   hosts: ran_node
@@ -59,12 +65,11 @@
     - role: setup/netplan
     - role: 5g/ran
 
-- name: Connect UEs on R2Lab to 5g network
-  hosts: faraday
-  strategy: free
+- hosts: faraday
   tasks:
-    - include_role:
-        name: r2lab/connect
+    - name: Connect UEs on R2Lab to 5g network
+      include_role:
+        name: r2lab/ue/connect
       vars:
         ue: "{{ item }}"
       loop: "{{ groups['qhats'] }}"
@@ -73,10 +78,6 @@
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
-  vars_files:
-    - ../vault.yml
-  vars:
-    worker_node_name: "{{ inventory_hostname }}"
   roles:
     - role: monarch/deploy
     - role: monarch/monitoring
