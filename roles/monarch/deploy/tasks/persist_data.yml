@@ -1,0 +1,31 @@
+---
+- name: Ensure /mnt/data mount point exists
+  file:
+    path: /mnt/data
+    state: directory
+    mode: '0755'
+
+- name: Mount /dev/sda1 to /mnt/data
+  mount:
+    path: /mnt/data
+    src: /dev/sda1
+    fstype: ext4
+    state: mounted
+
+- name: Create MongoDB data directory
+  file:
+    path: /mnt/data/mongodb
+    state: directory
+    mode: '0755'
+
+- name: Create MinIO data directory
+  file:
+    path: /mnt/data/minio
+    state: directory
+    mode: '0755'
+
+- name: Create Thanos data directory
+  file:
+    path: /mnt/data/thanos
+    state: directory
+    mode: '0755'

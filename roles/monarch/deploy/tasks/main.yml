@@ -1,9 +1,11 @@
 ---
+- import_tasks: persist_data.yml
+
 - name: Clone 5G-Monarch repo
   git:
     repo: "{{ repo_url }}"
     dest: "{{ repo_dest }}"
-    version: main
+    version: "{{ branch }}"
     update: yes
     force: yes 
 

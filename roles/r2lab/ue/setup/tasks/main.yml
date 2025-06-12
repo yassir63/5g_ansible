@@ -19,9 +19,18 @@
     timeout: 180
     sleep: 5
 
-- name: Configure UE "{{ ue }}" via jump host
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'config-ue'
+- name: Set mbim mode on UE "{{ ue }}" via jump host
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'set-mbim'
   delegate_to: faraday.inria.fr
+
+- name: Check mode on UE "{{ ue }}" via jump host
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'check-ue'
+  register: mode_status
+  delegate_to: faraday.inria.fr
+
+- name: Show used mode on UE "{{ ue }}"
+  debug:
+    var: mode_status.stdout
 
 - name: Prepare UE "{{ ue }}" via jump host
   shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'prepare-ue --dnn="{{ dnn }}"'
