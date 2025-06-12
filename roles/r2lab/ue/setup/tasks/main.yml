@@ -33,5 +33,5 @@
     var: mode_status.stdout
 
 - name: Prepare UE "{{ ue }}" via jump host
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'prepare-ue --dnn="{{ dnn }}"'
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'prepare-ue --dnn="{{ hostvars[ue].dnn }}"'
   delegate_to: faraday.inria.fr

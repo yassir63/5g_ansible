@@ -1,4 +1,7 @@
 ---
 - name: Power OFF R2Lab testbed
-  shell: all-off
-  delegate_to: faraday.inria.fr
+  shell: |
+    source ~/.bashrc
+    all-off
+  args:
+    executable: /bin/bash

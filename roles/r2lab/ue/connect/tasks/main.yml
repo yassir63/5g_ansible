@@ -1,4 +1,4 @@
 ---
 - name: Start UE "{{ ue }}" via jump host
-  shell: ssh root@{{ ue }} 'start.sh -F "{{ dnn }}"'
+  shell: ssh root@{{ ue }} 'start.sh -F "{{ hostvars[ue].dnn }}"'
   delegate_to: faraday.inria.fr
