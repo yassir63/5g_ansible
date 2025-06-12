@@ -81,4 +81,3 @@
   roles:
     - role: monarch/deploy
     - role: monarch/monitoring
-    - role: monarch/expose
