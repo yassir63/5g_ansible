@@ -1,4 +1,49 @@
 ---
+- name: Label {{ groups['core_node'][0] }} for Monarch scheduling
+  command: kubectl label node {{ groups['core_node'][0] }} open5gs-core-node=true --overwrite
+  changed_when: false
+
+- name: Add Kyverno Helm repo
+  ansible.builtin.shell: |
+    helm repo add kyverno https://kyverno.github.io/kyverno/
+    helm repo update
+  args:
+    executable: /bin/bash
+
+- name: Install Kyverno using Helm
+  ansible.builtin.shell: |
+    helm upgrade --install kyverno kyverno/kyverno -n kyverno --create-namespace
+  args:
+    executable: /bin/bash
+
+- name: Copy Kyverno policy to force Open5GS pods to {{ groups['core_node'][0] }}
+  copy:
+    dest: /tmp/force-open5gs-node.yaml
+    content: |
+      apiVersion: kyverno.io/v1
+      kind: ClusterPolicy
+      metadata:
+        name: force-open5gs-to-core-node
+      spec:
+        mutateExistingOnPolicyUpdate: true
+        rules:
+          - name: add-open5gs-node-selector
+            match:
+              resources:
+                kinds: ["Pod"]
+                selector:
+                  matchLabels:
+                    app: open5gs
+            mutate:
+              patchStrategicMerge:
+                spec:
+                  nodeSelector:
+                    open5gs-core-node: "true"
+
+- name: Apply Kyverno policy
+  command: kubectl apply -f /tmp/force-open5gs-node.yaml
+  changed_when: false
+
 - name: Clone open5gs-k8s repo
   ansible.builtin.git:
     repo: "{{ repo_url }}"

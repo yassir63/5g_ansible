@@ -13,19 +13,6 @@
   command: kubectl label node {{ worker_node_name }} monarch-node=true --overwrite
   changed_when: false
 
-- name: Add Kyverno Helm repo
-  ansible.builtin.shell: |
-    helm repo add kyverno https://kyverno.github.io/kyverno/
-    helm repo update
-  args:
-    executable: /bin/bash
-
-- name: Install Kyverno using Helm
-  ansible.builtin.shell: |
-    helm upgrade --install kyverno kyverno/kyverno -n kyverno --create-namespace
-  args:
-    executable: /bin/bash
-
 - name: Copy Kyverno policy
   copy:
     dest: /tmp/monarch-force-node.yaml
