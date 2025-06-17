@@ -30,13 +30,10 @@
               kinds: ["Pod"]
               namespaces: ["monarch"]
           mutate:
-            targets:
-              - select:
-                  kind: Pod
-                patchStrategicMerge:
-                  spec:
-                    nodeSelector:
-                      monarch-node: "true"
+            patchStrategicMerge:
+              spec:
+                nodeSelector:
+                  monarch-node: "true"
 
 - name: Apply Kyverno policy
   command: kubectl apply -f /tmp/monarch-force-node.yaml
