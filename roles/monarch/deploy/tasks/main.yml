@@ -22,18 +22,17 @@
       metadata:
         name: monarch-force-node
       spec:
-        mutateExistingOnPolicyUpdate: true
         rules:
-        - name: add-monarch-node-selector
-          match:
-            resources:
-              kinds: ["Pod"]
-              namespaces: ["monarch"]
-          mutate:
-            patchStrategicMerge:
-              spec:
-                nodeSelector:
-                  monarch-node: "true"
+          - name: add-monarch-node-selector
+            match:
+              resources:
+                kinds: ["Pod"]
+                namespaces: ["monarch"]
+            mutate:
+              patchStrategicMerge:
+                spec:
+                  nodeSelector:
+                    monarch-node: "true"
 
 - name: Apply Kyverno policy
   command: kubectl apply -f /tmp/monarch-force-node.yaml
