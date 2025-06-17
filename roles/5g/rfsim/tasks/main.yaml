@@ -1,0 +1,20 @@
+---
+- name: Install OAI NR-UE chart using Helm
+  kubernetes.core.helm:
+    name: oai-nr-ue
+    chart_ref: "{{ charts_base }}/oai-nr-ue"
+    release_namespace: "{{ ran_ns }}"
+    create_namespace: true
+    state: present
+    wait: true
+  register: helm_oai_nr_ue
+
+- name: Install OAI NR-UE2 chart using Helm
+  kubernetes.core.helm:
+    name: oai-nr-ue2
+    chart_ref: "{{ charts_base }}/oai-nr-ue2"
+    release_namespace: "{{ ran_ns }}"
+    create_namespace: true
+    state: present
+    wait: true
+  register: helm_oai_nr_ue2
