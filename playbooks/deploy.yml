@@ -32,6 +32,21 @@
   roles:
     - role: setup/k8s/cluster_join
 
+- name: Configure GRE Tunnel From Core Node to RAN Node
+  hosts: core_node
+  vars:
+    ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+
+
+- name: Configure GRE Tunnel From RAN Node to Core Node
+  hosts: ran_node
+  vars:
+    ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+
 - name: Deploy Open5gs Core
   hosts: core_node
   roles:

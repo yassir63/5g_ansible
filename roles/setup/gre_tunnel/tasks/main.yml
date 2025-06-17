@@ -1,0 +1,3 @@
+---
+- name: Create GRE Tunnel Between Core and RAN Node
+  shell: ovs-vsctl add-port n3br gre0 -- set interface gre0 type=gre options:remote_ip={{ ip }}
