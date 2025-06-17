@@ -9,8 +9,8 @@
     update: yes
     force: yes 
 
-- name: Label {{ worker_node_name }} for Monarch scheduling
-  command: kubectl label node {{ worker_node_name }} monarch-node=true --overwrite
+- name: Label {{ groups['monitor_node'][0] }} for Monarch scheduling
+  command: kubectl label node {{ groups['monitor_node'][0] }} monarch-node=true --overwrite
   changed_when: false
 
 - name: Copy Kyverno policy
@@ -30,10 +30,13 @@
               kinds: ["Pod"]
               namespaces: ["monarch"]
           mutate:
-            patchStrategicMerge:
-              spec:
-                nodeSelector:
-                  monarch-node: "true"
+            targets:
+              - select:
+                  kind: Pod
+                patchStrategicMerge:
+                  spec:
+                    nodeSelector:
+                      monarch-node: "true"
 
 - name: Apply Kyverno policy
   command: kubectl apply -f /tmp/monarch-force-node.yaml
@@ -58,8 +61,8 @@
         annotations:
           scheduler.kubernetes.io/node-selector: "monarch-node=true"
 
-- name: Get IP of node {{ worker_node_name }}
-  command: kubectl get node {{ worker_node_name }} -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
+- name: Get IP of node {{ groups['monitor_node'][0] }}
+  command: kubectl get node {{ groups['monitor_node'][0] }} -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
   register: monarch_node_ip_result
 
 - name: Set monarch_node_ip fact
