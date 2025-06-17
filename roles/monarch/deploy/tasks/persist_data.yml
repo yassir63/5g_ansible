@@ -9,7 +9,7 @@
   mount:
     path: /mnt/data
     src: /dev/sda1
-    fstype: vfat
+    fstype: ext4
     state: mounted
 
 - name: Create MongoDB data directory
