@@ -1,7 +1,0 @@
----
-grafana_port: 32005
-sopnode_host: "{{ groups['monitor_node'][0] }}"
-webshell_host: "{{ groups['webshell'][0] }}"
-webshell_user: "{{ hostvars[groups['webshell'][0]].ansible_user }}"
-webshell_port: "{{ hostvars[groups['webshell'][0]].ansible_port }}"
-ssh_key: "{{ hostvars[groups['webshell'][0]].ansible_ssh_private_key_file }}"
