@@ -1,0 +1,17 @@
+---
+- name: Setup Iperf on UPFs
+  hosts: core_node
+  gather_facts: false
+  roles:
+    - role: scenarios/iperf/upf
+
+- name: Iperf3 client test on each UE via Faraday
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Run iperf3 from each UE
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 100'
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue
+      delegate_to: faraday.inria.fr
