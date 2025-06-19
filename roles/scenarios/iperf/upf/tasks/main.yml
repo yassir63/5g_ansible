@@ -1,51 +1,48 @@
 ---
-- name: Wait for open5gs-upf1 and open5gs-upf2 pods to be ready
+- name: Get list of UPF pods
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: open5gs
-  register: open5gs_pods
+  register: upf_pods
 
-- name: Set UPF pod names
-  set_fact:
+- set_fact:
     upf1_pod: "{{ item.metadata.name }}"
-  loop: "{{ open5gs_pods.resources }}"
-  when: item.metadata.name is match("open5gs-upf1-.*")
+  loop: "{{ upf_pods.resources }}"
+  when: item.metadata.name is match('^open5gs-upf1-')
 
-- name: Set UPF pod names
-  set_fact:
+- set_fact:
     upf2_pod: "{{ item.metadata.name }}"
-  loop: "{{ open5gs_pods.resources }}"
-  when: item.metadata.name is match("open5gs-upf2-.*")
+  loop: "{{ upf_pods.resources }}"
+  when: item.metadata.name is match('^open5gs-upf2-')
 
 - name: Install iperf3 in UPF1
-  kubernetes.core.k8s_exec:
-    namespace: open5gs
-    pod: "{{ upf1_pod }}"
-    command: apt update && apt install -y iperf3
+  shell: |
+    kubectl -n open5gs exec {{ upf1_pod }} -- bash -c '
+      set -euo pipefail
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        apt-get update -qq &&
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iperf3
+      fi
+    '
+  register: upf1_install
+  changed_when: "'Preparing to unpack' in upf1_install.stdout"
 
 - name: Install iperf3 in UPF2
-  kubernetes.core.k8s_exec:
-    namespace: open5gs
-    pod: "{{ upf2_pod }}"
-    command: apt update && apt install -y iperf3
+  shell: |
+    kubectl -n open5gs exec {{ upf2_pod }} -- bash -c '
+      set -euo pipefail
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        apt-get update -qq &&
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iperf3
+      fi
+    '
+  register: upf2_install
+  changed_when: "'Preparing to unpack' in upf2_install.stdout"
 
-- name: Start iperf3 server on UPF1 in background
-  kubernetes.core.k8s_exec:
-    namespace: open5gs
-    pod: "{{ upf1_pod }}"
-    command:
-      - sh
-      - -c
-      - "nohup iperf3 -s -B 10.41.0.1 > /tmp/iperf3_upf1.log 2>&1 &"
-    tty: false
+- name: Start iperf3 server on UPF1 (background)
+  shell: |
+    kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'iperf3 -s -B 10.41.0.1 -D'
 
-- name: Start iperf3 server on UPF2 in background
-  kubernetes.core.k8s_exec:
-    namespace: open5gs
-    pod: "{{ upf2_pod }}"
-    command:
-      - sh
-      - -c
-      - "nohup iperf3 -s -B 10.42.0.2 > /tmp/iperf3_upf2.log 2>&1 &"
-    tty: false
-
+- name: Start iperf3 server on UPF2 (background)
+  shell: |
+    kubectl -n open5gs exec {{ upf2_pod }} -- bash -c 'iperf3 -s -B 10.42.0.1 -D'
