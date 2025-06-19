@@ -155,3 +155,9 @@
     {{ repo_dest }}/venv/bin/python mongo-tools/check-subscribers.py
   args:
     chdir: "{{ repo_dest }}"
+  register: check_out
+  changed_when: false
+
+- name: Show Added subscribers
+  debug:
+    var: check_out.stdout
