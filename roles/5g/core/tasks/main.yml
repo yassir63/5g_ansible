@@ -149,3 +149,9 @@
     chdir: "{{ repo_dest }}"
   register: sub_out
   changed_when: false
+
+- name: Check added subscribers
+  ansible.builtin.shell: |
+    {{ repo_dest }}/venv/bin/python mongo-tools/check-subscribers.py
+  args:
+    chdir: "{{ repo_dest }}"
