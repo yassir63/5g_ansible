@@ -39,7 +39,6 @@
   roles:
     - role: setup/gre_tunnel
 
-
 - name: Configure GRE Tunnel From RAN Node to Core Node
   hosts: ran_node
   vars:
