@@ -41,16 +41,16 @@
 
 - name: Run iperf3 client on NR-UE (background)
   shell: |
-    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -B 10.41.0.2 -t 100 -D'
+    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -B 10.41.0.2 -t 100'
 
 - name: Run iperf3 client on NR-UE2 (background)
   shell: |
-    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -B 10.42.0.2 -t 100 -D'
+    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -B 10.42.0.2 -t 100'
 
 - name: Run reverse iperf3 client on NR-UE (background)
   shell: |
-    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -B 10.41.0.2 -t 100 -R -D'
+    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -B 10.41.0.2 -t 100 -R'
 
 - name: Run reverse iperf3 client on NR-UE2 (background)
   shell: |
-    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -B 10.42.0.2 -t 100 -R -D'
+    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -B 10.42.0.2 -t 100 -R'
