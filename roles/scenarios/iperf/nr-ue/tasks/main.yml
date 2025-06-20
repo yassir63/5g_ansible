@@ -1,0 +1,56 @@
+---
+- name: Get list of NR-UE pods
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: open5gs
+  register: ue_pods
+
+- set_fact:
+    ue1_pod: "{{ item.metadata.name }}"
+  loop: "{{ ue_pods.resources }}"
+  when: item.metadata.name is match('^oai-nr-ue-')
+
+- set_fact:
+    ue2_pod: "{{ item.metadata.name }}"
+  loop: "{{ ue_pods.resources }}"
+  when: item.metadata.name is match('^oai-nr-ue2-')
+
+- name: Install iperf3 on NR-UE
+  shell: |
+    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c '
+      set -euo pipefail
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        yum update -y -qq &&
+        yum install -y -qq iperf3
+      fi
+    '
+  register: ue1_install
+  changed_when: false
+
+- name: Install iperf3 on NR-UE2
+  shell: |
+    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c '
+      set -euo pipefail
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        yum update -y -qq &&
+        yum install -y -qq iperf3
+      fi
+    '
+  register: ue2_install
+  changed_when: false
+
+- name: Run iperf3 client on NR-UE (background)
+  shell: |
+    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -B 10.41.0.2 -t 100 -D'
+
+- name: Run iperf3 client on NR-UE2 (background)
+  shell: |
+    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -B 10.42.0.2 -t 100 -D'
+
+- name: Run reverse iperf3 client on NR-UE (background)
+  shell: |
+    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -B 10.41.0.2 -t 100 -R -D'
+
+- name: Run reverse iperf3 client on NR-UE2 (background)
+  shell: |
+    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -B 10.42.0.2 -t 100 -R -D'
