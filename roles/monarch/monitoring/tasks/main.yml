@@ -1,4 +1,9 @@
 ---
+- name: Set gNB Monitoring Interval from the .env of Monarch
+  command: ./set_gnb_monitoring_interval.sh
+  args:
+    chdir: "{{ repo_dest }}"
+
 - name: Submit monitoring requests to Monarch
   ansible.builtin.shell: cd {{ repo_dest }}/request_translator && \
     python3 test_api.py --json_file requests/request_slice.json submit && \
