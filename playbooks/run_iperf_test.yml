@@ -5,12 +5,23 @@
   roles:
     - role: scenarios/iperf/upf
 
-- name: Iperf3 client test on each UE via Faraday
+- name: Iperf3 client test on each UE via Faraday (Uplink Test)
   hosts: faraday
   gather_facts: false
   tasks:
-    - name: Run iperf3 from each UE
-      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 100'
+    - name: Run iperf3 client each UE for 200s
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200'
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue
+      delegate_to: faraday.inria.fr
+
+- name: Iperf3 reverse client test on each UE via Faraday (Downlink Test)
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Run iperf3 client each UE for 200s
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R'
       loop: "{{ groups['qhats'] }}"
       loop_control:
         loop_var: ue
