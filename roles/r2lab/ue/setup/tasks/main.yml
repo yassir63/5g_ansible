@@ -1,22 +1,55 @@
 ---
-- name: Power ON "{{ ue }}" PDU outlet
-  shell: rhubarbe pdu on "{{ ue }}"
+- name: Power ON UEs PDU outlet
+  shell: rhubarbe pdu on "{{ item }}"
   delegate_to: faraday.inria.fr
+  async: 1800
+  poll: 0
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    label: "{{ item }}"
+  register: power_ue_jobs
 
-- name: Verify PDU status
-  shell: rhubarbe pdu status "{{ ue }}"
-  register: pdu_status
-  delegate_to: faraday.inria.fr
+- name: Wait for all UEs to be turned ON
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: job_result
+  until: job_result.finished
+  retries: 100
+  delay: 10
+  loop: "{{ power_ue_jobs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
 
-- name: Wait for "{{ ue }}" SSH
+- name: Wait for UEs to be SSH accessible
   wait_for:
-    host: "{{ ue }}"
+    host: "{{ item }}"
     port: 22
     timeout: 180
     sleep: 5
   delegate_to: faraday.inria.fr
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    label: "{{ item }}"
+  register: power_ue_jobs
 
-- name: Set {{ hostvars[ue].mode }} mode on UE "{{ ue }}" via jump host
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'set-{{ hostvars[ue].mode }}'
+- name: Set MBIM/QMI mode on UEs
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'set-{{ hostvars[item].mode }}'
   delegate_to: faraday.inria.fr
+  async: 1800
+  poll: 0
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    label: "{{ item }}"
+  register: set_ue_jobs
+
+- name: Wait for all UEs to be turned ON
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: job_result
+  until: job_result.finished
+  retries: 100
+  delay: 10
+  loop: "{{ set_ue_jobs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
   

@@ -71,31 +71,11 @@
   roles:
     - role: r2lab/cleanup
 
-- hosts: faraday
-  tasks:
-    - name: Setup UEs on R2Lab
-      ansible.builtin.command: >
-        ansible-playbook -i inventory/hosts.ini playbooks/run_setup_ue.yml --extra-vars "ue={{ item }} -c local"
-      args: 
-        chdir: "{{ playbook_dir | dirname }}"
-      async: 1800
-      poll: 0
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        label: "{{ item }}"
-      register: prepare_ue_jobs
-
-    - name: Wait for role completion on all UEs
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: job_result
-      until: job_result.finished
-      retries: 100
-      delay: 10
-      loop: "{{ prepare_ue_jobs.results }}"
-      loop_control:
-        label: "{{ item.item }}"
-
+- name: Setup UEs on R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab/ue/setup
+      
 - name: Power ON RRU on R2Lab
   hosts: faraday
   roles:
