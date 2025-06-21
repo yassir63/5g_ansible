@@ -14,6 +14,7 @@
     port: 22
     timeout: 180
     sleep: 5
+  delegate_to: faraday.inria.fr
 
 - name: Set {{ hostvars[ue].mode }} mode on UE "{{ ue }}" via jump host
   shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'set-{{ hostvars[ue].mode }}'

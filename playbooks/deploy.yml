@@ -75,7 +75,7 @@
   tasks:
     - name: Setup UEs on R2Lab
       ansible.builtin.command: >
-        ansible-playbook -i inventory/hosts.ini playbooks/run_setup_ue.yml --extra-vars "ue={{ item }}"
+        ansible-playbook -i inventory/hosts.ini playbooks/run_setup_ue.yml --extra-vars "ue={{ item }} -c local"
       args: 
         chdir: "{{ playbook_dir | dirname }}"
       async: 1800

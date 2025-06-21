@@ -1,5 +1,5 @@
 ---
-- hosts: faraday
+- hosts: localhost
   tasks:
     - name: Setup UEs on R2Lab
       include_role:
