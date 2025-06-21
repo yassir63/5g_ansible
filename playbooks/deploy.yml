@@ -4,7 +4,9 @@
   tasks:
     - name: Run pos role in parallel for each sopnode
       ansible.builtin.command: >
-        ansible-playbook run_pos.yml --extra-vars "node={{ item }}" -c local
+        ansible-playbook playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+      args: 
+        chdir: "{{ playbook_dir | dirname }}"
       async: 1800
       poll: 0
       loop: "{{ groups['sopnodes'] }}"
