@@ -1,7 +1,7 @@
 ---
 - hosts: webshell
   tasks:
-    - name: Prepare Sopnodes 
+    - name: Prepare Sopnodes in parallel from webshell
       include_role:
         name: pos
       vars:
