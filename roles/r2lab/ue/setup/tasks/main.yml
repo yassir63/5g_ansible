@@ -8,10 +8,6 @@
   register: pdu_status
   delegate_to: faraday.inria.fr
 
-- name: Show PDU status
-  debug:
-    var: pdu_status.stdout
-
 - name: Wait for "{{ ue }}" SSH
   wait_for:
     host: "{{ ue }}"
@@ -22,12 +18,4 @@
 - name: Set {{ hostvars[ue].mode }} mode on UE "{{ ue }}" via jump host
   shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'set-{{ hostvars[ue].mode }}'
   delegate_to: faraday.inria.fr
-
-- name: Check mode on UE "{{ ue }}" via jump host
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'check-ue'
-  register: mode_status
-  delegate_to: faraday.inria.fr
-
-- name: Show used mode on UE "{{ ue }}"
-  debug:
-    var: mode_status.stdout
+  

@@ -1,0 +1,9 @@
+---
+- hosts: faraday
+  tasks:
+    - name: Setup UEs on R2Lab
+      include_role:
+        name: r2lab/ue/setup
+      vars:
+        ue: "{{ ue }}"
+       
