@@ -2,7 +2,7 @@
 - hosts: webshell
   gather_facts: false
   tasks:
-    - name: Run pos role in parallel for each sopnode
+    - name: Run pos reset in parallel for each sopnode
       ansible.builtin.command: >
         ansible-playbook -i inventory/hosts.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
       args: 
@@ -14,7 +14,7 @@
         label: "{{ item }}"
       register: prepare_jobs
 
-    - name: Wait for role completion on all Sopnodes
+    - name: Wait for all Sopnodes used to be reset
       async_status:
         jid: "{{ item.ansible_job_id }}"
       register: job_result
