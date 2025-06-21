@@ -1,4 +1,4 @@
-- hosts: webshell
+- hosts: localhost
   gather_facts: false
   tasks:
     - name: Run pos role on {{ node }}
