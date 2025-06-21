@@ -19,8 +19,8 @@
     timeout: 180
     sleep: 5
 
-- name: Set mbim mode on UE "{{ ue }}" via jump host
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'set-mbim'
+- name: Set {{ hostvars[ue].mode }} mode on UE "{{ ue }}" via jump host
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'set-{{ hostvars[ue].mode }}'
   delegate_to: faraday.inria.fr
 
 - name: Check mode on UE "{{ ue }}" via jump host
