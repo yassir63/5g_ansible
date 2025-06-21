@@ -3,6 +3,7 @@
   command: ./set_gnb_monitoring_interval.sh
   args:
     chdir: "{{ repo_dest }}"
+  ignore_errors: true
 
 - name: Submit monitoring requests to Monarch
   ansible.builtin.shell: cd {{ repo_dest }}/request_translator && \

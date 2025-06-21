@@ -15,6 +15,20 @@
       loop_control:
         loop_var: ue
       delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: test_down_jobs
+    
+    - name: Wait for iperf3 test completion on all UEs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ test_down_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
 
 - name: Iperf3 client test on each UE via Faraday (Uplink Test)
   hosts: faraday
@@ -26,3 +40,17 @@
       loop_control:
         loop_var: ue
       delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: test_up_jobs
+    
+    - name: Wait for iperf3 test completion on all UEs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ test_up_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"

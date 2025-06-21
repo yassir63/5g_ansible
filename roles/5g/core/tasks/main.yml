@@ -50,6 +50,7 @@
     dest: "{{ repo_dest }}"
     version: main
     update: yes
+    force: yes
 
 - name: Ensure {{ open5gs_ns }} namespace exists
   kubernetes.core.k8s:

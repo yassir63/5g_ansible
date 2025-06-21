@@ -5,6 +5,7 @@
     dest: "{{ repo_dest }}"
     version: main
     update: yes
+    force: yes
 
 - name: Update HOST_GNB variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:

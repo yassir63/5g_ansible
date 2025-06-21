@@ -1,7 +1,7 @@
 ---
 - hosts: webshell
   tasks:
-    - name: Prepare Sopnodes 
+    - name: Prepare Sopnodes in parallel from webshell
       include_role:
         name: pos
       vars:
@@ -9,6 +9,20 @@
       loop: "{{ groups['sopnodes'] }}"
       loop_control:
         label: "{{ item }}"
+      async: 1800
+      poll: 0
+      register: prepare_jobs
+
+    - name: Wait for role completion on all Sopnodes
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ prepare_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
 
 - name: Setup Sopnodes
   hosts: sopnodes
@@ -66,6 +80,20 @@
       loop: "{{ groups['qhats'] }}"
       loop_control:
         label: "{{ item }}"
+      async: 1800
+      poll: 0
+      register: prepare_ue_jobs
+    
+    - name: Wait for role completion on all UEs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ prepare_ue_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
 
 - name: Power ON RRU on R2Lab
   hosts: faraday
@@ -89,6 +117,7 @@
       loop: "{{ groups['qhats'] }}"
       loop_control:
         label: "{{ item }}"
+      ignore_errors: true
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node

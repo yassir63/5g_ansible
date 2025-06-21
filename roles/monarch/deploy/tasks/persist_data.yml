@@ -1,12 +1,12 @@
-- name: Ensure /mnt/data mount point exists
+- name: Ensure /mnt/{{ storage }} mount point exists
   file:
-    path: /mnt/data
+    path: /mnt/{{ storage }}
     state: directory
     mode: '0755'
 
-- name: Mount /dev/sda1 to /mnt/data
+- name: Mount /dev/{{ storage }} to /mnt/data
   mount:
-    path: /mnt/data
+    path: /mnt/{{ storage }}
     src: /dev/sda1
     fstype: ext4
     state: mounted
