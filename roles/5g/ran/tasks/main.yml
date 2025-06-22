@@ -21,13 +21,13 @@
     line: "LOCAL_INTERFACE=\"{{ nic_interface }}\""
     backrefs: true
 
-- name: Update FLEXRIC variable in prepare-demo-oai.sh if using aw2s gnb image
-  ansible.builtin.lineinfile:
-    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
-    regexp: '^FLEXRIC='
-    line: "FLEXRIC=false"
-    backrefs: true
-  when: rru in ['jaguar', 'panther']
+# - name: Disable FLEXRIC in prepare-demo-oai.sh if using aw2s gnb image
+#   ansible.builtin.lineinfile:
+#     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+#     regexp: '^FLEXRIC='
+#     line: "FLEXRIC=false"
+#     backrefs: true
+#   when: rru in ['jaguar', 'panther']
 
 - name: Run prepare-demo-oai.sh to pull & configure OAI RAN charts
   ansible.builtin.command: "{{ script_path }} -a -R {{ rru }}"
