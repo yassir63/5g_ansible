@@ -1,0 +1,5 @@
+---
+- name: Run interference test
+  hosts: faraday
+  roles:
+    - role: scenarios/interference
