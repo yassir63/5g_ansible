@@ -39,6 +39,16 @@
   register: upf2_install
   changed_when: "'Preparing to unpack' in upf2_install.stdout"
 
+- name: Stop any potential existing background iperfs running on UPF1
+  shell: |
+    kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'pkill iperf3'
+  ignore_errors: true
+
+- name: Stop any potential existing background iperfs running on UPF2
+  shell: |
+    kubectl -n open5gs exec {{ upf2_pod }} -- bash -c 'pkill iperf3'
+  ignore_errors: true
+
 - name: Start iperf3 server on UPF1 (background)
   shell: |
     kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'iperf3 -s -B 10.41.0.1 -D'
