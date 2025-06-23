@@ -23,10 +23,6 @@
     sleep: 5
   delegate_to: faraday.inria.fr
 
-- name: Start Gaussian Noise Emmission from USRP b205 on frequency {{ hostvars[groups['faraday'][0]].dl_freq }} for the downlink interference with -g {{ hostvars[groups['faraday'][0]].g }} for 5 minutes
-  shell: ssh root@fit08 'timeout 300 uhd_siggen --gaussian --freq="{{ hostvars[groups['faraday'][0]].dl_freq }}" -g "{{ hostvars[groups['faraday'][0]].g }}"'
-  delegate_to: faraday.inria.fr
-
-- name: Start Gaussian Noise Emmission from USRP b205 on frequency {{ hostvars[groups['faraday'][0]].ul_freq }} for the uplink interference with -g {{ hostvars[groups['faraday'][0]].g }} for 5 minutes
-  shell: ssh root@fit08 'timeout 300 uhd_siggen --gaussian --freq="{{ hostvars[groups['faraday'][0]].ul_freq }}" -g "{{ hostvars[groups['faraday'][0]].g }}"'
+- name: Start Gaussian Noise Emmission from USRP b205 on frequency {{ hostvars[groups['faraday'][0]].freq }} with -g {{ hostvars[groups['faraday'][0]].g }} for 5 minutes
+  shell: ssh root@fit08 'timeout 300 uhd_siggen --gaussian --freq="{{ hostvars[groups['faraday'][0]].freq }}" -g "{{ hostvars[groups['faraday'][0]].g }}"'
   delegate_to: faraday.inria.fr
