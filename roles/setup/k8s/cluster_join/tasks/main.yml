@@ -13,7 +13,6 @@
     src: /etc/kubernetes/admin.conf
     dest: ./admin.conf
     flat: yes
-    force: yes
   delegate_to: "{{ groups['k8s_master'][0] }}"
 
 - name: Copy admin.conf from control machine to worker node
@@ -21,6 +20,7 @@
     src: ./admin.conf
     dest: /root/.kube/config
     mode: '0644'
+    force: yes
   become: true
 
 - name: Wait for kubelet to start and become active
