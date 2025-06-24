@@ -1,6 +1,6 @@
 ---
 - name: Turn ON node fit08
-  shell: rload -i gnuradio 8
+  shell: rhubarbe load -i gnuradio 8
   delegate_to: faraday.inria.fr
 
 - name: Wait 5 minutes for the node to be ready
@@ -8,7 +8,7 @@
     seconds: 300
 
 - name: Turn ON USRP b205 on node fit08
-  shell: uon 8
+  shell: rhubarbe usrpon 8
   delegate_to: faraday.inria.fr
 
 - name: Wait 30 seconds for the USRP to be ready
