@@ -90,8 +90,6 @@
               type: Directory
     EOF
     )"
-  args:
-    warn: false
   when: inventory_hostname == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
 
 - name: Copy kube-proxy config to expected path on node
