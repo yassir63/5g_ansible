@@ -7,14 +7,8 @@
     update_cache: yes
   become: true
 
-- name: Gather system facts for CPU optimization for CPU optimization
-  ansible.builtin.setup:
-
 - name: Set CPU governor to performance on every core
-  shell: cpufreq-set -c {{ item }} -r -g performance
-  loop: "{{ query('ansible.builtin.sequence', start=0, end=ansible_processor_vcpus | int - 1) }}"
-  become: true
-  when: ansible_processor_vcpus is defined
+  shell: for ((i=0;i<$(nproc);i++)); do cpufreq-set -c $i -r -g performance; done
 
 - name: Apply sysctl tuning parameters
   sysctl:
