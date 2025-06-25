@@ -54,3 +54,19 @@
 - name: Apply sysctl parameters
   command: sysctl --system
   become: true
+
+- name: Ensure CPUAffinity is set in system.conf
+  lineinfile:
+    path: /etc/systemd/system.conf
+    regexp: '^CPUAffinity='
+    line: 'CPUAffinity=2-7'
+    state: present
+  when: inventory_hostname == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
+
+- name: Reload sysctl
+  command: sysctl -p
+  when: inventory_hostname == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
+
+- name: Reload systemd config
+  command: systemctl daemon-reexec
+  when: inventory_hostname == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
