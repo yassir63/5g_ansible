@@ -50,6 +50,7 @@
       kind: KubeProxyConfiguration
       ipvs:
         strictARP: true
+  delegate_to: "{{ groups['core_node'][0] }}"
   when: inventory_hostname == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
 
 - name: Patch kubelet systemd service to use custom config
@@ -90,14 +91,9 @@
               type: Directory
     EOF
     )"
+  delegate_to: "{{ groups['core_node'][0] }}"
   when: inventory_hostname == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
 
-- name: Copy kube-proxy config to expected path on node
-  become: true
-  copy:
-    src: /etc/kubernetes/kubeproxy-config.yaml
-    dest: /etc/kubernetes/kubeproxy-config.yaml
-  when: inventory_hostname == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
 
 - name: Reload sysctl
   command: sysctl -p
