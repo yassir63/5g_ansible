@@ -1,5 +1,10 @@
 ---
-- name: Run interference test
+- name: Setup noise generator on R2Lab
   hosts: faraday
   roles:
-    - role: scenarios/interference
+    - role: scenarios/interference/setup
+
+- name: Run interference test on R2Lab
+  hosts: faraday
+  roles:
+    - role: scenarios/interference/run
