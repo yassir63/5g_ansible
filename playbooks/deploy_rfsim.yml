@@ -1,6 +1,6 @@
 ---
 - hosts: webshell
-  gather_facts: false
+  gather_facts: true
   tasks:
     - name: Run pos reset in parallel for each sopnode
       ansible.builtin.command: >

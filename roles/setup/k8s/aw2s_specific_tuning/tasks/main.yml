@@ -1,4 +1,17 @@
 ---
+- name: Ensure CPUAffinity is set in system.conf
+  lineinfile:
+    path: /etc/systemd/system.conf
+    regexp: '^CPUAffinity='
+    line: 'CPUAffinity=2-7'
+    state: present
+
+- name: Reload sysctl
+  command: sysctl -p
+
+- name: Reload systemd config
+  command: systemctl daemon-reexec
+
 - name: Add Kubernetes and RT settings to sysctl.conf
   blockinfile:
     path: /etc/sysctl.conf

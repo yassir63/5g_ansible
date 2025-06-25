@@ -7,10 +7,14 @@
     update_cache: yes
   become: true
 
+- name: Gather system facts for CPU optimization for CPU optimization
+  ansible.builtin.setup:
+
 - name: Set CPU governor to performance on every core
   shell: cpufreq-set -c {{ item }} -r -g performance
   loop: "{{ query('ansible.builtin.sequence', start=0, end=ansible_processor_vcpus | int - 1) }}"
   become: true
+  when: ansible_processor_vcpus is defined
 
 - name: Apply sysctl tuning parameters
   sysctl:
@@ -24,7 +28,6 @@
     - { key: net.core.rmem_max,            val: '134217728' }
     - { key: net.core.wmem_default,        val: '134217728' }
     - { key: net.core.wmem_max,            val: '134217728' }
-    - { key: net.core.rmem_default,        val: '62500000'  }
     - { key: net.core.netdev_max_backlog,  val: '5000'      }
     - { key: net.core.optmem_max,          val: '524288'    }
     - { key: kernel.sched_rt_runtime_us,   val: '-1'        }
