@@ -8,7 +8,10 @@
   become: true
 
 - name: Set CPU governor to performance on every core
-  shell: for ((i=0;i<$(nproc);i++)); do cpufreq-set -c $i -r -g performance; done
+  shell: bash -c 'for ((i=0;i<$(nproc);i++)); do cpufreq-set -c $i -r -g performance; done'
+  become: true
+  ignore_errors: true
+  when: inventory_hostname != "sopnode-f3"
 
 - name: Apply sysctl tuning parameters
   sysctl:
