@@ -9,25 +9,26 @@
   hosts: faraday
   gather_facts: false
   tasks:
-    - name: Start iperf3 DL test for each UE in background
-      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R -J log_dl.json'
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        loop_var: ue
+    - name: Start iperf3 DL test for UE1 in background
+      shell: ssh root@qhat01 'iperf3 -c {{ hostvars[qhat01].upf_ip }} -B {{ hostvars[ue].ip }} -t 100 -R -J log_dl.json'
       delegate_to: faraday.inria.fr
       async: 1800
       poll: 0
-      register: down_jobs
+      register: down_job_1
 
-    - name: Start iperf3 UL test for each UE in background
-      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -J log_ul.json'
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        loop_var: ue
+    - name: Start iperf3 UL test for UE2 in background
+      shell: ssh root@qhat02 'iperf3 -c {{ hostvars[qhat02].upf_ip }} -B {{ hostvars[ue].ip }} -t 100 -J log_ul.json'
       delegate_to: faraday.inria.fr
       async: 1800
       poll: 0
-      register: up_jobs
+      register: down_job_2
+
+    - name: Start iperf3 DL test for UE3 in background
+      shell: ssh root@qaht03 'iperf3 -c {{ hostvars[qhat03].upf_ip }} -B {{ hostvars[ue].ip }} -t 100 -R -J log_dl.json'
+      delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: up_job_1
 
 - name: Bandwidth intervention sequence
   hosts: faraday
@@ -37,9 +38,9 @@
       wait_for:
         timeout: 30
 
-    - name: Limit bandwidth on qhat01 to 10Mbps
+    - name: Limit bandwidth on qhat01 to 5Mbps
       shell: |
-        ssh root@qhat01 'tc qdisc add dev wwan0 root tbf rate 10mbit burst 32kbit latency 400ms'
+        ssh root@qhat01 'tc qdisc add dev wwan0 root tbf rate 5mbit burst 32kbit latency 400ms'
       delegate_to: faraday.inria.fr
 
     - name: Wait 30 more seconds before stopping qhat03
@@ -56,6 +57,11 @@
   hosts: faraday
   gather_facts: false
   tasks:
+    - name: Remove limit on qhat01
+      shell: |
+        ssh root@qhat01 'tc qdisc del dev wwan0 root'
+      delegate_to: faraday.inria.fr
+
     - name: Wait for DL jobs
       async_status:
         jid: "{{ item.ansible_job_id }}"
@@ -63,7 +69,18 @@
       until: result.finished
       retries: 100
       delay: 10
-      loop: "{{ down_jobs.results }}"
+      loop: "{{ down_job_1.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Wait for DL jobs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ down_job_2.results }}"
       loop_control:
         label: "{{ item.item }}"
 
@@ -78,6 +95,6 @@
       until: result.finished
       retries: 100
       delay: 10
-      loop: "{{ up_jobs.results }}"
+      loop: "{{ up_job_1.results }}"
       loop_control:
         label: "{{ item.item }}"

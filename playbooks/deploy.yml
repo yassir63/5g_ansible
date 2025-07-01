@@ -55,6 +55,11 @@
   roles:
     - role: setup/gre_tunnel
 
+- name: Deploy 5G-Monarch for monitoring
+  hosts: monitor_node
+  roles:
+    - role: monarch/deploy
+
 - name: Deploy Open5gs Core
   hosts: core_node
   roles:
@@ -107,6 +112,11 @@
     - role: setup/netplan
     - role: 5g/ran
 
+- name: Launch 5G-Monarch monitoring
+  hosts: monitor_node
+  roles:
+    - role: monarch/monitoring
+
 - hosts: faraday
   tasks:
     - name: Connect UEs on R2Lab to 5g network
@@ -118,9 +128,4 @@
       loop_control:
         label: "{{ item }}"
       ignore_errors: true
-
-- name: Deploy 5G-Monarch for monitoring
-  hosts: monitor_node
-  roles:
-    - role: monarch/deploy
-    - role: monarch/monitoring
+      
