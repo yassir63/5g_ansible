@@ -4,7 +4,59 @@
   roles:
     - role: scenarios/interference/setup
 
+- name: Setup Iperf on UPFs
+  hosts: core_node
+  gather_facts: false
+  roles:
+    - role: scenarios/iperf/upf
+
+- name: Run iperf3 Downlink and Uplink in parallel on all UEs
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Start iperf3 DL test for each UE in background
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R -J log_dl_interf.json'
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue
+      delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: down_jobs
+
+    - name: Start iperf3 UL test for each UE in background
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -J log_ul_interf.json'
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue
+      delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: up_jobs
+
 - name: Run interference test on R2Lab
   hosts: faraday
-  roles:
-    - role: scenarios/interference/run
+  gather_facts: false
+  tasks:
+    - name: Wait 80 seconds before running noise generator
+      wait_for:
+        timeout: 30
+
+    - name: Run noise generator
+      include_role:
+        name: scenarios/interference/run
+
+- name: Wait for iperf3 Uplink tests to finish
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait for UL jobs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ up_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"

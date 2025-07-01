@@ -1,0 +1,83 @@
+---
+- name: Setup Iperf on UPFs
+  hosts: core_node
+  gather_facts: false
+  roles:
+    - role: scenarios/iperf/upf
+
+- name: Run iperf3 Downlink and Uplink in parallel on all UEs
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Start iperf3 DL test for each UE in background
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R -J log_dl.json'
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue
+      delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: down_jobs
+
+    - name: Start iperf3 UL test for each UE in background
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -J log_ul.json'
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue
+      delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: up_jobs
+
+- name: Bandwidth intervention sequence
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait 30 seconds before applying bandwidth limit to qhat01
+      wait_for:
+        timeout: 30
+
+    - name: Limit bandwidth on qhat01 to 10Mbps
+      shell: |
+        ssh root@qhat01 'tc qdisc add dev wwan0 root tbf rate 10mbit burst 32kbit latency 400ms'
+      delegate_to: faraday.inria.fr
+
+    - name: Wait 30 more seconds before stopping qhat03
+      wait_for:
+        timeout: 30
+
+    - name: Stop qhat03 UE (simulate disconnect)
+      include_role:
+        name: r2lab/ue/stop
+      vars:
+        ue: qhat03
+
+- name: Wait for iperf3 Downlink tests to finish
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait for DL jobs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ down_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+- name: Wait for iperf3 Uplink tests to finish
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait for UL jobs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ up_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
