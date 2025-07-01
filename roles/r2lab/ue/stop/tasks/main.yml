@@ -2,3 +2,4 @@
 - name: Stop UE "{{ ue }}" via jump host
   shell: ssh root@{{ ue }} 'stop.sh'
   delegate_to: faraday.inria.fr
+  ignore_errors: true
