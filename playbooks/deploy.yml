@@ -55,11 +55,6 @@
   roles:
     - role: setup/gre_tunnel
 
-- name: Deploy 5G-Monarch for monitoring
-  hosts: monitor_node
-  roles:
-    - role: monarch/deploy
-
 - name: Deploy Open5gs Core
   hosts: core_node
   roles:
@@ -77,6 +72,11 @@
   become: true
   roles:
     - role: setup/k8s/cluster_join
+
+- name: Deploy 5G-Monarch for monitoring
+  hosts: monitor_node
+  roles:
+    - role: monarch/deploy
 
 - name: Cleanup R2Lab
   hosts: faraday
@@ -128,4 +128,3 @@
       loop_control:
         label: "{{ item }}"
       ignore_errors: true
-      
