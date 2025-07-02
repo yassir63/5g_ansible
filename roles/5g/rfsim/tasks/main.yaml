@@ -18,3 +18,13 @@
     state: present
     wait: true
   register: helm_oai_nr_ue2
+
+- name: Install OAI NR-UE3 chart using Helm
+  kubernetes.core.helm:
+    name: oai-nr-ue3
+    chart_ref: "{{ charts_base }}/oai-nr-ue3"
+    release_namespace: "{{ ran_ns }}"
+    create_namespace: true
+    state: present
+    wait: true
+  register: helm_oai_nr_ue3

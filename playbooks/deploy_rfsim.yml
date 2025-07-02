@@ -66,6 +66,11 @@
   roles:
     - role: setup/k8s/cluster_join
 
+- name: Deploy 5G-Monarch for monitoring
+  hosts: monitor_node
+  roles:
+    - role: monarch/deploy
+
 - name: Deploy OAI RAN
   hosts: ran_node
   vars:
@@ -74,8 +79,7 @@
     - role: 5g/ran
     - role: 5g/rfsim
 
-- name: Deploy 5G-Monarch for monitoring
+- name: Launch 5G-Monarch monitoring
   hosts: monitor_node
   roles:
-    - role: monarch/deploy
     - role: monarch/monitoring
