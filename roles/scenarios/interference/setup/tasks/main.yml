@@ -1,23 +1,23 @@
 ---
-- name: Turn ON node fit08
-  shell: rhubarbe load -i gnuradio 8
+- name: Turn ON node {{ fit_node }}
+  shell: rhubarbe load -i gnuradio {{ fit_number }}
   delegate_to: faraday.inria.fr
 
 - name: Wait 5 minutes for the node to be ready
   pause:
     seconds: 300
 
-- name: Turn ON USRP b205 on node fit08
-  shell: rhubarbe usrpon 8
+- name: Turn ON USRP {{ fit_usrp }} on node {{ fit_node }}
+  shell: rhubarbe usrpon {{ fit_number }}
   delegate_to: faraday.inria.fr
 
 - name: Wait 30 seconds for the USRP to be ready
   pause:
     seconds: 30
 
-- name: Wait for the node fit08 ti be SSH accessible
+- name: Wait for the node {{ fit_node }} ti be SSH accessible
   wait_for:
-    host: fit08
+    host: "{{ fit_node }}"
     port: 22
     timeout: 180
     sleep: 5

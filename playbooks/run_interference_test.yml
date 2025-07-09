@@ -1,30 +1,30 @@
 ---
-- name: Setup Iperf on UPFs
+- name: Setup iperf3 on UPFs
   hosts: core_node
   gather_facts: false
   roles:
     - role: scenarios/iperf/upf
 
-- name: Run iperf3 Downlink and Uplink in parallel on all UEs
+- name: Run iperf3 on UEs
   hosts: faraday
   gather_facts: false
   tasks:
     - name: Start iperf3 DL test for UE1 in background
-      shell: ssh root@qhat01 'iperf3 -c {{ hostvars[qhat01].upf_ip }} -B {{ hostvars[ue].ip }} -t 100 -R -J log_dl.json'
+      shell: ssh root@qhat01 'iperf3 -c {{ hostvars[qhat01].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R -J log_dl.json'
       delegate_to: faraday.inria.fr
       async: 1800
       poll: 0
       register: down_job_1
 
     - name: Start iperf3 UL test for UE2 in background
-      shell: ssh root@qhat02 'iperf3 -c {{ hostvars[qhat02].upf_ip }} -B {{ hostvars[ue].ip }} -t 100 -J log_ul.json'
+      shell: ssh root@qhat02 'iperf3 -c {{ hostvars[qhat02].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -J log_ul.json'
       delegate_to: faraday.inria.fr
       async: 1800
       poll: 0
       register: down_job_2
 
     - name: Start iperf3 DL test for UE3 in background
-      shell: ssh root@qaht03 'iperf3 -c {{ hostvars[qhat03].upf_ip }} -B {{ hostvars[ue].ip }} -t 100 -R -J log_dl.json'
+      shell: ssh root@qaht03 'iperf3 -c {{ hostvars[qhat03].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R -J log_dl.json'
       delegate_to: faraday.inria.fr
       async: 1800
       poll: 0
@@ -34,9 +34,9 @@
   hosts: faraday
   gather_facts: false
   tasks:
-    - name: Wait 80 seconds before running noise generator
+    - name: Wait 60 seconds before running noise generator
       wait_for:
-        timeout: 30
+        timeout: 60
 
     - name: Run noise generator
       include_role:

@@ -60,7 +60,7 @@
   roles:
     - role: 5g/core
 
-# - name: Apply specific tunig on RAN Node if AW2s RRUs are used   -->doensnt do what it is supposed to do
+# - name: Apply specific tunig on RAN Node if AW2s RRUs are used   #doesnt work for now!
 #   hosts: ran_node
 #   become: true
 #   roles:
@@ -128,3 +128,27 @@
       loop_control:
         label: "{{ item }}"
       ignore_errors: true
+
+- name: Setup iperf3 on UPFs
+  hosts: core_node
+  gather_facts: false
+  roles:
+    - role: scenarios/iperf/upf
+
+- name: Setup first fit node on R2Lab
+  hosts: faraday
+  vars:
+    fit_node: "{{ groups['fit_nodes'][0] }}"
+    fit_number: "{{ hostvars[fit_node].fit_number }}"
+    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
+  roles:
+    - role: scenarios/interference/setup
+
+- name: Setup second fit node on R2Lab
+  hosts: faraday
+  vars:
+    fit_node: "{{ groups['fit_nodes'][1] }}"
+    fit_number: "{{ hostvars[fit_node].fit_number }}"
+    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
+  roles:
+    - role: scenarios/interference/setup

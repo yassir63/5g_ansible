@@ -7,7 +7,7 @@
 - name: Mount /dev/{{ storage }} to /mnt/data
   mount:
     path: /mnt/{{ storage }}
-    src: /dev/sda1
+    src: /dev/{{ storage }}
     fstype: ext4
     state: mounted
 

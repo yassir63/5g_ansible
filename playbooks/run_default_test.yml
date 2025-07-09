@@ -1,11 +1,11 @@
 ---
-- name: Setup Iperf on UPFs
+- name: Setup iperf3 on UPFs
   hosts: core_node
   gather_facts: false
   roles:
     - role: scenarios/iperf/upf
 
-- name: Run iperf3 Downlink and Uplink in parallel on all UEs
+- name: Run iperf3 on all UEs
   hosts: faraday
   gather_facts: false
   tasks:

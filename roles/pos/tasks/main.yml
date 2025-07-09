@@ -9,10 +9,10 @@
   shell: >
     pos nodes image --staging "{{ node }}" "{{ pos_image }}"
 
-- name: (POS) Set boot parameters on {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
-  shell: >
-    pos nodes bootparameter "{{ node }}" "{{ boot_parameters }}"
-  when: node == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
+# - name: (POS) Set boot parameters on {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }} #doenst work for now!
+#   shell: >
+#     pos nodes bootparameter "{{ node }}" "{{ boot_parameters }}"
+#   when: node == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"

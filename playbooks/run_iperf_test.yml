@@ -1,5 +1,5 @@
 ---
-- name: Setup Iperf on UPFs
+- name: Setup iperf3 on UPFs
   hosts: core_node
   gather_facts: false
   roles:
