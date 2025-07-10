@@ -1,0 +1,34 @@
+---
+- name: Install VNC Server on {{ fit_node }}
+  shell: ssh root@{{ fit_node }} 'apt update && apt install -y tigervnc-standalone-server tigervnc-xorg-extension tigervnc-viewer'
+  delegate_to: faraday.inria.fr
+  ignore_errors: true
+
+- name: Set VNC password non-interactively
+  shell: |
+    ssh root@{{ fit_node }} "mkdir -p /root/.vnc && \
+    echo '1234567890' | vncpasswd -f > /root/.vnc/passwd && \
+    chmod 600 /root/.vnc/passwd"
+  delegate_to: faraday.inria.fr
+
+- name: Launch VNC server on {{ fit_node }}
+  shell: ssh root@{{ fit_node }} 'vncserver'
+  delegate_to: faraday.inria.fr
+
+- name: Display xterm on VNC
+  shell: ssh root@{{ fit_node }} 'export DISPLAY=:1; xterm &'
+  delegate_to: faraday.inria.fr
+
+- name: Launch SSH Tunnel for VNC on local machine
+  ansible.builtin.debug:
+    msg: |
+      On your local machine, run:
+      ssh -t {{ hostvars[groups['faraday'][0]].ansible_user }}@faraday.inria.fr -L 5901:127.0.0.1:5901 ssh root@{{ fit_node }} -L 5901:127.0.0.1:5901
+
+      The password is: 1234567890
+
+- name: Launch uhd_fft on the VNC
+  ansible.builtin.debug:
+    msg: |
+      On your local machine, run:
+      uhd_fft -f {{ hostvars[groups['faraday'][0]].freq }} -s 50M

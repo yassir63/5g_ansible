@@ -60,12 +60,12 @@
   roles:
     - role: 5g/core
 
-# - name: Apply specific tunig on RAN Node if AW2s RRUs are used   #doesnt work for now!
-#   hosts: ran_node
-#   become: true
-#   roles:
-#     - role: setup/k8s/aw2s_specific_tuning
-#       when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
+- name: Apply specific tunig on RAN Node if AW2s RRUs are used
+  hosts: ran_node
+  become: true
+  roles:
+    - role: setup/k8s/aw2s_specific_tuning
+      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
@@ -152,3 +152,10 @@
     fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
   roles:
     - role: scenarios/interference/setup
+
+- name: Setup second fit node for interference visualization
+  hosts: faraday
+  vars:
+    fit_node: "{{ groups['fit_nodes'][1] }}"
+  roles:
+    - role: scenarios/interference/watch

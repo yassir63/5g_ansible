@@ -3,7 +3,7 @@
   lineinfile:
     path: /etc/systemd/system.conf
     regexp: '^CPUAffinity='
-    line: 'CPUAffinity=2-7'
+    line: 'CPUAffinity=4-15'
     state: present
 
 - name: Reload sysctl
@@ -80,7 +80,7 @@
       memorySwap: {}
       nodeStatusReportFrequency: 0s
       nodeStatusUpdateFrequency: 0s
-      reservedSystemCPUs: 0-7
+      reservedSystemCPUs: 0-15
       resolvConf: /run/systemd/resolve/resolv.conf
       rotateCertificates: true
       runtimeRequestTimeout: 0s
