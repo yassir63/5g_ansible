@@ -15,11 +15,11 @@
   shell: ssh root@{{ fit_node }} 'vncserver'
   delegate_to: faraday.inria.fr
 
-- name: Display xterm on VNC
-  shell: ssh root@{{ fit_node }} 'nohup env DISPLAY=:1 xterm >/dev/null 2>&1 &'
+- name: Launch uhd_fft inside xterm on {{ fit_node }}
+  shell: ssh root@{{ fit_node }} "nohup env DISPLAY=:1 xterm -e 'uhd_fft -f {{ hostvars[groups['faraday'][0]].freq }} -s 50M; bash' >/dev/null 2>&1 &"
   delegate_to: faraday.inria.fr
 
-- name: Launch SSH Tunnel for VNC on local machine
+- name: Launch SSH Tunnel for VNC on local machine for visualization
   ansible.builtin.debug:
     msg: |
       On your local machine, run:
@@ -28,11 +28,3 @@
       >>>
 
       Connect to localhost:1 with this password: 1234567890
-
-- name: Launch uhd_fft on the VNC
-  ansible.builtin.debug:
-    msg: |
-      On your local machine, run:
-      >>>
-        uhd_fft -f {{ hostvars[groups['faraday'][0]].freq }} -s 50M
-      >>>
