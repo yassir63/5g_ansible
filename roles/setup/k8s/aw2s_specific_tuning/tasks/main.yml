@@ -91,16 +91,6 @@
       syncFrequency: 0s
       volumeStatsAggPeriod: 0s
 
-- name: Ensure kube-proxy config is set
-  copy:
-    dest: /etc/kubernetes/kubeproxy-config.yaml
-    content: |
-      apiVersion: kubeproxy.config.k8s.io/v1alpha1
-      kind: KubeProxyConfiguration
-      ipvs:
-        strictARP: true
-  delegate_to: "{{ groups['core_node'][0] }}"
-
 - name: Patch kube-proxy DaemonSet to use custom config file
   shell: |
     kubectl -n kube-system patch daemonset kube-proxy --patch "$(cat <<EOF
@@ -123,6 +113,12 @@
     EOF
     )"
   delegate_to: "{{ groups['core_node'][0] }}"
+
+- name: Remove kubelet CPU manager checkpoint file
+  ansible.builtin.file:
+    path: /var/lib/kubelet/cpu_manager_state
+    state: absent
+  become: true
 
 - name: Restart kubelet
   systemd:

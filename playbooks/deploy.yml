@@ -60,18 +60,18 @@
   roles:
     - role: 5g/core
 
+- name: Join Kubernetes Cluster on Workers
+  hosts: k8s_workers
+  become: true
+  roles:
+    - role: setup/k8s/cluster_join
+
 - name: Apply specific tunig on RAN Node if AW2s RRUs are used
   hosts: ran_node
   become: true
   roles:
     - role: setup/k8s/aw2s_specific_tuning
       when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
-
-- name: Join Kubernetes Cluster on Workers
-  hosts: k8s_workers
-  become: true
-  roles:
-    - role: setup/k8s/cluster_join
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
