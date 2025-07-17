@@ -4,7 +4,14 @@ network:
     ens2f0:
       mtu: 9216
       dhcp4: true
+    ens2f1:
+      mtu: 9216
+      dhcp4: false
   vlans:
+    r2lab_usrp:
+      id: 3010
+      link: ens2f1
+      dhcp4: true
     jaguar_1:
       id: 2004
       mtu: 9216

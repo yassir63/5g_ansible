@@ -42,7 +42,7 @@
     label: "{{ item }}"
   register: set_ue_jobs
 
-- name: Wait for all UEs to be turned ON
+- name: Wait for setup to finish on all UEs
   async_status:
     jid: "{{ item.ansible_job_id }}"
   register: job_result

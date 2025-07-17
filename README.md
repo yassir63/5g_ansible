@@ -118,7 +118,7 @@ Playbook YAML files define the logic for each deployment step and usage scenario
 
 - You may assign any node for any role (core, ran, monitor) **except** that RAN must be deployed on `sopnode-f1` or `sopnode-f2`.
 - You can run everything on a single node (not recommended for performance).
-- UPF, DNN, IPs, and RRU frequency are defined in the `[configuration of the Open5gs core](https://github.com/Ziyad-Mabrouk/open5gs-k8s/blob/main/mongo-tools/generate-data.py).
+- UPF, DNN, IPs, and RRU frequency are defined in the [configuration of the Open5gs core](https://github.com/Ziyad-Mabrouk/open5gs-k8s/blob/main/mongo-tools/generate-data.py).
 
 ---
 
