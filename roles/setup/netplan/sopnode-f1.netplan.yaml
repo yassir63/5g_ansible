@@ -12,27 +12,7 @@ network:
       id: 3010
       link: ens2f1
       dhcp4: true
-    jaguar_1:
-      id: 2004
-      mtu: 9216
-      link: ens2f0
-      addresses:
-        - 172.28.4.138/28
-    jaguar_2:
-      id: 2005
-      mtu: 9216
-      link: ens2f0
-      addresses:
-        - 172.28.4.170/28
-    panther_1:
-      id: 2006
-      mtu: 9216
-      link: ens2f0
-      addresses:
-        - 172.28.4.202/28
-    panther_2:
-      id: 2007
-      mtu: 9216
-      link: ens2f0
-      addresses:
-        - 172.28.4.234/28
+    r2lab_aw2s:
+      id: 3011
+      link: ens2f1
+      dhcp4: true
