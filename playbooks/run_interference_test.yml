@@ -1,57 +1,69 @@
 ---
-- name: Setup iperf3 on UPFs
-  hosts: core_node
-  gather_facts: false
+- name: Setup second fit node on R2Lab
+  hosts: faraday
+  vars:
+    fit_node: "{{ groups['fit_nodes'][1] }}"
+    fit_number: "{{ hostvars[fit_node].fit_number }}"
+    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
   roles:
-    - role: scenarios/iperf/upf
+    - role: scenarios/interference/setup
+  when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
 
-- name: Run iperf3 on UEs
+- name: Setup interference USRP on R2Lab
+  hosts: faraday
+  vars:
+    rru: "{{ hostvars[groups['faraday'][0]].interference_usrp }}"
+  roles:
+    - role: r2lab/rru
+  when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
+
+- name: Connect first UE on R2Lab to the 5G network
+  hosts: faraday
+  roles:
+    - role: r2lab/ue/connect
+      vars:
+        ue: "{{ groups['qhats'][0] }}"
+
+- name: Run Iperf test
   hosts: faraday
   gather_facts: false
   tasks:
-    - name: Start iperf3 DL test for UE1 in background
-      shell: ssh root@qhat01 'iperf3 -c {{ hostvars[qhat01].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R -J log_dl.json'
+    - name: Start bidirectional iperf3 on first UE in background for 5 minutes
+      shell: >
+        ssh root@{{ groups['qhats'][0] }} 
+        'iperf3 -c {{ hostvars[groups["qhats"][0]].upf_ip }} --bidir -t 300 -J log_interference_test.json'
       delegate_to: faraday.inria.fr
       async: 1800
       poll: 0
-      register: down_job_1
+      register: iperf_job
 
-    - name: Start iperf3 UL test for UE2 in background
-      shell: ssh root@qhat02 'iperf3 -c {{ hostvars[qhat02].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -J log_ul.json'
-      delegate_to: faraday.inria.fr
-      async: 1800
-      poll: 0
-      register: down_job_2
-
-    - name: Start iperf3 DL test for UE3 in background
-      shell: ssh root@qaht03 'iperf3 -c {{ hostvars[qhat03].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R -J log_dl.json'
-      delegate_to: faraday.inria.fr
-      async: 1800
-      poll: 0
-      register: up_job_1
-
-- name: Run interference test on R2Lab
-  hosts: faraday
-  gather_facts: false
-  tasks:
-    - name: Wait 60 seconds before running noise generator
+    - name: Wait 1 minute before running noise generator
       wait_for:
         timeout: 60
 
-    - name: Run noise generator
-      include_role:
-        name: scenarios/interference/run
+- name: Run noise generator from fit node for 100 seconds
+  hosts: faraday
+  vars:
+    node: "{{ groups['fit_nodes'][1] }}"
+    time: 100
+  roles:
+    - role: scenarios/interference/run
+  when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
 
-- name: Wait for iperf3 Downlink tests to finish
+- name: Run noise generator from USRP for 100 seconds
+  hosts: faraday
+  vars:
+    node: "{{ hostvars[groups['faraday'][0]].interference_usrp }}"
+    time: 100
+  roles:
+    - role: scenarios/interference/run
+  when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
+
+- name: Wait for Iperf test to finish
   hosts: faraday
   gather_facts: false
   tasks:
-    - name: Remove limit on qhat01
-      shell: |
-        ssh root@qhat01 'tc qdisc del dev wwan0 root'
-      delegate_to: faraday.inria.fr
-
-    - name: Wait for DL jobs
+    - name: Wait for iperf jobs
       async_status:
         jid: "{{ item.ansible_job_id }}"
       register: result
@@ -59,31 +71,5 @@
       retries: 100
       delay: 10
       loop: "{{ down_job_1.results }}"
-      loop_control:
-        label: "{{ item.item }}"
-
-    - name: Wait for DL jobs
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: result
-      until: result.finished
-      retries: 100
-      delay: 10
-      loop: "{{ down_job_2.results }}"
-      loop_control:
-        label: "{{ item.item }}"
-
-- name: Wait for iperf3 Uplink tests to finish
-  hosts: faraday
-  gather_facts: false
-  tasks:
-    - name: Wait for UL jobs
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: result
-      until: result.finished
-      retries: 100
-      delay: 10
-      loop: "{{ up_job_1.results }}"
       loop_control:
         label: "{{ item.item }}"

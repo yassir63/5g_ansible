@@ -4,7 +4,7 @@
 ansible-galaxy install -r collections/requirements.yml
 
 # Default playbook
-PLAYBOOK="playbooks/run_iperf_test.yml"
+PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
 
 # Parse options
 while getopts ":pd" opt; do
@@ -13,12 +13,12 @@ while getopts ":pd" opt; do
       PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
       ;;
     d )
-      PLAYBOOK="playbooks/run_default_test.yml"
+      PLAYBOOK="playbooks/run_default_iperf_test.yml"
       ;;
     \? )
       echo "Usage: $0 [-p] [-d]"
       echo "  -p  Run parallel iperf test playbook"
-      echo "  -d  Run default test playbook"
+      echo "  -d  Run default iperf test playbook"
       exit 1
       ;;
   esac

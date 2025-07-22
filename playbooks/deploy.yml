@@ -117,17 +117,17 @@
   roles:
     - role: monarch/monitoring
 
-- hosts: faraday
-  tasks:
-    - name: Connect UEs on R2Lab to 5g network
-      include_role:
-        name: r2lab/ue/connect
-      vars:
-        ue: "{{ item }}"
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        label: "{{ item }}"
-      ignore_errors: true
+# - hosts: faraday
+#   tasks:
+#     - name: Connect UEs on R2Lab to 5g network
+#       include_role:
+#         name: r2lab/ue/connect
+#       vars:
+#         ue: "{{ item }}"
+#       loop: "{{ groups['qhats'] }}"
+#       loop_control:
+#         label: "{{ item }}"
+#       ignore_errors: true
 
 - name: Setup iperf3 on UPFs
   hosts: core_node
@@ -135,7 +135,7 @@
   roles:
     - role: scenarios/iperf/upf
 
-- name: Setup first fit node on R2Lab
+- name: Setup fit node on R2Lab
   hosts: faraday
   vars:
     fit_node: "{{ groups['fit_nodes'][0] }}"
@@ -144,18 +144,9 @@
   roles:
     - role: scenarios/interference/setup
 
-- name: Setup second fit node on R2Lab
+- name: Setup fit node for spectre visualization (uhd_fft)
   hosts: faraday
   vars:
-    fit_node: "{{ groups['fit_nodes'][1] }}"
-    fit_number: "{{ hostvars[fit_node].fit_number }}"
-    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
-  roles:
-    - role: scenarios/interference/setup
-
-- name: Setup second fit node for interference visualization
-  hosts: faraday
-  vars:
-    fit_node: "{{ groups['fit_nodes'][1] }}"
+    fit_node: "{{ groups['fit_nodes'][0] }}"
   roles:
     - role: scenarios/interference/watch

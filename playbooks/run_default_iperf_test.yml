@@ -1,0 +1,34 @@
+---
+- hosts: faraday
+  tasks:
+    - name: Connect UEs on R2Lab to 5G network
+      include_role:
+        name: r2lab/ue/connect
+      vars:
+        ue: "{{ item }}"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        label: "{{ item }}"
+      ignore_errors: true
+
+- name: Iperf3 reverse client test on each UE via Faraday (Downlink Test)
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Run iperf3 reverse client on each UE for 200s
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -t 200 -R -J log_dl_test.json'
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue
+      delegate_to: faraday.inria.fr
+
+- name: Iperf3 client test on each UE via Faraday (Uplink Test)
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Run iperf3 client on each UE for 200s
+      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -t 200 -J log_ul_test.json'
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue
+      delegate_to: faraday.inria.fr

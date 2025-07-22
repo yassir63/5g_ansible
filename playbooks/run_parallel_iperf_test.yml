@@ -1,31 +1,34 @@
 ---
-- name: Setup iperf3 on UPFs
-  hosts: core_node
-  gather_facts: false
+- name: Connect first 4 UEs on R2Lab to the 5G network
+  hosts: faraday
   roles:
-    - role: scenarios/iperf/upf
+    - role: r2lab/ue/connect
+      vars:
+        ue: "{{ item }}"
+  loop: "{{ groups['qhats'][:4] }}"
+  loop_control:
+    label: "{{ item }}"
 
-- name: Iperf3 reverse client test on each UE via Faraday (Downlink Test)
+- name: Run sequential iperf3 tests on first 4 UEs
   hosts: faraday
   gather_facts: false
+  vars:
+    ue_list: "{{ groups['qhats'][:4] }}"
   tasks:
-    - name: Run iperf3 client each UE for 200s
-      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -B {{ hostvars[ue].ip }} -t 200 -R'
-      loop: "{{ groups['qhats'] }}"
+    - name: Run iperf3 test on each UE sequentially
+      block:
+        - name: Start bidirectional iperf3 on {{ item }} in background for 5 minutes
+          shell: >
+            ssh root@{{ item }}
+            'iperf3 -c {{ hostvars[item].upf_ip }} --bidir -t 300 -J log_iperf_test.json'
+          delegate_to: faraday.inria.fr
+          async: 1800
+          poll: 0
+          register: iperf_job
+
+        - name: Wait 60 seconds before next UE
+          wait_for:
+            timeout: 60
+      loop: "{{ ue_list }}"
       loop_control:
-        loop_var: ue
-      delegate_to: faraday.inria.fr
-      async: 1800
-      poll: 0
-      register: test_down_jobs
-    
-    - name: Wait for iperf3 test completion on all UEs
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: job_result
-      until: job_result.finished
-      retries: 100
-      delay: 10
-      loop: "{{ test_down_jobs.results }}"
-      loop_control:
-        label: "{{ item.item }}"
+        label: "{{ item }}"

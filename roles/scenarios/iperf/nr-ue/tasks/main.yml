@@ -15,6 +15,11 @@
   loop: "{{ ue_pods.resources }}"
   when: item.metadata.name is match('^oai-nr-ue2-')
 
+- set_fact:
+    ue3_pod: "{{ item.metadata.name }}"
+  loop: "{{ ue_pods.resources }}"
+  when: item.metadata.name is match('^oai-nr-ue3-')
+
 - name: Install iperf3 on NR-UE
   shell: |
     kubectl -n open5gs exec {{ ue1_pod }} -- bash -c '
@@ -37,6 +42,18 @@
       fi
     '
   register: ue2_install
+  changed_when: false
+
+- name: Install iperf3 on NR-UE3
+  shell: |
+    kubectl -n open5gs exec {{ ue3_pod }} -- bash -c '
+      set -euo pipefail
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        yum update -y -qq &&
+        yum install -y -qq iperf3
+      fi
+    '
+  register: ue3_install
   changed_when: false
 
 - name: Run iperf3 client on NR-UE for 200s (Uplink Test on Slice 1)

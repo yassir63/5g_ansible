@@ -1,4 +1,3 @@
 ---
-fit_node: fit08
-fit_number: 8
-fit_usrp: b205
+node: n320
+time: 300
