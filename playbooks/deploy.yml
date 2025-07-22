@@ -60,6 +60,12 @@
   roles:
     - role: 5g/core
 
+- name: Setup iperf3 on UPFs
+  hosts: core_node
+  gather_facts: false
+  roles:
+    - role: scenarios/iperf/upf
+
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
   become: true
@@ -117,36 +123,14 @@
   roles:
     - role: monarch/monitoring
 
-# - hosts: faraday
-#   tasks:
-#     - name: Connect UEs on R2Lab to 5g network
-#       include_role:
-#         name: r2lab/ue/connect
-#       vars:
-#         ue: "{{ item }}"
-#       loop: "{{ groups['qhats'] }}"
-#       loop_control:
-#         label: "{{ item }}"
-#       ignore_errors: true
-
-- name: Setup iperf3 on UPFs
-  hosts: core_node
-  gather_facts: false
-  roles:
-    - role: scenarios/iperf/upf
-
-- name: Setup fit node on R2Lab
-  hosts: faraday
-  vars:
-    fit_node: "{{ groups['fit_nodes'][0] }}"
-    fit_number: "{{ hostvars[fit_node].fit_number }}"
-    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
-  roles:
-    - role: scenarios/interference/setup
-
-- name: Setup fit node for spectre visualization (uhd_fft)
-  hosts: faraday
-  vars:
-    fit_node: "{{ groups['fit_nodes'][0] }}"
-  roles:
-    - role: scenarios/interference/watch
+#- hosts: faraday
+#  tasks:
+#    - name: Connect UEs on R2Lab to 5g network
+#      include_role:
+#        name: r2lab/ue/connect
+#      vars:
+#        ue: "{{ item }}"
+#      loop: "{{ groups['qhats'] }}"
+#      loop_control:
+#        label: "{{ item }}"
+#      ignore_errors: true

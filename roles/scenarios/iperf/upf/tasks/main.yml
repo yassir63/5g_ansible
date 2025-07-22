@@ -4,18 +4,21 @@
     kind: Pod
     namespace: open5gs
   register: upf_pods
+  no_log: true
 
 - set_fact:
     upf1_pod: "{{ item.metadata.name }}"
   loop: "{{ upf_pods.resources }}"
   when: item.metadata.name is match('^open5gs-upf1-')
+  no_log: true
 
 - set_fact:
     upf2_pod: "{{ item.metadata.name }}"
   loop: "{{ upf_pods.resources }}"
   when: item.metadata.name is match('^open5gs-upf2-')
+  no_log: true
 
-- name: Install iperf3 in UPF1
+- name: Install iperf3 on UPF1
   shell: |
     kubectl -n open5gs exec {{ upf1_pod }} -- bash -c '
       set -euo pipefail
@@ -27,7 +30,7 @@
   register: upf1_install
   changed_when: "'Preparing to unpack' in upf1_install.stdout"
 
-- name: Install iperf3 in UPF2
+- name: Install iperf3 on UPF2
   shell: |
     kubectl -n open5gs exec {{ upf2_pod }} -- bash -c '
       set -euo pipefail
@@ -39,15 +42,15 @@
   register: upf2_install
   changed_when: "'Preparing to unpack' in upf2_install.stdout"
 
-- name: Stop any potential existing background iperfs running on UPF1
-  shell: |
-    kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'pkill iperf3'
-  ignore_errors: true
+# - name: Stop any potential existing background iperfs running on UPF1
+#   shell: |
+#     kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'pkill iperf3'
+#   ignore_errors: true
 
-- name: Stop any potential existing background iperfs running on UPF2
-  shell: |
-    kubectl -n open5gs exec {{ upf2_pod }} -- bash -c 'pkill iperf3'
-  ignore_errors: true
+# - name: Stop any potential existing background iperfs running on UPF2
+#   shell: |
+#     kubectl -n open5gs exec {{ upf2_pod }} -- bash -c 'pkill iperf3'
+#   ignore_errors: true
 
 - name: Start iperf3 server on UPF1 (background)
   shell: |

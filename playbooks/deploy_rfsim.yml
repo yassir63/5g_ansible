@@ -60,6 +60,12 @@
   roles:
     - role: 5g/core
 
+- name: Setup iperf3 on UPFs
+  hosts: core_node
+  gather_facts: false
+  roles:
+    - role: scenarios/iperf/upf
+
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
   become: true

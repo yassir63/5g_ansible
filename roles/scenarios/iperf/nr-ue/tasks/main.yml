@@ -4,21 +4,25 @@
     kind: Pod
     namespace: open5gs
   register: ue_pods
+  no_log: true
 
 - set_fact:
     ue1_pod: "{{ item.metadata.name }}"
   loop: "{{ ue_pods.resources }}"
   when: item.metadata.name is match('^oai-nr-ue-')
+  no_log: true
 
 - set_fact:
     ue2_pod: "{{ item.metadata.name }}"
   loop: "{{ ue_pods.resources }}"
   when: item.metadata.name is match('^oai-nr-ue2-')
+  no_log: true
 
 - set_fact:
     ue3_pod: "{{ item.metadata.name }}"
   loop: "{{ ue_pods.resources }}"
   when: item.metadata.name is match('^oai-nr-ue3-')
+  no_log: true
 
 - name: Install iperf3 on NR-UE
   shell: |
