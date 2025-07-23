@@ -86,6 +86,6 @@
       until: result.finished
       retries: 100
       delay: 10
-      loop: "{{ down_job_1.results }}"
+      loop: "{{ iperf_job.results }}"
       loop_control:
         label: "{{ item.item }}"

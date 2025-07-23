@@ -32,3 +32,18 @@
       loop: "{{ ue_list }}"
       loop_control:
         label: "{{ item }}"
+
+- name: Wait for Iperf test to finish
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait for iperf jobs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ iperf_job.results }}"
+      loop_control:
+        label: "{{ item.item }}"
