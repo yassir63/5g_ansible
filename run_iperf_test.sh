@@ -4,21 +4,25 @@
 ansible-galaxy install -r collections/requirements.yml
 
 # Default playbook
-PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
+PLAYBOOK="playbooks/run_default_iperf_test.yml"
 
 # Parse options
 while getopts ":pd" opt; do
   case ${opt} in
-    p )
-      PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
-      ;;
     d )
       PLAYBOOK="playbooks/run_default_iperf_test.yml"
       ;;
+    p )
+      PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
+      ;;
+    i )
+      PLAYBOOK="playbooks/run_interference_test.yml"
+      ;;
     \? )
-      echo "Usage: $0 [-p] [-d]"
-      echo "  -p  Run parallel iperf test playbook"
+      echo "Usage: $0 [-d] [-p] [-i]"
       echo "  -d  Run default iperf test playbook"
+      echo "  -p  Run parallel iperf test playbook"
+      echo "  -i  Run iperf test with interference playbook"
       exit 1
       ;;
   esac

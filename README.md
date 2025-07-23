@@ -12,9 +12,11 @@ This repository provides a fully automated [Ansible](https://www.ansible.com/) f
 
 ## 🚀 Quick Start
 
-From the SLICES Webshell, clone this repo and simply run:
+From the SLICES Webshell:
 
 ```bash
+git clone https://github.com/Ziyad-Mabrouk/5g_ansible.git
+cd 5g_ansible
 ./deploy.sh
 ```
 
@@ -27,6 +29,55 @@ This will:
 - Clean up and configure R2Lab resources: RRU, UEs, Fit Nodes.
 - Deploy the **OAI RAN stack** with **FlexRIC and gNB** ([Ziyad-Mabrouk/oai5g-rru](https://github.com/Ziyad-Mabrouk/oai5g-rru/tree/gen-cn2)).
 
+> **Note:** This will only prepare the UEs, but will not connect them. That is done via one of the test scenarios below. However, you can uncomment the last section of the `playbooks/deploy.yml` file so that all the UEs in the `[qhats]` group of the `inventory/hosts.ini` will be connected to the 5G network.
+
+---
+
+## Available Scenarios
+After running `deploy.sh`, choose one of the available scenarios to run based on your experiment:
+
+### 1. Default Iperf Test
+```bash
+./run_iperf_test.sh -d
+```
+- Connect all UEs defined in `[qhats]` host group.
+- Each UE runs downlink then uplink iperf3 test *separately*.
+> **Note:** This is the baseline scenario used to for basic connectivity testing and benchmarking.
+
+### 2. Parallel Iperf Tests
+```bash
+./run_iperf_test.sh -p
+```
+- Connect the *first 4* UEs.
+- Each UE runs bidirectional iperf3 test for 5 minutes, sequentially spaced by 1 minute.
+
+### 3. Interference Test with Spectrum Visualization
+```bash
+./run_iperf_test.sh -i
+```
+- Connect the first UE.
+- Spectrum visualization using `uhd_fft` on the first fit node.
+- Noise generation via second fit node (`interference_usrp=fit`) or specified USRP (`n300` or `n320`).
+- While noise is active 1 minute after the UE performs bidirectional iperf3.
+
+---
+
+## RF Simulation Mode
+
+To run the setup **without any R2Lab devices**, using RF Simulation only, run:
+
+```bash
+./deploy_rfsim.sh
+```
+
+No changes to `inventory/hosts.ini` are required. The playbook not use Faraday and UE configurations and instead it will install 3 NR-UEs as Kubernetes pods (`oai-nr-ue`, `oai-nr-ue2`, `oai-nr-ue3`). Each uses the same IMSI as qhat01, qhat02, and qhat03 respectively.
+
+Afer that, to run the RFSIM iperf test:
+```bash
+./run_rfsim_iperf_test.sh
+```
+This will run uplink, then downlink iperf test for slice 1 (`oai-nr-ue`) and slice 2 (`oai-nr-ue2`) separately.
+
 ---
 
 ## Inventory Configuration
@@ -37,6 +88,7 @@ The deployment is driven by `inventory/hosts.ini`, where you define:
 - Which node acts as Kubernetes master/worker
 - R2Lab Faraday jump-host and remote UEs
 - RRU to use
+- Other scenario-specific parameters ...
 
 ### Example Snippet:
 
@@ -60,40 +112,24 @@ sopnode-f2
 sopnode-f3  # Acts as Kubernetes master + Open5GS Core node
 
 [ran_node]
-sopnode-f2  # Only f1 and f2 supported for RAN
+sopnode-f2  # Only f1 and f2 are supported for RAN deployements with AW2S RRUS (jaguar and panther)
 
 [monitor_node]
 sopnode-f1  # Monarch monitoring stack
 
-# R2Lab Jump-host and UEs
+# R2Lab Section
 [faraday]
-faraday.inria.fr ansible_user=inria_ubinet01 rru=jaguar freq=3401.22M g=110
+faraday.inria.fr ansible_user=inria_ubinet01 rru=jaguar interference_usrp=n320 freq=3411.22M g=110 s=20M
 
 [qhats]
-qhat01 ansible_host=qhat01 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet ip=10.41.0.2 upf_ip=10.41.0.1
-qhat02 ansible_host=qhat02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=streaming ip=10.42.0.2 upf_ip=10.42.0.1
+qhat01 ansible_host=qhat01 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
+qhat02 ansible_host=qhat02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=streaming upf_ip=10.42.0.1
+
+[fit_nodes]
+fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' fit_number=2 fit_usrp=b210
 ```
 
-> **Note:** Update the `ansible_user` under `[faraday]` to match your actual R2Lab slice name.
-
----
-
-## RRU Configuration
-
-- Supported RRUs: `n300`, `n320` (use same gNB config) or `jaguar`, `panther` (use different gNB config).
-- Frequency is specified in `[faraday]` and only affects interference test scenarios (not needed otherwise).
-
----
-
-## RF Simulation Mode
-
-To run the setup **without any R2Lab devices**, using RF Simulation only:
-
-```bash
-./deploy_rfsim.sh
-```
-
-> No changes to `inventory/hosts.ini` are required. The script will skip Faraday and UE configurations and install three OAI-NR-UEs instead (with the same imsi as qhat01, qhat02 and qhat03 respectively).
+> **IMPORTANT:** Update the `ansible_user` under `[faraday]` to match your actual R2Lab slice name.
 
 ---
 
@@ -106,19 +142,14 @@ After deployment, instructions will be printed to your terminal with the SSH com
 
 ---
 
-## Playbooks & Scenarios
-
-Playbook YAML files define the logic for each deployment step and usage scenario. For UE-related experiments, ensure that:
-- The Quectel UEs are correctly configured.
-- The `inventory/hosts.ini` file correctly maps DNN, mode, and IP settings per UE.
-
----
-
 ## Customization Tips
 
-- You may assign any node for any role (core, ran, monitor) **except** that RAN must be deployed on `sopnode-f1` or `sopnode-f2`.
+- You may assign any node for any role (core, ran, monitor) **except** that AW2S RAN must can only be deployed on `sopnode-f1` or `sopnode-f2`.
 - You can run everything on a single node (not recommended for performance).
-- UPF, DNN, IPs, and RRU frequency are defined in the [configuration of the Open5gs core](https://github.com/Ziyad-Mabrouk/open5gs-k8s/blob/main/mongo-tools/generate-data.py).
+- The UPF and DNN of each UE are defined in [this configuration of the Open5gs core](https://github.com/Ziyad-Mabrouk/open5gs-k8s/blob/main/mongo-tools/generate-data.py) and should not be changed.
+- Supported RRUs are: `n300`, `n320` (they use [same gNB config](https://github.com/Ziyad-Mabrouk/oai5g-rru/blob/gen-cn2/ran-config/conf/gnb.sa.band78.106prb.n310.7ds2u.conf)) or `jaguar`, `panther` (use [different gNB config](https://github.com/Ziyad-Mabrouk/oai5g-rru/blob/gen-cn2/ran-config/conf/gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf)).
+- The entire `[fit_nodes]` group, as well as the frequency, gain (g) and sample rate / bandwidth covered by the noise generator (s) specified in `[faraday]`, are only relevant to the interference test scenario and are not needed otherwise.
+- For the interference scenario, the first fist node (`groups[fit_nodes][0]`) is used for spectrum visualization. The USRP used for noise generation (`interference_usrp`) can be `=fit`(meaning the second fit node's USRP will be used as noise generator), or `=n300` / `=n320`).
 
 ---
 
@@ -126,4 +157,4 @@ Playbook YAML files define the logic for each deployment step and usage scenario
 
 - Ensure you have SSH access from Webshell to `faraday.inria.fr` **and** from your local machine to the Webshell environment.
 - Always verify your reservations are active in the [Duckburg Calendar](https://duckburg.net.cit.tum.de/calendar) and [R2Lab](https://r2lab.inria.fr/run.md).
-
+- This code relies heavily on the setup and configuration of SLICES and R2Lab, thus any changes/problems related to these testbeds can impact experiments.
