@@ -23,7 +23,7 @@
     fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
   roles:
     - role: scenarios/interference/setup
-  when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
+      when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
 
 - name: Setup interference USRP on R2Lab
   hosts: faraday
@@ -31,7 +31,7 @@
     rru: "{{ hostvars[groups['faraday'][0]].interference_usrp }}"
   roles:
     - role: r2lab/rru
-  when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
+      when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
 
 - name: Connect first UE on R2Lab to the 5G network
   hosts: faraday
@@ -64,7 +64,7 @@
     time: 100
   roles:
     - role: scenarios/interference/run
-  when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
+      when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
 
 - name: Run noise generator from USRP for 100 seconds
   hosts: faraday
@@ -73,7 +73,7 @@
     time: 100
   roles:
     - role: scenarios/interference/run
-  when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
+      when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
 
 - name: Wait for Iperf test to finish
   hosts: faraday

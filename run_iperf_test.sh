@@ -7,7 +7,7 @@ ansible-galaxy install -r collections/requirements.yml
 PLAYBOOK="playbooks/run_default_iperf_test.yml"
 
 # Parse options
-while getopts ":pd" opt; do
+while getopts ":dpi" opt; do
   case ${opt} in
     d )
       PLAYBOOK="playbooks/run_default_iperf_test.yml"
