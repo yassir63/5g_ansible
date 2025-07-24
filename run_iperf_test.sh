@@ -22,7 +22,7 @@ while getopts ":dpi" opt; do
       TEST_PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
       ;;
     i )
-      SETUP_PLAYBOOK="playbooks/interference_iperf_test_setup.yml"
+      SETUP_PLAYBOOK="playbooks/interference_test_setup.yml"
       TEST_PLAYBOOK="playbooks/run_interference_test.yml"
       ;;
     \? )
