@@ -34,7 +34,17 @@ This will:
 ---
 
 ## Available Scenarios
-After running `deploy.sh`, choose one of the available scenarios to run based on your experiment:
+After running `deploy.sh`, choose one of the available scenarios to run based on your experiment setup.
+
+#### Command Overview
+```bash
+./run_iperf_test.sh [OPTION] [--no-setup]
+```
+- `-d`: Run the default iperf test
+- `-p`: Run the parallel iperf test
+- `-i`: Run the interference test
+- `--no-setup`: Optional. Skip the setup phase and only run the test playbook.
+Use this when repeating the same test without redoing the necessary setup.
 
 ### 1. Default Iperf Test
 ```bash
@@ -59,6 +69,13 @@ After running `deploy.sh`, choose one of the available scenarios to run based on
 - Spectrum visualization using `uhd_fft` on the first fit node.
 - Noise generation via second fit node (`interference_usrp=fit`) or specified USRP (`n300` or `n320`).
 - Noise generation is active 100 seconds after the UE performs bidirectional iperf3.
+
+#### Re-running a Test without Setup
+To skip the setup phase (e.g., when UEs and USRPs are already configured), use the `--no-setup` flag:
+```bash
+./run_iperf_test.sh -i --no-setup
+```
+This avoids reconnecting UEs and reconfiguring the noise generator, and only re-runs the test logic.
 
 ---
 

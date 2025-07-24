@@ -1,45 +1,4 @@
 ---
-- name: Setup first fit node on R2Lab
-  hosts: faraday
-  vars:
-    fit_node: "{{ groups['fit_nodes'][0] }}"
-    fit_number: "{{ hostvars[fit_node].fit_number }}"
-    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
-  roles:
-    - role: scenarios/interference/setup
-
-- name: Setup first fit node for spectre visualization (uhd_fft)
-  hosts: faraday
-  vars:
-    fit_node: "{{ groups['fit_nodes'][0] }}"
-  roles:
-    - role: scenarios/interference/watch
-
-- name: Setup second fit node on R2Lab for noise genaration
-  hosts: faraday
-  vars:
-    fit_node: "{{ groups['fit_nodes'][1] }}"
-    fit_number: "{{ hostvars[fit_node].fit_number }}"
-    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
-  roles:
-    - role: scenarios/interference/setup
-      when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
-
-- name: Setup interference USRP on R2Lab
-  hosts: faraday
-  vars:
-    rru: "{{ hostvars[groups['faraday'][0]].interference_usrp }}"
-  roles:
-    - role: r2lab/rru
-      when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
-
-- name: Connect first UE on R2Lab to the 5G network
-  hosts: faraday
-  roles:
-    - role: r2lab/ue/connect
-      vars:
-        ue: "{{ groups['qhats'][0] }}"
-
 - name: Run Iperf test
   hosts: faraday
   gather_facts: false
@@ -75,17 +34,10 @@
     - role: scenarios/interference/run
       when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
 
-- name: Wait for Iperf test to finish
-  hosts: faraday
-  gather_facts: false
-  tasks:
-    - name: Wait for iperf jobs
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: result
-      until: result.finished
-      retries: 100
-      delay: 10
-      loop: "{{ iperf_job.results }}"
-      loop_control:
-        label: "{{ item.item }}"
+- name: Wait for iperf job to finish
+  async_status:
+    jid: "{{ iperf_job.ansible_job_id }}"
+  register: result
+  until: result.finished
+  retries: 100
+  delay: 10

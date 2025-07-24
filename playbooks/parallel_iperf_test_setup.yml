@@ -1,0 +1,10 @@
+---
+- name: Connect first 4 UEs on R2Lab to the 5G network
+  hosts: faraday
+  roles:
+    - role: r2lab/ue/connect
+      vars:
+        ue: "{{ item }}"
+  loop: "{{ groups['qhats'][:4] }}"
+  loop_control:
+    label: "{{ item }}"

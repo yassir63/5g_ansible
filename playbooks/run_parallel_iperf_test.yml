@@ -1,14 +1,4 @@
 ---
-- name: Connect first 4 UEs on R2Lab to the 5G network
-  hosts: faraday
-  roles:
-    - role: r2lab/ue/connect
-      vars:
-        ue: "{{ item }}"
-  loop: "{{ groups['qhats'][:4] }}"
-  loop_control:
-    label: "{{ item }}"
-
 - name: Run sequential iperf3 tests on first 4 UEs
   hosts: faraday
   gather_facts: false
@@ -33,17 +23,11 @@
       loop_control:
         label: "{{ item }}"
 
-- name: Wait for Iperf test to finish
-  hosts: faraday
-  gather_facts: false
-  tasks:
-    - name: Wait for iperf jobs
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: result
-      until: result.finished
-      retries: 100
-      delay: 10
-      loop: "{{ iperf_job.results }}"
-      loop_control:
-        label: "{{ item.item }}"
+- name: Wait for iperf job to finish
+  async_status:
+    jid: "{{ iperf_job.ansible_job_id }}"
+  register: result
+  until: result.finished
+  retries: 100
+  delay: 10
+

@@ -3,30 +3,59 @@
 # Install required Ansible collections
 ansible-galaxy install -r collections/requirements.yml
 
-# Default playbook
-PLAYBOOK="playbooks/run_default_iperf_test.yml"
+# Default playbooks
+SETUP_PLAYBOOK="playbooks/setup_default_iperf_test.yml"
+TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
 
-# Parse options
+# By default, run setup
+RUN_SETUP=true
+
+# Parse short options
 while getopts ":dpi" opt; do
   case ${opt} in
     d )
-      PLAYBOOK="playbooks/run_default_iperf_test.yml"
+      SETUP_PLAYBOOK="playbooks/setup_default_iperf_test.yml"
+      TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
       ;;
     p )
-      PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
+      SETUP_PLAYBOOK="playbooks/setup_parallel_iperf_test.yml"
+      TEST_PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
       ;;
     i )
-      PLAYBOOK="playbooks/run_interference_test.yml"
+      SETUP_PLAYBOOK="playbooks/setup_interference_iperf_test.yml"
+      TEST_PLAYBOOK="playbooks/run_interference_test.yml"
       ;;
     \? )
-      echo "Usage: $0 [-d] [-p] [-i]"
-      echo "  -d  Run default iperf test playbook"
-      echo "  -p  Run parallel iperf test playbook"
-      echo "  -i  Run iperf test with interference playbook"
+      echo "Usage: $0 [-d] [-p] [-i] [--no-setup]"
+      echo "  -d           Use default iperf test playbook"
+      echo "  -p           Use parallel iperf test playbook"
+      echo "  -i           Use interference iperf test playbook"
+      echo "  --no-setup   Skip the setup playbook (useful if setup was already run)"
       exit 1
       ;;
   esac
 done
 
-# Run the selected playbook
-ansible-playbook -i inventory/hosts.ini "$PLAYBOOK"
+# Shift positional parameters past getopts-parsed options
+shift $((OPTIND -1))
+
+# Handle long options (e.g. --no-setup)
+for arg in "$@"; do
+  case $arg in
+    --no-setup)
+      RUN_SETUP=false
+      ;;
+    *)
+      echo "Unknown argument: $arg"
+      echo "Usage: $0 [-d] [-p] [-i] [--no-setup]"
+      exit 1
+      ;;
+  esac
+done
+
+# Run selected playbooks
+if $RUN_SETUP; then
+  ansible-playbook -i inventory/hosts.ini "$SETUP_PLAYBOOK"
+fi
+
+ansible-playbook -i inventory/hosts.ini "$TEST_PLAYBOOK"
