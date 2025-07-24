@@ -4,7 +4,7 @@
 ansible-galaxy install -r collections/requirements.yml
 
 # Default playbooks
-SETUP_PLAYBOOK="playbooks/setup_default_iperf_test.yml"
+SETUP_PLAYBOOK="playbooks/default_iperf_test_setup.yml"
 TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
 
 # By default, run setup
@@ -14,15 +14,15 @@ RUN_SETUP=true
 while getopts ":dpi" opt; do
   case ${opt} in
     d )
-      SETUP_PLAYBOOK="playbooks/setup_default_iperf_test.yml"
+      SETUP_PLAYBOOK="playbooks/default_iperf_test_setup.yml"
       TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
       ;;
     p )
-      SETUP_PLAYBOOK="playbooks/setup_parallel_iperf_test.yml"
+      SETUP_PLAYBOOK="playbooks/parallel_iperf_test_setup.yml"
       TEST_PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
       ;;
     i )
-      SETUP_PLAYBOOK="playbooks/setup_interference_iperf_test.yml"
+      SETUP_PLAYBOOK="playbooks/interference_iperf_test_setup.yml"
       TEST_PLAYBOOK="playbooks/run_interference_test.yml"
       ;;
     \? )
