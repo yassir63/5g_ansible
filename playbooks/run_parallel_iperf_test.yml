@@ -23,11 +23,15 @@
       loop_control:
         label: "{{ item }}"
 
-- name: Wait for iperf job to finish
-  async_status:
-    jid: "{{ iperf_job.ansible_job_id }}"
-  register: result
-  until: result.finished
-  retries: 100
-  delay: 10
+- name: Wait for Iperf job to finish
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait for iperf job
+      async_status:
+        jid: "{{ iperf_job.ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10
 

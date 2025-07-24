@@ -10,7 +10,23 @@ TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
 # By default, run setup
 RUN_SETUP=true
 
-# Parse short options
+# First handle long options
+for arg in "$@"; do
+  case "$arg" in
+    --no-setup)
+      RUN_SETUP=false
+      # Remove this arg from $@ so getopts doesn't see it
+      set -- "${@/--no-setup/}"
+      ;;
+    --*)
+      echo "Unknown option: $arg"
+      echo "Usage: $0 [-d] [-p] [-i] [--no-setup]"
+      exit 1
+      ;;
+  esac
+done
+
+# Now parse short options
 while getopts ":dpi" opt; do
   case ${opt} in
     d )
@@ -36,22 +52,8 @@ while getopts ":dpi" opt; do
   esac
 done
 
-# Shift positional parameters past getopts-parsed options
-shift $((OPTIND -1))
-
-# Handle long options (e.g. --no-setup)
-for arg in "$@"; do
-  case $arg in
-    --no-setup)
-      RUN_SETUP=false
-      ;;
-    *)
-      echo "Unknown argument: $arg"
-      echo "Usage: $0 [-d] [-p] [-i] [--no-setup]"
-      exit 1
-      ;;
-  esac
-done
+# Shift past processed short options
+shift $((OPTIND - 1))
 
 # Run selected playbooks
 if $RUN_SETUP; then
