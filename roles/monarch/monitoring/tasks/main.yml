@@ -20,3 +20,24 @@
 - name: Print API submission result
   ansible.builtin.debug:
     var: submit_output.stdout_lines
+
+- name: Access Grafana Dashboard
+  ansible.builtin.debug:
+    msg: |
+      To access the Grafana Dashboard, follow these chained SSH port forwarding steps:
+
+      Step 1: On your local machine, SSH into Duckburg with remote port forwarding
+        >>>
+        ssh -L 8888:localhost:8888 -p 10022 ziyad@duckburg.net.in.tum.de
+        >>>
+
+      Step 2: From inside Duckburg, forward {{ groups['monitor_node'][0] }}:32005 to localhost:8888
+        >>>
+        ssh -L 8888:localhost:32005 root@{{ groups['monitor_node'][0] }}
+        >>>
+
+      Step 3: Now open your browser and go to http://localhost:8888 to access Grafana.
+
+      Grafana credentials:
+        User: admin
+        Password: monarch-operator

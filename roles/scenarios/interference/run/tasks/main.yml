@@ -3,3 +3,4 @@
   shell: ssh root@{{ node }} 'timeout {{ time }} uhd_siggen --gaussian --freq="{{ hostvars[groups['faraday'][0]].freq }}" -g "{{ hostvars[groups['faraday'][0]].g }}" -s "{{ hostvars[groups['faraday'][0]].s }}"'
   delegate_to: faraday.inria.fr
   ignore_errors: true
+  no_log: true
