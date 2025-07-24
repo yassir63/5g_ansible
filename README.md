@@ -49,7 +49,7 @@ After running `deploy.sh`, choose one of the available scenarios to run based on
 ./run_iperf_test.sh -p
 ```
 - Connect the *first 4* UEs.
-- Each UE runs bidirectional iperf3 test for 5 minutes, sequentially spaced by 1 minute.
+- Each UE runs bidirectional iperf3 test for 400 seconds, sequentially spaced by 100 seconds.
 
 ### 3. Interference Test with Spectrum Visualization
 ```bash
@@ -58,7 +58,7 @@ After running `deploy.sh`, choose one of the available scenarios to run based on
 - Connect the first UE.
 - Spectrum visualization using `uhd_fft` on the first fit node.
 - Noise generation via second fit node (`interference_usrp=fit`) or specified USRP (`n300` or `n320`).
-- While noise is active 1 minute after the UE performs bidirectional iperf3.
+- Noise generation is active 100 seconds after the UE performs bidirectional iperf3.
 
 ---
 

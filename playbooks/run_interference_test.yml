@@ -53,9 +53,9 @@
       poll: 0
       register: iperf_job
 
-    - name: Wait 1 minute before running noise generator
+    - name: Wait 100 seconds before running noise generator
       wait_for:
-        timeout: 60
+        timeout: 100
 
 - name: Run noise generator from fit node for 100 seconds
   hosts: faraday

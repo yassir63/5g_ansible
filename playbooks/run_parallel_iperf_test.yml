@@ -17,18 +17,18 @@
   tasks:
     - name: Run iperf3 test on each UE sequentially
       block:
-        - name: Start bidirectional iperf3 on {{ item }} in background for 5 minutes
+        - name: Start bidirectional iperf3 on {{ item }} in background for 400 seconds
           shell: >
             ssh root@{{ item }}
-            'iperf3 -c {{ hostvars[item].upf_ip }} --bidir -t 300 -J log_iperf_test.json'
+            'iperf3 -c {{ hostvars[item].upf_ip }} --bidir -t 400 -J log_iperf_test.json'
           delegate_to: faraday.inria.fr
           async: 1800
           poll: 0
           register: iperf_job
 
-        - name: Wait 60 seconds before next UE
+        - name: Wait 100 seconds before next UE
           wait_for:
-            timeout: 60
+            timeout: 100
       loop: "{{ ue_list }}"
       loop_control:
         label: "{{ item }}"

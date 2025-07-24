@@ -11,7 +11,7 @@
         label: "{{ item }}"
       ignore_errors: true
 
-- name: Iperf3 reverse client test on each UE via Faraday (Downlink Test)
+- name: Iperf3 reverse client test for 200 seconds on each UE via Faraday (Downlink Test)
   hosts: faraday
   gather_facts: false
   tasks:
@@ -22,7 +22,7 @@
         loop_var: ue
       delegate_to: faraday.inria.fr
 
-- name: Iperf3 client test on each UE via Faraday (Uplink Test)
+- name: Iperf3 client test on each for 200 seconds UE via Faraday (Uplink Test)
   hosts: faraday
   gather_facts: false
   tasks:

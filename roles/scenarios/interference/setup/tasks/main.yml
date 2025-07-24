@@ -15,7 +15,7 @@
   pause:
     seconds: 30
 
-- name: Wait for the node {{ fit_node }} ti be SSH accessible
+- name: Wait for the node {{ fit_node }} to be SSH accessible
   wait_for:
     host: "{{ fit_node }}"
     port: 22
