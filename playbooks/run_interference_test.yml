@@ -1,5 +1,5 @@
 ---
-- name: Run Iperf test
+- name: Run iperf test
   hosts: faraday
   gather_facts: false
   tasks:
@@ -34,7 +34,7 @@
     - role: scenarios/interference/run
       when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
 
-- name: Wait for Iperf job to finish
+- name: Wait for iperf job to finish
   hosts: faraday
   gather_facts: false
   tasks:

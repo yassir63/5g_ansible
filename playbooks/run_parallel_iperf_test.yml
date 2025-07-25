@@ -1,37 +1,65 @@
 ---
-- name: Run sequential iperf3 tests on first 4 UEs
+- name: Run iperf3 tests sequentially on first 4 UEs
   hosts: faraday
   gather_facts: false
   vars:
-    ue_list: "{{ groups['qhats'][:4] }}"
+    ue1: "{{ groups['qhats'][0] }}"
+    ue2: "{{ groups['qhats'][1] }}"
+    ue3: "{{ groups['qhats'][2] }}"
+    ue4: "{{ groups['qhats'][3] }}"
   tasks:
-    - name: Run iperf3 test on each UE sequentially
-      block:
-        - name: Start bidirectional iperf3 on {{ item }} in background for 400 seconds
-          shell: >
-            ssh root@{{ item }}
-            'iperf3 -c {{ hostvars[item].upf_ip }} --bidir -t 400 -J log_iperf_test.json'
-          delegate_to: faraday.inria.fr
-          async: 1800
-          poll: 0
-          register: iperf_job
+    - name: Start iperf3 on {{ ue1 }} in background
+      shell: >
+        ssh root@{{ ue1 }}
+        'iperf3 -c {{ hostvars[ue1].upf_ip }} --bidir -t 400 -J log_iperf_test.json'
+      async: 1800
+      poll: 0
+      register: ue1_job
 
-        - name: Wait 100 seconds before next UE
-          wait_for:
-            timeout: 100
-      loop: "{{ ue_list }}"
-      loop_control:
-        label: "{{ item }}"
+    - name: Wait 100 seconds before next UE
+      wait_for:
+        timeout: 100
 
-- name: Wait for Iperf job to finish
+    - name: Start iperf3 on {{ ue2 }} in background
+      shell: >
+        ssh root@{{ ue2 }}
+        'iperf3 -c {{ hostvars[ue2].upf_ip }} --bidir -t 400 -J log_iperf_test.json'
+      async: 1800
+      poll: 0
+      register: ue2_job
+
+    - name: Wait 100 seconds before next UE
+      wait_for:
+        timeout: 100
+
+    - name: Start iperf3 on {{ ue3 }} in background
+      shell: >
+        ssh root@{{ ue3 }}
+        'iperf3 -c {{ hostvars[ue3].upf_ip }} --bidir -p 5202 -t 400 -J log_iperf_test.json'
+      async: 1800
+      poll: 0
+      register: ue3_job
+
+    - name: Wait 100 seconds before next UE
+      wait_for:
+        timeout: 100
+
+    - name: Start iperf3 on {{ ue4 }} in background
+      shell: >
+        ssh root@{{ ue4 }}
+        'iperf3 -c {{ hostvars[ue4].upf_ip }} --bidir -p 5202 -t 400 -J log_iperf_test.json'
+      async: 1800
+      poll: 0
+      register: ue4_job
+
+- name: Wait for the last iperf job to finish
   hosts: faraday
   gather_facts: false
   tasks:
     - name: Wait for iperf job
       async_status:
-        jid: "{{ iperf_job.ansible_job_id }}"
+        jid: "{{ ue4_job.ansible_job_id }}"
       register: result
       until: result.finished
       retries: 100
       delay: 10
-
