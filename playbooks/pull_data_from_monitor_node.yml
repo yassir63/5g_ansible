@@ -1,0 +1,37 @@
+- name: Pull Thanos data from Prometheus pod and copy to webshell
+  hosts: webshell
+  gather_facts: no
+  vars:
+    namespace: monarch
+    prometheus_pod: prometheus-nssdc-prometheus-0
+    local_prometheus_path: /mnt/data/prometheus
+    local_thanos_path: /mnt/data/minio/monarch-thanos
+    webshell_prometheus_dest_path: ~/monarch-prometheus
+    webshell_thanos_dest_path: ~/monarch-thanos
+  tasks:
+    - name: Ensure Thanos destination directory exists on webshell
+      file:
+        path: "{{ webshell_thanos_dest_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure Prometheus destination directory exists on webshell
+      file:
+        path: "{{ webshell_prometheus_dest_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy /prometheus from pod to monitor_node local dir
+      delegate_to: "{{ groups['monitor_node'][0] }}"
+      command: >
+        kubectl -n {{ namespace }} cp {{ namespace }}/{{ prometheus_pod }}:/prometheus {{ local_prometheus_path }}
+
+    - name: Pull Prometheus data via scp from monitor_node
+      command: >
+        scp -r {{ groups['monitor_node'][0] }}:{{ local_prometheus_path }}/* {{ webshell_prometheus_dest_path }}
+      ignore_errors: yes
+
+    - name: Pull Thanos data via scp from monitor_node
+      shell: scp -r {{ groups['monitor_node'][0] }}:{{ local_thanos_path }}/* {{ webshell_thanos_dest_path }}
+      args:
+      ignore_errors: yes
