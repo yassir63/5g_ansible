@@ -1,11 +1,11 @@
 ---
 - import_tasks: persist_data.yml
 
-- name: Push MinIO monarch-thanos data from webshell to {{ groups['monitor_node'][0] }}
-  delegate_to: "{{ groups['webshell'][0] }}"
-  shell: scp -r ~/monarch-thanos {{ groups['monitor_node'][0] }}:/mnt/data/minio
-  ignore_errors: true
-  when: hostvars[groups['webshell'][0]].push_data == 'true'
+# - name: Push MinIO monarch-thanos data from webshell to {{ groups['monitor_node'][0] }}
+#   delegate_to: "{{ groups['webshell'][0] }}"
+#   shell: scp -r ~/monarch-thanos {{ groups['monitor_node'][0] }}:/mnt/data/minio
+#   ignore_errors: true
+#   when: hostvars[groups['webshell'][0]].push_data == 'true'
 
 - name: Clone 5G-Monarch repo
   git:

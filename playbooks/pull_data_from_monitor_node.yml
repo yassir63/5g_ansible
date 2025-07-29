@@ -1,6 +1,7 @@
+# Experimental playbook! Don't use!
 - name: Pull Thanos data from Prometheus pod and copy to webshell
   hosts: webshell
-  gather_facts: no
+  gather_facts: false
   vars:
     namespace: monarch
     prometheus_pod: prometheus-nssdc-prometheus-0
@@ -29,9 +30,8 @@
     - name: Pull Prometheus data via scp from monitor_node
       command: >
         scp -r {{ groups['monitor_node'][0] }}:{{ local_prometheus_path }}/* {{ webshell_prometheus_dest_path }}
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Pull Thanos data via scp from monitor_node
       shell: scp -r {{ groups['monitor_node'][0] }}:{{ local_thanos_path }}/* {{ webshell_thanos_dest_path }}
-      args:
-      ignore_errors: yes
+      ignore_errors: true
