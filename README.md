@@ -136,7 +136,7 @@ sopnode-f1  # Monarch monitoring stack
 
 # R2Lab Section
 [faraday]
-faraday.inria.fr ansible_user=inria_ubinet01 rru=jaguar interference_usrp=n320 freq=3411.22M g=110 s=20M
+faraday.inria.fr ansible_user=inria_ubinet01 rru=jaguar interference_usrp=n320 freq=3411.22M g=110 s=20M conf=...
 
 [qhats]
 qhat01 ansible_host=qhat01 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
@@ -164,7 +164,8 @@ After deployment, instructions will be printed to your terminal with the SSH com
 - You may assign any node for any role (core, ran, monitor) **except** that AW2S RAN must can only be deployed on `sopnode-f1` or `sopnode-f2`.
 - You can run everything on a single node (not recommended for performance).
 - The UPF and DNN of each UE are defined in [this configuration of the Open5gs core](https://github.com/Ziyad-Mabrouk/open5gs-k8s/blob/main/mongo-tools/generate-data.py) and should not be changed.
-- Supported RRUs are: `n300`, `n320` (they use [same gNB config](https://github.com/Ziyad-Mabrouk/oai5g-rru/blob/gen-cn2/ran-config/conf/gnb.sa.band78.106prb.n310.7ds2u.conf)) or `jaguar`, `panther` (use [different gNB config](https://github.com/Ziyad-Mabrouk/oai5g-rru/blob/gen-cn2/ran-config/conf/gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf)).
+- Supported RRUs are: `n300`, `n320`, `jaguar` and `panther`.
+- The specific gNB configuration file is mandatory and must be specified via the `conf` variable in the `hosts.ini` file (under the `[faraday]` group). Only config files available in the [`ran-config/conf/`](https://github.com/Ziyad-Mabrouk/oai5g-rru/tree/gen-cn2/ran-config/conf) directory of the `oai5g-rru` repository are supported.
 - The entire `[fit_nodes]` group, as well as the frequency, gain (g) and sample rate / bandwidth covered by the noise generator (s) specified in `[faraday]`, are only relevant to the interference test scenario and are not needed otherwise.
 - For the interference scenario, the first fist node (`groups[fit_nodes][0]`) is used for spectrum visualization. The USRP used for noise generation (`interference_usrp`) can be `=fit`(meaning the second fit node's USRP will be used as noise generator), or `=n300` / `=n320`).
 

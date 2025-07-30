@@ -3,5 +3,6 @@ repo_url: "https://github.com/Ziyad-Mabrouk/open5gs-k8s.git"
 repo_dest: "~/open5gs-k8s"
 ran_ns: open5gs
 rru: "{{ hostvars[groups['faraday'][0]].rru }}"
+conf: "{{ hostvars[groups['faraday'][0]].conf }}"
 script_path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
 charts_base: "{{ repo_dest }}/oai-ran/oai-cn5g-fed/charts/oai-5g-ran"
