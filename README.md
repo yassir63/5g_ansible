@@ -115,35 +115,40 @@ The deployment is driven by `inventory/hosts.ini`, where you define:
 localhost ansible_connection=local
 
 # SLICES Deployment Nodes
-[sopnodes]
-sopnode-f1 ansible_user=root nic_interface=ens2f0 ip=172.28.2.76 storage=sda1
-sopnode-f2 ansible_user=root nic_interface=ens2f1 ip=172.28.2.77 storage=sda1
-sopnode-f3 ansible_user=root nic_interface=ens15f0 ip=172.28.2.95 storage=sdb1
-
-# Kubernetes Configuration
-[k8s_workers]
-sopnode-f1
-sopnode-f2
-
 [core_node]
-sopnode-f3  # Acts as Kubernetes master + Open5GS Core node
+# Acts as Kubernetes master + Open5GS Core node
+sopnode-f3 ansible_user=root nic_interface=ens15f1 ip=172.28.2.95 storage=sdb1
 
 [ran_node]
-sopnode-f2  # Only f1 and f2 are supported for RAN deployements with AW2S RRUS (jaguar and panther)
+# Hosts OAI gNB (sopnode-w3 is not supported for this role in the case of AW2S RAN)
+sopnode-f2 ansible_user=root nic_interface=ens2f1 ip=172.28.2.77 storage=sda1
 
 [monitor_node]
-sopnode-f1  # Monarch monitoring stack
+# Monarch monitoring stack + data persistance
+sopnode-f1 ansible_user=root nic_interface=ens2f1 ip=172.28.2.76 storage=sda1
 
 # R2Lab Section
 [faraday]
-faraday.inria.fr ansible_user=inria_ubinet01 rru=jaguar interference_usrp=n320 freq=3411.22M g=110 s=20M conf=...
+faraday.inria.fr ansible_user=inria_ubinet01 rru=jaguar interference_usrp=n320 freq=3411.22M g=110 s=20M conf=gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf
 
 [qhats]
 qhat01 ansible_host=qhat01 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
 qhat02 ansible_host=qhat02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=streaming upf_ip=10.42.0.1
+qhat03 ansible_host=qhat03 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
+qhat11 ansible_host=qhat11 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=streaming upf_ip=10.42.0.1
 
 [fit_nodes]
 fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' fit_number=2 fit_usrp=b210
+
+# Group aliases
+[sopnodes:children]
+core_node
+ran_node
+monitor_node
+
+[k8s_workers:children]
+ran_node
+monitor_node
 ```
 
 > **IMPORTANT:** Update the `ansible_user` under `[faraday]` to match your actual R2Lab slice name.
