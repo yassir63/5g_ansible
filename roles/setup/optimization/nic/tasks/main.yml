@@ -8,10 +8,6 @@
     update_cache: yes
   become: true
 
-- name: Increase NIC ring buffers on ens21f0
-  command: ethtool -G ens21f0 tx 8160 rx 8160
-  become: true
-
 - name: Increase NIC ring buffers on {{ nic_interface }}
   command: ethtool -G {{ nic_interface }} tx 8160 rx 8160
   become: true
