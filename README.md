@@ -161,7 +161,7 @@ After deployment, instructions will be printed to your terminal with the SSH com
 
 ## Customization Tips
 
-- You may assign any node for any role (core, ran, monitor) **except** that AW2S RAN must can only be deployed on `sopnode-f1` or `sopnode-f2`.
+- You may assign any node for any role (core, ran, monitor) **except** that AW2S RAN can only be deployed on `sopnode-f1`, `sopnode-f2` or `sopnode-f3`.
 - You can run everything on a single node (not recommended for performance).
 - The UPF and DNN of each UE are defined in [this configuration of the Open5gs core](https://github.com/Ziyad-Mabrouk/open5gs-k8s/blob/main/mongo-tools/generate-data.py) and should not be changed.
 - Supported RRUs are: `n300`, `n320`, `jaguar` and `panther`.
