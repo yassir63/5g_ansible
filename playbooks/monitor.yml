@@ -1,0 +1,109 @@
+- name: Connect UE {{ ue_count }}
+  when: ue_count > 0
+  delegate_to: faraday
+  block:
+    - name: Connect UE #{{ ue_count }}
+      include_role:
+        name: r2lab/ue/connect
+      vars:
+        ue: "{{ groups['qhats'][ue_count - 1] }}"
+
+- name: Loop over durations to collect metrics
+  vars:
+    sample_rate: 1
+  loop: "{{ durations }}"
+  loop_control:
+    loop_var: duration
+  block:
+    - name: Initialize metrics data
+      set_fact:
+        cpu_totals: "{{ dict(containers | zip(containers | map('regex_replace', '.*', '0') | list)) }}"
+        mem_totals: "{{ dict(containers | zip(containers | map('regex_replace', '.*', '0') | list)) }}"
+        samples: "{{ dict(containers | zip(containers | map('regex_replace', '.*', '0') | list)) }}"
+        start_time: "{{ ansible_date_time.epoch | int }}"
+
+    - name: Sample metrics {{ duration }}s
+      vars:
+        loop_range: "{{ range(0, duration | int, sample_rate) | list }}"
+      loop: "{{ loop_range }}"
+      loop_control:
+        loop_var: sample_index
+      block:
+        - name: Sample each container
+          vars:
+            container: "{{ item }}"
+          loop: "{{ containers }}"
+          loop_control:
+            loop_var: item
+          block:
+            - name: Get pod name
+              shell: |
+                kubectl -n open5gs get pod -l app={{ item }} -o jsonpath="{.items[0].metadata.name}"
+              register: pod_name_cmd
+              changed_when: false
+
+            - name: Get container name (for oai-flexric)
+              shell: |
+                kubectl -n open5gs get pod {{ pod_name_cmd.stdout }} -o jsonpath="{.spec.containers[0].name}"
+              when: item == "oai-flexric"
+              register: container_name_cmd
+              changed_when: false
+
+            - name: Get CPU/MEM usage
+              shell: |
+                kubectl -n open5gs top pod {{ pod_name_cmd.stdout }} --containers | grep {{ (item == 'oai-flexric') | ternary(container_name_cmd.stdout, item) }} | awk '{print $3","$4}'
+              register: usage_cmd
+              changed_when: false
+              failed_when: usage_cmd.stdout == ""
+
+            - name: Parse and update usage
+              set_fact:
+                cpu_totals: >-
+                  {{
+                    cpu_totals | combine({
+                      item: (cpu_totals[item] | int + (usage_cmd.stdout.split(',')[0] | regex_replace('m','') | int))
+                    })
+                  }}
+                mem_totals: >-
+                  {{
+                    mem_totals | combine({
+                      item: (mem_totals[item] | int + (usage_cmd.stdout.split(',')[1] | regex_replace('Mi','') | int))
+                    })
+                  }}
+                samples: >-
+                  {{
+                    samples | combine({
+                      item: (samples[item] | int + 1)
+                    })
+                  }}
+
+        - name: Sleep between samples
+          pause:
+            seconds: "{{ sample_rate }}"
+
+    - name: Get Prometheus disk usage
+      shell: |
+        kubectl -n monarch get pod -l app.kubernetes.io/name=prometheus -o jsonpath="{.items[0].metadata.name}"
+      register: prom_pod
+
+    - name: Get Prometheus disk usage (Mi)
+      shell: |
+        kubectl -n monarch exec {{ prom_pod.stdout }} -c prometheus -- du -s /prometheus | awk '{print int($1 / 1024)}'
+      register: disk_usage_cmd
+      changed_when: false
+
+    - name: Write metrics to CSV
+      vars:
+        disk_usage: "{{ disk_usage_cmd.stdout }}"
+      loop: "{{ containers }}"
+      loop_control:
+        loop_var: container
+      lineinfile:
+        path: "{{ output_file }}"
+        create: yes
+        line: >-
+          {{ ue_count }},{{ duration }},{{ container }},
+          {{ (cpu_totals[container] | int // samples[container] | int) }},
+          {{ (mem_totals[container] | int // samples[container] | int) }},
+          {{ disk_usage }}
+        insertafter: EOF

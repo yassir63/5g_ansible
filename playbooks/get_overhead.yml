@@ -1,0 +1,59 @@
+---
+- name: Install metrics-server for resource monitoring
+  hosts: monitor_node
+  become: true
+  tasks:
+    - name: Add metrics-server Helm repo
+      command: helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server
+      args:
+        creates: ~/.cache/helm/repository/metrics-server-index.yaml
+
+    - name: Update Helm repos
+      command: helm repo update
+
+    - name: Install metrics-server with initial configuration
+      command: >
+        helm install metrics-server metrics-server/metrics-server -n kube-system
+        --set args="{--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP,Hostname}"
+      register: install_output
+      failed_when: install_output.rc != 0 and 'already exists' not in install_output.stderr
+
+    - name: Upgrade metrics-server (to apply args safely)
+      command: >
+        helm upgrade metrics-server metrics-server/metrics-server
+        -n kube-system
+        --reuse-values
+        --set args="{--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP,Hostname}"
+
+- name: Measure monitoring overhead across UE connections
+  hosts: monitor_node
+  gather_facts: false
+  vars:
+    durations: [30, 60, 120]
+    containers:
+      - oai-gnb
+      - metrics-parser
+      - oai-flexric
+    output_file: /tmp/monitoring_overhead.csv
+  tasks:
+    - name: Ensure output CSV has header
+      copy:
+        dest: "{{ output_file }}"
+        content: "UE_Count,Duration,Container,Avg_CPU(millicores),Avg_MEM(Mi),Disk_Usage(Mi)\n"
+        force: yes
+
+    - name: Run monitoring for each UE connection count
+      include_tasks: monitor.yml
+      loop: [0, 1, 2, 3, 4]
+      loop_control:
+        loop_var: ue_count
+
+- name: Upload CSV results using bashupload
+  hosts: monitor_node
+  gather_facts: false
+  tasks:
+    - name: Upload CSV via bashupload
+      shell: curl --upload-file {{ output_file }} https://bashupload.com/monitoring_overhead.csv
+      register: upload_out
+    - debug:
+        var: upload_out.stdout
