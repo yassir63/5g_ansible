@@ -1,5 +1,7 @@
 # Automated 5G Deployment And Monitoring With Ansible
 
+![setup](images/setup.png)
+
 This repository provides a fully automated [Ansible](https://www.ansible.com/) framework for deploying and monitoring a sliced 5G network using Kubernetes. It is intended to be run from the [SLICES platform Webshell](https://post-5g-web.slices-ri.eu/), assuming you have:
 
 - A valid [SLICES account](https://doc.slices-ri.eu/).
