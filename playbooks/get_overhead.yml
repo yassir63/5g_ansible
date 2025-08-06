@@ -25,35 +25,112 @@
         --reuse-values
         --set args="{--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP,Hostname}"
 
-- name: Measure monitoring overhead across UE connections
+- name: Ensure monitoring script is deployed
   hosts: monitor_node
   gather_facts: false
-  vars:
-    durations: [30, 60, 120]
-    containers:
-      - oai-gnb
-      - metrics-parser
-      - oai-flexric
-    output_file: /tmp/monitoring_overhead.csv
   tasks:
-    - name: Ensure output CSV has header
+    - name: Copy monitoring script to monitor_node
       copy:
-        dest: "{{ output_file }}"
-        content: "UE_Count,Duration,Container,Avg_CPU(millicores),Avg_MEM(Mi),Disk_Usage(Mi)\n"
-        force: yes
+        src: files/collect_monitoring.sh
+        dest: /tmp/collect_monitoring.sh
+        mode: '0755'
 
-    - name: Run monitoring for each UE connection count
-      include_tasks: monitor.yml
-      loop: [0, 1, 2, 3, 4]
-      loop_control:
-        loop_var: ue_count
-
-- name: Upload CSV results using bashupload
+- name: Run monitoring with 0 UEs
   hosts: monitor_node
   gather_facts: false
   tasks:
-    - name: Upload CSV via bashupload
-      shell: curl --upload-file {{ output_file }} https://bashupload.com/monitoring_overhead.csv
-      register: upload_out
-    - debug:
-        var: upload_out.stdout
+    - name: Run monitoring for UE count 0
+      shell: /tmp/collect_monitoring.sh 0
+      register: upload_result
+
+    - name: Show bashupload link for UE 0
+      debug:
+        var: upload_result.stdout_lines
+
+- name: Connect UE 1 and monitor
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Connect UE 1
+      include_role:
+        name: r2lab/ue/connect
+      vars:
+        ue: "{{ groups['qhats'][0] }}"
+
+- name: Monitor after connecting UE 1
+  hosts: monitor_node
+  gather_facts: false
+  tasks:
+    - name: Run monitoring for UE count 1
+      shell: /tmp/collect_monitoring.sh 1
+      register: upload_result
+
+    - name: Show bashupload link for UE 1
+      debug:
+        var: upload_result.stdout_lines
+
+- name: Connect UE 2 and monitor
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Connect UE 2
+      include_role:
+        name: r2lab/ue/connect
+      vars:
+        ue: "{{ groups['qhats'][1] }}"
+
+- name: Monitor after connecting UE 2
+  hosts: monitor_node
+  gather_facts: false
+  tasks:
+    - name: Run monitoring for UE count 2
+      shell: /tmp/collect_monitoring.sh 2
+      register: upload_result
+
+    - name: Show bashupload link for UE 2
+      debug:
+        var: upload_result.stdout_lines
+
+- name: Connect UE 3 and monitor
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Connect UE 3
+      include_role:
+        name: r2lab/ue/connect
+      vars:
+        ue: "{{ groups['qhats'][2] }}"
+
+- name: Monitor after connecting UE 3
+  hosts: monitor_node
+  gather_facts: false
+  tasks:
+    - name: Run monitoring for UE count 3
+      shell: /tmp/collect_monitoring.sh 3
+      register: upload_result
+
+    - name: Show bashupload link for UE 3
+      debug:
+        var: upload_result.stdout_lines
+
+- name: Connect UE 4 and monitor
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Connect UE 4
+      include_role:
+        name: r2lab/ue/connect
+      vars:
+        ue: "{{ groups['qhats'][3] }}"
+
+- name: Monitor after connecting UE 4
+  hosts: monitor_node
+  gather_facts: false
+  tasks:
+    - name: Run monitoring for UE count 4
+      shell: /tmp/collect_monitoring.sh 4
+      register: upload_result
+
+    - name: Show bashupload link for UE 4
+      debug:
+        var: upload_result.stdout_lines
