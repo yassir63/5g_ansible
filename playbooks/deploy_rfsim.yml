@@ -82,6 +82,7 @@
   hosts: ran_node
   vars:
     rru: "rfsim"
+    conf: "gnb.sa.band78.106prb.rfsim.conf"
   roles:
     - role: 5g/ran
     - role: 5g/rfsim
