@@ -71,8 +71,8 @@
   become: true
   roles:
     - role: setup/k8s/cluster_join
-      when: groups['core_node'][0]] != groups['ran_node'][0]] or groups['core_node'][0]] != groups['monitor_node'][0]
-
+      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+      
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
   roles:

@@ -71,7 +71,7 @@
   become: true
   roles:
     - role: setup/k8s/cluster_join
-      when: groups['core_node'][0]] != groups['ran_node'][0]] or groups['core_node'][0]] != groups['monitor_node'][0]
+      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
 
 - name: Apply specific tunig on RAN Node if AW2s RRUs are used
   hosts: ran_node
