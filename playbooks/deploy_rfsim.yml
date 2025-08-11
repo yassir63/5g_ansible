@@ -71,6 +71,7 @@
   become: true
   roles:
     - role: setup/k8s/cluster_join
+      when: groups['core_node'][0]] != groups['ran_node'][0]] or groups['core_node'][0]] != groups['monitor_node'][0]
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
@@ -81,6 +82,7 @@
   hosts: ran_node
   vars:
     rru: "rfsim"
+    conf: "gnb.sa.band78.106prb.rfsim.conf"
   roles:
     - role: 5g/ran
     - role: 5g/rfsim
