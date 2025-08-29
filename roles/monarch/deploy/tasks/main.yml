@@ -13,6 +13,32 @@
   command: kubectl label node {{ groups['monitor_node'][0] }} monarch-node=true --overwrite
   changed_when: false
 
+- name: Ensure Kyverno namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: kyverno
+    state: present
+
+- name: Check if Kyverno release exists
+  ansible.builtin.command: helm status kyverno -n kyverno
+  register: kyverno_status
+  failed_when: false
+  changed_when: false
+
+- name: Add Kyverno Helm repo
+  ansible.builtin.command: helm repo add kyverno https://kyverno.github.io/kyverno/
+  when: kyverno_status.rc != 0
+
+- name: Update Helm repos
+  ansible.builtin.command: helm repo update
+  when: kyverno_status.rc != 0
+
+- name: Install Kyverno using Helm
+  ansible.builtin.command: >
+    helm upgrade --install kyverno kyverno/kyverno -n kyverno --create-namespace
+  when: kyverno_status.rc != 0
+
 - name: Copy Kyverno policy
   copy:
     dest: /tmp/monarch-force-node.yaml
