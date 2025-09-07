@@ -1,5 +1,5 @@
 ---
-repo_url: "https://github.com/Ziyad-Mabrouk/open5gs-k8s.git"
+repo_url: "https://github.com/yassir63/open5gs-k8s.git"
 repo_dest: "~/open5gs-k8s"
 open5gs_ns: "open5gs"
 deployment_option: "msd/overlays/open5gs-metrics"
