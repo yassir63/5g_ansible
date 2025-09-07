@@ -1,0 +1,18 @@
+---
+- name: Clone open5gs-k8s repo
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: main
+    update: yes
+    force: yes
+
+- name: Update RUN_MODE variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^RUN_MODE='
+    line: "RUN_MODE=\"full\""
+    backrefs: true
+
+
+
