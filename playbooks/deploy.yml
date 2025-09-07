@@ -55,10 +55,19 @@
   roles:
     - role: setup/gre_tunnel
 
-- name: Deploy Open5gs Core
+- name: Deploy Open5GS Core (when core_type is open5gs)
   hosts: core_node
   roles:
     - role: 5g/core
+  when: core_type | default("open5gs") == "open5gs"
+
+- name: Deploy OAI Core (when core_type is oai)
+  hosts: core_node
+  roles:
+    - role: 5g/ran
+      vars:
+        oai_run_mode: "{{ oai_run_mode | default('full') }}"
+  when: core_type | default("open5gs") == "oai"
 
 - name: Setup iperf3 on UPFs
   hosts: core_node
@@ -114,12 +123,15 @@
   roles:
     - role: r2lab/rru
 
-- name: Deploy OAI RAN
+- name: Deploy OAI RAN (when core_type is open5gs)
   hosts: ran_node
   roles:
     - role: setup/optimization/nic
     - role: setup/netplan
     - role: 5g/ran
+      vars:
+        oai_run_mode: "gnb-only"
+  when: core_type | default("open5gs") == "open5gs"
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node

@@ -6,3 +6,10 @@ rru: "{{ hostvars[groups['faraday'][0]].rru }}"
 conf: "{{ hostvars[groups['faraday'][0]].conf }}"
 script_path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
 charts_base: "{{ repo_dest }}/oai-ran/oai-cn5g-fed/charts/oai-5g-ran"
+
+# OAI Core deployment mode
+# Options: "gnb-only", "gnb-upf", "full"
+# "gnb-only": Deploy only gNB (current default)
+# "gnb-upf": Deploy gNB + UPF
+# "full": Deploy complete OAI 5G Core (AMF, SMF, UPF, etc.) + gNB
+oai_run_mode: "gnb-only"

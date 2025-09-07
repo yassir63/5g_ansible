@@ -21,6 +21,13 @@
     line: "LOCAL_INTERFACE=\"{{ nic_interface }}\""
     backrefs: true
 
+- name: Configure RUN_MODE in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^RUN_MODE='
+    line: "RUN_MODE=\"{{ oai_run_mode }}\""
+    backrefs: true
+
 # - name: Disable FLEXRIC in prepare-demo-oai.sh if using aw2s gnb image
 #   ansible.builtin.lineinfile:
 #     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
@@ -55,3 +62,34 @@
     state: present
     wait: true
   register: helm_gnb
+
+- name: Install OAI Core components when RUN_MODE is full
+  kubernetes.core.helm:
+    name: "{{ item.name }}"
+    chart_ref: "{{ charts_base }}/{{ item.chart }}"
+    release_namespace: "{{ ran_ns }}"
+    create_namespace: true
+    state: present
+    wait: true
+  loop:
+    - { name: "oai-amf", chart: "oai-amf" }
+    - { name: "oai-smf", chart: "oai-smf" }
+    - { name: "oai-upf", chart: "oai-upf" }
+    - { name: "oai-nrf", chart: "oai-nrf" }
+    - { name: "oai-udm", chart: "oai-udm" }
+    - { name: "oai-udr", chart: "oai-udr" }
+    - { name: "oai-ausf", chart: "oai-ausf" }
+    - { name: "oai-nssf", chart: "oai-nssf" }
+  when: oai_run_mode == "full"
+  register: oai_core_helm
+
+- name: Install OAI UPF when RUN_MODE is gnb-upf
+  kubernetes.core.helm:
+    name: oai-upf
+    chart_ref: "{{ charts_base }}/oai-upf"
+    release_namespace: "{{ ran_ns }}"
+    create_namespace: true
+    state: present
+    wait: true
+  when: oai_run_mode == "gnb-upf"
+  register: oai_upf_helm
