@@ -63,7 +63,7 @@
   roles:
     - role: 5g/core_oai
   #  - role: 5g/ran
-    - role: 5g/rfsim
+    - role: 5g/rfsim_oai
 
 
 #- name: Setup iperf3 on UPFs

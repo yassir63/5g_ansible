@@ -60,12 +60,49 @@
 #    wait: true
 #  register: helm_flex
 
-- name: Install OAI gNB chart using Helm
-  kubernetes.core.helm:
-    name: oai-gnb
-    chart_ref: "{{ charts_base }}/oai-5g-ran/oai-gnb"
-    release_namespace: "{{ ran_ns }}"
-    create_namespace: true
-    state: present
-    wait: true
-  register: helm_gnb
+#- name: Install OAI CORE chart using Helm
+#  kubernetes.core.helm:
+#    name: oai-
+#    chart_ref: "{{ charts_base }}/oai-5g-ran/oai-gnb"
+#    release_namespace: "{{ ran_ns }}"
+#    create_namespace: true
+#    state: present
+#    wait: true
+#  register: helm_gnb
+
+- name: Ensure demo_oai.sh exists
+  ansible.builtin.stat:
+    path: "{{ demo_oai_dir }}/demo_oai.sh"
+  register: demo_oai_stat
+
+- name: Fail if demo_oai.sh is missing
+  ansible.builtin.fail:
+    msg: "demo_oai.sh not found in {{ demo_oai_dir }}. Check repo layout or demo_oai_dir."
+  when: not demo_oai_stat.stat.exists
+
+- name: Ensure demo_oai.sh is executable
+  ansible.builtin.file:
+    path: "{{ demo_oai_dir }}/demo_oai.sh"
+    mode: "0755"
+
+- name: Run demo_oai.sh {{ demo_oai_cmd }}
+  ansible.builtin.command: "./demo_oai.sh {{ demo_oai_cmd }}"
+  args:
+    chdir: "{{ demo_oai_dir }}"
+  register: demo_oai_run
+  # Adjust idempotency heuristic if your script prints something different when already started
+  changed_when: >
+    demo_oai_run.rc == 0 and
+    ('already running' not in (demo_oai_run.stdout | lower)) and
+    ('already running' not in (demo_oai_run.stderr | lower))
+
+
+# - name: Install OAI gNB chart using Helm
+#   kubernetes.core.helm:
+#     name: oai-gnb
+#     chart_ref: "{{ charts_base }}/oai-5g-ran/oai-gnb"
+#     release_namespace: "{{ ran_ns }}"
+#     create_namespace: true
+#     state: present
+#     wait: true
+#   register: helm_gnb
