@@ -36,15 +36,15 @@
   register: ran_script
   changed_when: "'OAI5G charts are now configured' in ran_script.stdout"
 
-- name: Install OAI FlexRIC chart using Helm
-  kubernetes.core.helm:
-    name: oai-flexric
-    chart_ref: "{{ charts_base }}/oai-flexric"
-    release_namespace: "{{ ran_ns }}"
-    create_namespace: true
-    state: present
-    wait: true
-  register: helm_flex
+#- name: Install OAI FlexRIC chart using Helm
+#  kubernetes.core.helm:
+#    name: oai-flexric
+#    chart_ref: "{{ charts_base }}/oai-flexric"
+#    release_namespace: "{{ ran_ns }}"
+#    create_namespace: true
+#    state: present
+#    wait: true
+#  register: helm_flex
 
 - name: Install OAI gNB chart using Helm
   kubernetes.core.helm:
