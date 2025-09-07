@@ -70,15 +70,22 @@
 #    wait: true
 #  register: helm_gnb
 
-- name: Ensure demo_oai.sh exists
+- name: Wait for demo_oai.sh to exist
+  ansible.builtin.wait_for:
+    path: "{{ demo_oai_dir }}/demo_oai.sh"
+    state: present
+    timeout: 600
+    delay: 2
+
+- name: Stat demo_oai.sh
   ansible.builtin.stat:
     path: "{{ demo_oai_dir }}/demo_oai.sh"
   register: demo_oai_stat
 
-# - name: Fail if demo_oai.sh is missing
-#   ansible.builtin.fail:
-#     msg: "demo_oai.sh not found in {{ demo_oai_dir }}. Check repo layout or demo_oai_dir."
-#   when: not demo_oai_stat.stat.exists
+- name: Fail if demo_oai.sh is missing (after wait)
+  ansible.builtin.fail:
+    msg: "demo_oai.sh not found in {{ demo_oai_dir }}. Check repo/branch or script name."
+  when: not demo_oai_stat.stat.exists
 
 - name: Ensure demo_oai.sh is executable
   ansible.builtin.file:
@@ -90,7 +97,6 @@
   args:
     chdir: "{{ demo_oai_dir }}"
   register: demo_oai_run
-  # Adjust idempotency heuristic if your script prints something different when already started
   changed_when: >
     demo_oai_run.rc == 0 and
     ('already running' not in (demo_oai_run.stdout | lower)) and
