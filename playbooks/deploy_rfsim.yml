@@ -55,21 +55,22 @@
   roles:
     - role: setup/gre_tunnel
 
-- name: Deploy Open5GS Core (when rfsim_core_type is open5gs)
+- name: Deploy Core Network
   hosts: core_node
-  roles:
-    - role: 5g/core
-  when: rfsim_core_type | default("open5gs") == "open5gs"
+  tasks:
+    - name: Deploy Open5GS Core
+      include_role:
+        name: 5g/core
+      when: rfsim_core_type | default("open5gs") == "open5gs"
 
-- name: Deploy OAI Core (when rfsim_core_type is oai)
-  hosts: core_node
-  roles:
-    - role: 5g/ran
-      vars:
-        oai_run_mode: "{{ rfsim_oai_run_mode | default('full') }}"
-        rru: "rfsim"
-        conf: "gnb.sa.band78.106prb.rfsim.conf"
-  when: rfsim_core_type | default("open5gs") == "oai"
+    - name: Deploy OAI Core
+      include_role:
+        name: 5g/ran
+        vars:
+          oai_run_mode: "{{ rfsim_oai_run_mode | default('full') }}"
+          rru: "rfsim"
+          conf: "gnb.sa.band78.106prb.rfsim.conf"
+      when: rfsim_core_type | default("open5gs") == "oai"
 
 - name: Setup iperf3 on UPFs
   hosts: core_node
@@ -89,17 +90,22 @@
 #  roles:
 #    - role: monarch/deploy
 
-- name: Deploy OAI RAN (when rfsim_core_type is open5gs)
+- name: Deploy RAN Network
   hosts: ran_node
-  vars:
-    rru: "rfsim"
-    conf: "gnb.sa.band78.106prb.rfsim.conf"
-  roles:
-    - role: 5g/ran
-      vars:
-        oai_run_mode: "gnb-only"
-    - role: 5g/rfsim
-  when: rfsim_core_type | default("open5gs") == "open5gs"
+  tasks:
+    - name: Deploy OAI RAN with RF Simulation
+      include_role:
+        name: 5g/ran
+        vars:
+          oai_run_mode: "gnb-only"
+          rru: "rfsim"
+          conf: "gnb.sa.band78.106prb.rfsim.conf"
+      when: rfsim_core_type | default("open5gs") == "open5gs"
+
+    - name: Deploy RF Simulation UEs
+      include_role:
+        name: 5g/rfsim
+      when: rfsim_core_type | default("open5gs") == "open5gs"
 
 #- name: Launch 5G-Monarch monitoring
 #  hosts: monitor_node
