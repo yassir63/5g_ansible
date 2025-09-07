@@ -66,10 +66,10 @@
     - name: Deploy OAI Core
       include_role:
         name: 5g/ran
-        vars:
-          oai_run_mode: "{{ rfsim_oai_run_mode | default('full') }}"
-          rru: "rfsim"
-          conf: "gnb.sa.band78.106prb.rfsim.conf"
+      vars:
+        oai_run_mode: "{{ rfsim_oai_run_mode | default('full') }}"
+        rru: "rfsim"
+        conf: "gnb.sa.band78.106prb.rfsim.conf"
       when: rfsim_core_type | default("open5gs") == "oai"
 
 - name: Setup iperf3 on UPFs
@@ -96,10 +96,10 @@
     - name: Deploy OAI RAN with RF Simulation
       include_role:
         name: 5g/ran
-        vars:
-          oai_run_mode: "gnb-only"
-          rru: "rfsim"
-          conf: "gnb.sa.band78.106prb.rfsim.conf"
+      vars:
+        oai_run_mode: "gnb-only"
+        rru: "rfsim"
+        conf: "gnb.sa.band78.106prb.rfsim.conf"
       when: rfsim_core_type | default("open5gs") == "open5gs"
 
     - name: Deploy RF Simulation UEs
