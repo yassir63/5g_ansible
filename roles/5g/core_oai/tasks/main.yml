@@ -70,37 +70,37 @@
 #    wait: true
 #  register: helm_gnb
 
-- name: Check for demo-oai.sh
-  ansible.builtin.stat:
-    path: "{{ repo_dest }}/oai-ran/demo-oai.sh"
-  register: demo_oai_stat
+#- name: Check for demo-oai.sh
+#  ansible.builtin.stat:
+#    path: "{{ repo_dest }}/oai-ran/demo-oai.sh"
+#  register: demo_oai_stat
 
-- name: Fail if demo-oai.sh is missing
-  ansible.builtin.fail:
-    msg: "demo-oai.sh not found in {{ repo_dest }}/oai-ran"
-  when: not demo_oai_stat.stat.exists
+#- name: Fail if demo-oai.sh is missing
+#  ansible.builtin.fail:
+#    msg: "demo-oai.sh not found in {{ repo_dest }}/oai-ran"
+#  when: not demo_oai_stat.stat.exists
 
-- name: Ensure demo-oai.sh is executable
-  ansible.builtin.file:
-    path: "{{ repo_dest }}/oai-ran/demo-oai.sh"
-    mode: "0755"
+#- name: Ensure demo-oai.sh is executable
+#  ansible.builtin.file:
+#   path: "{{ repo_dest }}/oai-ran/demo-oai.sh"
+#    mode: "0755"
 
-- name: Run demo-oai.sh start (bash)
-  ansible.builtin.shell: |
-    set -Eeuo pipefail
-    ./demo-oai.sh start
-  args:
-    chdir: "{{ repo_dest }}/oai-ran"
-    executable: /bin/bash
-  register: demo_oai_run
-  changed_when: >
-    demo_oai_run.rc == 0 and
-    ('already running' not in (demo_oai_run.stdout | lower)) and
-    ('already running' not in (demo_oai_run.stderr | lower))
+#- name: Run demo-oai.sh start (bash)
+#  ansible.builtin.shell: |
+#    set -Eeuo pipefail
+#    ./demo-oai.sh start
+#  args:
+#    chdir: "{{ repo_dest }}/oai-ran"
+#    executable: /bin/bash
+#  register: demo_oai_run
+#  changed_when: >
+#    demo_oai_run.rc == 0 and
+#    ('already running' not in (demo_oai_run.stdout | lower)) and
+#    ('already running' not in (demo_oai_run.stderr | lower))
 
-- name: Show demo-oai.sh output
-  ansible.builtin.debug:
-    var: demo_oai_run.stdout
+#- name: Show demo-oai.sh output
+#  ansible.builtin.debug:
+ #   var: demo_oai_run.stdout
 
 
 # - name: Install OAI gNB chart using Helm

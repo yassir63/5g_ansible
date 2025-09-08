@@ -40,6 +40,7 @@
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
+    - role: setup/netplan
 
 - name: Configure GRE Tunnel From Core Node to RAN Node
   hosts: core_node
@@ -63,7 +64,7 @@
   roles:
     - role: 5g/core_oai
   #  - role: 5g/ran
-    - role: 5g/rfsim_oai
+#    - role: 5g/rfsim_oai
 
 
 #- name: Setup iperf3 on UPFs
