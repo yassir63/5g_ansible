@@ -12,6 +12,7 @@
       - tcpdump
       - python3-pip
       - jq
+      - nano
     state: present
     update_cache: yes
 
