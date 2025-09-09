@@ -54,3 +54,24 @@
 - name: Apply sysctl parameters
   command: sysctl --system
   become: true
+
+
+- name: Download and run k9s webinstall script
+  ansible.builtin.shell: |
+    curl -sS https://webinstall.dev/k9s | bash
+  args:
+    executable: /bin/bash
+  environment:
+    # In case HOME is not passed when using become
+    HOME: "{{ ansible_env.HOME | default('/root') }}"
+  register: k9s_install
+  changed_when: "'k9s' in k9s_install.stdout or k9s_install.rc == 0"
+
+- name: Source envman PATH.env (makes k9s available in PATH for future sessions)
+  ansible.builtin.shell: |
+    source ~/.config/envman/PATH.env
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ansible_env.HOME | default('/root') }}"
+  changed_when: false
