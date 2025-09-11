@@ -1,14 +1,56 @@
 ---
-- name: Create kube-flannel namespace 
+# roles/setup/cni/tasks/main.yml
+
+# You can override this in inventory/group_vars if different
+- name: Set kubeconfig path (override with var if different)
+  set_fact:
+    kubeconfig: "{{ kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+    helm_bin: "/snap/bin/helm"
+
+# -------------------------------------------------------------------
+# Dependencies: Python K8s client + Helm via snap (works on Jammy/Noble)
+# -------------------------------------------------------------------
+
+- name: Ensure Python Kubernetes client is installed
+  become: true
+  apt:
+    name: python3-kubernetes
+    state: present
+    update_cache: yes
+
+- name: Ensure snapd is installed
+  become: true
+  apt:
+    name: snapd
+    state: present
+    update_cache: yes
+
+- name: Install Helm via snap (classic)
+  become: true
+  community.general.snap:
+    name: helm
+    classic: true
+    state: present
+
+# ----------------
+# Flannel via Helm
+# ----------------
+
+- name: Create kube-flannel namespace
+  become: true
   kubernetes.core.k8s:
-    name: kube-flannel
     api_version: v1
     kind: Namespace
+    name: kube-flannel
     state: present
-  become: true
+    kubeconfig: "{{ kubeconfig }}"
 
-- name: Apply namespace with pod-security label
+- name: Apply kube-flannel namespace label (Pod Security)
+  become: true
   kubernetes.core.k8s:
+    state: present
+    apply: yes
+    kubeconfig: "{{ kubeconfig }}"
     definition:
       apiVersion: v1
       kind: Namespace
@@ -16,78 +58,158 @@
         name: kube-flannel
         labels:
           pod-security.kubernetes.io/enforce: privileged
-    state: present
-    apply: yes
-  become: true
 
 - name: Add Flannel Helm repo
+  become: true
   kubernetes.core.helm_repository:
     name: flannel
     repo_url: https://flannel-io.github.io/flannel/
-  become: true
+    kubeconfig: "{{ kubeconfig }}"
+    binary_path: "{{ helm_bin }}"
 
-- name: Install Flannel via Helm
+- name: Install/upgrade Flannel via Helm
+  become: true
   kubernetes.core.helm:
     name: flannel
     chart_ref: flannel/flannel
     release_namespace: kube-flannel
     create_namespace: false
-    state: present
+    state: present          # change to 'latest' if you want upgrades each run
     wait: true
     wait_timeout: 300s
-  become: true
+    kubeconfig: "{{ kubeconfig }}"
+    binary_path: "{{ helm_bin }}"
 
-- name: Upload Multus DaemonSet manifest with patched resources to the master node
+# -------------
+# Multus deploy
+# -------------
+
+- name: Upload Multus DaemonSet manifest to the master node
+  become: true
   copy:
     src: multus-daemonset.yml
     dest: /root/multus-daemonset.yml
     mode: '0644'
-  become: true
 
-- name: Install Multus DaemonSet
+- name: Install/ensure Multus DaemonSet is present
+  become: true
   kubernetes.core.k8s:
     state: present
     src: /root/multus-daemonset.yml
-  become: true
+    kubeconfig: "{{ kubeconfig }}"
 
 - name: Wait for Multus DaemonSet to be ready
+  become: true
   kubernetes.core.k8s_info:
     kind: DaemonSet
     namespace: kube-system
     name: kube-multus-ds
+    kubeconfig: "{{ kubeconfig }}"
   register: multus_ds_info
-  until: multus_ds_info.resources[0].status.desiredNumberScheduled == multus_ds_info.resources[0].status.numberReady
+  until: >
+    multus_ds_info.resources
+    and multus_ds_info.resources[0].status.desiredNumberScheduled is defined
+    and multus_ds_info.resources[0].status.numberReady is defined
+    and multus_ds_info.resources[0].status.desiredNumberScheduled
+        == multus_ds_info.resources[0].status.numberReady
   retries: 20
   delay: 15
-  become: true
+
+# -------------------------
+# Open vSwitch + CNAO/OVS-CNI
+# -------------------------
 
 - name: Ensure Open vSwitch is installed
+  become: true
   apt:
     name: openvswitch-switch
     state: present
     update_cache: yes
-  become: true
 
 - name: Create OVS bridges for ovs-cni
+  become: true
   command: "ovs-vsctl --may-exist add-br {{ item }}"
   loop:
     - n2br
     - n3br
     - n4br
-  become: true
 
-- name: Apply Cluster-Network-Addons Operator & OVS-CNI
+# --- Download remote manifests with curl via command (no shell), then apply ---
+
+- name: Ensure curl is installed (for manifest downloads)
+  become: true
+  apt:
+    name: curl
+    state: present
+    update_cache: yes
+
+- name: Create temp dir for CNAO manifests
+  become: true
+  file:
+    path: /tmp/cnao
+    state: directory
+    mode: '0755'
+
+- name: Download CNAO/OVS-CNI manifest (namespace)
+  become: true
+  command:
+    argv:
+      - curl
+      - -fsSL
+      - https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml
+      - -o
+      - /tmp/cnao/namespace.yaml
+  args:
+    creates: /tmp/cnao/namespace.yaml
+
+- name: Download CNAO/OVS-CNI manifest (CRD)
+  become: true
+  command:
+    argv:
+      - curl
+      - -fsSL
+      - https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml
+      - -o
+      - /tmp/cnao/network-addons-config.crd.yaml
+  args:
+    creates: /tmp/cnao/network-addons-config.crd.yaml
+
+- name: Download CNAO/OVS-CNI manifest (operator)
+  become: true
+  command:
+    argv:
+      - curl
+      - -fsSL
+      - https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml
+      - -o
+      - /tmp/cnao/operator.yaml
+  args:
+    creates: /tmp/cnao/operator.yaml
+
+- name: Download CNAO/OVS-CNI manifest (network-addons-config)
+  become: true
+  command:
+    argv:
+      - curl
+      - -fsSL
+      - https://gist.githubusercontent.com/niloysh/1f14c473ebc08a18c4b520a868042026/raw/d96f07e241bb18d2f3863423a375510a395be253/network-addons-config.yaml
+      - -o
+      - /tmp/cnao/network-addons-config.yaml
+  args:
+    creates: /tmp/cnao/network-addons-config.yaml
+
+- name: Apply Cluster-Network-Addons Operator & OVS-CNI (from local files)
+  become: true
   kubernetes.core.k8s:
     state: present
     src: "{{ item }}"
-    kubeconfig: "{{ kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+    kubeconfig: "{{ kubeconfig }}"
   loop:
-    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml"
-    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml"
-    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
-    - "https://gist.githubusercontent.com/niloysh/1f14c473ebc08a18c4b520a868042026/raw/d96f07e241bb18d2f3863423a375510a395be253/network-addons-config.yaml"
-  become: false
+    - /tmp/cnao/namespace.yaml
+    - /tmp/cnao/network-addons-config.crd.yaml
+    - /tmp/cnao/operator.yaml
+    - /tmp/cnao/network-addons-config.yaml
 
-- name: Wait 10 seconds for cluster-network-addons Ready
+- name: Wait 10 seconds for cluster-network-addons to settle
   pause:
     seconds: 10

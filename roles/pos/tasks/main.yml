@@ -7,7 +7,7 @@
 
 - name: (POS) Flash image to {{ node }}
   shell: >
-    pos nodes image --staging "{{ node }}" "{{ pos_image }}"
+    pos nodes image "{{ node }}" "{{ pos_image }}"
 
 - name: (POS) Set boot parameters on {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
   shell: >

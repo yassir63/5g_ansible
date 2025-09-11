@@ -13,12 +13,10 @@
       - python3-pip
       - jq
       - nano
+      - python3-virtualenv
     state: present
     update_cache: yes
 
-- name: Install virtualenv using pip3
-  pip:
-    name: virtualenv
 
 - name: Disable swap
   shell: |

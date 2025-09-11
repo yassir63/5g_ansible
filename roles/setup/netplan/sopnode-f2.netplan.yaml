@@ -1,18 +1,18 @@
 network:
   version: 2
   ethernets:
-    ens2f0:
+    ens2f0np0:
       mtu: 9216
       dhcp4: true
-    ens2f1:
+    ens2f1np1:
       mtu: 9216
       dhcp4: false
   vlans:
     r2lab_usrp:
       id: 3010
-      link: ens2f1
+      link: ens2f1np1
       dhcp4: true
     r2lab_aw2s:
       id: 3011
-      link: ens2f1
+      link: ens2f1np1
       dhcp4: true
