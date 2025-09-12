@@ -60,15 +60,13 @@
     pos nodes bootparameter {{ node }} "{{ boot_parameters_benetel }}"
   when: node == groups['ran_node'][0] and (boot_parameters_benetel is defined)
 
-- name: (POS) Set boot parameters on {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
+- name: (POS) Set boot parameters for Jaguar scenario
   shell: >
-    pos nodes bootparameter {{ node }} {{ boot_parameters }}
-  when: node == groups['ran_node'][0] and (boot_parameters_benetel is not defined) and (rru | default(hostvars[groups['faraday'][0]].rru)) in ['jaguar', 'benetel1'] and node in ['sopnode-f1', 'sopnode-f2']
-
-- name: (POS) Set boot parameters on sopnode-f3 for RRU {{ hostvars[groups['faraday'][0]].rru }}
-  shell: >
-    pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
-  when: node == groups['ran_node'][0] and (boot_parameters_benetel is not defined) and (rru | default(hostvars[groups['faraday'][0]].rru)) in ['jaguar', 'benetel1'] and node in ['sopnode-f3']
+    pos nodes bootparameter {{ node }} {{ (boot_parameters if node in ['sopnode-f1','sopnode-f2'] else boot_parameters_f3) }}
+  when:
+    - node == groups['ran_node'][0]
+    - boot_parameters_benetel is not defined
+    - (rru | default(hostvars[groups['faraday'][0]].rru)) == 'jaguar'
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
