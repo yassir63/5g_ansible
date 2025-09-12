@@ -6,3 +6,6 @@
         name: pos
       vars:
         node: "{{ node }}"
+        pos_image: "{{ hostvars[node].pos_image | default(pos_image) }}"
+        boot_parameters: "{{ hostvars[node].boot_parameters | default(boot_parameters) }}"
+        boot_parameters_f3: "{{ hostvars[node].boot_parameters_f3 | default(boot_parameters_f3) }}"

@@ -4,6 +4,25 @@
 # RT Ubuntu runs as root only
 ansible_user: root
 
+# Ensure POS images the RT kernel image with desired boot params
+pos_image: ubuntu-jammy-rt@2025-09-11T12:59:20+00:00
+boot_parameters: >-
+  mitigations=off usbcore.autosuspend=-1 intel_iommu=on iommu=pt selinux=0 enforcing=0
+  nmi_watchdog=0 softlockup_panic=0 audit=0 skew_tick=1
+  isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14,16
+  nohz_full=0,2,4,6,8,10,12,14,16 rcu_nocbs=0,2,4,6,8,10,12,14,16 rcu_nocb_poll
+  intel_pstate=disable nosoftlockup cgroup_disable=memory mce=off
+  hugepagesz=1G hugepages=40 hugepagesz=2M hugepages=0 default_hugepagesz=1G
+  kthread_cpus=18-35 tsc=reliable
+boot_parameters_f3: >-
+  mitigations=off usbcore.autosuspend=-1 intel_iommu=on iommu=pt selinux=0 enforcing=0
+  nmi_watchdog=0 softlockup_panic=0 audit=0 skew_tick=1
+  isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14,16
+  nohz_full=0,2,4,6,8,10,12,14,16 rcu_nocbs=0,2,4,6,8,10,12,14,16 rcu_nocb_poll
+  intel_pstate=disable nosoftlockup cgroup_disable=memory mce=off
+  hugepagesz=1G hugepages=40 hugepagesz=2M hugepages=0 default_hugepagesz=1G
+  kthread_cpus=18-35 tsc=reliable
+
 # PTP
 ptp_interface: ens15f2
 ptp_domain_number: 24
