@@ -5,16 +5,35 @@
 - name: (POS) Allocate {{ node }} 
   shell: pos allocations allocate "{{ node }}"
 
+- name: (POS) Resolve POS image variables for {{ node }}
+  ansible.builtin.set_fact:
+    resolved_pos_image_user: >-
+      {{
+        (pos_image_user_effective)
+        if (pos_image_user_effective is defined and (pos_image_user_effective | length) > 0)
+        else (
+          hostvars[node].pos_image_user | default('')
+        )
+      }}
+    resolved_pos_image: >-
+      {{
+        (pos_image_effective)
+        if (pos_image_effective is defined and (pos_image_effective | length) > 0)
+        else (
+          hostvars[node].pos_image | default(pos_image)
+        )
+      }}
+
 - name: (POS) Compute imaging command for {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
       {{
         (
-          'pos node image --user ' ~ pos_image_user_effective ~ ' ' ~ node ~ ' ' ~ (pos_image_effective | default(pos_image))
+          'pos node image --user ' ~ resolved_pos_image_user ~ ' ' ~ node ~ ' ' ~ resolved_pos_image
         )
-        if (pos_image_user_effective is defined and (pos_image_user_effective | length) > 0)
+        if (resolved_pos_image_user is defined and (resolved_pos_image_user | length) > 0)
         else (
-          'pos nodes image --staging ' ~ node ~ ' ' ~ (pos_image_effective | default(pos_image))
+          'pos nodes image --staging ' ~ node ~ ' ' ~ resolved_pos_image
         )
       }}
 
