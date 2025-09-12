@@ -41,4 +41,15 @@ dpdk_u_plane_pci: "3a:11.0"
 dpdk_c_plane_pci: "3a:11.1"
 dpdk_driver: "vfio-pci"
 
+# Benetel-specific kernel boot parameters
+boot_parameters_benetel: >-
+  mitigations=off usbcore.autosuspend=-1 intel_iommu=on iommu=pt selinux=0 enforcing=0
+  nmi_watchdog=0 softlockup_panic=0 audit=0 skew_tick=1
+  isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14,16
+  nohz_full=0,2,4,6,8,10,12,14,16 rcu_nocbs=0,2,4,6,8,10,12,14,16 rcu_nocb_poll
+  intel_pstate=disable nosoftlockup cgroup_disable=memory mce=off
+  hugepagesz=1G hugepages=40 hugepagesz=2M hugepages=0 default_hugepagesz=1G
+  isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14 kthread_cpus=18-35
+  intel_pstate=disable nosoftlockup tsc=reliable
+
 
