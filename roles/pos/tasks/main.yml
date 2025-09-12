@@ -5,10 +5,20 @@
 - name: (POS) Allocate {{ node }} 
   shell: pos allocations allocate "{{ node }}"
 
+- name: (POS) Load ran_node group vars if present
+  ansible.builtin.include_vars:
+    file: "{{ item }}"
+    name: ran_node_vars
+  with_first_found:
+    - "{{ playbook_dir | dirname }}/group_vars/ran_node.yml"
+    - "{{ playbook_dir }}/../group_vars/ran_node.yml"
+  ignore_errors: true
+  failed_when: false
+
 - name: (POS) Resolve POS image variables for {{ node }}
   ansible.builtin.set_fact:
-    resolved_pos_image_user: "{{ hostvars[node].pos_image_user | default(pos_image_user, true) | default('', true) }}"
-    resolved_pos_image: "{{ hostvars[node].pos_image | default(pos_image, true) | default(pos_image_default, true) }}"
+    resolved_pos_image_user: "{{ hostvars[node].pos_image_user | default(pos_image_user, true) | default(ran_node_vars.pos_image_user if (ran_node_vars is defined and ran_node_vars.pos_image_user is defined) else '', true) }}"
+    resolved_pos_image: "{{ hostvars[node].pos_image | default(pos_image, true) | default(ran_node_vars.pos_image if (ran_node_vars is defined and ran_node_vars.pos_image is defined) else pos_image_default, true) }}"
 
 - name: (POS) Compute imaging command for {{ node }}
   ansible.builtin.set_fact:
