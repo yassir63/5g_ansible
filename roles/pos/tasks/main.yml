@@ -12,7 +12,7 @@
         (pos_image_user_override)
         if (pos_image_user_override is defined and (pos_image_user_override | length) > 0)
         else (
-          hostvars[node].pos_image_user | default('')
+          (hostvars[node].pos_image_user | default(pos_image_user | default('')))
         )
       }}
     resolved_pos_image: >-
@@ -20,7 +20,7 @@
         (pos_image_override)
         if (pos_image_override is defined and (pos_image_override | length) > 0)
         else (
-          hostvars[node].pos_image | default(pos_image)
+          (hostvars[node].pos_image | default(pos_image | default(pos_image_default)))
         )
       }}
 
