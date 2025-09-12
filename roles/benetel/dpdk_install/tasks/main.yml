@@ -1,0 +1,49 @@
+---
+ 
+- name: Ensure build prerequisites are installed
+  ansible.builtin.apt:
+    name:
+      - wget
+      - xz-utils
+      - libnuma-dev
+      - meson
+      - ninja-build
+      - build-essential
+      - python3-pip
+    state: present
+    update_cache: true
+
+- name: Ensure DPDK archive is present
+  ansible.builtin.get_url:
+    url: http://fast.dpdk.org/rel/dpdk-20.11.9.tar.xz
+    dest: /root/dpdk-20.11.9.tar.xz
+    mode: '0644'
+
+- name: Extract DPDK
+  ansible.builtin.unarchive:
+    src: /root/dpdk-20.11.9.tar.xz
+    dest: /root
+    remote_src: true
+    creates: /root/dpdk-stable-20.11.9
+
+- name: Configure DPDK with meson
+  ansible.builtin.command: meson build
+  args:
+    chdir: /root/dpdk-stable-20.11.9
+    creates: /root/dpdk-stable-20.11.9/build/build.ninja
+
+- name: Build DPDK with ninja
+  ansible.builtin.command: ninja -C build
+  args:
+    chdir: /root/dpdk-stable-20.11.9
+  changed_when: "'ninja: no work to do.' not in dpdk_build_result.stdout | default('')"
+  register: dpdk_build_result
+
+- name: Install DPDK
+  ansible.builtin.command: ninja install -C build
+  args:
+    chdir: /root/dpdk-stable-20.11.9
+  changed_when: false
+
+
+

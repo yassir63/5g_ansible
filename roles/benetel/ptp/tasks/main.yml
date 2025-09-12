@@ -1,0 +1,65 @@
+---
+
+- name: Ensure linuxptp is installed
+  ansible.builtin.apt:
+    name: linuxptp
+    state: present
+    update_cache: true
+
+- name: Ensure /etc/sysconfig exists
+  ansible.builtin.file:
+    path: /etc/sysconfig
+    state: directory
+    mode: '0755'
+
+- name: Install ptp4l.conf
+  ansible.builtin.template:
+    src: ptp4l.conf.j2
+    dest: /etc/ptp4l.conf
+    mode: '0644'
+
+- name: Install /etc/sysconfig/ptp4l
+  ansible.builtin.template:
+    src: sysconfig_ptp4l.j2
+    dest: /etc/sysconfig/ptp4l
+    mode: '0644'
+
+- name: Install /etc/sysconfig/phc2sys
+  ansible.builtin.template:
+    src: sysconfig_phc2sys.j2
+    dest: /etc/sysconfig/phc2sys
+    mode: '0644'
+
+- name: Install ptp4l systemd unit
+  ansible.builtin.template:
+    src: ptp4l.service.j2
+    dest: /usr/lib/systemd/system/ptp4l.service
+    mode: '0644'
+
+- name: Install phc2sys systemd unit
+  ansible.builtin.template:
+    src: phc2sys.service.j2
+    dest: /usr/lib/systemd/system/phc2sys.service
+    mode: '0644'
+
+- name: Disable NTP via timedatectl
+  ansible.builtin.command: timedatectl set-ntp false
+  changed_when: false
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable and start ptp4l
+  ansible.builtin.service:
+    name: ptp4l
+    enabled: true
+    state: started
+
+- name: Enable and start phc2sys
+  ansible.builtin.service:
+    name: phc2sys
+    enabled: true
+    state: started
+
+

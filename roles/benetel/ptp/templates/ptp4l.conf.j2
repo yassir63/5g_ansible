@@ -1,0 +1,13 @@
+[global]
+domainNumber            {{ ptp_domain_number }}
+slaveOnly               {{ ptp_slave_only }}
+time_stamping           {{ ptp_time_stamping }}
+tx_timestamp_timeout    {{ ptp_tx_timestamp_timeout }}
+logging_level           {{ ptp_logging_level }}
+summary_interval        {{ ptp_summary_interval }}
+
+[{{ ptp_interface }}]
+network_transport       L2
+hybrid_e2e              0
+
+

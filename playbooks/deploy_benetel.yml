@@ -1,0 +1,14 @@
+---
+# Extends the standard deploy with Benetel-specific PTP and DPDK setup
+
+- import_playbook: deploy.yml
+
+- name: Benetel PTP and DPDK setup
+  hosts: ran_node
+  become: true
+  roles:
+    - role: benetel/ptp
+    - role: benetel/dpdk_install
+    - role: benetel/dpdk_config
+
+
