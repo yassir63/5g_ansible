@@ -5,9 +5,25 @@
 - name: (POS) Allocate {{ node }} 
   shell: pos allocations allocate "{{ node }}"
 
+- name: (POS) Compute imaging command for {{ node }}
+  ansible.builtin.set_fact:
+    pos_image_cmd: >-
+      {{
+        (
+          'pos node image --user ' ~ hostvars[node].pos_image_user ~ ' ' ~ node ~ ' ' ~ (hostvars[node].pos_image | default(pos_image))
+        )
+        if (hostvars[node] is defined and hostvars[node].pos_image_user is defined and (hostvars[node].pos_image_user | length) > 0)
+        else (
+          'pos nodes image --staging ' ~ node ~ ' ' ~ (hostvars[node].pos_image | default(pos_image))
+        )
+      }}
+
+- name: (POS) Show imaging command
+  ansible.builtin.debug:
+    msg: "{{ pos_image_cmd }}"
+
 - name: (POS) Flash image to {{ node }}
-  shell: >
-    {{ 'pos node image --user ' ~ pos_image_user ~ ' ' ~ node ~ ' ' ~ pos_image if pos_image_user | length > 0 else 'pos nodes image --staging ' ~ node ~ ' ' ~ pos_image }}
+  shell: "{{ pos_image_cmd }}"
 
 - name: (POS) Set boot parameters on {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
   shell: >
