@@ -6,7 +6,7 @@ pos_rt_node: "{{ groups['ran_node'][0] }}"
 pos_rt_image: "ubuntu-jammy-rt@2025-09-11T12:59:20+00:00"
 
 # POS user owning the image
-pos_rt_user: "root"
+pos_rt_user: "turletti"
 
 # Kernel boot parameters for Benetel scenario (single line)
 pos_rt_boot_parameters: >-

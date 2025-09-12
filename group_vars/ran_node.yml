@@ -1,6 +1,9 @@
 ---
 # Defaults for all hosts in group 'ran_node'. Override per-host in host_vars/<hostname>.yml
 
+# RT Ubuntu runs as root only
+ansible_user: root
+
 # PTP
 ptp_interface: ens15f2
 ptp_domain_number: 24
