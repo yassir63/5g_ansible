@@ -9,16 +9,16 @@
   ansible.builtin.set_fact:
     resolved_pos_image_user: >-
       {{
-        (pos_image_user_effective)
-        if (pos_image_user_effective is defined and (pos_image_user_effective | length) > 0)
+        (pos_image_user_override)
+        if (pos_image_user_override is defined and (pos_image_user_override | length) > 0)
         else (
           hostvars[node].pos_image_user | default('')
         )
       }}
     resolved_pos_image: >-
       {{
-        (pos_image_effective)
-        if (pos_image_effective is defined and (pos_image_effective | length) > 0)
+        (pos_image_override)
+        if (pos_image_override is defined and (pos_image_override | length) > 0)
         else (
           hostvars[node].pos_image | default(pos_image)
         )
