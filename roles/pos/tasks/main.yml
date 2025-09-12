@@ -57,7 +57,7 @@
 
 - name: (POS) Set boot parameters for Benetel scenario when provided
   shell: >
-    pos nodes bootparameter {{ node }} "{{ boot_parameters_benetel }}"
+    pos nodes bootparameter {{ node }} {{ boot_parameters_benetel }}
   when: node == groups['ran_node'][0] and (boot_parameters_benetel is defined)
 
 - name: (POS) Set boot parameters for Jaguar scenario
