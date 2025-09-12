@@ -1,20 +1,22 @@
----
-- name: Update apt cache and install Kubernetes components
-  ansible.builtin.apt:
+- name: Install Kubernetes apt key
+  apt_key:
+    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    state: present
+    keyring: /usr/share/keyrings/kubernetes-archive-keyring.gpg
+
+- name: Add Kubernetes apt repository
+  apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
+    state: present
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install kubelet, kubeadm, and kubectl
+  apt:
     name:
       - kubelet
       - kubeadm
       - kubectl
-    state: present
-    update_cache: yes
-  become: true
-
-- name: Ensure kube-proxy config is set
-  copy:
-    dest: /etc/kubernetes/kubeproxy-config.yaml
-    content: |
-      apiVersion: kubeproxy.config.k8s.io/v1alpha1
-      kind: KubeProxyConfiguration
-      ipvs:
-        strictARP: true
-  when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
+    state: latest
