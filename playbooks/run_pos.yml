@@ -1,8 +1,15 @@
 - hosts: webshell
   gather_facts: false
   tasks:
+    - name: Compute effective POS image variables for {{ node }}
+      ansible.builtin.set_fact:
+        pos_image_effective: "{{ hostvars[node].pos_image | default(pos_image) }}"
+        pos_image_user_effective: "{{ hostvars[node].pos_image_user | default('') }}"
+
     - name: Run pos role on {{ node }}
       include_role:
         name: pos
       vars:
         node: "{{ node }}"
+        pos_image_effective: "{{ pos_image_effective }}"
+        pos_image_user_effective: "{{ pos_image_user_effective }}"

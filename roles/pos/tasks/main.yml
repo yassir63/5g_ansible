@@ -10,11 +10,11 @@
     pos_image_cmd: >-
       {{
         (
-          'pos node image --user ' ~ hostvars[node].pos_image_user ~ ' ' ~ node ~ ' ' ~ (hostvars[node].pos_image | default(pos_image))
+          'pos node image --user ' ~ pos_image_user_effective ~ ' ' ~ node ~ ' ' ~ pos_image_effective
         )
-        if (hostvars[node] is defined and hostvars[node].pos_image_user is defined and (hostvars[node].pos_image_user | length) > 0)
+        if (pos_image_user_effective is defined and (pos_image_user_effective | length) > 0)
         else (
-          'pos nodes image --staging ' ~ node ~ ' ' ~ (hostvars[node].pos_image | default(pos_image))
+          'pos nodes image --staging ' ~ node ~ ' ' ~ pos_image_effective
         )
       }}
 
