@@ -6,6 +6,3 @@
         name: pos
       vars:
         node: "{{ node }}"
-        pos_image: "{{ (hostvars[node].pos_image) if (hostvars[node] is defined and hostvars[node].pos_image is defined) else omit }}"
-        boot_parameters: "{{ (hostvars[node].boot_parameters) if (hostvars[node] is defined and hostvars[node].boot_parameters is defined) else omit }}"
-        boot_parameters_f3: "{{ (hostvars[node].boot_parameters_f3) if (hostvars[node] is defined and hostvars[node].boot_parameters_f3 is defined) else omit }}"
