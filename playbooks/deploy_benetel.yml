@@ -3,6 +3,12 @@
 
 - import_playbook: deploy.yml
 
+- name: Prepare RT kernel on RAN node via POS
+  hosts: webshell
+  gather_facts: false
+  roles:
+    - role: benetel/pos_rt_kernel
+
 - name: Benetel PTP and DPDK setup
   hosts: ran_node
   become: true
