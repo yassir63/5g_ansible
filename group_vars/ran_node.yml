@@ -6,6 +6,7 @@ ansible_user: root
 
 # Ensure POS images the RT kernel image with desired boot params
 pos_image: ubuntu-jammy-rt@2025-09-11T12:59:20+00:00
+pos_image_user: turletti
 boot_parameters: >-
   mitigations=off usbcore.autosuspend=-1 intel_iommu=on iommu=pt selinux=0 enforcing=0
   nmi_watchdog=0 softlockup_panic=0 audit=0 skew_tick=1
