@@ -20,6 +20,21 @@
     resolved_pos_image_user: "{{ hostvars[node].pos_image_user | default(pos_image_user, true) | default(ran_node_vars.pos_image_user if (ran_node_vars is defined and ran_node_vars.pos_image_user is defined) else '', true) }}"
     resolved_pos_image: "{{ hostvars[node].pos_image | default(pos_image, true) | default(ran_node_vars.pos_image if (ran_node_vars is defined and ran_node_vars.pos_image is defined) else pos_image_default, true) }}"
 
+- name: (POS) Auto-set Benetel boot parameters when rru=benetel1
+  ansible.builtin.set_fact:
+    boot_parameters_benetel: >-
+      mitigations=off usbcore.autosuspend=-1 intel_iommu=on iommu=pt selinux=0 enforcing=0
+      nmi_watchdog=0 softlockup_panic=0 audit=0 skew_tick=1
+      isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14,16
+      nohz_full=0,2,4,6,8,10,12,14,16 rcu_nocbs=0,2,4,6,8,10,12,14,16 rcu_nocb_poll
+      intel_pstate=disable nosoftlockup cgroup_disable=memory mce=off
+      hugepagesz=1G hugepages=40 hugepagesz=2M hugepages=0 default_hugepagesz=1G
+      isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14 kthread_cpus=18-35
+      intel_pstate=disable nosoftlockup tsc=reliable
+  when:
+    - boot_parameters_benetel is not defined
+    - (rru | default(hostvars[groups['faraday'][0]].rru)) == 'benetel1'
+
 - name: (POS) Compute imaging command for {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
@@ -40,15 +55,20 @@
 - name: (POS) Flash image to {{ node }}
   shell: "{{ pos_image_cmd }}"
 
+- name: (POS) Set boot parameters for Benetel scenario when provided
+  shell: >
+    pos nodes bootparameter {{ node }} "{{ boot_parameters_benetel }}"
+  when: node == groups['ran_node'][0] and (boot_parameters_benetel is defined)
+
 - name: (POS) Set boot parameters on {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
   shell: >
-    pos nodes bootparameter {{ node }} {{ (boot_parameters_benetel | default(boot_parameters)) if (rru | default(hostvars[groups['faraday'][0]].rru)) == 'benetel1' else boot_parameters }}
-  when: node == groups['ran_node'][0] and (rru | default(hostvars[groups['faraday'][0]].rru)) in ['jaguar', 'benetel1'] and node in ['sopnode-f1', 'sopnode-f2']
+    pos nodes bootparameter {{ node }} {{ boot_parameters }}
+  when: node == groups['ran_node'][0] and (boot_parameters_benetel is not defined) and (rru | default(hostvars[groups['faraday'][0]].rru)) in ['jaguar', 'benetel1'] and node in ['sopnode-f1', 'sopnode-f2']
 
 - name: (POS) Set boot parameters on sopnode-f3 for RRU {{ hostvars[groups['faraday'][0]].rru }}
   shell: >
-    pos nodes bootparameter {{ node }} {{ (boot_parameters_benetel | default(boot_parameters_f3)) if (rru | default(hostvars[groups['faraday'][0]].rru)) == 'benetel1' else boot_parameters_f3 }}
-  when: node == groups['ran_node'][0] and (rru | default(hostvars[groups['faraday'][0]].rru)) in ['jaguar', 'benetel1'] and node in ['sopnode-f3']
+    pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
+  when: node == groups['ran_node'][0] and (boot_parameters_benetel is not defined) and (rru | default(hostvars[groups['faraday'][0]].rru)) in ['jaguar', 'benetel1'] and node in ['sopnode-f3']
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
