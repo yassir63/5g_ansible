@@ -19,12 +19,12 @@
 - name: Apply Kyverno CRDs manually
   kubernetes.core.k8s:
     state: present
-    src: /tmp/kyverno/crds/
+    src: /tmp/kyverno/kyverno/crds/
   become: true
 
 - name: Install Kyverno Helm chart (skip CRDs)
   ansible.builtin.shell: |
-    helm upgrade --install kyverno /tmp/kyverno \
+    helm upgrade --install kyverno /tmp/kyverno/kyverno \
       -n kyverno --create-namespace --wait=false --skip-crds
   args:
     executable: /bin/bash
