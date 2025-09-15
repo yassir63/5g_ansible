@@ -10,12 +10,22 @@
   args:
     executable: /bin/bash
 
-- name: Install Kyverno using Helm (no wait)
+- name: Download Kyverno chart locally
   ansible.builtin.shell: |
-    helm repo add kyverno https://kyverno.github.io/kyverno/
-    helm repo update
-    helm upgrade --install kyverno kyverno/kyverno \
-      -n kyverno --create-namespace --version 2.5.3 --wait=false
+    helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp/
+  args:
+    executable: /bin/bash
+
+- name: Apply Kyverno CRDs manually
+  kubernetes.core.k8s:
+    state: present
+    src: /tmp/kyverno/crds/
+  become: true
+
+- name: Install Kyverno Helm chart (skip CRDs)
+  ansible.builtin.shell: |
+    helm upgrade --install kyverno /tmp/kyverno \
+      -n kyverno --create-namespace --wait=false --skip-crds
   args:
     executable: /bin/bash
 
@@ -34,7 +44,7 @@
   delay: 15
   ignore_errors: yes
 
-- name: Debug Kyverno Deployment and pods if not ready
+- name: Debug Kyverno deployment and pods if not ready
   block:
     - debug:
         var: kyverno_status.resources[0].status
