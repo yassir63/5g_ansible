@@ -77,12 +77,14 @@
     api_version: apps/v1
     kind: DaemonSet
     namespace: kube-system
-    name: kube-multus-ds   # ⚠️ ensure this matches metadata.name in your YAML
+    name: kube-multus-ds
   register: multus_ds_info
   until:
     - multus_ds_info.resources | length > 0
-    - multus_ds_info.resources[0].status.desiredNumberScheduled == multus_ds_info.resources[0].status.numberAvailable
-  retries: 40   # 10 minutes
+    - multus_ds_info.resources[0].status.desiredNumberScheduled is defined
+    - multus_ds_info.resources[0].status.numberReady is defined
+    - multus_ds_info.resources[0].status.desiredNumberScheduled == multus_ds_info.resources[0].status.numberReady
+  retries: 40
   delay: 15
   become: true
 
