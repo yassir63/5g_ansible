@@ -22,24 +22,27 @@
 
 - name: Backup and remove existing Kyverno CRDs if present
   block:
+
     - name: Find existing Kyverno CRDs
       kubernetes.core.k8s_info:
         api_version: apiextensions.k8s.io/v1
         kind: CustomResourceDefinition
       register: kyverno_crds
 
-    - name: Backup and delete problematic CRDs
-      block:
-        - name: Backup CRD
-          copy:
-            content: "{{ item | to_nice_yaml }}"
-            dest: "~/kyverno-crd-backup-{{ item.metadata.name }}.yaml"
-        - name: Delete CRD
-          kubernetes.core.k8s:
-            state: absent
-            definition: "{{ item }}"
+    - name: Backup CRDs
+      copy:
+        content: "{{ item | to_nice_yaml }}"
+        dest: "~/kyverno-crd-backup-{{ item.metadata.name }}.yaml"
       loop: "{{ kyverno_crds.resources }}"
       when: "'kyverno.io' in item.metadata.name"
+
+    - name: Delete CRDs
+      kubernetes.core.k8s:
+        state: absent
+        definition: "{{ item }}"
+      loop: "{{ kyverno_crds.resources }}"
+      when: "'kyverno.io' in item.metadata.name"
+
   ignore_errors: yes
 
 - name: Download Kyverno chart locally
@@ -98,7 +101,7 @@
         var: kyverno_pods.resources
 
     - name: Fetch init container logs for Kyverno pods
-      shell: |
+      ansible.builtin.shell: |
         kubectl logs -n kyverno {{ item.metadata.name }} -c {{ c.name }} --tail=50
       loop: "{{ kyverno_pods.resources | subelements('spec.initContainers') }}"
       loop_control:
