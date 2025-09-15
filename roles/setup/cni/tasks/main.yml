@@ -18,6 +18,17 @@
     state: present
   become: true
 
+- name: Download Helm install script
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    dest: /tmp/get-helm-3
+    mode: '0755'
+
+- name: Install Helm
+  ansible.builtin.command: /tmp/get-helm-3
+  args:
+    creates: /usr/local/bin/helm
+
 - name: Apply namespace with pod-security label
   kubernetes.core.k8s:
     definition:
