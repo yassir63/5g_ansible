@@ -18,6 +18,8 @@
 - name: Download Kyverno chart locally
   ansible.builtin.shell: |
     helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp/
+    # rename folder to fixed path to avoid versioned folder issues
+    mv /tmp/kyverno/kyverno-* /tmp/kyverno/kyverno
   args:
     executable: /bin/bash
 
