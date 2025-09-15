@@ -32,8 +32,11 @@
     file_type: directory
     patterns: "kyverno*"
   register: kyverno_chart_folder
-  failed_when: kyverno_chart_folder.matched == 0
-  msg: "No Kyverno chart folder found in /tmp/kyverno. Helm pull may have failed."
+
+- name: Fail if no Kyverno chart folder found
+  ansible.builtin.fail:
+    msg: "No Kyverno chart folder found in /tmp/kyverno. Helm pull may have failed."
+  when: kyverno_chart_folder.matched == 0
 
 - name: Install Kyverno Helm chart
   ansible.builtin.shell: |
