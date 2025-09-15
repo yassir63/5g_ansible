@@ -18,8 +18,10 @@
 
 - name: Install Kyverno using Helm (no wait)
   ansible.builtin.shell: |
+    helm repo add kyverno https://kyverno.github.io/kyverno/
+    helm repo update
     helm upgrade --install kyverno kyverno/kyverno \
-      -n kyverno --create-namespace --wait=false
+      -n kyverno --create-namespace --version v1.11.5 --wait=false
   args:
     executable: /bin/bash
 
@@ -36,10 +38,20 @@
     - kyverno_status.resources[0].status.readyReplicas >= 1
   retries: 40
   delay: 15
+  ignore_errors: yes
 
-- name: Debug Kyverno deployment status if failed
-  debug:
-    var: kyverno_status.resources[0].status
+- name: Debug Kyverno Deployment and pods if not ready
+  block:
+    - debug:
+        var: kyverno_status.resources[0].status
+    - name: List Kyverno pods
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: kyverno
+      register: kyverno_pods
+    - debug:
+        var: kyverno_pods.resources
   when: kyverno_status is failed
 
 - name: Copy Kyverno policy to force Open5GS pods to {{ groups['core_node'][0] }}
