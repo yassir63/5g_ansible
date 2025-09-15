@@ -10,6 +10,11 @@
   args:
     executable: /bin/bash
 
+- name: Remove old Kyverno chart folder if it exists
+  ansible.builtin.file:
+    path: /tmp/kyverno
+    state: absent
+
 - name: Download Kyverno chart locally
   ansible.builtin.shell: |
     helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp/
