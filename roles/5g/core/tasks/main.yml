@@ -15,9 +15,14 @@
     path: /tmp/kyverno
     state: absent
 
+- name: Ensure /tmp/kyverno exists
+  ansible.builtin.file:
+    path: /tmp/kyverno
+    state: directory
+
 - name: Download Kyverno chart locally
   ansible.builtin.shell: |
-    helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp/
+    helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp/kyverno
   args:
     executable: /bin/bash
 
@@ -27,6 +32,8 @@
     file_type: directory
     patterns: "kyverno*"
   register: kyverno_chart_folder
+  failed_when: kyverno_chart_folder.matched == 0
+  msg: "No Kyverno chart folder found in /tmp/kyverno. Helm pull may have failed."
 
 - name: Install Kyverno Helm chart
   ansible.builtin.shell: |
