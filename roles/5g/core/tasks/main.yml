@@ -21,16 +21,10 @@
   args:
     executable: /bin/bash
 
-- name: Apply Kyverno CRDs manually
-  kubernetes.core.k8s:
-    state: present
-    src: /tmp/kyverno/kyverno/crds/
-  become: true
-
-- name: Install Kyverno Helm chart (skip CRDs)
+- name: Install Kyverno Helm chart (let Helm handle CRDs)
   ansible.builtin.shell: |
     helm upgrade --install kyverno /tmp/kyverno/kyverno \
-      -n kyverno --create-namespace --wait=false --skip-crds
+      -n kyverno --create-namespace --wait=false
   args:
     executable: /bin/bash
 
@@ -53,14 +47,29 @@
   block:
     - debug:
         var: kyverno_status.resources[0].status
+
     - name: List Kyverno pods
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
         namespace: kyverno
       register: kyverno_pods
+
     - debug:
         var: kyverno_pods.resources
+
+    - name: Fetch init container logs for Kyverno pods
+      shell: |
+        kubectl logs -n kyverno {{ item.metadata.name }} -c {{ c.name }} --tail=50
+      loop: "{{ kyverno_pods.resources | subelements('spec.initContainers') }}"
+      loop_control:
+        label: "{{ item.0.metadata.name }} / {{ item.1.name }}"
+      register: init_logs
+      ignore_errors: yes
+
+    - name: Display init container logs
+      debug:
+        var: init_logs.results
   when: kyverno_status is failed
 
 - name: Copy Kyverno policy to force Open5GS pods to {{ groups['core_node'][0] }}
