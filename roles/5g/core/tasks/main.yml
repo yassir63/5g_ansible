@@ -18,14 +18,19 @@
 - name: Download Kyverno chart locally
   ansible.builtin.shell: |
     helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp/
-    # rename folder to fixed path to avoid versioned folder issues
-    mv /tmp/kyverno/kyverno-* /tmp/kyverno/kyverno
   args:
     executable: /bin/bash
 
-- name: Install Kyverno Helm chart (let Helm handle CRDs)
+- name: Find actual untarred Kyverno folder
+  ansible.builtin.find:
+    paths: /tmp/kyverno
+    file_type: directory
+    patterns: "kyverno*"
+  register: kyverno_chart_folder
+
+- name: Install Kyverno Helm chart
   ansible.builtin.shell: |
-    helm upgrade --install kyverno /tmp/kyverno/kyverno \
+    helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
       -n kyverno --create-namespace --wait=false
   args:
     executable: /bin/bash
