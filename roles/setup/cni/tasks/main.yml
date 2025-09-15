@@ -72,6 +72,7 @@
     src: /root/multus-daemonset.yml
   become: true
 
+  
 - name: Wait for Multus DaemonSet to be ready
   kubernetes.core.k8s_info:
     kind: DaemonSet
