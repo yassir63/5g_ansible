@@ -1,13 +1,25 @@
-- name: Install Kubernetes apt key
-  apt_key:
-    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-    state: present
-    keyring: /usr/share/keyrings/kubernetes-archive-keyring.gpg
+#- name: Install Kubernetes apt key
+#  apt_key:
+#    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+#    state: present
+#    keyring: /usr/share/keyrings/kubernetes-archive-keyring.gpg
+#
+#- name: Add Kubernetes apt repository
+#  apt_repository:
+#    repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
+#   state: present
 
 - name: Add Kubernetes apt repository
   apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
     state: present
+    filename: kubernetes.list
+
+- name: Download Google Cloud public signing key
+  ansible.builtin.get_url:
+    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    dest: /etc/apt/keyrings/kubernetes-archive-keyring.gpg
+    mode: '0644'
 
 - name: Update apt cache
   apt:
