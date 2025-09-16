@@ -1,6 +1,6 @@
 ---
 - name: Join the node to the cluster
-  command: "{{ hostvars[groups['core_node'][0]].kubeadm_join_command }} --v=5"
+  command: "{{ hostvars[groups['core_node'][0]].kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
 
 - name: Create .kube directory on worker node
   file:
