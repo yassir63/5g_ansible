@@ -12,9 +12,10 @@ boot_parameters: >-
   nmi_watchdog=0 softlockup_panic=0 audit=0 skew_tick=1
   isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14,16
   nohz_full=0,2,4,6,8,10,12,14,16 rcu_nocbs=0,2,4,6,8,10,12,14,16 rcu_nocb_poll
-  intel_pstate=disable nosoftlockup cgroup_disable=memory mce=off
+  intel_pstate=disable nosoftlockup systemd.unified_cgroup_hierarchy=1 mce=off
   hugepagesz=1G hugepages=40 hugepagesz=2M hugepages=0 default_hugepagesz=1G
   kthread_cpus=18-35 tsc=reliable
+# cgroup_disable=memory
 boot_parameters_f3: >-
   mitigations=off usbcore.autosuspend=-1 intel_iommu=on iommu=pt selinux=0 enforcing=0
   nmi_watchdog=0 softlockup_panic=0 audit=0 skew_tick=1
