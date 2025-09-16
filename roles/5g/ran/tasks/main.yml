@@ -14,6 +14,13 @@
     line: "HOST_GNB=\"{{ ansible_hostname }}\""
     backrefs: true
 
+- name: Update TAG_OAI5G_RRU variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^TAG_OAI5G_RRU='
+    line: "TAG_OAIG_RRU=\"{{ tag_oai5g_rru }}\""
+    backrefs: true
+
 - name: Update LOCAL_INTERFACE variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
