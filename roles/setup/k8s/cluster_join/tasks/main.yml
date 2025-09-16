@@ -25,7 +25,6 @@
         owner: root
         group: root
         mode: 0644
-      notify: Restart kubelet
 
     - name: Ensure kubelet systemd drop-in directory exists
       file:
@@ -38,21 +37,18 @@
         path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
         regexp: '--cgroup-driver='
         state: absent
-      notify: Restart kubelet
 
     - name: Reload systemd daemon
       command: systemctl daemon-reload
       become: true
-      notify: Restart kubelet
+
+    - name: Restart kubelet immediately
+      systemd:
+        name: kubelet
+        state: restarted
+        enabled: true
 
   when: cgroup_fs_type.stdout == "cgroup2fs"
-
-handlers:
-  - name: Restart kubelet
-    systemd:
-      name: kubelet
-      state: restarted
-      enabled: true
 
 - name: Join the node to the cluster
   command: "{{ hostvars[groups['core_node'][0]].kubeadm_join_command }} --v=5"
