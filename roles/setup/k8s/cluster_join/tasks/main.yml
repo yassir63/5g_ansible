@@ -43,15 +43,17 @@
     - name: Reload systemd daemon
       command: systemctl daemon-reload
       become: true
+      notify: Restart kubelet
 
   when: cgroup_fs_type.stdout == "cgroup2fs"
 
-- name: Restart kubelet
-  systemd:
-    name: kubelet
-    state: restarted
-    enabled: true
-  listen: Restart kubelet
+# Handlers
+handlers:
+  - name: Restart kubelet
+    systemd:
+      name: kubelet
+      state: restarted
+      enabled: true
 
 - name: Join the node to the cluster
   command: "{{ hostvars[groups['core_node'][0]].kubeadm_join_command }} --v=5"
