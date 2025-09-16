@@ -47,7 +47,6 @@
 
   when: cgroup_fs_type.stdout == "cgroup2fs"
 
-# Handlers
 handlers:
   - name: Restart kubelet
     systemd:
