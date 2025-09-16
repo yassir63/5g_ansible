@@ -36,6 +36,17 @@
   register: ran_script
   changed_when: "'OAI5G charts are now configured' in ran_script.stdout"
 
+- name: Download Helm install script
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    dest: /tmp/get-helm-3
+    mode: '0755'
+
+- name: Install Helm
+  ansible.builtin.command: /tmp/get-helm-3
+  args:
+    creates: /usr/local/bin/helm
+
 - name: Install OAI FlexRIC chart using Helm
   kubernetes.core.helm:
     name: oai-flexric
