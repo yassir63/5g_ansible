@@ -192,25 +192,29 @@
   args:
     executable: /bin/bash
 
+- name: Set MongoDB build directory
+  ansible.builtin.set_fact:
+    build_dir: "/tmp/mongo_build"
+
 - name: Create build directories
   file:
     path: "{{ item }}"
     state: directory
     mode: '0755'
   loop:
-    - /tmp/mongo_build
-    - /tmp/mongo_build/mongo_install
+    - "{{ build_dir }}"
+    - "{{ build_dir }}/mongo_install"
 
 - name: Clone MongoDB source
   git:
     repo: https://github.com/mongodb/mongo.git
-    dest: /tmp/mongo_build/mongo
+    dest: "{{ build_dir }}/mongo"
     version: r4.4.4
     force: yes
 
 - name: Compile MongoDB binaries
   ansible.builtin.shell: |
-    cd /tmp/mongo_build/mongo
+    cd {{ build_dir }}/mongo
     python3 buildscripts/scons.py install --ssl DESTDIR={{ build_dir }}/mongo_install PREFIX=/usr/local
   args:
     executable: /bin/bash
