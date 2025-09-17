@@ -158,13 +158,6 @@
     state: present
 
 # tasks/main.yml of your role
-
-- name: Set MongoDB build variables
-  set_fact:
-    mongo_version: "r4.4.4"
-    mongo_image_name: "custom/mongodb:4.4.4-debian-10-r0"
-    build_dir: "/tmp/mongo_build"
-
 - name: Install build dependencies
   apt:
     name:
@@ -183,28 +176,26 @@
       - libboost-program-options-dev
       - libboost-system-dev
       - libboost-thread-dev
-      - docker.io
+      - podman
     state: present
     update_cache: yes
-  become: true
 
 - name: Create build directory
   file:
-    path: "{{ build_dir }}"
+    path: /tmp/mongo_build
     state: directory
     mode: '0755'
-  become: true
 
 - name: Clone MongoDB source
   git:
     repo: https://github.com/mongodb/mongo.git
-    dest: "{{ build_dir }}/mongo"
-    version: "{{ mongo_version }}"
+    dest: /tmp/mongo_build/mongo
+    version: r4.4.4
     force: yes
 
 - name: Create Dockerfile for MongoDB build
   copy:
-    dest: "{{ build_dir }}/Dockerfile"
+    dest: /tmp/mongo_build/Dockerfile
     content: |
       FROM debian:10
       RUN apt-get update && apt-get install -y \
@@ -220,32 +211,33 @@
       ENV PATH="/usr/src/mongo/src:${PATH}"
       CMD ["mongod"]
 
-- name: Build MongoDB Docker image
-  community.docker.docker_image:
+- name: Build MongoDB Docker image using Podman
+  community.general.podman_image:
     build:
-      path: "{{ build_dir }}"
-    name: "{{ mongo_image_name }}"
+      path: /tmp/mongo_build
+    name: custom/mongodb:4.4.4-debian-10-r0
     tag: latest
-  become: true
 
-- name: Load MongoDB image into containerd (if needed)
-  ansible.builtin.shell: |
-    ctr -n k8s.io images import "{{ build_dir }}/mongodb_4.4.4_r0.tar" || true
-  become: true
-  changed_when: false
-  ignore_errors: true
+- name: Save MongoDB image to tarball
+  community.general.podman_image:
+    name: custom/mongodb:4.4.4-debian-10-r0
+    save: /tmp/mongodb_4.4.4_r0.tar
 
-- name: Verify MongoDB image is present
-  ansible.builtin.shell: |
-    crictl -r unix:///run/containerd/containerd.sock images | grep "{{ mongo_image_name }}"
+- name: Import MongoDB image into containerd
+  ansible.builtin.shell: crictl -r unix:///run/containerd/containerd.sock images import /tmp/mongodb_4.4.4_r0.tar
+  register: mongo_image_import
+  changed_when: true
+
+- name: Verify MongoDB image is loaded
+  ansible.builtin.shell: crictl -r unix:///run/containerd/containerd.sock images | grep custom/mongodb:4.4.4-debian-10-r0
   register: mongo_image_check
   failed_when: mongo_image_check.stdout == ""
   changed_when: false
 
 - name: Apply MongoDB with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n "{{ open5gs_ns }}"
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ open5gs_ns }}
   environment:
-    IMAGE_MONGODB: "{{ mongo_image_name }}"
+    IMAGE_MONGODB: "custom/mongodb:4.4.4-debian-10-r0"
 
 - name: Wait for MongoDB pod to be Ready
   kubernetes.core.k8s_info:
