@@ -179,6 +179,11 @@
     state: present
     update_cache: yes
 
+- name: Ensure Python psutil module is installed
+  pip:
+    name: psutil
+    executable: python3
+
 - name: Create build directories
   file:
     path: "{{ item }}"
