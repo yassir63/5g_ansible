@@ -32,7 +32,7 @@
   ansible.builtin.lineinfile:
     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
     regexp: '^TAG_OAI5G_RRU='
-    line: "TAG_OAIG_RRU=\"{{ tag_oai5g_rru }}\""
+    line: "TAG_OAI5G_RRU=\"{{ tag_oai5g_rru }}\""
     backrefs: true
 
 - name: Update REPO_OAI_CN5G_FED variable in prepare-demo-oai.sh
