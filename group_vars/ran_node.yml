@@ -49,7 +49,7 @@ boot_parameters_benetel: >-
   isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14,16
   nohz_full=0,2,4,6,8,10,12,14,16 rcu_nocbs=0,2,4,6,8,10,12,14,16 rcu_nocb_poll
   intel_pstate=disable nosoftlockup cgroup_disable=memory mce=off
-  hugepagesz=1G hugepages=40 hugepagesz=2M hugepages=0 default_hugepagesz=1G
+  hugepagesz=1G hugepages=40 hugepagesz=2M default_hugepagesz=1G
   isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14 kthread_cpus=18-35
   intel_pstate=disable nosoftlockup tsc=reliable
 
