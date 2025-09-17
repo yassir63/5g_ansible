@@ -158,28 +158,6 @@
     state: present
 
 # tasks/main.yml of your role
-- name: Install build dependencies
-  apt:
-    name:
-      - build-essential
-      - scons
-      - libssl-dev
-      - libcurl4-openssl-dev
-      - liblzma-dev
-      - python3
-      - python3-pip
-      - git
-      - pkg-config
-      - libsnappy-dev
-      - zlib1g-dev
-      - libboost-filesystem-dev
-      - libboost-program-options-dev
-      - libboost-system-dev
-      - libboost-thread-dev
-      - podman
-    state: present
-    update_cache: yes
-
 - name: Create build directory
   file:
     path: /tmp/mongo_build
@@ -211,17 +189,15 @@
       ENV PATH="/usr/src/mongo/src:${PATH}"
       CMD ["mongod"]
 
-- name: Build MongoDB Docker image using Podman
-  community.general.podman_image:
-    build:
-      path: /tmp/mongo_build
-    name: custom/mongodb:4.4.4-debian-10-r0
-    tag: latest
+- name: Build MongoDB Docker image with docker
+  ansible.builtin.shell: |
+    docker build -t custom/mongodb:4.4.4-debian-10-r0 /tmp/mongo_build
+  register: mongo_image_build
+  changed_when: true
 
 - name: Save MongoDB image to tarball
-  community.general.podman_image:
-    name: custom/mongodb:4.4.4-debian-10-r0
-    save: /tmp/mongodb_4.4.4_r0.tar
+  ansible.builtin.shell: docker save custom/mongodb:4.4.4-debian-10-r0 -o /tmp/mongodb_4.4.4_r0.tar
+  changed_when: true
 
 - name: Import MongoDB image into containerd
   ansible.builtin.shell: crictl -r unix:///run/containerd/containerd.sock images import /tmp/mongodb_4.4.4_r0.tar
