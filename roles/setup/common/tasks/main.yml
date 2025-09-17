@@ -2,7 +2,7 @@
 - name: Ensure required apt packages are installed
   apt:
     name:
-      - vim
+      - emacs
       - tmux
       - git
       - curl
