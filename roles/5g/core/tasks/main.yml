@@ -171,9 +171,13 @@
       args:
         executable: /bin/bash
 
+    - name: Move tarball to root-owned path
+      command: mv /tmp/mongodb_4.4.4_r0.tar /root/mongodb_4.4.4_r0.tar
+      become: true
+
     - name: Import MongoDB image into containerd
       ansible.builtin.shell: |
-        ctr -n k8s.io images import /tmp/mongodb_4.4.4_r0.tar
+        ctr -n k8s.io images import /root/mongodb_4.4.4_r0.tar
       args:
         executable: /bin/bash
       become: true
