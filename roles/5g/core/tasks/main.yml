@@ -165,7 +165,9 @@
       - python3
       - python3-pip
       - git
+      - pkg-config
       - scons
+      - libssl1.1
       - libssl-dev
       - libcurl4-openssl-dev
       - liblzma-dev
