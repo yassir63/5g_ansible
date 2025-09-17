@@ -179,10 +179,10 @@
     state: present
     update_cache: yes
 
-- name: Ensure Python psutil module is installed
-  pip:
+- name: Install Python psutil module for MongoDB build
+  ansible.builtin.pip:
     name: psutil
-    executable: python3
+    executable: /usr/bin/python3
 
 - name: Create build directories
   file:
