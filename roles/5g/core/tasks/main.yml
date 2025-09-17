@@ -209,10 +209,11 @@
     force: yes
 
 - name: Compile MongoDB binaries
-  shell: |
-    python3 buildscripts/scons.py install --prefix=/tmp/mongo_build/mongo_install --ssl
+  ansible.builtin.shell: |
+    cd /tmp/mongo_build/mongo
+    python3 buildscripts/scons.py install --ssl DESTDIR={{ build_dir }}/mongo_install PREFIX=/usr/local
   args:
-    chdir: /tmp/mongo_build/mongo
+    executable: /bin/bash
 
 - name: Prepare minimal rootfs for MongoDB container
   shell: |
