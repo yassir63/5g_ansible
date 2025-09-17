@@ -21,6 +21,27 @@
     line: "TAG_OAIG_RRU=\"{{ tag_oai5g_rru }}\""
     backrefs: true
 
+- name: Update REPO_OAI5G_RRU variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^REPO_OAI5G_RRU='
+    line: "REPO_OAI5G_RRU=\"{{ repo_oai5g_rru }}\""
+    backrefs: true
+
+- name: Update TAG_OAI5G_RRU variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^TAG_OAI5G_RRU='
+    line: "TAG_OAIG_RRU=\"{{ tag_oai5g_rru }}\""
+    backrefs: true
+
+- name: Update REPO_OAI_CN5G_FED variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^REPO_OAI_CN5G_FED='
+    line: "REPO_OAI_CN5G_FED=\"{{ repo_oai_cn5g_fed }}\""
+    backrefs: true
+
 - name: Update LOCAL_INTERFACE variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
