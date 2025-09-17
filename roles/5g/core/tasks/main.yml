@@ -161,7 +161,7 @@
   block:
     - name: Copy gzipped MongoDB image tarball to target
       copy:
-        src: {{ playbook_dir }}/../images/mongodb_4.4.4_r0.tar.gz
+        src: {{ playbook_dir | dirname }}/images/mongodb_4.4.4_r0.tar.gz
         dest: /tmp/mongodb_4.4.4_r0.tar.gz
         mode: '0644'
 
