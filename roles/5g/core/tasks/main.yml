@@ -158,7 +158,6 @@
     state: present
 
 - name: Build MongoDB 4.4.4 Docker image
-  hosts: all
   become: true
   vars:
     mongo_version: "r4.4.4"
