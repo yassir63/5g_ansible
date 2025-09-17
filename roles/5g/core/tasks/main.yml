@@ -157,6 +157,37 @@
     name: "{{ open5gs_ns }}"
     state: present
 
+- name: Load MongoDB 4.4.4 image into containerd
+  block:
+    - name: Copy gzipped MongoDB image tarball to target
+      copy:
+        src: {{ playbook_dir }}/images/mongodb_4.4.4_r0.tar.gz
+        dest: /tmp/mongodb_4.4.4_r0.tar.gz
+        mode: '0644'
+
+    - name: Decompress MongoDB image tarball
+      ansible.builtin.shell: |
+        gunzip -c /tmp/mongodb_4.4.4_r0.tar.gz > /tmp/mongodb_4.4.4_r0.tar
+      args:
+        executable: /bin/bash
+
+    - name: Import MongoDB image into containerd
+      ansible.builtin.shell: |
+        ctr -n k8s.io images import /tmp/mongodb_4.4.4_r0.tar
+      args:
+        executable: /bin/bash
+
+    - name: Remove temporary decompressed tar
+      file:
+        path: /tmp/mongodb_4.4.4_r0.tar
+        state: absent
+
+    - name: Verify image is loaded
+      ansible.builtin.shell: |
+        crictl -r unix:///run/containerd/containerd.sock images | grep bitnami/mongodb:4.4.4
+      register: mongo_image_check
+      changed_when: false
+
 - name: Apply MongoDB with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ open5gs_ns }}
 
