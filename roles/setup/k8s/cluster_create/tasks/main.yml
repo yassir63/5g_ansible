@@ -40,6 +40,9 @@
   register: join_command
   changed_when: false
 
-- name: Set join command as fact on master host
+- name: Set join command as fact on master host and worker nodes
   set_fact:
     kubeadm_join_command: "{{ join_command.stdout }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  with_items: "{{ groups['k8s_workers'] }}"

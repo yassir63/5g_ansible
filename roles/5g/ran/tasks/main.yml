@@ -28,11 +28,11 @@
     line: "REPO_OAI5G_RRU=\"{{ repo_oai5g_rru }}\""
     backrefs: true
 
-- name: Update TAG_OAI5G_RRU variable in prepare-demo-oai.sh
+- name: Update TAG_OAI_CN5G_FED variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
-    regexp: '^TAG_OAI5G_RRU='
-    line: "TAG_OAI5G_RRU=\"{{ tag_oai5g_rru }}\""
+    regexp: '^TAG_OAI_CN5G_FED='
+    line: "TAG_OAI_CN5G_FED=\"{{ tag_oai_cn5g_fed }}\""
     backrefs: true
 
 - name: Update REPO_OAI_CN5G_FED variable in prepare-demo-oai.sh
