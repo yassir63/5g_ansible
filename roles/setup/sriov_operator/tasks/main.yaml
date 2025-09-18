@@ -1,0 +1,46 @@
+- name: Create SR-IOV operator namespace
+  kubernetes.core.k8s:
+    state: present
+    api_version: v1
+    kind: Namespace
+    name: "{{ sriov_namespace }}"
+
+- name: Apply SR-IOV CRDs
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ sriov_operator_repo }}/config/crd/bases"
+
+- name: Deploy SR-IOV operator components
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ sriov_operator_repo }}/deploy"
+    namespace: "{{ sriov_namespace }}"
+
+- name: Wait for SR-IOV operator to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: "{{ sriov_namespace }}"
+    name: sriov-network-operator
+  register: sriov_deploy
+  until: sriov_deploy.resources | length > 0 and
+         sriov_deploy.resources[0].status.availableReplicas is defined and
+         sriov_deploy.resources[0].status.availableReplicas | int >= 1
+  retries: 30
+  delay: 10
+
+## Example policy (optional)
+#- name: Apply example SriovNetworkNodePolicy
+#  kubernetes.core.k8s:
+#    state: present
+#    definition:
+#      apiVersion: sriovnetwork.openshift.io/v1
+#      kind: SriovNetworkNodePolicy
+#      metadata:
+#        name: "{{ sriov_node_policy.name }}"
+#        namespace: "{{ sriov_namespace }}"
+#      spec:
+#        resourceName: "{{ sriov_node_policy.resourceName }}"
+#        nodeSelector: "{{ sriov_node_policy.nodeSelector }}"
+#        numVfs: "{{ sriov_node_policy.numVfs }}"
+#        nicSelector:
+#          vendor: "{{ sriov_node_policy.nicVendor }}"
