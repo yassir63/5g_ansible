@@ -1,5 +1,15 @@
 ---
 # Debian/Ubuntu
+- name: Force remove any Docker repo definitions (Debian/Ubuntu)
+  shell: |
+    rm -f /etc/apt/sources.list.d/docker.list
+    rm -f /etc/apt/sources.list.d/docker.repo
+    rm -f /etc/apt/sources.list.d/*docker*
+    rm -f /etc/apt/trusted.gpg.d/docker.gpg
+    rm -f /etc/apt/keyrings/docker.asc
+  become: true
+  when: ansible_facts['os_family'] == 'Debian'
+
 - name: Install prerequisites (Debian/Ubuntu)
   apt:
     name:
@@ -43,25 +53,7 @@
     state: present
     update_cache: yes
   become: true
-  when: ansible_facts.os_family == 'Debian'   
-
-
-#- name: Add Docker repo (Debian/Ubuntu)
-#  copy:
-#    dest: /etc/apt/sources.list.d/docker.list
-#    content: |
-#      deb [arch={{ ansible_facts['architecture'] }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }} {{ ansible_facts['distribution_#release'] }} stable
-#    mode: '0644'
-#  become: true
-#  when: ansible_facts['os_family'] == 'Debian'
-
-#- name: Install containerd (Debian/Ubuntu)
-#  apt:
-#    name: containerd.io
-#    state: present
-#    update_cache: yes
-#  become: true
-#  when: ansible_facts['os_family'] == 'Debian'
+  when: ansible_facts.os_family == 'Debian'
 
 # RHEL/CentOS/Alma/Rocky
 - name: Install prerequisites (RHEL family)
