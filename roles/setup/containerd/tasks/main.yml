@@ -12,19 +12,24 @@
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Remove old Docker repository definitions
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /etc/apt/sources.list.d/docker.list
-    - /etc/apt/sources.list.d/docker.repo
-    - /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+- name: Ensure apt keyrings directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Remove legacy Docker keys
-  ansible.builtin.file:
+- name: Remove all Docker APT sources to avoid conflicts
+  lineinfile:
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
+    regexp: '^deb.*download\.docker\.com/linux/ubuntu'
+  become: true
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Remove legacy Docker key(s)
+  file:
     path: "{{ item }}"
     state: absent
   loop:
@@ -33,9 +38,8 @@
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Add Docker GPG key (Debian/Ubuntu)
+- name: Add Docker GPG key
   ansible.builtin.shell: |
-    install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg \
       | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
@@ -44,57 +48,27 @@
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Add Docker APT repository (Debian/Ubuntu)
-  ansible.builtin.apt_repository:
+- name: Add Docker APT repository (clean)
+  apt_repository:
     repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
     state: present
     filename: docker
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Show Docker-related sources after cleanup
-  ansible.builtin.shell: grep -R "docker" /etc/apt/sources.list.d/ || true
-  register: docker_sources
-  changed_when: false
-  when: ansible_facts['os_family'] == 'Debian'
-
-- name: Debug Docker sources
-  debug:
-    msg: "{{ docker_sources.stdout_lines }}"
-  when: ansible_facts['os_family'] == 'Debian'
-
-- name: Update APT cache (Debian/Ubuntu)
+- name: Update APT cache
   apt:
     update_cache: yes
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-# RHEL/CentOS/Alma/Rocky
-- name: Install prerequisites (RHEL family)
-  yum:
-    name:
-      - dnf-plugins-core
-      - curl
-      - ca-certificates
-    state: present
-  become: true
-  when: ansible_facts['os_family'] == 'RedHat'
-
-- name: Add Docker repo (RHEL family)
-  command: dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-  args:
-    creates: /etc/yum.repos.d/docker-ce.repo
-  become: true
-  when: ansible_facts['os_family'] == 'RedHat'
-
-- name: Install containerd (RHEL family)
-  yum:
+- name: Install containerd (Debian/Ubuntu)
+  apt:
     name: containerd.io
     state: present
   become: true
-  when: ansible_facts['os_family'] == 'RedHat'
+  when: ansible_facts['os_family'] == 'Debian'
 
-# Common setup (both families)
 - name: Create /etc/containerd directory
   file:
     path: /etc/containerd
@@ -133,3 +107,13 @@
     enabled: yes
     state: restarted
   become: true
+
+- name: Debug Docker sources (after cleanup)
+  shell: grep -R "docker" /etc/apt/sources.list.d/ || true
+  register: docker_sources
+  changed_when: false
+  when: ansible_facts['os_family'] == 'Debian'
+
+- debug:
+    msg: "{{ docker_sources.stdout_lines }}"
+  when: ansible_facts['os_family'] == 'Debian'
