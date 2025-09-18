@@ -2,7 +2,7 @@
 sriov_namespace: sriov-network-operator
 
 # Repo branch or tag to install from
-sriov_operator_repo: "https://raw.githubusercontent.com/k8snetworkplumbingwg/sriov-network-operator/master"
+sriov_operator_repo: "github.com/k8snetworkplumbingwg/sriov-network-operator" #"https://raw.githubusercontent.com/k8snetworkplumbingwg/sriov-network-operator/master"
 
 # Example SR-IOV node policy
 sriov_node_policy:
