@@ -5,68 +5,29 @@
 - name: (POS) Allocate {{ node }} 
   shell: pos allocations allocate "{{ node }}"
 
-- name: (POS) Load ran_node group vars if present
-  ansible.builtin.include_vars:
-    file: "{{ item }}"
-    name: ran_node_vars
-  with_first_found:
-    - "{{ playbook_dir | dirname }}/group_vars/ran_node.yml"
-    - "{{ playbook_dir }}/../group_vars/ran_node.yml"
-  ignore_errors: true
-  failed_when: false
-
-- name: (POS) Resolve POS image variables for {{ node }}
-  ansible.builtin.set_fact:
-    resolved_pos_image_user: "{{ hostvars[node].pos_image_user | default(pos_image_user, true) | default(ran_node_vars.pos_image_user if (ran_node_vars is defined and ran_node_vars.pos_image_user is defined) else '', true) }}"
-    resolved_pos_image: "{{ hostvars[node].pos_image | default(pos_image, true) | default(ran_node_vars.pos_image if (ran_node_vars is defined and ran_node_vars.pos_image is defined) else pos_image_default, true) }}"
-
-- name: (POS) Auto-set Benetel boot parameters when rru=benetel1
-  ansible.builtin.set_fact:
-    boot_parameters_benetel: >-
-      mitigations=off usbcore.autosuspend=-1 intel_iommu=on iommu=pt selinux=0 enforcing=0
-      nmi_watchdog=0 softlockup_panic=0 audit=0 skew_tick=1
-      isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14,16
-      nohz_full=0,2,4,6,8,10,12,14,16 rcu_nocbs=0,2,4,6,8,10,12,14,16 rcu_nocb_poll
-      intel_pstate=disable nosoftlockup systemd.unified_cgroup_hierarchy=1 mce=off
-      hugepagesz=1G hugepages=40 hugepagesz=2M default_hugepagesz=1G
-      isolcpus=managed_irq,domain,0,2,4,6,8,10,12,14 kthread_cpus=18-35
-      intel_pstate=disable nosoftlockup tsc=reliable
-  when:
-    - boot_parameters_benetel is not defined
-    - (rru | default(hostvars[groups['faraday'][0]].rru)) == 'benetel1'
-
-- name: (POS) Compute imaging command for {{ node }}
+- name: Set POS image command for {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
-      {{
-        (
-          'pos node image --user ' ~ resolved_pos_image_user ~ ' ' ~ node ~ ' ' ~ resolved_pos_image
-        )
-        if (resolved_pos_image_user is defined and (resolved_pos_image_user | length) > 0)
-        else (
-          'pos nodes image --staging ' ~ node ~ ' ' ~ resolved_pos_image
-        )
-      }}
+      {% if node == groups['ran_node'][0]
+         and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
+      pos nodes image --user {{ pos_image_user }} {{ node }} {{ pos_rt_image }}
+      {% else %}
+      pos nodes image --staging {{ node }} {{ pos_image }}
+      {% endif %}
 
-- name: (POS) Show imaging command
-  ansible.builtin.debug:
-    msg: "{{ pos_image_cmd }}"
+- name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
+  ansible.builtin.shell: "{{ pos_image_cmd }}"
 
-- name: (POS) Flash image to {{ node }}
-  shell: "{{ pos_image_cmd }}"
-
-- name: (POS) Set boot parameters for Benetel scenario when provided
-  shell: >
-    pos nodes bootparameter {{ node }} {{ boot_parameters_benetel }}
-  when: node == groups['ran_node'][0] and (boot_parameters_benetel is defined)
-
-- name: (POS) Set boot parameters for Jaguar scenario
-  shell: >
-    pos nodes bootparameter {{ node }} {{ (boot_parameters if node in ['sopnode-f1','sopnode-f2'] else boot_parameters_f3) }}
-  when:
-    - node == groups['ran_node'][0]
-    - boot_parameters_benetel is not defined
-    - (rru | default(hostvars[groups['faraday'][0]].rru)) == 'jaguar'
+- name: (POS) Set boot parameters on node {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
+  ansible.builtin.shell: >-
+    {% if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
+    pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
+    {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
+    pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
+    {% else %}
+    pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
+    {% endif %}
+  when: node == groups['ran_node'][0]
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
