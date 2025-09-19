@@ -5,6 +5,7 @@
     src: "./kubeadm_join_command.txt"
   delegate_to: localhost
   run_once: true
+  become: false     # <— prevent sudo on localhost
   register: join_file
 
 - name: Set kubeadm join command fact for all nodes
