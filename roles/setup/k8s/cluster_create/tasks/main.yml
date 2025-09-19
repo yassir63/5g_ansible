@@ -42,8 +42,7 @@
   delegate_to: "{{ groups['core_node'][0] }}"
 
 - name: Save join command as fact on master
-  set_fact:
+  add_host:
+    name: "{{ groups['core_node'][0] }}"
     kubeadm_join_command: "{{ join_command.stdout }}"
-  delegate_to: "{{ groups['core_node'][0] }}"
-  delegate_facts: true
   run_once: true
