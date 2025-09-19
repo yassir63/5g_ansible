@@ -1,13 +1,12 @@
 ---
-# Ensure we always have the join command, even on restart
 - name: Read kubeadm join command from file
   slurp:
     src: "./kubeadm_join_command.txt"
   delegate_to: localhost
   run_once: true
-  become: false     # <— prevent sudo on localhost
   register: join_file
-
+  become: false
+  
 - name: Set kubeadm join command fact for all nodes
   set_fact:
     kubeadm_join_command: "{{ join_file['content'] | b64decode | trim }}"

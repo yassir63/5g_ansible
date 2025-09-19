@@ -34,28 +34,15 @@
   register: taint_out
   failed_when: false
 
-# Run once, on the master
-- name: Extract kubeadm join command
-  command: kubeadm token create --print-join-command
+- name: Extract kubeadm join command on master
+  shell: kubeadm token create --print-join-command
   register: join_command
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
 
-- name: Save join command to controller
+- name: Save kubeadm join command to file on control node
   copy:
     dest: "./kubeadm_join_command.txt"
-    content: "{{ join_command.stdout }}"
+    content: "{{ join_command.stdout | trim }}"
   delegate_to: localhost
   run_once: true
-
-# Make sure all hosts can load it
-- name: Read join command from file
-  slurp:
-    src: "./kubeadm_join_command.txt"
-  delegate_to: localhost
-  run_once: true
-  register: join_file
-
-- name: Set join command fact for all nodes
-  set_fact:
-    kubeadm_join_command: "{{ join_file['content'] | b64decode | trim }}"
