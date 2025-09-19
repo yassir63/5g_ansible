@@ -34,15 +34,17 @@
   register: taint_out
   failed_when: false
 
-- name: Extract kubeadm join command on master
+# on master, generate the join command
+- name: Generate kubeadm join command
   shell: kubeadm token create --print-join-command
   register: join_command
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
 
-- name: Save kubeadm join command to file on control node
+# save it to a file on the control node
+- name: Save join command to control node
   copy:
-    dest: "/tmp/kubeadm_join_command.txt"
-    content: "{{ join_command.stdout | trim }}"
+    content: "{{ join_command.stdout }}"
+    dest: /tmp/kubeadm_join_command.txt
   delegate_to: localhost
   run_once: true

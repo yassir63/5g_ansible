@@ -1,15 +1,9 @@
 ---
-- name: Read kubeadm join command from file
-  slurp:
-    src: "/tmp/kubeadm_join_command.txt"
-  delegate_to: localhost
-  run_once: true
-  register: join_file
-  become: false
-  
-- name: Set kubeadm join command fact for all nodes
+- name: Read join command
   set_fact:
-    kubeadm_join_command: "{{ join_file['content'] | b64decode | trim }}"
+    kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
+  run_once: true
+  delegate_to: "{{ inventory_hostname }}"
 
 - name: Join the node to the cluster
   command: "{{ hostvars[groups['core_node'][0]].kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
