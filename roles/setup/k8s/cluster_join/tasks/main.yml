@@ -1,4 +1,16 @@
 ---
+# Ensure we always have the join command, even on restart
+- name: Read kubeadm join command from file
+  slurp:
+    src: "./kubeadm_join_command.txt"
+  delegate_to: localhost
+  run_once: true
+  register: join_file
+
+- name: Set kubeadm join command fact for all nodes
+  set_fact:
+    kubeadm_join_command: "{{ join_file['content'] | b64decode | trim }}"
+
 - name: Join the node to the cluster
   command: "{{ hostvars[groups['core_node'][0]].kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
 
