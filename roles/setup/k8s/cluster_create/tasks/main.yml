@@ -38,11 +38,12 @@
   shell: |
     kubeadm token create --print-join-command
   register: join_command
-  changed_when: false
+  run_once: true
+  delegate_to: "{{ groups['k8s_masters'][0] }}"
 
-- name: Set join command as fact on master host and worker nodes
+- name: Set kubeadm_join_command fact for all hosts
   set_fact:
     kubeadm_join_command: "{{ join_command.stdout }}"
-  delegate_to: "{{ item }}"
+  run_once: true
+  delegate_to: localhost
   delegate_facts: true
-  with_items: "{{ groups['k8s_workers'] }}"
