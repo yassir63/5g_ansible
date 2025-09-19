@@ -43,3 +43,10 @@
 - name: Set join command as fact on master host
   set_fact:
     kubeadm_join_command: "{{ join_command.stdout }}"
+
+- name: Save join command as fact on master
+  set_fact:
+    kubeadm_join_command: "{{ join_command.stdout }}"
+  delegate_to: "{{ groups['core_node'][0] }}"
+  delegate_facts: true
+  run_once: true
