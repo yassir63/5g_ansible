@@ -42,7 +42,7 @@
 
 - name: Save kubeadm join command to file on control node
   copy:
-    dest: "./kubeadm_join_command.txt"
+    dest: "/tmp/kubeadm_join_command.txt"
     content: "{{ join_command.stdout | trim }}"
   delegate_to: localhost
   run_once: true
