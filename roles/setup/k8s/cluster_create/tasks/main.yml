@@ -38,12 +38,8 @@
   shell: |
     kubeadm token create --print-join-command
   register: join_command
-  run_once: true
-  delegate_to: "{{ groups['core_node'][0] }}"
+  changed_when: false
 
-- name: Set kubeadm_join_command fact for all hosts
+- name: Set join command as fact on master host
   set_fact:
     kubeadm_join_command: "{{ join_command.stdout }}"
-  run_once: true
-  delegate_to: localhost
-  delegate_facts: true
