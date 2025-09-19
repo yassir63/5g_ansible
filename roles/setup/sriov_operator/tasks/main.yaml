@@ -1,92 +1,64 @@
 ---
----
-- name: Install SR-IOV CNI Plugin and Deploy Device Plugin
-  hosts: k8s_nodes
-  become: true
-  vars:
-    sriov_cni_version: "v0.11.0"
-    sriov_device_plugin_version: "v0.11.0"
-    sriov_cni_url: "https://github.com/k8snetworkplumbingwg/sriov-cni/releases/download/{{ sriov_cni_version }}/sriov-cni-linux-amd64"
-    sriov_cni_bin_dir: "/opt/cni/bin"
-    kube_config_dir: "/etc/cni/net.d"
-    kube_system_namespace: "kube-system"
+- name: Deploy SR-IOV Network Operator via OLM
+  block:
+    # 1. Install OLM CRDs and components
+    - name: Install OLM CRDs
+      kubernetes.core.k8s:
+        state: present
+        src: "https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.28.0/crds.yaml"
 
-  tasks:
-    - name: Create CNI bin directory if not exists
-      file:
-        path: "{{ sriov_cni_bin_dir }}"
-        state: directory
-        mode: '0755'
+    - name: Install OLM components
+      kubernetes.core.k8s:
+        state: present
+        src: "https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.28.0/olm.yaml"
 
-    - name: Download SR-IOV CNI binary
-      get_url:
-        url: "{{ sriov_cni_url }}"
-        dest: "{{ sriov_cni_bin_dir }}/sriov"
-        mode: '0755'
-        force: yes
-      when: ansible_architecture == "x86_64"
+    # 2. Wait for OperatorGroup CRD
+    - name: Wait for OperatorGroup CRD to be available
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: operatorgroups.operators.coreos.com
+      register: crd_status
+      until: crd_status.resources | length > 0
+      retries: 20
+      delay: 10
 
-    - name: Verify SR-IOV CNI binary is present
-      stat:
-        path: "{{ sriov_cni_bin_dir }}/sriov"
-      register: sriov_binary
-    - assert:
-        that:
-          - sriov_binary.stat.exists
-        fail_msg: "SR-IOV CNI binary was not installed correctly."
-
-    - name: Confirm Multus CNI is installed (prerequisite)
-      stat:
-        path: "{{ sriov_cni_bin_dir }}/multus"
-      register: multus_binary
-    - assert:
-        that:
-          - multus_binary.stat.exists
-        fail_msg: "Multus CNI not found. Install Multus before SR-IOV."
-
-    # Deploy SR-IOV Device Plugin via Kubernetes DaemonSet (only on control plane or via kubectl node)
-    - name: Deploy SR-IOV Device Plugin using kubectl (run once from control plane)
-      k8s:
+    # 3. Create SR-IOV Operator namespace
+    - name: Ensure SR-IOV namespace exists
+      kubernetes.core.k8s:
         state: present
         definition:
-          apiVersion: apps/v1
-          kind: DaemonSet
+          apiVersion: v1
+          kind: Namespace
           metadata:
-            name: sriov-device-plugin
-            namespace: "{{ kube_system_namespace }}"
-            labels:
-              app: sriov-device-plugin
-          spec:
-            selector:
-              matchLabels:
-                app: sriov-device-plugin
-            template:
-              metadata:
-                labels:
-                  app: sriov-device-plugin
-              spec:
-                containers:
-                - name: sriovdp
-                  image: "ghcr.io/k8snetworkplumbingwg/sriov-network-device-plugin:{{ sriov_device_plugin_version }}"
-                  securityContext:
-                    privileged: true
-                  env:
-                  - name: "SRIOV_NODE_NAME"
-                    valueFrom:
-                      fieldRef:
-                        fieldPath: spec.nodeName
-                  volumeMounts:
-                  - name: device-plugin
-                    mountPath: /var/lib/kubelet/device-plugins
-                volumes:
-                - name: device-plugin
-                  hostPath:
-                    path: /var/lib/kubelet/device-plugins
-                tolerations:
-                - key: node-role.kubernetes.io/master
-                  operator: Exists
-                  effect: NoSchedule
-      delegate_to: "{{ groups['control_plane'][0] }}"
-      run_once: true
-      when: inventory_hostname in groups['control_plane'] or (groups['control_plane'] | first == inventory_hostname)
+            name: openshift-sriov-network-operator
 
+    # 4. Deploy OperatorGroup
+    - name: Create SR-IOV OperatorGroup
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1
+          kind: OperatorGroup
+          metadata:
+            name: sriov-network-operator-group
+            namespace: openshift-sriov-network-operator
+          spec:
+            targetNamespaces:
+              - openshift-sriov-network-operator
+
+    # 5. Subscribe to SR-IOV Operator
+    - name: Subscribe to SR-IOV Network Operator
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            name: sriov-network-operator-sub
+            namespace: openshift-sriov-network-operator
+          spec:
+            channel: stable
+            name: sriov-network-operator
+            source: operatorhubio-catalog
+            sourceNamespace: olm
