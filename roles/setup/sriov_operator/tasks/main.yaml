@@ -1,4 +1,7 @@
 ---
+- name: RESTART_HERE
+  ansible.builtin.meta: noop
+  
 - name: Deploy SR-IOV Network Operator
   block:
     - name: Install git (if not already installed)
@@ -80,7 +83,7 @@
     namespace: sriov-network-operator
   register: sriov_pods
 
-- name: RESTART_HERE Debug deployed pods
+- name: Debug deployed pods
   ansible.builtin.debug:
     var: sriov_pods.resources
 
