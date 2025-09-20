@@ -1,10 +1,14 @@
 ---
-- name: Read join command from file
+- name: Load join command from file
   set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
-  run_once: true
   delegate_to: localhost
+  run_once: true
   delegate_facts: true
+
+- name: Debug join command (for verification)
+  debug:
+    var: kubeadm_join_command
 
 - name: Join the node to the cluster
   command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"

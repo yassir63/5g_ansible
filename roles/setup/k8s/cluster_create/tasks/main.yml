@@ -39,12 +39,10 @@
   register: join_command
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
-  when: not lookup('file', '/tmp/kubeadm_join_command.txt', errors='ignore')
-  
-- name: Save join command to control node
+
+- name: Save join command to file on control node
   copy:
-    content: "{{ join_command.stdout | default('') }}"
+    content: "{{ join_command.stdout }}"
     dest: /tmp/kubeadm_join_command.txt
   delegate_to: localhost
   run_once: true
-  when: join_command is defined
