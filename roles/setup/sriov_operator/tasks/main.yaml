@@ -1,7 +1,4 @@
 ---
-- name: RESTART_HERE
-  ansible.builtin.meta: noop
-
 - name: Install Go
   become: yes
   block:
@@ -70,6 +67,9 @@
         kind: Namespace
         name: sriov-network-operator
         state: present
+
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
 
     - name: Apply Issuer and Certificates
       kubernetes.core.k8s:
