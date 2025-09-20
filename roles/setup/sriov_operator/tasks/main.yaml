@@ -1,5 +1,5 @@
 ---
-- name: Deploy SR-IOV Network Operator
+- name: [RETRY HERE] Deploy SR-IOV Network Operator
   block:
     - name: Install git (if not already installed)
       ansible.builtin.package:
