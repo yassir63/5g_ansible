@@ -1,6 +1,6 @@
 - name: Deploy SR-IOV Network Operator
   block:
-    - name: Install Go 1.24.6 (simple method)
+    - name: Install Go
       block:
         - name: Download Go 1.24.6
           ansible.builtin.get_url:
