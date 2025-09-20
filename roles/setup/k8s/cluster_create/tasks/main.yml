@@ -40,7 +40,7 @@
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
 
-- name: Save join command to file on control node
+- name: Save join command to control node
   copy:
     content: "{{ join_command.stdout }}"
     dest: /tmp/kubeadm_join_command.txt
