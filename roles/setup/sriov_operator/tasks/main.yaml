@@ -1,6 +1,7 @@
 - name: Deploy SR-IOV Network Operator
   block:
     - name: [RESTART HERE] Install Go 1.24.6
+      become: yes
       block:
         - name: Download Go
           ansible.builtin.get_url:
@@ -36,8 +37,6 @@
           ansible.builtin.file:
             path: /tmp/go1.24.6.linux-amd64.tar.gz
             state: absent
-
-      become: yes
 
     - name: Install git (if not already installed)
       ansible.builtin.package:
