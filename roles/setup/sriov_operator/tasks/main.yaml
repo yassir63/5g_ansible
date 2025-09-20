@@ -1,3 +1,4 @@
+---
 - name: Deploy SR-IOV Network Operator
   block:
     - name: [RESTART HERE] Install Go 1.24.6
