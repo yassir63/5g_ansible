@@ -1,4 +1,7 @@
 ---
+- name: RESTART_HERE
+  ansible.builtin.meta: noop
+
 - name: Install Go
   become: yes
   block:
@@ -68,8 +71,9 @@
         name: sriov-network-operator
         state: present
 
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
+    - name: Wait 5 seconds 
+      pause:
+        seconds: 5
 
     - name: Apply Issuer and Certificates
       kubernetes.core.k8s:
