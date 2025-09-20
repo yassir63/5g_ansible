@@ -1,7 +1,7 @@
 ---
 - name: Deploy SR-IOV Network Operator
   block:
-    - name: RESTART_HERE: Install git (if not already installed)
+    - name: RESTART_HERE Install git (if not already installed)
       ansible.builtin.package:
         name: git
         state: present   
