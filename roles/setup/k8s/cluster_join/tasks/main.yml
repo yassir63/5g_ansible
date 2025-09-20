@@ -7,7 +7,7 @@
   delegate_facts: true
 
 - name: Join the node to the cluster
-  command: "{{ hostvars['localhost'].kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
+  command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
   when: inventory_hostname in groups['k8s_workers']
 
 - name: Create .kube directory on worker node
