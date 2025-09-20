@@ -10,6 +10,8 @@
         golang_manage_gopath: false
         golang_cleanup_archive: true
       become: yes
+      become_user: root
+      when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"   
 
     - name: Install git (if not already installed)
       ansible.builtin.package:
