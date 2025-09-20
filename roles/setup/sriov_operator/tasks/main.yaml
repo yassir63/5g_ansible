@@ -1,64 +1,92 @@
 ---
-- name: Deploy SR-IOV Network Operator via OLM
+- name: Install Go
+  ansible.builtin.import_role:
+    name: gantsign.golang
+  vars:
+    golang_version: "1.24.6"
+- name: Deploy SR-IOV Network Operator
   block:
-    # 1. Install OLM CRDs and components
-    - name: Install OLM CRDs
+    - name: Install git (if not already installed)
+      ansible.builtin.package:
+        name: git
+        state: present
+
+    - name: Clone SR-IOV Network Operator
+      ansible.builtin.git:
+        repo: https://github.com/openshift/sriov-network-operator.git
+        dest: /root/sriov-network-operator
+        version: main
+
+    - name: Install Go dependency for sriov-network-operator
+      ansible.builtin.shell: |
+        /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
+      args:
+        chdir: /root/sriov-network-operator
+
+    - name: Ensure cert-manager is installed
       kubernetes.core.k8s:
         state: present
-        src: "https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.28.0/crds.yaml"
+        src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
-    - name: Install OLM components
+    - name: Create namespace sriov-network-operator
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: sriov-network-operator
+        state: present
+
+    - name: Apply Issuer and Certificates
       kubernetes.core.k8s:
         state: present
-        src: "https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.28.0/olm.yaml"
-
-    # 2. Wait for OperatorGroup CRD
-    - name: Wait for OperatorGroup CRD to be available
-      kubernetes.core.k8s_info:
-        api_version: apiextensions.k8s.io/v1
-        kind: CustomResourceDefinition
-        name: operatorgroups.operators.coreos.com
-      register: crd_status
-      until: crd_status.resources | length > 0
-      retries: 20
-      delay: 10
-
-    # 3. Create SR-IOV Operator namespace
-    - name: Ensure SR-IOV namespace exists
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Namespace
+        definition: |
+          apiVersion: cert-manager.io/v1
+          kind: Issuer
           metadata:
-            name: openshift-sriov-network-operator
-
-    # 4. Deploy OperatorGroup
-    - name: Create SR-IOV OperatorGroup
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: operators.coreos.com/v1
-          kind: OperatorGroup
-          metadata:
-            name: sriov-network-operator-group
-            namespace: openshift-sriov-network-operator
+            name: sriov-network-operator-selfsigned-issuer
+            namespace: sriov-network-operator
           spec:
-            targetNamespaces:
-              - openshift-sriov-network-operator
-
-    # 5. Subscribe to SR-IOV Operator
-    - name: Subscribe to SR-IOV Network Operator
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: operators.coreos.com/v1alpha1
-          kind: Subscription
+            selfSigned: {}
+          ---
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
           metadata:
-            name: sriov-network-operator-sub
-            namespace: openshift-sriov-network-operator
+            name: operator-webhook-cert
+            namespace: sriov-network-operator
           spec:
-            channel: stable
-            name: sriov-network-operator
-            source: operatorhubio-catalog
-            sourceNamespace: olm
+            secretName: operator-webhook-cert
+            dnsNames:
+            - operator-webhook-service.sriov-network-operator.svc
+            issuerRef:
+              name: sriov-network-operator-selfsigned-issuer
+          ---
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: network-resources-injector-cert
+            namespace: sriov-network-operator
+          spec:
+            secretName: network-resources-injector-cert
+            dnsNames:
+            - network-resources-injector-service.sriov-network-operator.svc
+            issuerRef:
+              name: sriov-network-operator-selfsigned-issuer
+
+    - name: Deploy SR-IOV Operator via Make
+      ansible.builtin.shell: |
+        export ADMISSION_CONTROLLERS_ENABLED=true
+        export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
+        make deploy-setup-k8s
+      args:
+        chdir: /root/sriov-network-operator
+
+- name: Verify SR-IOV Network Operator deployment
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: sriov-network-operator
+  register: sriov_pods
+
+- name: Debug deployed pods
+  ansible.builtin.debug:
+    var: sriov_pods.resources
+
+
