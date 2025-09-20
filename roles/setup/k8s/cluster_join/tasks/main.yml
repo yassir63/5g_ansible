@@ -1,12 +1,13 @@
 ---
-- name: Read join command
+- name: Read join command from file
   set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
   run_once: true
-  delegate_to: "{{ inventory_hostname }}"
+  delegate_to: localhost
+  delegate_facts: true
 
 - name: Join the node to the cluster
-  command: "{{ hostvars[groups['core_node'][0]].kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
+  command: "{{ hostvars['localhost'].kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
 
 - name: Create .kube directory on worker node
   file:

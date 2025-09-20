@@ -34,17 +34,19 @@
   register: taint_out
   failed_when: false
 
-# on master, generate the join command
+# On master, generate the join command if file doesn’t already exist
 - name: Generate kubeadm join command
   shell: kubeadm token create --print-join-command
   register: join_command
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
+  when: not lookup('file', '/tmp/kubeadm_join_command.txt', errors='ignore')
 
-# save it to a file on the control node
+# Save join command to file on control node
 - name: Save join command to control node
   copy:
-    content: "{{ join_command.stdout }}"
+    content: "{{ join_command.stdout | default('') }}"
     dest: /tmp/kubeadm_join_command.txt
   delegate_to: localhost
   run_once: true
+  when: join_command is defined
