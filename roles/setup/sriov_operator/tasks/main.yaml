@@ -1,4 +1,10 @@
 ---
+- name: Ensure pip is installed
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+    update_cache: yes
+
 - name: Install Go
   include_role:
     name: gantsign.golang
