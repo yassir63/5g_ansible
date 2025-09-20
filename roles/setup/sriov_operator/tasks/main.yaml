@@ -1,22 +1,16 @@
 ---
-- name: Ensure pip is installed
-  ansible.builtin.apt:
-    name: python3-pip
-    state: present
-    update_cache: yes
-
-- name: Install Go
-  include_role:
-    name: gantsign.golang
-  vars:
-    golang_version: "1.24.6"
-    golang_install_system_wide: true
-    golang_manage_gopath: false
-    golang_cleanup_archive: true
-  become: yes   
-
 - name: Deploy SR-IOV Network Operator
   block:
+    - name: Install Go
+    include_role:
+      name: gantsign.golang
+    vars:
+      golang_version: "1.24.6"
+      golang_install_system_wide: true
+      golang_manage_gopath: false
+      golang_cleanup_archive: true
+    become: yes   
+
     - name: Install git (if not already installed)
       ansible.builtin.package:
         name: git
