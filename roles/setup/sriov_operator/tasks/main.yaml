@@ -1,7 +1,45 @@
 ---
 - name: RESTART_HERE
   ansible.builtin.meta: noop
-  
+
+- name: Install Go
+  become: yes
+  block:
+    - name: Download Go
+      ansible.builtin.get_url:
+        url: https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
+        dest: /tmp/go1.24.6.linux-amd64.tar.gz
+        mode: '0644'
+        timeout: 60
+        validate_certs: yes
+
+    - name: Extract Go to /usr/local
+      ansible.builtin.unarchive:
+        src: /tmp/go1.24.6.linux-amd64.tar.gz
+        dest: /usr/local
+        remote_src: yes
+        creates: /usr/local/go
+
+    - name: Create GOPATH directory
+      ansible.builtin.file:
+        path: /opt/gopath
+        state: directory
+        mode: '0755'
+
+    - name: Set up Go environment via profile script
+      ansible.builtin.copy:
+        content: |
+          export GOROOT=/usr/local/go
+          export GOPATH=/opt/gopath
+          export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+        dest: /etc/profile.d/golang.sh
+        mode: '0755'
+
+    - name: Clean up downloaded archive
+      ansible.builtin.file:
+        path: /tmp/go1.24.6.linux-amd64.tar.gz
+        state: absent
+
 - name: Deploy SR-IOV Network Operator
   block:
     - name: Install git (if not already installed)
