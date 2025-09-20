@@ -2,8 +2,8 @@
 - name: Deploy SR-IOV Network Operator
   block:
     - name: Install Go
-    include_role:
-      name: gantsign.golang
+      include_role:
+        name: gantsign.golang
     vars:
       golang_version: "1.24.6"
       golang_install_system_wide: true
