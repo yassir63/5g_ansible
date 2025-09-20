@@ -64,11 +64,11 @@
         state: present
         src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
-    - name: Create namespace openshift-sriov-network-operator
+    - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
         api_version: v1
         kind: Namespace
-        name: openshift-sriov-network-operator
+        name: sriov-network-operator
         state: present
 
     - name: Wait 5 seconds 
@@ -83,7 +83,7 @@
           kind: Issuer
           metadata:
             name: sriov-network-operator-selfsigned-issuer
-            namespace: openshift-sriov-network-operator
+            namespace: sriov-network-operator
           spec:
             selfSigned: {}
           ---
@@ -91,7 +91,7 @@
           kind: Certificate
           metadata:
             name: operator-webhook-cert
-            namespace: openshift-sriov-network-operator
+            namespace: sriov-network-operator
           spec:
             secretName: operator-webhook-cert
             dnsNames:
@@ -103,7 +103,7 @@
           kind: Certificate
           metadata:
             name: network-resources-injector-cert
-            namespace: openshift-sriov-network-operator
+            namespace: sriov-network-operator
           spec:
             secretName: network-resources-injector-cert
             dnsNames:
@@ -122,7 +122,7 @@
 - name: Verify SR-IOV Network Operator deployment
   kubernetes.core.k8s_info:
     kind: Pod
-    namespace: openshift-sriov-network-operator
+    namespace: sriov-network-operator
   register: sriov_pods
 
 - name: Debug deployed pods
