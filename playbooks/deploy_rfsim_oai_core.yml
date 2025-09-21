@@ -60,7 +60,8 @@
   hosts: core_node
   vars:
     rru: "rfsim"
-    conf: "gnb.sa.band78.106prb.rfsim.conf"
+    conf: "gnb.sa.band78.273prb.rfsim.2x2.conf"
+    #conf: "gnb.sa.band78.106prb.rfsim.conf"
   roles:
     - role: 5g/core_oai
   #  - role: 5g/ran
