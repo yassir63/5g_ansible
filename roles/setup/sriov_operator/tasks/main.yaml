@@ -125,7 +125,7 @@
     - name: Wait 10 seconds 
       pause:
         seconds: 10
-	
+
     - name: Find CRD files in bases/
       find:
         paths: "/root/sriov-network-operator/config/crd/bases"
