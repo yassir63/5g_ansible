@@ -158,16 +158,20 @@
           {% endfor %}
         dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
 
-    - name: Copy all YAML files from bases (including kustomization.yaml) to crd on the same remote host
+    - name: Create list of all files to copy (including kustomization.yaml)
+      set_fact:
+        all_files_to_copy:
+          - /root/sriov-network-operator/config/crd/bases/kustomization.yaml
+          {% for file in crd_files.files %}
+          - {{ file.path }}
+          {% endfor %}
+
+    - name: Copy all YAML files from bases to crd (on remote host)
       copy:
         src: "{{ item }}"
         dest: /root/sriov-network-operator/config/crd/
         remote_src: yes
-      loop:
-        - /root/sriov-network-operator/config/crd/bases/kustomization.yaml
-        - "{{ crd_files.files | map(attribute='path') | list }}"
-      loop_control:
-        flatten: yes   
+      loop: "{{ all_files_to_copy }}"   
 
     - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
