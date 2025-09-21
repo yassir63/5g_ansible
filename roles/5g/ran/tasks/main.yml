@@ -49,6 +49,13 @@
     line: "LOCAL_INTERFACE=\"{{ nic_interface }}\""
     backrefs: true
 
+- name: Update RRU variable with {{ rru }} in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^RRU='
+    line: "RRU=\"{{ rru }}\""
+    backrefs: true
+
 # - name: Disable FLEXRIC in prepare-demo-oai.sh if using aw2s gnb image
 #   ansible.builtin.lineinfile:
 #     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
