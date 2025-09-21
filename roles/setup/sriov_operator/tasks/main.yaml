@@ -132,13 +132,22 @@
       pause:
         seconds: 10
 
-    - name: Find CRD files in bases/
+    - name: Ensure source and destination directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - /root/sriov-network-operator/config/crd/bases
+        - /root/sriov-network-operator/config/crd
+
+    - name: Find all existing YAML files in bases directory
       find:
-        paths: "/root/sriov-network-operator/config/crd/bases"
+        paths: /root/sriov-network-operator/config/crd/bases
         patterns: "*.yaml"
+        file_type: file
       register: crd_files
 
-    - name: Create kustomization.yaml from found files
+    - name: Create kustomization.yaml in memory (from files in bases)
       copy:
         content: |
           apiVersion: kustomize.config.k8s.io/v1beta1
@@ -149,17 +158,11 @@
           {% endfor %}
         dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
 
-    - name: Find all files in /root/sriov-network-operator/config/crd/bases
-      find:
-        paths: /root/sriov-network-operator/config/crd/bases/
-        file_type: file
-      register: found_files
-
-    - name: Copy each file on the directory above
+    - name: Copy all YAML files from bases (including newly created kustomization.yaml) to crd
       copy:
         src: "{{ item }}"
-        dest: /root/sriov-network-operator/config/crd
-      loop: "{{ found_files.files | map(attribute='path') | list }}"
+        dest: /root/sriov-network-operator/config/crd/
+      loop: "{{ crd_files.files | map(attribute='path') | list + ['/root/sriov-network-operator/config/crd/bases/kustomization.yaml'] }}"   
 
     - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
