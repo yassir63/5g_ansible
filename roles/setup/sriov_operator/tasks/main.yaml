@@ -54,7 +54,7 @@
 
     - name: Clone SR-IOV Network Operator
       ansible.builtin.git:
-        repo: github.com/k8snetworkplumbingwg/sriov-network-operator.git
+        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /root/sriov-network-operator
         version: main
 
