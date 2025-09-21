@@ -40,6 +40,12 @@
         dest: /etc/profile.d/golang.sh
         mode: '0755'
 
+    - name: Create symbolic link from /usr/local/go/bin/go to /usr/local/bin/go
+      file:
+        src: /usr/local/go/bin/go
+        dest: /usr/local/bin/go
+        state: link   
+
     - name: Clean up downloaded archive
       ansible.builtin.file:
         path: /tmp/go1.24.6.linux-amd64.tar.gz
