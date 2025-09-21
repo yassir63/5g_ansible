@@ -160,8 +160,12 @@
 
     - name: Build list of all files to copy (including kustomization.yaml)
       set_fact:
-        all_files_to_copy: >
-          ["/root/sriov-network-operator/config/crd/bases/kustomization.yaml"] + {{ crd_files.files | map(attribute='path') | list }}
+        all_files_to_copy: |
+          {% set files = ["/root/sriov-network-operator/config/crd/bases/kustomization.yaml"] %}
+          {% for file in crd_files.files %}
+          {%   set _ = files.append(file.path) %}
+          {% endfor %}
+          {{ files }}
 
     - name: Copy all YAML files (including kustomization.yaml) to crd directory on remote
       copy:
