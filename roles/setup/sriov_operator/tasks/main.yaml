@@ -2,6 +2,12 @@
 - name: RESTART_HERE
   ansible.builtin.meta: noop
 
+- name: Upgrade all packages (Debian/Ubuntu)
+  apt:
+    upgrade: dist
+    update_cache: yes
+  become: true
+
 - name: Install Go
   become: yes
   block:
@@ -49,7 +55,7 @@
 
     - name: Clone SR-IOV Network Operator
       ansible.builtin.git:
-        repo: https://github.com/openshift/sriov-network-operator.git
+        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /root/sriov-network-operator
         version: main
 
