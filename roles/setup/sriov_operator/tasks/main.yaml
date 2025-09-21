@@ -140,7 +140,7 @@
         - /root/sriov-network-operator/config/crd/bases
         - /root/sriov-network-operator/config/crd
 
-    - name: Find all CRD YAML files in bases (exclude any kustomization.yaml)
+    - name: Find all CRD YAML files in bases (exclude kustomization.yaml)
       find:
         paths: /root/sriov-network-operator/config/crd/bases
         patterns: "*.yaml"
@@ -148,7 +148,7 @@
         file_type: file
       register: crd_files
 
-    - name: Create kustomization.yaml in config/crd (without self-reference)
+    - name: Create kustomization.yaml in bases directory
       copy:
         content: |
           apiVersion: kustomize.config.k8s.io/v1beta1
@@ -157,16 +157,16 @@
           {% for file in crd_files.files %}
             - {{ file.path | basename }}
           {% endfor %}
-        dest: /root/sriov-network-operator/config/crd/kustomization.yaml
+        dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
 
-
-    - name: Build list of all files to copy (including kustomization.yaml)
+    - name: Build list of all files to copy (CRDs + kustomization.yaml)
       set_fact:
         all_files_to_copy: |
-          {% set files = ["/root/sriov-network-operator/config/crd/bases/kustomization.yaml"] %}
+          {% set files = [] %}
           {% for file in crd_files.files %}
           {%   set _ = files.append(file.path) %}
           {% endfor %}
+          {% set _ = files.append('/root/sriov-network-operator/config/crd/bases/kustomization.yaml') %}
           {{ files }}
 
     - name: Copy all YAML files (including kustomization.yaml) to crd directory on remote
@@ -175,7 +175,7 @@
         dest: /root/sriov-network-operator/config/crd/
         remote_src: yes
       loop: "{{ all_files_to_copy }}"
-
+      
     - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
         export ADMISSION_CONTROLLERS_ENABLED=true
