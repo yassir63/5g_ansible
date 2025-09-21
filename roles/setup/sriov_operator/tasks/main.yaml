@@ -2,9 +2,8 @@
 - name: RESTART_HERE
   ansible.builtin.meta: noop
 
-- name: Upgrade all packages (Debian/Ubuntu)
+- name: Update APT package cache
   apt:
-    upgrade: dist
     update_cache: yes
   become: true
 
