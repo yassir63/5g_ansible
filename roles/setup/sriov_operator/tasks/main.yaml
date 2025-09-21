@@ -125,19 +125,14 @@
     - name: Wait 10 seconds 
       pause:
         seconds: 10
-
-- name: Generate kustomization.yaml inline
-  hosts: localhost
-  connection: local
-  gather_facts: no
-  tasks:
-    - name: Find CRD files
+	
+    - name: Find CRD files in bases/
       find:
         paths: "/root/sriov-network-operator/config/crd/bases"
         patterns: "*.yaml"
       register: crd_files
 
-    - name: Create kustomization.yaml from found files as it is missing...
+    - name: Create kustomization.yaml from found files
       copy:
         content: |
           apiVersion: kustomize.config.k8s.io/v1beta1
@@ -146,7 +141,7 @@
           {% for file in crd_files.files %}
             - {{ file.path | basename }}
           {% endfor %}
-        dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml   
+        dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
 
     - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
