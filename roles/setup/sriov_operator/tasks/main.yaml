@@ -149,6 +149,12 @@
           {% endfor %}
         dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
 
+    - name: Create symbolic link from crd/bases/kustomization.yaml to crd/kustomization.yaml
+      file:
+        src: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
+        dest: /root/sriov-network-operator/config/crd/kustomization.yaml
+        state: link   
+
     - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
         export ADMISSION_CONTROLLERS_ENABLED=true
