@@ -71,6 +71,10 @@
         state: present
         src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
+    - name: Wait 5 seconds 
+      pause:
+        seconds: 5
+
     - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
         api_version: v1
@@ -117,6 +121,10 @@
             - network-resources-injector-service.sriov-network-operator.svc
             issuerRef:
               name: sriov-network-operator-selfsigned-issuer
+
+    - name: Wait 10 seconds 
+      pause:
+        seconds: 10
 
     - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
