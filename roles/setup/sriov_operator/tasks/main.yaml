@@ -56,8 +56,8 @@
       ansible.builtin.git:
         repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /root/sriov-network-operator
-	clone: yes
-	update: yes
+        clone: yes
+        update: yes
         version: main
 
     - name: Install Go dependency for sriov-network-operator
