@@ -58,7 +58,7 @@
         dest: /root/sriov-network-operator
         clone: yes
         update: yes
-        version: main
+        version: master
 
     - name: Install Go dependency for sriov-network-operator
       ansible.builtin.shell: |
