@@ -149,11 +149,17 @@
           {% endfor %}
         dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
 
-    - name: Create symbolic link from crd/bases/kustomization.yaml to crd/kustomization.yaml
-      file:
-        src: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
-        dest: /root/sriov-network-operator/config/crd/kustomization.yaml
-        state: link   
+    - name: Find all files in /root/sriov-network-operator/config/crd/bases
+      find:
+        paths: /root/sriov-network-operator/config/crd/bases/
+        file_type: file
+      register: found_files
+
+    - name: Copy each file on the directory above
+      copy:
+        src: "{{ item }}"
+        dest: /root/sriov-network-operator/config/crd
+      loop: "{{ found_files.files | map(attribute='path') | list }}"
 
     - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
