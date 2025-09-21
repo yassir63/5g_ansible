@@ -1,0 +1,35 @@
+---
+# see https://gitlab.eurecom.fr/oai/orchestration/charts/-/blob/oai-gnb-fhi-72/oai-gnb-fhi-72/README.md#prerequisite
+- name: Create SR-IOV Node Policies
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: sriovnetwork.openshift.io/v1
+      kind: SriovNetworkNodePolicy
+      metadata:
+        name: "{{ item.name }}"
+        namespace: openshift-sriov-network-operator
+      spec:
+        resourceName: "{{ item.resourceName }}"
+        nodeSelector:
+          feature.node.kubernetes.io/network-sriov.capable: "true"
+        priority: "{{ item.priority }}"
+        mtu: 9216
+        deviceType: vfio-pci
+        isRdma: false
+        numVfs: 4
+        linkType: eth
+        nicSelector:
+          pfNames: "{{ item.pfNames }}"
+          rootDevices: "{{ item.rootDevices }}"
+  loop:
+    - name: RESOURCE_NAME_U_PLANE
+      resourceName: RESOURCE_NAME_U_PLANE
+      priority: 11
+      pfNames: ["PHYSICAL_INTERFACE#0-1"]
+      rootDevices: ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
+    - name: RESOURCE_NAME_C_PLANE
+      resourceName: RESOURCE_NAME_C_PLANE
+      priority: 12
+      pfNames: ["PHYSICAL_INTERFACE#2-3"]
+      rootDevices: ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
