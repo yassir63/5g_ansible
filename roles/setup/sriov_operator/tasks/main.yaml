@@ -140,14 +140,15 @@
         - /root/sriov-network-operator/config/crd/bases
         - /root/sriov-network-operator/config/crd
 
-    - name: Find all existing YAML files in bases directory
+    - name: Find all CRD YAML files in bases (exclude any kustomization.yaml)
       find:
         paths: /root/sriov-network-operator/config/crd/bases
         patterns: "*.yaml"
+        excludes: "kustomization.yaml"
         file_type: file
       register: crd_files
 
-    - name: Create kustomization.yaml in memory (from files in bases)
+    - name: Create kustomization.yaml in config/crd (without self-reference)
       copy:
         content: |
           apiVersion: kustomize.config.k8s.io/v1beta1
@@ -156,7 +157,8 @@
           {% for file in crd_files.files %}
             - {{ file.path | basename }}
           {% endfor %}
-        dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
+        dest: /root/sriov-network-operator/config/crd/kustomization.yaml
+
 
     - name: Build list of all files to copy (including kustomization.yaml)
       set_fact:
