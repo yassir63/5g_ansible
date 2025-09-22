@@ -3,8 +3,9 @@
 - name: RESTART_SR-IOV
   ansible.builtin.meta: noop
 
-- name: Gather vars from sopnode-f3
-  setup:
+- name: Load ran_node vars from sopnode-f3
+  include_vars:
+    file: group_vars/ran_node.yml
   delegate_to: sopnode-f3
   run_once: true
 
