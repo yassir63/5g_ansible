@@ -3,25 +3,24 @@
 - name: RESTART_SR-IOV
   ansible.builtin.meta: noop
 
-- name: Label sopnode-f3 as SR-IOV capable
-  kubernetes.core.k8s:
-    api_version: v1
-    kind: Node
-    name: hostvars[groups['ran_node'][0]]
-    definition:
-      metadata:
-        labels:
-          feature.node.kubernetes.io/network-sriov.capable: "true"
-    state: patched
-  delegate_to: "{{ groups['ran_node'][0] }}"   # run from control/master node
-
-
 - name: Load ran_node vars on controller
   include_vars:
     file: "/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/group_vars/ran_node.yml"
     name: ran_vars
   run_once: true
   delegate_to: localhost
+
+- name: Label sopnode-f3 as SR-IOV capable
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Node
+    name: {{ ran_vars.ran_sopnode }}
+    definition:
+      metadata:
+        labels:
+          feature.node.kubernetes.io/network-sriov.capable: "true"
+    state: patched
+  delegate_to: "{{ groups['core_node'][0] }}"   # run from control/master node
 
 - name: Debug ran_node vars
   debug:
