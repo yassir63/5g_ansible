@@ -1,6 +1,6 @@
 ---
 # Defaults for all hosts in group 'ran_node'. Override per-host in host_vars/<hostname>.yml
-ran_sopnode: "sopnode-f3"
+ran_sopnode: sopnode-f3
 
 # RT Ubuntu runs as root only
 ansible_user: root
