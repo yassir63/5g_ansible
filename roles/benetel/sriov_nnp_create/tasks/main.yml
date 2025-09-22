@@ -34,10 +34,10 @@
     - name: RESOURCE_NAME_U_PLANE
       resourceName: RESOURCE_NAME_U_PLANE
       priority: 11
-      pfNames: ["{{ hostvars[groups['ran_node'][0]].dpdk_interface }}"] # ["PHYSICAL_INTERFACE#0-1"]
-      rootDevices: ["{{  hostvars[groups['ran_node'][0]].dpdk_du_c_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
+      pfNames: ["{{ hostvars[ran_node_host].dpdk_interface }}"] # ["PHYSICAL_INTERFACE#0-1"]
+      rootDevices: ["{{ hostvars[ran_node_host].dpdk_du_u_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
     - name: RESOURCE_NAME_C_PLANE
       resourceName: RESOURCE_NAME_C_PLANE
       priority: 12
-      pfNames: ["{{  hostvars[groups['ran_node'][0]].dpdk_interface }}"] # ["PHYSICAL_INTERFACE#2-3"]
-      rootDevices: ["{{  hostvars[groups['ran_node'][0]].dpdk_du_c_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
+      pfNames: ["{{ hostvars[ran_node_host].dpdk_interface }}"] # ["PHYSICAL_INTERFACE#2-3"]
+      rootDevices: ["{{ hostvars[ran_node_host].dpdk_du_c_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
