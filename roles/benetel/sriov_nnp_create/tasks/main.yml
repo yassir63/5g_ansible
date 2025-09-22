@@ -36,4 +36,4 @@
       priority: 12
       pfNames: ["{{ dpdk_interface }}"] # ["PHYSICAL_INTERFACE#2-3"]
       rootDevices: ["{{ dpdk_du_c_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
-  delegate_to: localhost
+  delegate_to: core_node
