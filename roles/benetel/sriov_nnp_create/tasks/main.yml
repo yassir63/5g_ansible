@@ -35,8 +35,8 @@
         numVfs: 4
         linkType: eth
         nicSelector:
-          pfNames: "{{ ran_vars.dpdk_interface }}"
-          rootDevices: "{{ ran_vars.dpdk_du_c_plane_mac }}"
+          pfNames: ["{{ ran_vars.dpdk_interface }}"]
+          rootDevices: ["{{ ran_vars.dpdk_du_c_plane_mac }}"]
 
 - name: Create SR-IOV Node Policies for U_PLANE
   kubernetes.core.k8s:
@@ -58,6 +58,6 @@
         numVfs: 4
         linkType: eth
         nicSelector:
-          pfNames: "{{ ran_vars.dpdk_interface }}"
-          rootDevices: "{{ ran_vars.dpdk_du_u_plane_mac }}"
+          pfNames: ["{{ ran_vars.dpdk_interface }}"]
+          rootDevices: ["{{ ran_vars.dpdk_du_u_plane_mac }}"]
 
