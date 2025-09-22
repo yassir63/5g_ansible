@@ -91,28 +91,28 @@
       syncFrequency: 0s
       volumeStatsAggPeriod: 0s
 
-- name: Patch kube-proxy DaemonSet to use custom config file
-  shell: |
-    kubectl -n kube-system patch daemonset kube-proxy --patch "$(cat <<EOF
-    spec:
-      template:
-        spec:
-          containers:
-          - name: kube-proxy
-            command:
-            - /usr/local/bin/kube-proxy
-            - --config=/var/lib/kube-proxy/kubeproxy-config.yaml
-            volumeMounts:
-            - name: kube-proxy-config
-              mountPath: /var/lib/kube-proxy
-          volumes:
-          - name: kube-proxy-config
-            hostPath:
-              path: /etc/kubernetes
-              type: Directory
-    EOF
-    )"
-  delegate_to: "{{ groups['core_node'][0] }}"
+#- name: Patch kube-proxy DaemonSet to use custom config file
+#  shell: |
+#    kubectl -n kube-system patch daemonset kube-proxy --patch "$(cat <<EOF
+#    spec:
+#      template:
+#        spec:
+#          containers:
+#          - name: kube-proxy
+#            command:
+#            - /usr/local/bin/kube-proxy
+#            - --config=/var/lib/kube-proxy/kubeproxy-config.yaml
+#            volumeMounts:
+#            - name: kube-proxy-config
+#              mountPath: /var/lib/kube-proxy
+#          volumes:
+#          - name: kube-proxy-config
+#            hostPath:
+#              path: /etc/kubernetes
+#              type: Directory
+#    EOF
+#    )"
+#  delegate_to: "{{ groups['core_node'][0] }}"
 
 - name: Remove kubelet CPU manager checkpoint file
   ansible.builtin.file:
