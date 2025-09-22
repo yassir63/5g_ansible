@@ -14,7 +14,7 @@
   kubernetes.core.k8s:
     api_version: v1
     kind: Node
-    name: {{ ran_vars.ran_sopnode }}
+    name: "{{ ran_vars.ran_sopnode }}"
     definition:
       metadata:
         labels:
