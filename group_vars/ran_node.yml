@@ -18,8 +18,8 @@ dpdk_vlan: 1
 # Per-host values – strongly recommended to override per host
 dpdk_du_u_plane_mac: "00:11:22:33:44:66"
 dpdk_du_c_plane_mac: "00:11:22:33:44:67"
-dpdk_u_plane_pci: "3a:11.0"
-dpdk_c_plane_pci: "3a:11.1"
+dpdk_u_plane_pci: "0000:3a:11.0"
+dpdk_c_plane_pci: "0000:3a:11.1"
 dpdk_driver: "vfio-pci"
 
 sriovNetworkNamespace: "sriov-network-operator"
