@@ -12,7 +12,7 @@
 
 - name: Debug ran_node vars
   debug:
-    msg: "ran_node dpdk_interface={{ hostvars[groups['ran_node'][0]].dpdk_interface | default('NOT DEFINED') }}"
+    msg: "ran_node dpdk_interface={{ ran_vars.dpdk_interface | default('NOT DEFINED') }}"
   run_once: true
   
 - name: Create SR-IOV Node Policies
@@ -41,7 +41,7 @@
     - name: RESOURCE_NAME_U_PLANE
       resourceName: RESOURCE_NAME_U_PLANE
       priority: 11
-      pfNames: ["{{ hostvars[groups['ran_node'] | first].dpdk_interface }}"] # ["PHYSICAL_INTERFACE#0-1"]
+      pfNames: ["{{ ran_vars.dpdk_interface }}"] # ["PHYSICAL_INTERFACE#0-1"]
       rootDevices: ["{{ hostvars[groups['ran_node'] | first].dpdk_du_u_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
     - name: RESOURCE_NAME_C_PLANE
       resourceName: RESOURCE_NAME_C_PLANE
