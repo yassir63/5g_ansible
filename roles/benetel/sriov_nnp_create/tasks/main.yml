@@ -42,9 +42,9 @@
       resourceName: RESOURCE_NAME_U_PLANE
       priority: 11
       pfNames: ["{{ ran_vars.dpdk_interface }}"] # ["PHYSICAL_INTERFACE#0-1"]
-      rootDevices: ["{{ hostvars[groups['ran_node'] | first].dpdk_du_u_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
+      rootDevices: ["{{ ran_vars.dpdk_du_u_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
     - name: RESOURCE_NAME_C_PLANE
       resourceName: RESOURCE_NAME_C_PLANE
       priority: 12
-      pfNames: ["{{ hostvars[groups['ran_node'] | first].dpdk_interface }}"] # ["PHYSICAL_INTERFACE#2-3"]
-      rootDevices: ["{{ hostvars[groups['ran_node'] | first].dpdk_du_c_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
+      pfNames: ["{{ ran_vars.dpdk_interface }}"] # ["PHYSICAL_INTERFACE#2-3"]
+      rootDevices: ["{{ ran_vars.dpdk_du_c_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
