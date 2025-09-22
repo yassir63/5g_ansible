@@ -5,7 +5,7 @@
 
 - name: Load ran_node vars on controller
   include_vars:
-    file: "../../group_vars/ran_node.yml"
+    file: "/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/group_vars/ran_node.yml"
     name: ran_vars
   run_once: true
   delegate_to: localhost
