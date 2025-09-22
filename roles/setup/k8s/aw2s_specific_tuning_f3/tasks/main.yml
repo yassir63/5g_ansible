@@ -1,5 +1,5 @@
 ---
-- name: RESTART_SR-IOV
+- name: RESTART_RAN_K8S
   ansible.builtin.meta: noop
 
 - name: Ensure CPUAffinity is set in system.conf
