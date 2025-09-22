@@ -6,6 +6,7 @@
 - name: Create SR-IOV Node Policies
   kubernetes.core.k8s:
     state: present
+    delegate_to: localhost
     definition:
       apiVersion: sriovnetwork.openshift.io/v1
       kind: SriovNetworkNodePolicy
