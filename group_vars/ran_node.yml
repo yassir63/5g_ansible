@@ -21,5 +21,10 @@ dpdk_u_plane_pci: "3a:11.0"
 dpdk_c_plane_pci: "3a:11.1"
 dpdk_driver: "vfio-pci"
 
+sriovNetworkNamespace: "sriov-network-operator"
+sriovResourceNameCplane: "ruvfioc"
+sriovResourceNameUplane: "ruvfiou"
+
+
 
 
