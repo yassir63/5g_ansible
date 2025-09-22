@@ -28,7 +28,7 @@
         resourceName: "{{ item.resourceName }}"
         nodeSelector:
           feature.node.kubernetes.io/network-sriov.capable: "true"
-        priority: "{{ item.priority }}"
+        priority: {{ item.priority }}
         mtu: 9216
         deviceType: vfio-pci
         isRdma: false
