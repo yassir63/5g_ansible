@@ -127,6 +127,10 @@
     - role: benetel/ptp
     - role: benetel/dpdk_install
     - role: benetel/dpdk_config
+
+- name: Create and Setup Kubernetes Cluster On Master
+  hosts: core_node
+  roles:
     - role: benetel/sriov_nnp_create    
 
 - name: Deploy OAI RAN
