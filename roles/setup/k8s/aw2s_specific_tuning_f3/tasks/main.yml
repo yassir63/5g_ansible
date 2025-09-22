@@ -1,4 +1,7 @@
 ---
+- name: RESTART_SR-IOV
+  ansible.builtin.meta: noop
+
 - name: Ensure CPUAffinity is set in system.conf
   lineinfile:
     path: /etc/systemd/system.conf
