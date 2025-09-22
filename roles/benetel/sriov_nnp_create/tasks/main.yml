@@ -5,9 +5,10 @@
 
 - name: Load ran_node vars on controller
   include_vars:
-    file: group_vars/ran_node.yml
+    file: "../../group_vars/ran_node.yml"
     name: ran_vars
   run_once: true
+  delegate_to: localhost
 
 - name: Debug ran_node vars
   debug:
