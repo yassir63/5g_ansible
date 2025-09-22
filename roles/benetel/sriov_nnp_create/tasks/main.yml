@@ -6,7 +6,6 @@
 - name: Create SR-IOV Node Policies
   kubernetes.core.k8s:
     state: present
-    delegate_to: localhost
     definition:
       apiVersion: sriovnetwork.openshift.io/v1
       kind: SriovNetworkNodePolicy
@@ -37,3 +36,4 @@
       priority: 12
       pfNames: ["{{ dpdk_interface }}"] # ["PHYSICAL_INTERFACE#2-3"]
       rootDevices: ["{{ dpdk_du_c_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
+  delegate_to: localhost
