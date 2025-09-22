@@ -2,6 +2,11 @@
 # see https://gitlab.eurecom.fr/oai/orchestration/charts/-/blob/oai-gnb-fhi-72/oai-gnb-fhi-72/README.md#prerequisite
 - name: RESTART_SR-IOV
   ansible.builtin.meta: noop
+
+- name: Debug ran_node vars
+  debug:
+    msg: "ran_node dpdk_interface={{ hostvars[groups['ran_node'][0]].dpdk_interface | default('NOT DEFINED') }}"
+  run_once: true
   
 - name: Create SR-IOV Node Policies
   kubernetes.core.k8s:
