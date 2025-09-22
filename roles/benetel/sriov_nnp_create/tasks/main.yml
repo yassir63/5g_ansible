@@ -38,13 +38,13 @@
           pfNames: "{{ item.pfNames }}"
           rootDevices: "{{ item.rootDevices }}"
   loop:
-    - name: RESOURCE_NAME_U_PLANE
-      resourceName: RESOURCE_NAME_U_PLANE
+    - name: ruvfiou
+      resourceName: ruvfiou
       priority: 11
       pfNames: ["{{ ran_vars.dpdk_interface }}"] # ["PHYSICAL_INTERFACE#0-1"]
       rootDevices: ["{{ ran_vars.dpdk_du_u_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
-    - name: RESOURCE_NAME_C_PLANE
-      resourceName: RESOURCE_NAME_C_PLANE
+    - name: ruvfioc
+      resourceName: ruvfioc
       priority: 12
       pfNames: ["{{ ran_vars.dpdk_interface }}"] # ["PHYSICAL_INTERFACE#2-3"]
       rootDevices: ["{{ ran_vars.dpdk_du_c_plane_mac }}"] # ["PCI_ADDRESS_OF_THE_PHYSICAL_INTERFACE"]
