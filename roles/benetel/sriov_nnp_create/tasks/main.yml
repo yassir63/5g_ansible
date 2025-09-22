@@ -22,10 +22,10 @@
       apiVersion: sriovnetwork.openshift.io/v1
       kind: SriovNetworkNodePolicy
       metadata:
-        name: {{ ran_vars.sriovResourceNameCplane }}
-        namespace: {{ ran_vars.sriovNetworkNamespace }} 
+        name: ""{{ ran_vars.sriovResourceNameCplane }}
+        namespace: "{{ ran_vars.sriovNetworkNamespace }}"
       spec:
-        resourceName: {{ ran_vars.sriovResourceNameCplane }}
+        resourceName: "{{ ran_vars.sriovResourceNameCplane }}"
         nodeSelector:
           feature.node.kubernetes.io/network-sriov.capable: "true"
         priority: 12
@@ -45,10 +45,10 @@
       apiVersion: sriovnetwork.openshift.io/v1
       kind: SriovNetworkNodePolicy
       metadata:
-        name: {{ ran_vars.sriovResourceNameUplane }}
-        namespace: {{ ran_vars.sriovNetworkNamespace }} 
+        name: "{{ ran_vars.sriovResourceNameUplane }}"
+        namespace: "{{ ran_vars.sriovNetworkNamespace }}"
       spec:
-        resourceName: {{ ran_vars.sriovResourceNameUplane }}
+        resourceName: "{{ ran_vars.sriovResourceNameUplane }}"
         nodeSelector:
           feature.node.kubernetes.io/network-sriov.capable: "true"
         priority: 11
@@ -58,6 +58,6 @@
         numVfs: 4
         linkType: eth
         nicSelector:
-          pfNames: '{{ ran_vars.dpdk_interface }}'
-          rootDevices: '{{ ran_vars.dpdk_du_u_plane_mac }}'
+          pfNames: "{{ ran_vars.dpdk_interface }}"
+          rootDevices: "{{ ran_vars.dpdk_du_u_plane_mac }}"
 
