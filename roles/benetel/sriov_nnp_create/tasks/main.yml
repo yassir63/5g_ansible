@@ -19,7 +19,7 @@
       metadata:
         labels:
           feature.node.kubernetes.io/network-sriov.capable: "true"
-	  node-role.kubernetes.io/worker=
+	  node-role.kubernetes.io/worker: ""
     state: patched
   delegate_to: "{{ groups['core_node'][0] }}"   # run from control/master node
 
