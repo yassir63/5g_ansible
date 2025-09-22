@@ -147,7 +147,7 @@
 #    - name: Connect UEs on R2Lab to 5g network
 #      include_role:
 #        name: r2lab/ue/connect
-`#      vars:
+#      vars:
 #        ue: "{{ item }}"
 #      loop: "{{ groups['qhats'] }}"
 #      loop_control:
