@@ -13,7 +13,7 @@
         labels:
           feature.node.kubernetes.io/network-sriov.capable: "true"
     state: patched
-  delegate_to: "{{ groups['core_node'][0] }}"   # run from control/master node
+#  delegate_to: "{{ groups['core_node'][0] }}"   # run from control/master node
 
 
 - name: Load ran_node vars on controller
