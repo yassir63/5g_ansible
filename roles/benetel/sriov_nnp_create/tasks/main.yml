@@ -25,8 +25,8 @@
 
 - name: Debug ran_node vars
   debug:
-#    msg: "ran_node dpdk_interface={{ ran_vars.dpdk_interface | default('NOT DEFINED') }}"
-    msg: "ran_node rootDevices={{ ran_vars.dpdk_du_c_plane_mac | default('NOT DEFINED') }}"
+    msg: "ran_node dpdk_interface={{ ran_vars.dpdk_interface | default('NOT DEFINED') }}"
+    msg: "ran_node rootDevices={{ ran_vars.pci_dpdk_interface | default('NOT DEFINED') }}"
   run_once: true
   
 - name: Create SR-IOV Node Policies for C_PLANE
