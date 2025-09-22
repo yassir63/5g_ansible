@@ -88,9 +88,9 @@
         name: sriov-network-operator
         state: present
 
-    - name: Wait 5 seconds 
+    - name: Wait 10 seconds 
       pause:
-        seconds: 5
+        seconds: 10
 
     - name: Apply Issuer and Certificates
       kubernetes.core.k8s:
