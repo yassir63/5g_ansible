@@ -23,7 +23,7 @@
       kind: SriovNetworkNodePolicy
       metadata:
         name: "{{ item.name }}"
-        namespace: openshift-sriov-network-operator
+        namespace: sriov-network-operator
       spec:
         resourceName: "{{ item.resourceName }}"
         nodeSelector:
