@@ -10,7 +10,7 @@
   run_once: true
   delegate_to: localhost
 
-- name: Label sopnode-f3 as SR-IOV capable
+- name: Label node {{ ran_vars.ran_sopnode }} as SR-IOV capable
   kubernetes.core.k8s:
     api_version: v1
     kind: Node
@@ -25,15 +25,15 @@
 
 - name: Debug ran_node vars
   debug:
-    msg: "ran_node dpdk_interface={{ ran_vars.dpdk_interface | default('NOT DEFINED') }}"
-    msg: "ran_node rootDevices={{ ran_vars.pci_dpdk_interface | default('NOT DEFINED') }}"
+    msg: "ran_node dpdk_interface_c={{ ran_vars.dpdk_interface_c | default('NOT DEFINED') }}"
+    msg: "ran_node sriovResourceNameCplane={{ ran_vars.sriovResourceNameCplane | default('NOT DEFINED') }}"
   run_once: true
 
 # sometimes, fails with "denied the request: no supported NIC is selected by the nicSelector in CR ruvfioc"
-# try adding 10s delay here...
-- name: Wait 10 seconds
+# try adding 20s delay here...
+- name: Wait 20 seconds
   pause:
-    seconds: 10
+    seconds: 20
 
 - name: Create SR-IOV Node Policies for C_PLANE
   kubernetes.core.k8s:
