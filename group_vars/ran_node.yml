@@ -26,6 +26,9 @@ sriovNetworkNamespace: "sriov-network-operator"
 sriovResourceNameCplane: "ruvfioc"
 sriovResourceNameUplane: "ruvfiou"
 
+dpdk_interface_c: ens15f2#0-1
+dpdk_interface_u: ens15f2#2-3
+pci_dpdk_interface: "0000:3a:00.2" # retrieved with dmesg |grep ens15f2 on sopnode-f3
 
 
 
