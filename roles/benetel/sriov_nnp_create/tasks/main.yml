@@ -26,7 +26,6 @@
 - name: Debug ran_node vars
   debug:
     msg: "ran_node dpdk_interface_c={{ ran_vars.dpdk_interface_c | default('NOT DEFINED') }}"
-    msg: "ran_node sriovResourceNameCplane={{ ran_vars.sriovResourceNameCplane | default('NOT DEFINED') }}"
   run_once: true
 
 - name: Wait until SR-IOV operator detects NICs on the node
