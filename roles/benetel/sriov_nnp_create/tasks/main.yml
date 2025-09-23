@@ -34,7 +34,7 @@
 - name: Wait 10 seconds
   pause:
     seconds: 10
-	
+
 - name: Create SR-IOV Node Policies for C_PLANE
   kubernetes.core.k8s:
     state: present
