@@ -77,9 +77,9 @@
         state: present
         src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
-    - name: Wait 5 seconds 
+    - name: Wait 10 seconds 
       pause:
-        seconds: 5
+        seconds: 10
 
     - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
@@ -88,9 +88,9 @@
         name: sriov-network-operator
         state: present
 
-    - name: Wait 5 seconds 
+    - name: Wait 10 seconds 
       pause:
-        seconds: 5
+        seconds: 10
 
     - name: Apply Issuer and Certificates
       kubernetes.core.k8s:
@@ -128,9 +128,9 @@
             issuerRef:
               name: sriov-network-operator-selfsigned-issuer
 
-    - name: Wait 10 seconds 
+    - name: Wait 15 seconds 
       pause:
-        seconds: 10
+        seconds: 15
 
     - name: Ensure source and destination directories exist
       file:
