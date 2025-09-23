@@ -29,11 +29,17 @@
     msg: "ran_node sriovResourceNameCplane={{ ran_vars.sriovResourceNameCplane | default('NOT DEFINED') }}"
   run_once: true
 
-# sometimes, fails with "denied the request: no supported NIC is selected by the nicSelector in CR ruvfioc"
-# try adding 20s delay here...
-- name: Wait 20 seconds
-  pause:
-    seconds: 20
+- name: Wait until SR-IOV operator detects NICs on the node
+  kubernetes.core.k8s_info:
+    api_version: sriovnetwork.openshift.io/v1
+    kind: SriovNetworkNodeState
+    name: "{{ ran_vars.ran_sopnode }}"
+    namespace: "{{ ran_vars.sriovNetworkNamespace }}"
+  register: sriov_node_state
+  until: sriov_node_state.resources | length > 0 and
+         (sriov_node_state.resources[0].status.interfaces | selectattr('name', 'equalto', ran_vars.dpdk_interface_c.split('#')[0]) | list | length) > 0
+  retries: 12   # retry for ~1 minute
+  delay: 5
 
 - name: Create SR-IOV Node Policies for C_PLANE
   kubernetes.core.k8s:
