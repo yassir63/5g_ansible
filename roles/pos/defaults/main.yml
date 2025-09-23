@@ -24,5 +24,5 @@ boot_parameters_rt: >-
   hugepages=40 hugepagesz=2M default_hugepagesz=1G
   mitigations=off intel_iommu=on processor.max_cstate=1 idle=poll
   intel_idle.max_cstate=0 iommu=pt skew_tick=1 tsc=nowatchdog
-  nmi_watchdog=0 softlockup_panic=0 audit=0 mce=off
+  nmi_watchdog=0 softlockup_panic=0 audit=0 mce=off nosmt
 
