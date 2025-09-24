@@ -1,0 +1,21 @@
+---
+repo_url: "https://github.com/yassir63/open5gs-k8s.git"
+repo_dest: "~/open5gs-k8s"
+version: ueransim
+recursive: yes
+open5gs_ns: "open5gs"
+deployment_option: "msd/overlays/open5gs-metrics"
+nfs:
+  - nrf
+  - scp
+  - amf
+  - udr
+  - bsf
+  - ausf
+  - nssf
+  - pcf
+  - udm
+nad_list:
+  - n2network
+  - n3network
+  - n4network
