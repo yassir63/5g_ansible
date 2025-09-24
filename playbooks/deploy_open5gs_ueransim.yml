@@ -58,7 +58,7 @@
 - name: Deploy Open5gs Core
   hosts: core_node
   roles:
-    - role: 5g/core
+    - role: 5g/core_ueransim
 
 - name: Setup iperf3 on UPFs
   hosts: core_node
