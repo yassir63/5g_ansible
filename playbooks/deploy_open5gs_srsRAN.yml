@@ -78,14 +78,13 @@
 #  roles:
 #    - role: monarch/deploy
 
-#- name: Deploy OAI RAN
-#  hosts: ran_node
-#  vars:
-#    rru: "rfsim"
-#    conf: "gnb.sa.band78.106prb.rfsim.conf"
-#  roles:
-#    - role: 5g/ran
-#    - role: 5g/rfsim
+- name: Deploy srsRAN RAN
+  hosts: ran_node
+  gather_facts: false
+  vars:
+    ue_count: 2
+  roles:
+    - role: 5g/ran_srsRAN
 
 #- name: Launch 5G-Monarch monitoring
 #  hosts: monitor_node
