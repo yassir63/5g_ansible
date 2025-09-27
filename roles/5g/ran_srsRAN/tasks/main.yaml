@@ -79,125 +79,125 @@
   changed_when: gnb_start.rc == 0
   failed_when: gnb_start.rc != 0
 
-# ------------------------------
-# UE deployment (label-based selectors + lenient wait)
-# ------------------------------
+# # ------------------------------
+# # UE deployment (label-based selectors + lenient wait)
+# # ------------------------------
 
-- name: Check UE kustomize dir exists
-  ansible.builtin.stat:
-    path: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
-  register: ue_dir
+# - name: Check UE kustomize dir exists
+#   ansible.builtin.stat:
+#     path: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
+#   register: ue_dir
 
-- name: Fail if UE kustomize dir missing
-  ansible.builtin.fail:
-    msg: >
-      UE kustomize directory not found:
-      {{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}
-  when: not ue_dir.stat.exists
+# - name: Fail if UE kustomize dir missing
+#   ansible.builtin.fail:
+#     msg: >
+#       UE kustomize directory not found:
+#       {{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}
+#   when: not ue_dir.stat.exists
 
-- name: Apply srsRAN UE manifests (kubectl -k .)
-  ansible.builtin.command: >
-    {{ kubectl_bin }} apply -k . -n {{ open5gs_ns }}
-  args:
-    chdir: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
-  register: srs_ue_apply
-  changed_when: >
-    ('configured' in (srs_ue_apply.stdout | default(''))) or
-    ('created' in (srs_ue_apply.stdout | default('')))
-  failed_when: srs_ue_apply.rc != 0
+# - name: Apply srsRAN UE manifests (kubectl -k .)
+#   ansible.builtin.command: >
+#     {{ kubectl_bin }} apply -k . -n {{ open5gs_ns }}
+#   args:
+#     chdir: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
+#   register: srs_ue_apply
+#   changed_when: >
+#     ('configured' in (srs_ue_apply.stdout | default(''))) or
+#     ('created' in (srs_ue_apply.stdout | default('')))
+#   failed_when: srs_ue_apply.rc != 0
 
-# Snapshot UE pods by selectors
-- name: Snapshot UE pods (selectors)
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ open5gs_ns }}"
-    label_selectors: "{{ srs_ue_label_selectors }}"
-  register: ue_pods_now
+# # Snapshot UE pods by selectors
+# - name: Snapshot UE pods (selectors)
+#   kubernetes.core.k8s_info:
+#     kind: Pod
+#     namespace: "{{ open5gs_ns }}"
+#     label_selectors: "{{ srs_ue_label_selectors }}"
+#   register: ue_pods_now
 
-- name: Debug UE names/phases (selectors)
-  ansible.builtin.debug:
-    msg:
-      - "UE selectors={{ srs_ue_label_selectors | join(',') }}"
-      - "UE names={{ ue_pods_now.resources | map(attribute='metadata.name') | list }}"
-      - "UE phases={{ ue_pods_now.resources | map(attribute='status.phase') | list }}"
+# - name: Debug UE names/phases (selectors)
+#   ansible.builtin.debug:
+#     msg:
+#       - "UE selectors={{ srs_ue_label_selectors | join(',') }}"
+#       - "UE names={{ ue_pods_now.resources | map(attribute='metadata.name') | list }}"
+#       - "UE phases={{ ue_pods_now.resources | map(attribute='status.phase') | list }}"
 
-# Wait until AT LEAST ONE UE pod is Running
-- name: Wait for at least one UE pod Running
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ open5gs_ns }}"
-    label_selectors: "{{ srs_ue_label_selectors }}"
-  register: srs_ue_pods
-  until: >
-    (srs_ue_pods.resources | selectattr('status.phase','equalto','Running') | list | length) >= 1
-  retries: 90
-  delay: 5
+# # Wait until AT LEAST ONE UE pod is Running
+# - name: Wait for at least one UE pod Running
+#   kubernetes.core.k8s_info:
+#     kind: Pod
+#     namespace: "{{ open5gs_ns }}"
+#     label_selectors: "{{ srs_ue_label_selectors }}"
+#   register: srs_ue_pods
+#   until: >
+#     (srs_ue_pods.resources | selectattr('status.phase','equalto','Running') | list | length) >= 1
+#   retries: 90
+#   delay: 5
 
-- name: Build ue_ready_pods list
-  ansible.builtin.set_fact:
-    ue_ready_pods: >-
-      {{
-        srs_ue_pods.resources
-        | selectattr('status.phase','equalto','Running')
-        | map(attribute='metadata.name') | list
-      }}
+# - name: Build ue_ready_pods list
+#   ansible.builtin.set_fact:
+#     ue_ready_pods: >-
+#       {{
+#         srs_ue_pods.resources
+#         | selectattr('status.phase','equalto','Running')
+#         | map(attribute='metadata.name') | list
+#       }}
 
-- name: Warn if fewer UE pods than requested
-  ansible.builtin.debug:
-    msg:
-      - "Requested ue_count={{ ue_count }} but only {{ ue_ready_pods | length }} UE pod(s) are Running."
-      - "Will round-robin start {{ ue_count }} logical UEs across available UE pod(s)."
-  when: (ue_ready_pods | length) < ue_count
+# - name: Warn if fewer UE pods than requested
+#   ansible.builtin.debug:
+#     msg:
+#       - "Requested ue_count={{ ue_count }} but only {{ ue_ready_pods | length }} UE pod(s) are Running."
+#       - "Will round-robin start {{ ue_count }} logical UEs across available UE pod(s)."
+#   when: (ue_ready_pods | length) < ue_count
 
-- name: Desired logical UE names (ue1..ueN)
-  ansible.builtin.set_fact:
-    ue_logical_names: "{{ range(1, ue_count + 1) | map('int') | map('regex_replace','^(.*)$','ue\\1') | list }}"
+# - name: Desired logical UE names (ue1..ueN)
+#   ansible.builtin.set_fact:
+#     ue_logical_names: "{{ range(1, ue_count + 1) | map('int') | map('regex_replace','^(.*)$','ue\\1') | list }}"
 
-- name: Compute UE exec plan (idx -> selected pod)
-  ansible.builtin.set_fact:
-    ue_plan: "{{ (ue_plan | default([])) + [ {'idx': item, 'pod': ue_ready_pods[(item-1) % (ue_ready_pods | length)]} ] }}"
-  loop: "{{ range(1, ue_count + 1) | list }}"
-  when: (ue_ready_pods | length) > 0
+# - name: Compute UE exec plan (idx -> selected pod)
+#   ansible.builtin.set_fact:
+#     ue_plan: "{{ (ue_plan | default([])) + [ {'idx': item, 'pod': ue_ready_pods[(item-1) % (ue_ready_pods | length)]} ] }}"
+#   loop: "{{ range(1, ue_count + 1) | list }}"
+#   when: (ue_ready_pods | length) > 0
 
-- name: Show UE → pod mapping
-  ansible.builtin.debug:
-    msg: |
-      UE mapping (round-robin across {{ ue_ready_pods | length }} pod(s)):
-      {% for e in ue_plan | default([]) -%}
-      ue{{ e.idx }} -> {{ e.pod }}
-      {% endfor %}
+# - name: Show UE → pod mapping
+#   ansible.builtin.debug:
+#     msg: |
+#       UE mapping (round-robin across {{ ue_ready_pods | length }} pod(s)):
+#       {% for e in ue_plan | default([]) -%}
+#       ue{{ e.idx }} -> {{ e.pod }}
+#       {% endfor %}
 
-# Start each UE (DETACHED + idempotent)
-- name: Check if each UE is already running
-  ansible.builtin.command: >
-    {{ kubectl_bin }} -n {{ open5gs_ns }}
-    exec {{ item.pod }} -- /bin/sh -lc
-    'test -f /tmp/ue{{ item.idx }}.pid && kill -0 $(cat /tmp/ue{{ item.idx }}.pid) 2>/dev/null'
-  loop: "{{ ue_plan | default([]) }}"
-  register: ue_running
-  changed_when: false
-  failed_when: false
+# # Start each UE (DETACHED + idempotent)
+# - name: Check if each UE is already running
+#   ansible.builtin.command: >
+#     {{ kubectl_bin }} -n {{ open5gs_ns }}
+#     exec {{ item.pod }} -- /bin/sh -lc
+#     'test -f /tmp/ue{{ item.idx }}.pid && kill -0 $(cat /tmp/ue{{ item.idx }}.pid) 2>/dev/null'
+#   loop: "{{ ue_plan | default([]) }}"
+#   register: ue_running
+#   changed_when: false
+#   failed_when: false
 
-- name: Start each UE in background if not running
-  ansible.builtin.command: >
-    {{ kubectl_bin }} -n {{ open5gs_ns }}
-    exec {{ ue.pod }} -- /bin/sh -lc
-    'nohup /srsran/config/start_ue.sh {{ ue.idx }}
-     > /var/log/ue{{ ue.idx }}.log 2>&1 &
-     echo $! > /tmp/ue{{ ue.idx }}.pid'
-  loop: "{{ ue_plan | default([]) }}"
-  loop_control:
-    loop_var: ue
-    extended: true
-  when: ue_running.results[ansible_loop.index0].rc != 0
-  register: ue_start
-  changed_when: ue_start.rc == 0
-  failed_when: ue_start.rc != 0
+# - name: Start each UE in background if not running
+#   ansible.builtin.command: >
+#     {{ kubectl_bin }} -n {{ open5gs_ns }}
+#     exec {{ ue.pod }} -- /bin/sh -lc
+#     'nohup /srsran/config/start_ue.sh {{ ue.idx }}
+#      > /var/log/ue{{ ue.idx }}.log 2>&1 &
+#      echo $! > /tmp/ue{{ ue.idx }}.pid'
+#   loop: "{{ ue_plan | default([]) }}"
+#   loop_control:
+#     loop_var: ue
+#     extended: true
+#   when: ue_running.results[ansible_loop.index0].rc != 0
+#   register: ue_start
+#   changed_when: ue_start.rc == 0
+#   failed_when: ue_start.rc != 0
 
-- name: Summary
-  ansible.builtin.debug:
-    msg:
-      - "gNB started (detached): PID /tmp/gnb.pid, log /var/log/gnb.log"
-      - "UEs started (detached): PID /tmp/ueN.pid, logs /var/log/ueN.log ({{ ue_count }} logical UEs)"
-      - "GNU multi-UE started once on first UE pod (detached): PID /tmp/gnu_multi_ue.pid, log /var/log/gnu_multi_ue.log"
-      - "Routes added on all logical UEs"
+# - name: Summary
+#   ansible.builtin.debug:
+#     msg:
+#       - "gNB started (detached): PID /tmp/gnb.pid, log /var/log/gnb.log"
+#       - "UEs started (detached): PID /tmp/ueN.pid, logs /var/log/ueN.log ({{ ue_count }} logical UEs)"
+#       - "GNU multi-UE started once on first UE pod (detached): PID /tmp/gnu_multi_ue.pid, log /var/log/gnu_multi_ue.log"
+#       - "Routes added on all logical UEs"
