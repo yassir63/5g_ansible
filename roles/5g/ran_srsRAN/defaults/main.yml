@@ -1,0 +1,16 @@
+---
+ran_ns: open5gs
+open5gs_ns: "open5gs"
+
+repo_dest: "~/open5gs-k8s"
+srs_repo_rel: "k8s_srsran_open5gs"
+
+srs_gnb_rel: "srsRAN/srsran-gnb"
+srs_ue_rel:  "ues/srsue"
+
+srs_gnb_label_selectors: ["app=srsran-gnb"]
+srs_ue_label_selectors:  ["app=srsue"]
+
+ue_count: 3
+
+kubectl_bin: "kubectl"
