@@ -1,0 +1,10 @@
+---
+repo_url: "https://github.com/yassir63/open5gs-k8s.git"
+repo_dest: "~/open5gs-k8s"
+ran_ns: oai
+rru: "{{ hostvars[groups['faraday'][0]].rru }}"
+conf: "{{ hostvars[groups['faraday'][0]].conf }}"
+script_path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+charts_base: "{{ repo_dest }}/oai-ran/oai-cn5g-fed/charts"
+demo_oai_dir: "{{ repo_dest }}/oai-ran"
+demo_oai_cmd: "start"
