@@ -26,10 +26,10 @@ This will:
 - Allocate and reset the reserved machines using `pos`.
 - Install all required packages.
 - Set up a Kubernetes cluster across the nodes.
-- Deploy the **Open5GS Core** (with slice support via [Ziyad-Mabrouk/open5gs-k8s](https://github.com/Ziyad-Mabrouk/open5gs-k8s)).
+- Deploy the **Open5GS Core** (with slice support via [yassir63/open5gs-k8s](https://github.com/yassir63/open5gs-k8s)).
 - Deploy the **Monarch monitoring framework** ([Ziyad-Mabrouk/5g-monarch](https://github.com/Ziyad-Mabrouk/5g-monarch), forked from [niloysh/5g-monarch](https://github.com/niloysh/5g-monarch)).
 - Clean up and configure R2Lab resources: RRU, UEs, Fit Nodes.
-- Deploy the **OAI RAN stack** with **FlexRIC and gNB** ([Ziyad-Mabrouk/oai5g-rru](https://github.com/Ziyad-Mabrouk/oai5g-rru/tree/gen-cn2)).
+- Deploy the **OAI RAN stack** with **FlexRIC and gNB** ([yassir63/oai5g-rru](https://github.com/yassir63/oai5g-rru/tree/gen-cn2)).
 
 > **Note:** This will only prepare the UEs, but will not connect them. That is done via one of the test scenarios below. However, you can uncomment the last section of the `playbooks/deploy.yml` file so that all the UEs in the `[qhats]` group of the `inventory/hosts.ini` will be connected to the 5G network.
 
