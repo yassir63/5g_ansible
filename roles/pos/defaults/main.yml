@@ -1,5 +1,5 @@
 pos_image: ubuntu-jammy-slices@2025-04-02T01:33:28+00:00
-pos_rt_image: ubuntu-jammy-rt@2025-09-11T12:59:20+00:00
+pos_rt_image: ubuntu-jammy-rt@2025-09-28T10:59:59+00:00
 pos_image_user: turletti
 # Boot parameters for ran node on f1 or f2 with USRP N3XX or AW2S RRUs
 boot_parameters_f1f2: >-
