@@ -1,14 +1,43 @@
-# Automated 5G Deployment And Monitoring With Ansible
+# Automated 5G Deployment & Monitoring with Ansible
 
 ![setup](images/setup.png)
 
-This repository provides a fully automated [Ansible](https://www.ansible.com/) framework for deploying and monitoring a sliced 5G network using Kubernetes. It is intended to be run from the [SLICES platform Webshell](https://post-5g-web.slices-ri.eu/), assuming you have:
+This repository provides a fully automated [Ansible](https://www.ansible.com/) framework for deploying and monitoring a sliced 5G network on Kubernetes. It is intended to be run from the [SLICES platform Webshell](https://post-5g-web.slices-ri.eu/), assuming you have:
 
 - A valid [SLICES account](https://doc.slices-ri.eu/).
 - A valid reservation for the machines `sopnode-f1`, `sopnode-f2`, and `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
 - A valid [R2Lab account and reservation](https://r2lab.inria.fr/tuto-010-registration.md).
 
-> This work was developed as part of my internship at [Inria Sophia Antipolis](https://www.inria.fr/en/inria-centre-universite-cote-azur), under the supervision of: Thierry Turletti, Chadi Barakat, and Walid Dabbous.
+It supports:
+
+- **R2Lab deployments** (Open5GS core + OAI on R2Lab resources).
+- **RF Simulation** (no R2Lab devices).
+- **Multiple RAN combos**: OAI gNB (rfsim), srsRAN gNB (ZMQ), UERANSIM gNB/UE.
+
+This work was done by **Yassir Amami** and **Ziyad Mabrouk** as part of our mission at [Inria Sophia Antipolis](https://www.inria.fr/en/inria-centre-universite-cote-azur).
+
+---
+
+## 📁 Repository Layout
+
+```
+.
+├─ deployments/                # Deployment launchers (see below)
+│  ├─ deploy.sh                # R2Lab: Open5GS core + OAI on R2Lab
+│  ├─ deploy_rfsim_oai_core.sh # OAI core + OAI gNB (RFSIM emulated)
+│  ├─ deploy_open5gs_rfsim.sh  # Open5GS core + OAI gNB (RFSIM emulated)
+│  ├─ deploy_open5gs_srsRAN.sh # Open5GS core + srsRAN gNB + UEs (ZMQ emulated)
+│  └─ deploy_open5gs_ueransim.sh # Open5GS core + UERANSIM gNB + emulated UEs
+├─ iperfTests/                 # Iperf test scenarios & runners (moved here)
+│  ├─ run_iperf_test.sh        # Default/parallel/interference test runner
+│  └─ run_rfsim_iperf_test.sh  # RFSim iperf tests
+├─ playbooks/                  # Ansible playbooks
+├─ inventory/                  # hosts.ini and group_vars
+├─ collections/                # Ansible collections
+├─ roles/                      # Ansible roles
+├─ images/                     # figures/screenshots
+└─ deploy.sh                   # Unified launcher (new)
+```
 
 ---
 
@@ -17,132 +46,170 @@ This repository provides a fully automated [Ansible](https://www.ansible.com/) f
 From the SLICES Webshell:
 
 ```bash
-git clone https://github.com/Ziyad-Mabrouk/5g_ansible.git
+git clone https://github.com/yassir63/5g_ansible.git
 cd 5g_ansible
-./deploy.sh
+./deploy.sh r2lab
 ```
 
 This will:
-- Allocate and reset the reserved machines using `pos`.
-- Install all required packages.
-- Set up a Kubernetes cluster across the nodes.
-- Deploy the **Open5GS Core** (with slice support via [yassir63/open5gs-k8s](https://github.com/yassir63/open5gs-k8s)).
-- Deploy the **Monarch monitoring framework** ([Ziyad-Mabrouk/5g-monarch](https://github.com/Ziyad-Mabrouk/5g-monarch), forked from [niloysh/5g-monarch](https://github.com/niloysh/5g-monarch)).
-- Clean up and configure R2Lab resources: RRU, UEs, Fit Nodes.
-- Deploy the **OAI RAN stack** with **FlexRIC and gNB** ([yassir63/oai5g-rru](https://github.com/yassir63/oai5g-rru/tree/gen-cn2)).
 
-> **Note:** This will only prepare the UEs, but will not connect them. That is done via one of the test scenarios below. However, you can uncomment the last section of the `playbooks/deploy.yml` file so that all the UEs in the `[qhats]` group of the `inventory/hosts.ini` will be connected to the 5G network.
+- Allocate and reset reserved machines via `pos`.
+- Install required packages.
+- Set up a Kubernetes cluster across nodes.
+- Deploy **Open5GS Core** (with slice support via the `open5gs-k8s` dependency).
+- Deploy the **Monarch** monitoring stack which allows the monitoring of the Core as well as the OAI gNB or the srsRAN gNB for now.
+- Prepare R2Lab resources (RRU, UEs, Fit Nodes) as required.
+
+> **Note:** By default, UEs are prepared but not necessarily connected. Use one of the **iperf test scenarios** below to exercise the system, or adjust the last section of the relevant deploy playbook if you want automatic attach.
 
 ---
 
-## Available Scenarios
-After running `deploy.sh`, choose one of the available scenarios to run based on your experiment setup.
+## 🧭 Unified Deployment Launcher
+
+Use the top-level `deploy.sh` to select a deployment target explicitly:
+
+```bash
+./deploy.sh <target>
+```
+
+Available **targets**:
+
+- `r2lab` → `deployments/deploy.sh`
+  - Runs **Open5GS core + OAI** on **R2Lab**.
+- `oai_rfsim` → `deployments/deploy_rfsim_oai_core.sh`
+  - Runs **OAI core + OAI gNB** with **RFSIM** (emulated).
+- `open5gs_rfsim` → `deployments/deploy_open5gs_rfsim.sh`
+  - Runs **Open5GS core + OAI gNB** with **RFSIM** (emulated).
+- `open5gs_srsran` → `deployments/deploy_open5gs_srsRAN.sh`
+  - Runs **Open5GS core + srsRAN gNB + UEs** (**ZMQ** emulated).
+- `open5gs_ueransim` → `deployments/deploy_open5gs_ueransim.sh`
+  - Runs **Open5GS core + UERANSIM gNB + emulated UEs**.
+
+Examples:
+
+```bash
+./deploy.sh r2lab
+./deploy.sh oai_rfsim
+./deploy.sh open5gs_rfsim
+./deploy.sh open5gs_srsran
+./deploy.sh open5gs_ueransim
+```
+
+> The wrapper is **explicit only** (no extra options forwarded). If you need to pass Ansible variables later, run the underlying playbooks directly or extend the wrapper.
+
+---
+
+## 📶 Iperf Test Scenarios
+
+After deployment, choose one of the following scenarios. The helper script is now under `iperfTests/`. ( works only for the R2Lab scenario for now )
 
 #### Command Overview
+
 ```bash
+cd iperfTests
 ./run_iperf_test.sh [OPTION] [--no-setup]
 ```
+
 - `-d`: Run the default iperf test
 - `-p`: Run the parallel iperf test
 - `-i`: Run the interference test
-- `--no-setup`: Optional. Skip the setup phase and only run the test playbook.
-Use this when repeating the same test without redoing the necessary setup.
+- `--no-setup`: Skip the setup phase (useful for repeat runs)
 
-### 1. Default Iperf Test
+### 1) Default Iperf Test
+
 ```bash
+cd iperfTests
 ./run_iperf_test.sh -d
 ```
-- Connect all UEs defined in `[qhats]` host group.
-- Each UE runs downlink then uplink iperf3 test *separately*.
-> **Note:** This is the baseline scenario used to for basic connectivity testing and benchmarking.
 
-### 2. Parallel Iperf Tests
+- Connects UEs defined in `[qhats]`.
+- Each UE runs downlink then uplink iperf3 separately.
+
+### 2) Parallel Iperf Tests
+
 ```bash
+cd iperfTests
 ./run_iperf_test.sh -p
 ```
-- Connect the *first 4* UEs.
-- Each UE runs bidirectional iperf3 test for 400 seconds, sequentially spaced by 100 seconds.
 
-### 3. Interference Test with Spectrum Visualization
+- Connects the *first 4* UEs.
+- Each UE runs bidirectional iperf3 for 400s, staggered by 100s.
+
+### 3) Interference Test + Spectrum Visualization
+
 ```bash
+cd iperfTests
 ./run_iperf_test.sh -i
 ```
-- Connect the first UE.
-- Spectrum visualization using `uhd_fft` on the first fit node.
-- Noise generation via second fit node (`interference_usrp=fit`) or specified USRP (`n300` or `n320`).
-- Noise generation is active 100 seconds after the UE performs bidirectional iperf3.
 
-#### Re-running a Test without Setup
-To skip the setup phase (e.g., when UEs and USRPs are already configured), use the `--no-setup` flag:
-```bash
-./run_iperf_test.sh -i --no-setup
-```
-This avoids reconnecting UEs and reconfiguring the noise generator, and only re-runs the test logic.
+- Connects the first UE.
+- Spectrum visualization (`uhd_fft`) on the first fit node.
+- Noise generation via second fit node (`interference_usrp=fit`) or specific USRP (`n300`/`n320`).
+- Noise starts 100s after UE begins bidirectional iperf3.
 
----
-
-## RF Simulation Mode
-
-To run the setup **without any R2Lab devices**, using RF Simulation only, run:
+#### RF Simulation Iperf
 
 ```bash
-./deploy_rfsim.sh
-```
-
-No changes to `inventory/hosts.ini` are required. The playbook not use Faraday and UE configurations and instead it will install 3 NR-UEs as Kubernetes pods (`oai-nr-ue`, `oai-nr-ue2`, `oai-nr-ue3`). Each uses the same IMSI as qhat01, qhat02, and qhat03 respectively.
-
-Afer that, to run the RFSIM iperf test:
-```bash
+cd iperfTests
 ./run_rfsim_iperf_test.sh
 ```
-This will run uplink, then downlink iperf test for slice 1 (`oai-nr-ue`) and slice 2 (`oai-nr-ue2`) separately.
+
+- Runs uplink then downlink iperf on RFSim UEs (slice 1 & 2).
+
+> Use `--no-setup` to skip connection & device config when re-running a scenario without changes.
 
 ---
 
-## Inventory Configuration
+## 🛰 RF Simulation Mode (no R2Lab)
 
-The deployment is driven by `inventory/hosts.ini`, where you define:
+To run the setup **without** R2Lab devices using RF Simulation only:
 
-- Core, RAN, and Monitoring nodes
-- Which node acts as Kubernetes master/worker
-- R2Lab Faraday jump-host and remote UEs
-- RRU to use
-- Other scenario-specific parameters ...
+```bash
+./deploy.sh open5gs_rfsim
+# then
+cd iperfTests && ./run_rfsim_iperf_test.sh
+```
 
-### Example Snippet:
+The playbooks will create NR-UE pods (e.g., `oai-nr-ue`, `oai-nr-ue2`, `oai-nr-ue3`) on Kubernetes.
+
+---
+
+## 🧾 Inventory Configuration
+
+All deployments are driven by `inventory/hosts.ini`:
+
+- Core, RAN, Monitoring nodes
+- Kubernetes master/worker roles
+- R2Lab Faraday jump-host & remote UEs
+- RRU model
+- Scenario-specific parameters
+
+### Example
 
 ```ini
-# SLICES Webshell
 [webshell]
 localhost ansible_connection=local
 
-# SLICES Deployment Nodes
 [core_node]
-# Acts as Kubernetes master + Open5GS Core node
 sopnode-f3 ansible_user=root nic_interface=ens15f1 ip=172.28.2.95 storage=sdb1
 
 [ran_node]
-# Hosts OAI gNB (sopnode-w3 is not supported for this role in the case of AW2S RAN)
 sopnode-f2 ansible_user=root nic_interface=ens2f1 ip=172.28.2.77 storage=sda1
 
 [monitor_node]
-# Monarch monitoring stack + data persistance
 sopnode-f1 ansible_user=root nic_interface=ens2f1 ip=172.28.2.76 storage=sda1
 
-# R2Lab Section
 [faraday]
-faraday.inria.fr ansible_user=inria_ubinet01 rru=jaguar interference_usrp=n320 freq=3411.22M g=110 s=20M conf=gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf
+faraday.inria.fr ansible_user=<your_r2lab_user> rru=jaguar interference_usrp=n320 freq=3411.22M g=110 s=20M conf=gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf
 
 [qhats]
-qhat01 ansible_host=qhat01 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
-qhat02 ansible_host=qhat02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=streaming upf_ip=10.42.0.1
-qhat03 ansible_host=qhat03 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
-qhat11 ansible_host=qhat11 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=streaming upf_ip=10.42.0.1
+qhat01 ansible_host=qhat01 ansible_user=root ansible_ssh_common_args='-o ProxyJump=<your_r2lab_user>@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
+qhat02 ansible_host=qhat02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=<your_r2lab_user>@faraday.inria.fr' mode=mbim dnn=streaming upf_ip=10.42.0.1
+qhat03 ansible_host=qhat03 ansible_user=root ansible_ssh_common_args='-o ProxyJump=<your_r2lab_user>@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
 
 [fit_nodes]
-fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' fit_number=2 fit_usrp=b210
+fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=<your_r2lab_user>@faraday.inria.fr' fit_number=2 fit_usrp=b210
 
-# Group aliases
 [sopnodes:children]
 core_node
 ran_node
@@ -153,44 +220,47 @@ ran_node
 monitor_node
 ```
 
-> **IMPORTANT:** Update the `ansible_user` under `[faraday]` to match your actual R2Lab slice name.
+> **IMPORTANT:** set `ansible_user` in `[faraday]` to your actual R2Lab slice name.
 
 ---
 
-## Monitoring Dashboard Access
+## 📊 Monitoring Dashboard Access
 
-After deployment, instructions will be printed to your terminal with the SSH command required to access the **Monarch monitoring dashboard**.
+After deployment, the terminal prints the SSH command to access the **Monarch** dashboard.
 
-**Note:** To access Duckburg nodes from your local machine, you must configure your local environment to connect to the SLICES infrastructure. See:
-👉 [SLICES CLI and SSH access guide](https://doc.slices-ri.eu/SupportingServices/slicescli.html)
-
----
-
-## Customization Tips
-
-- You may assign any node for any role (core, ran, monitor) **except** that AW2S RAN can only be deployed on `sopnode-f1`, `sopnode-f2` or `sopnode-f3`.
-- You can run everything on a single node (not recommended for performance).
-- The UPF and DNN of each UE are defined in [this configuration of the Open5gs core](https://github.com/Ziyad-Mabrouk/open5gs-k8s/blob/main/mongo-tools/generate-data.py) and should not be changed.
-- Supported RRUs are: `n300`, `n320`, `jaguar` and `panther`.
-- The specific gNB configuration file is mandatory and must be specified via the `conf` variable in the `hosts.ini` file (under the `[faraday]` group). Only config files available in the [`ran-config/conf/`](https://github.com/Ziyad-Mabrouk/oai5g-rru/tree/gen-cn2/ran-config/conf) directory of the `oai5g-rru` repository are supported.
-- The entire `[fit_nodes]` group, as well as the frequency, gain (g) and sample rate / bandwidth covered by the noise generator (s) specified in `[faraday]`, are only relevant to the interference test scenario and are not needed otherwise.
-- For the interference scenario, the first fist node (`groups[fit_nodes][0]`) is used for spectrum visualization. The USRP used for noise generation (`interference_usrp`) can be `=fit`(meaning the second fit node's USRP will be used as noise generator), or `=n300` / `=n320`).
+**Tip:** To access Duckburg nodes from your local machine, configure SLICES CLI/SSH per the official guide.
 
 ---
 
-## Troubleshooting
+## 🛠 Customization Notes
 
-- Ensure you have SSH access from Webshell to `faraday.inria.fr` **and** from your local machine to the Webshell environment.
-- Always verify your reservations are active in the [Duckburg Calendar](https://duckburg.net.cit.tum.de/calendar) and [R2Lab](https://r2lab.inria.fr/run.md).
-- This code relies heavily on the setup and configuration of SLICES and R2Lab, thus any changes/problems related to these testbeds can impact experiments.
+- You can assign any node to any role (core/ran/monitor), except AW2S RAN is limited to `sopnode-f1..f3`.
+- Single-node deployment is possible (not recommended for performance).
+- UE DNN/UPF mapping is defined by the Open5GS core data generator; don’t change unless you know what you’re doing.
+- Supported RRUs: `n300`, `n320`, `jaguar`, `panther`.
+- The gNB `conf` file is mandatory (see `ran-config/conf/` in `oai5g-rru`).
+- Interference scenario uses the first fit node for spectrum viz; the second fit node (or `n300`/`n320`) as noise source.
 
-## Data Persistence
+---
 
-All of Monarch's monitoring data is automatically persisted to the block storage device specified under the storage variable in your `hosts.ini` file (e.g., `sda1` for `sopnode-f1`). This device is mounted under `/mnt/data`, and all monitoring data flushed by Prometheus to the MinIO bucket is stored under `/mnt/data/minio/monarch-thanos/`.
+## 🧰 Troubleshooting
 
-**Note on Prometheus persistence:** Prometheus writes all incoming metrics data to an in-memory *head block* and only flushes this data to disk every **2 hours**. At the moment, this interval cannot be changed in our setup. As a result:
-> ⚠️ If the monitor node is terminated or redeployed before 2 hours have passed, any collected data will be lost.
+- Ensure SSH access from Webshell → `faraday.inria.fr` and from your local machine → Webshell.
+- Verify reservations in the Duckburg and R2Lab calendars.
+- Testbeds evolve; changes on SLICES/R2Lab can affect experiments.
 
-To ensure metrics are actually written to disk and persist across redeployments, you must wait **at least 2 hours** after starting data collection, in which case extending your reservation is needed. Once this threshold is reached, Prometheus will flush the in-memory block to the permanent on-disk block that survives restarts.
+---
 
-As long as the same monitor node and mounted storage are reused, previously flushed data will remain available in the monitoring dashboard.
+## 💾 Data Persistence
+
+Monarch’s data is persisted to the block device specified by `storage` in `hosts.ini`, mounted under `/mnt/data`. MinIO stores Thanos blocks in `/mnt/data/minio/monarch-thanos/`.
+
+**Prometheus flushing behavior:** data is flushed from in-memory head to disk every **\~2 hours**. If the monitor node is terminated before a flush, that interim data is lost. After the first flush, data survives restarts as long as the same node and storage are reused.
+
+---
+
+## 🙏 Acknowledgments
+
+- Inria Sophia Antipolis — DIANA Team
+- Upstream components: Open5GS, OAI, srsRAN, UERANSIM, Monarch
+
