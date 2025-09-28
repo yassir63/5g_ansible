@@ -82,7 +82,7 @@
   hosts: ran_node
   gather_facts: false
   vars:
-    ue_count: 2
+    ue_count: 4
   roles:
     - role: 5g/ran_srsRAN
 

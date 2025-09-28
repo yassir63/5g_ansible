@@ -79,125 +79,234 @@
   changed_when: gnb_start.rc == 0
   failed_when: gnb_start.rc != 0
 
-# # ------------------------------
-# # UE deployment (label-based selectors + lenient wait)
-# # ------------------------------
+# ------------------------------
+# Deploy srsRAN UEs (tmux-managed in a single pod)
+# ------------------------------
 
-# - name: Check UE kustomize dir exists
-#   ansible.builtin.stat:
-#     path: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
-#   register: ue_dir
+# Ensure UE kustomize dir exists
+- name: Check UE kustomize dir exists
+  ansible.builtin.stat:
+    path: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
+  register: ue_dir
 
-# - name: Fail if UE kustomize dir missing
-#   ansible.builtin.fail:
-#     msg: >
-#       UE kustomize directory not found:
-#       {{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}
-#   when: not ue_dir.stat.exists
+- name: Fail if UE kustomize dir missing
+  ansible.builtin.fail:
+    msg: >
+      UE kustomize directory not found:
+      {{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}
+  when: not ue_dir.stat.exists
 
-# - name: Apply srsRAN UE manifests (kubectl -k .)
-#   ansible.builtin.command: >
-#     {{ kubectl_bin }} apply -k . -n {{ open5gs_ns }}
-#   args:
-#     chdir: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
-#   register: srs_ue_apply
-#   changed_when: >
-#     ('configured' in (srs_ue_apply.stdout | default(''))) or
-#     ('created' in (srs_ue_apply.stdout | default('')))
-#   failed_when: srs_ue_apply.rc != 0
+# Apply UE manifests (kustomize)
+- name: Apply srsRAN UE manifests (kubectl -k .)
+  ansible.builtin.command: >
+    {{ kubectl_bin }} apply -k . -n {{ open5gs_ns }}
+  args:
+    chdir: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
+  register: srs_ue_apply
+  changed_when: >
+    ('configured' in (srs_ue_apply.stdout | default(''))) or
+    ('created' in (srs_ue_apply.stdout | default('')))
+  failed_when: srs_ue_apply.rc != 0
 
-# # Snapshot UE pods by selectors
-# - name: Snapshot UE pods (selectors)
-#   kubernetes.core.k8s_info:
-#     kind: Pod
-#     namespace: "{{ open5gs_ns }}"
-#     label_selectors: "{{ srs_ue_label_selectors }}"
-#   register: ue_pods_now
+# --- Robust UE pod discovery & wait ---
+- name: List all pods in {{ open5gs_ns }}
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+  register: all_pods
 
-# - name: Debug UE names/phases (selectors)
-#   ansible.builtin.debug:
-#     msg:
-#       - "UE selectors={{ srs_ue_label_selectors | join(',') }}"
-#       - "UE names={{ ue_pods_now.resources | map(attribute='metadata.name') | list }}"
-#       - "UE phases={{ ue_pods_now.resources | map(attribute='status.phase') | list }}"
+- name: Filter UE pods by provided selectors (if any)
+  when: srs_ue_label_selectors is defined and (srs_ue_label_selectors | length) > 0
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors: "{{ srs_ue_label_selectors }}"
+  register: ue_by_labels
 
-# # Wait until AT LEAST ONE UE pod is Running
-# - name: Wait for at least one UE pod Running
-#   kubernetes.core.k8s_info:
-#     kind: Pod
-#     namespace: "{{ open5gs_ns }}"
-#     label_selectors: "{{ srs_ue_label_selectors }}"
-#   register: srs_ue_pods
-#   until: >
-#     (srs_ue_pods.resources | selectattr('status.phase','equalto','Running') | list | length) >= 1
-#   retries: 90
-#   delay: 5
+- name: Build UE pod candidates
+  ansible.builtin.set_fact:
+    ue_candidates: >-
+      {{
+        (ue_by_labels.resources if (ue_by_labels is defined and (ue_by_labels.resources | length) > 0)
+         else
+         (all_pods.resources
+           | selectattr('metadata.name','search','^(srsran-ue|srsue|ue)[0-9-]'))
+         ) | list
+      }}
 
-# - name: Build ue_ready_pods list
-#   ansible.builtin.set_fact:
-#     ue_ready_pods: >-
-#       {{
-#         srs_ue_pods.resources
-#         | selectattr('status.phase','equalto','Running')
-#         | map(attribute='metadata.name') | list
-#       }}
+- name: Debug available pod names (when no UE candidates)
+  ansible.builtin.debug:
+    msg: "{{ all_pods.resources | map(attribute='metadata.name') | list }}"
+  when: ue_candidates | length == 0
 
-# - name: Warn if fewer UE pods than requested
-#   ansible.builtin.debug:
-#     msg:
-#       - "Requested ue_count={{ ue_count }} but only {{ ue_ready_pods | length }} UE pod(s) are Running."
-#       - "Will round-robin start {{ ue_count }} logical UEs across available UE pod(s)."
-#   when: (ue_ready_pods | length) < ue_count
+- name: Fail if no UE pods were found
+  ansible.builtin.fail:
+    msg: "No UE pods found via selectors {{ srs_ue_label_selectors | default([]) }} or name patterns ^(srsran-ue|srsue|ue)"
+  when: ue_candidates | length == 0
 
-# - name: Desired logical UE names (ue1..ueN)
-#   ansible.builtin.set_fact:
-#     ue_logical_names: "{{ range(1, ue_count + 1) | map('int') | map('regex_replace','^(.*)$','ue\\1') | list }}"
+- name: Choose the first UE pod
+  ansible.builtin.set_fact:
+    ue_pod_name: "{{ (ue_candidates | first).metadata.name }}"
 
-# - name: Compute UE exec plan (idx -> selected pod)
-#   ansible.builtin.set_fact:
-#     ue_plan: "{{ (ue_plan | default([])) + [ {'idx': item, 'pod': ue_ready_pods[(item-1) % (ue_ready_pods | length)]} ] }}"
-#   loop: "{{ range(1, ue_count + 1) | list }}"
-#   when: (ue_ready_pods | length) > 0
+- name: Wait for chosen UE pod to be Ready
+  ansible.builtin.command: >
+    {{ kubectl_bin }} wait --for=condition=Ready pod/{{ ue_pod_name }}
+    -n {{ open5gs_ns }} --timeout=600s
+  register: ue_wait
+  changed_when: false
+  failed_when: ue_wait.rc != 0
 
-# - name: Show UE → pod mapping
-#   ansible.builtin.debug:
-#     msg: |
-#       UE mapping (round-robin across {{ ue_ready_pods | length }} pod(s)):
-#       {% for e in ue_plan | default([]) -%}
-#       ue{{ e.idx }} -> {{ e.pod }}
-#       {% endfor %}
+# -----------------------------------------
+# UE in one pod + tmux-managed processes
+# -----------------------------------------
 
-# # Start each UE (DETACHED + idempotent)
-# - name: Check if each UE is already running
-#   ansible.builtin.command: >
-#     {{ kubectl_bin }} -n {{ open5gs_ns }}
-#     exec {{ item.pod }} -- /bin/sh -lc
-#     'test -f /tmp/ue{{ item.idx }}.pid && kill -0 $(cat /tmp/ue{{ item.idx }}.pid) 2>/dev/null'
-#   loop: "{{ ue_plan | default([]) }}"
-#   register: ue_running
-#   changed_when: false
-#   failed_when: false
+# ------------------------------
+# Ensure tmux inside the UE pod
+# ------------------------------
+- name: Install tmux in UE pod
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/sh -lc
+    "apt-get update && apt-get install -y tmux"
+  register: tmux_install
+  changed_when: "'Setting up tmux' in tmux_install.stdout or 'tmux is already the newest version' in tmux_install.stdout"
+  failed_when: tmux_install.rc != 0
 
-# - name: Start each UE in background if not running
-#   ansible.builtin.command: >
-#     {{ kubectl_bin }} -n {{ open5gs_ns }}
-#     exec {{ ue.pod }} -- /bin/sh -lc
-#     'nohup /srsran/config/start_ue.sh {{ ue.idx }}
-#      > /var/log/ue{{ ue.idx }}.log 2>&1 &
-#      echo $! > /tmp/ue{{ ue.idx }}.pid'
-#   loop: "{{ ue_plan | default([]) }}"
-#   loop_control:
-#     loop_var: ue
-#     extended: true
-#   when: ue_running.results[ansible_loop.index0].rc != 0
-#   register: ue_start
-#   changed_when: ue_start.rc == 0
-#   failed_when: ue_start.rc != 0
+# Build ue indices 1..N
+- name: Build ue indices
+  ansible.builtin.set_fact:
+    ue_indices: "{{ range(1, ue_count + 1) | list }}"
 
-# - name: Summary
-#   ansible.builtin.debug:
-#     msg:
-#       - "gNB started (detached): PID /tmp/gnb.pid, log /var/log/gnb.log"
-#       - "UEs started (detached): PID /tmp/ueN.pid, logs /var/log/ueN.log ({{ ue_count }} logical UEs)"
-#       - "GNU multi-UE started once on first UE pod (detached): PID /tmp/gnu_multi_ue.pid, log /var/log/gnu_multi_ue.log"
-#       - "Routes added on all logical UEs"
+# (optional) sanity: tmux present in the pod
+- name: Check tmux exists in UE pod
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} --
+    tmux -V
+  register: tmux_ver
+  changed_when: false
+  failed_when: false
+
+# Ensure tmux session 'ran' exists
+- name: Create tmux session 'ran' if missing
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} --
+    /bin/sh -lc "tmux has-session -t ran || tmux new-session -d -s ran"
+  changed_when: true
+  failed_when: false
+
+# Start/refresh UE windows and run start_ue.sh in each
+- name: Start each UE in its own tmux window
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} --
+    /bin/sh -lc "
+      tmux list-windows -t ran | grep -q 'ue{{ idx }}' && tmux kill-window -t ran:ue{{ idx }} || true;
+      tmux new-window -t ran -n ue{{ idx }} 'bash -lc \"/srsran/config/start_ue.sh {{ idx }}\"'
+    "
+  loop: "{{ ue_indices }}"
+  loop_control:
+    loop_var: idx
+  register: tmux_ue_windows
+  changed_when: true
+  failed_when: false
+
+# Wait for each UE to be up (either PID file or srsue process per config)
+- name: Wait until each UE is up (pid OR srsue process)
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/sh -lc
+    'ok=1; for i in $(seq 1 {{ ue_count }}); do
+       if ! { test -f /tmp/ue${i}.pid || pgrep -af "srsue .*ue_${i}\\.conf" >/dev/null; }; then
+         ok=0; break;
+       fi
+     done; test "$ok" = "1"'
+  register: ue_up_check
+  changed_when: false
+  failed_when: false
+  retries: 60
+  delay: 2
+  until: ue_up_check.rc == 0
+
+# Small stagger before GNU
+- name: Pause briefly before starting GNU Radio
+  ansible.builtin.pause:
+    seconds: 2
+
+# Start/refresh GNU window and run start_gnu.sh once
+- name: Start GNU in tmux window 'gnu'
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} --
+    /bin/sh -lc "
+      tmux list-windows -t ran | grep -q '^\\s*[0-9]\\+: gnu\\b' && tmux kill-window -t ran:gnu || true;
+      tmux new-window -t ran -n gnu 'bash -lc \"/srsran/config/start_gnu.sh {{ ue_count }}\"'
+    "
+  register: tmux_gnu_win
+  changed_when: true
+  failed_when: false
+
+# Wait until GNU prints its interactive prompt
+- name: Wait for GNU to print its prompt
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/sh -lc
+    "grep -q 'Press Enter to quit' /var/log/gnu_multi_ue.log"
+  register: gnu_log_wait
+  changed_when: false
+  failed_when: false
+  retries: 30
+  delay: 2
+  until: gnu_log_wait.rc == 0
+
+# Show GNU status (ps + log tail)
+- name: Show GNU status (process + log tail)
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/sh -lc
+    "echo '== ps =='; pgrep -af 'python3 .*srsran/config/multi_ue_scenario.py' || true;
+     echo '== gnu log tail =='; tail -n 50 /var/log/gnu_multi_ue.log || true"
+  register: gnu_status
+  changed_when: false
+  failed_when: false
+
+- name: GNU status
+  ansible.builtin.debug:
+    msg: "{{ gnu_status.stdout }}"
+
+# Small pause, then routing (script may warn for absent namespaces; don't fail)
+- name: Pause briefly before adding default route
+  ansible.builtin.pause:
+    seconds: 2
+
+- name: Add default route once (inside the UE pod)
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/bash -lc
+    'UE_COUNT={{ ue_count }} /srsran/config/add_route.sh'
+  register: route_once
+  changed_when: false
+  failed_when: false
+
+# Extract UE IP addresses from logs
+- name: Extract UE IP addresses from logs
+  ansible.builtin.command: >
+    {{ kubectl_bin }} -n {{ open5gs_ns }}
+    exec {{ ue_pod_name }} -- /bin/sh -lc
+    "grep -m1 'PDU Session Establishment successful' /var/log/ue{{ idx }}.log | awk '{print \$NF}'"
+  loop: "{{ ue_indices }}"
+  loop_control:
+    loop_var: idx
+    extended: true
+  register: ue_ips
+  changed_when: false
+  failed_when: false
+
+- name: Show UE IP addresses
+  ansible.builtin.debug:
+    msg: "UE{{ idx }} → {{ ue_ips.results[ansible_loop.index0].stdout | default('N/A') }}"
+  loop: "{{ ue_indices }}"
+  loop_control:
+    loop_var: idx
+    extended: true
+
+# Summary
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      - "UEs started in tmux session 'ran': windows ue1..ue{{ ue_count }}, logs /var/log/ueN.log"
+      - "GNU multi-UE started in tmux window 'gnu': log /var/log/gnu_multi_ue.log"
+      - "Routes attempted via add_route.sh (non-fatal if some UEs absent)"
+      - "Inspect tmux: kubectl -n {{ open5gs_ns }} exec -it {{ ue_pod_name }} -- tmux attach -t ran"
