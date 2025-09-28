@@ -1,0 +1,95 @@
+---
+# Assumes vars are defined somewhere:
+# open5gs_ns, repo_dest, timeout_duration, gnb_kustomize_dir, ue_kustomize_dir
+
+- name: Ensure Open5GS namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ open5gs_ns }}"
+    state: present
+
+- name: Check if subscribers exist (with timeout)
+  ansible.builtin.shell: |
+    set -o pipefail
+    timeout {{ timeout_duration }}s python3 mongo-tools/check-subscribers.py
+  args:
+    chdir: "{{ repo_dest }}"
+    executable: /bin/bash
+  register: subscriber_check
+  changed_when: false
+  failed_when: >
+    (subscriber_check.rc == 124) or
+    ('No subscribers found' in (subscriber_check.stdout | default('')))
+
+- name: Show subscriber check output (stdout/stderr/rc)
+  ansible.builtin.debug:
+    msg:
+      - "stdout: {{ subscriber_check.stdout | default('') }}"
+      - "stderr: {{ subscriber_check.stderr | default('') }}"
+      - "rc: {{ subscriber_check.rc }}"
+
+# --- gNB ---
+
+- name: Apply UERANSIM gNB (kubectl -k)
+  ansible.builtin.command: >
+    kubectl apply -k "{{ repo_dest }}/{{ gnb_kustomize_dir }}" -n {{ open5gs_ns }}
+  register: gnb_apply
+  changed_when: >
+    ('configured' in (gnb_apply.stdout | default(''))) or
+    ('created' in (gnb_apply.stdout | default('')))
+  failed_when: gnb_apply.rc != 0
+
+- name: Wait for gNB pod(s) Ready (label component=gnb)
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "component=gnb"
+  register: gnb_pods
+  until: >
+    (gnb_pods.resources | length) > 0 and
+    (
+      gnb_pods.resources
+      | map(attribute='status.containerStatuses') | map('default', []) | list
+      | sum(start=[])
+      | map(attribute='ready') | list | unique
+    ) == [True]
+  retries: 40
+  delay: 5
+
+- name: Small grace period after gNB readiness
+  ansible.builtin.pause:
+    seconds: 5
+
+# --- UE ---
+
+- name: Apply UERANSIM UE (kubectl -k)
+  ansible.builtin.command: >
+    kubectl apply -k "{{ repo_dest }}/{{ ue_kustomize_dir }}" -n {{ open5gs_ns }}
+  register: ue_apply
+  changed_when: >
+    ('configured' in (ue_apply.stdout | default(''))) or
+    ('created' in (ue_apply.stdout | default('')))
+  failed_when: ue_apply.rc != 0
+
+- name: Wait for UE pod(s) Running (label component=ue)
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "component=ue"
+  register: ue_pods
+  until: >
+    (ue_pods.resources | length) > 0 and
+    (ue_pods.resources | map(attribute='status.phase') | unique) == ['Running']
+  retries: 60
+  delay: 5
+
+- name: Success summary / next steps
+  ansible.builtin.debug:
+    msg:
+      - "UERANSIM RAN deployment complete."
+      - "Next steps:"
+      - "  1) Generate traffic from UEs (e.g., ping)."
+      - "  2) Verify traffic goes through the intended slice (packet captures on the UPF)."
