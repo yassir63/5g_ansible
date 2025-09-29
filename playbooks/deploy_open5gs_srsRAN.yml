@@ -58,7 +58,9 @@
 - name: Deploy Open5gs Core
   hosts: core_node
   roles:
-    - role: 5g/core_srsRAN
+    - role: 5g/core/core_open5gs
+      vars:
+        version: "srsRAN"
 
 - name: Setup iperf3 on UPFs
   hosts: core_node
@@ -84,7 +86,7 @@
   vars:
     ue_count: 4
   roles:
-    - role: 5g/ran_srsRAN
+    - role: 5g/ran/ran_srsRAN
 
 #- name: Launch 5G-Monarch monitoring
 #  hosts: monitor_node
