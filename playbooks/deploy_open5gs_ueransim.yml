@@ -58,7 +58,9 @@
 - name: Deploy Open5gs Core
   hosts: core_node
   roles:
-    - role: 5g/core_ueransim
+    - role: 5g/core/core_open5gs
+      vars:
+        version: "ueransim"
 
 - name: Setup iperf3 on UPFs
   hosts: core_node
@@ -81,7 +83,7 @@
 - name: Deploy UERANSIM RAN
   hosts: ran_node
   roles:
-    - role: 5g/ueransim
+    - role: 5g/ran/ueransim
 
 #- name: Deploy OAI RAN
 #  hosts: ran_node

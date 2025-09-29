@@ -62,7 +62,7 @@
     rru: "rfsim"
     conf: "gnb.sa.band78.106prb.rfsim.2x2.conf"
   roles:
-    - role: 5g/core_oai
+    - role: 5g/core/core_oai
   #  - role: 5g/ran
 #    - role: 5g/rfsim_oai
 
