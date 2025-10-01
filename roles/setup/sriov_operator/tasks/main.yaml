@@ -7,33 +7,25 @@
     update_cache: yes
   become: true
 
-- name: Deploy SR-IOV Operator
-  block:
-    - name: Ensure kubectl is installed
-      ansible.builtin.apt:
-        name: kubectl
-        state: present
-        update_cache: yes
+- name: Install dependencies and deploy SR-IOV Operator
+  ansible.builtin.shell: |
+    # Install kubectl if missing
+    if ! command -v kubectl &> /dev/null; then
+      curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
+      install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+    fi
 
-    - name: Ensure kustomize is installed
-      ansible.builtin.shell: |
-        curl -sLo /usr/local/bin/kustomize https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize_5.1.1_linux_amd64
-        chmod +x /usr/local/bin/kustomize
-      args:
-        creates: /usr/local/bin/kustomize
+    # Install kustomize if missing
+    if ! command -v kustomize &> /dev/null; then
+      curl -sLo /tmp/kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.1.0/kustomize_v5.1.0_linux_amd64
+      chmod +x /tmp/kustomize
+      mv /tmp/kustomize /usr/local/bin/kustomize
+    fi
 
-    - name: Ensure skopeo is installed
-      ansible.builtin.apt:
-        name: skopeo
-        state: present
-        update_cache: yes
+    # Deploy CRDs
+    kubectl apply -f <(kustomize build /root/sriov-network-operator/config/crd/bases)
 
-    - name: Apply SR-IOV CRDs
-      ansible.builtin.shell: kubectl apply -f /root/sriov-network-operator/config/crd/bases
-      args:
-        executable: /bin/bash
-
-    - name: Deploy SR-IOV Operator manifests via kustomize
-      ansible.builtin.shell: kustomize build /root/sriov-network-operator/config/default | kubectl apply -f -
-      args:
-        executable: /bin/bash
+    # Deploy the SR-IOV Operator manifests
+    kubectl apply -f <(kustomize build /root/sriov-network-operator/config/default)
+  args:
+    executable: /bin/bash
