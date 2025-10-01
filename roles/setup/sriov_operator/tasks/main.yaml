@@ -7,99 +7,52 @@
     update_cache: yes
   become: true
 
-- name: Ensure git is installed
-  ansible.builtin.package:
-    name: git
-    state: present
-  become: yes
-
-- name: Install Kustomize
+- name: Deploy SR-IOV Operator
   block:
-    - name: Download Kustomize
-      ansible.builtin.get_url:
-        url: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.2.0/kustomize_v5.2.0_linux_amd64.tar.gz
-        dest: /tmp/kustomize.tar.gz
-        mode: '0644'
-        validate_certs: yes
 
-    - name: Extract Kustomize
-      ansible.builtin.unarchive:
-        src: /tmp/kustomize.tar.gz
-        dest: /usr/local/bin
-        remote_src: yes
-        extra_opts: [--strip-components=1]
-        mode: '0755'
+    - name: Ensure kubectl is installed
+      ansible.builtin.package:
+        name: kubectl
+        state: present
 
-    - name: Remove Kustomize archive
-      ansible.builtin.file:
-        path: /tmp/kustomize.tar.gz
-        state: absent
-  become: yes
+    - name: Ensure kustomize is installed
+      ansible.builtin.package:
+        name: kustomize
+        state: present
 
-- name: Clone SR-IOV Network Operator repo
-  ansible.builtin.git:
-    repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
-    dest: /root/sriov-network-operator
-    version: master
-    force: yes
+    - name: Ensure cert-manager is installed
+      kubernetes.core.k8s:
+        state: present
+        src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
-- name: Install Go dependency for SR-IOV operator
-  ansible.builtin.shell: |
-    /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
-  args:
-    chdir: /root/sriov-network-operator
+    - name: Create SR-IOV Operator namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: sriov-network-operator
+        state: present
 
-# ------------------------
-# Apply CRDs individually
-# ------------------------
-- name: Find CRD YAML files
-  ansible.builtin.find:
-    paths: /root/sriov-network-operator/config/crd/bases
-    patterns: "*.yaml"
-    excludes: "kustomization.yaml"
-    file_type: file
-  register: crd_files
+    - name: Clone SR-IOV Network Operator repo
+      ansible.builtin.git:
+        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
+        dest: /root/sriov-network-operator
+        update: yes
 
-- name: Apply CRDs
-  kubernetes.core.k8s:
-    state: present
-    src: "{{ item.path }}"
-  loop: "{{ crd_files.files }}"
+    - name: Deploy SR-IOV Operator using kustomize
+      ansible.builtin.shell: |
+        kubectl apply -k /root/sriov-network-operator/deployment/sriov-network-operator-chart
+      args:
+        warn: false
 
+    - name: Wait for SR-IOV pods to be ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: sriov-network-operator
+      register: sriov_pods
+      until: sriov_pods.resources | length > 0
+      retries: 10
+      delay: 10
 
-- name: Build list of all files to copy (CRDs + kustomization.yaml)
-  set_fact:
-    all_files_to_copy: |
-      {% set files = [] %}
-      {% for file in crd_files.files %}
-      {%   set _ = files.append(file.path) %}
-      {% endfor %}
-      {% set _ = files.append('/root/sriov-network-operator/config/crd/bases/kustomization.yaml') %}
-      {{ files }}
-
-- name: Copy all YAML files (including kustomization.yaml) to crd directory on remote
-  copy:
-    src: "{{ item }}"
-    dest: /root/sriov-network-operator/config/crd/
-    remote_src: yes
-  loop: "{{ all_files_to_copy }}"
-
-- name: Deploy SR-IOV Operator via Make
-  ansible.builtin.shell: |
-    export ADMISSION_CONTROLLERS_ENABLED=true
-    export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
-    make deploy-setup-k8s
-  args:
-    chdir: /root/sriov-network-operator
-
-- name: Verify SR-IOV Network Operator deployment
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: sriov-network-operator
-  register: sriov_pods
-
-- name: Debug deployed pods
-  ansible.builtin.debug:
-    var: sriov_pods.resources
-
-
+    - name: Debug SR-IOV pods
+      ansible.builtin.debug:
+        var: sriov_pods.resources
