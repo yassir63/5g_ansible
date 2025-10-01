@@ -7,10 +7,8 @@
     update_cache: yes
   become: true
 
-- name: Deploy SR-IOV Operator on Ubuntu 22.04
-  hosts: all
-  become: yes
-  tasks:
+- name: Deploy SR-IOV Operator
+  block:
 
     - name: Ensure kubectl is installed
       ansible.builtin.shell: |
@@ -32,17 +30,6 @@
       args:
         _uses_shell: yes
 
-    - name: Ensure Go is installed (for building operator)
-      ansible.builtin.shell: |
-        if ! command -v go >/dev/null 2>&1; then
-          curl -LO https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
-          rm -rf /usr/local/go
-          tar -C /usr/local -xzf go1.24.6.linux-amd64.tar.gz
-          rm go1.24.6.linux-amd64.tar.gz
-        fi
-      args:
-        _uses_shell: yes
-
     - name: Clone SR-IOV Network Operator
       ansible.builtin.git:
         repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
@@ -56,7 +43,7 @@
         state: present
         src: /root/sriov-network-operator/config/crd/bases
 
-    - name: Deploy SR-IOV Operator
+    - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
         export ADMISSION_CONTROLLERS_ENABLED=true
         export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
@@ -65,12 +52,12 @@
         chdir: /root/sriov-network-operator
         _uses_shell: yes
 
-    - name: Verify deployed SR-IOV Operator pods
+    - name: Verify SR-IOV Operator pods
       kubernetes.core.k8s_info:
         kind: Pod
         namespace: sriov-network-operator
       register: sriov_pods
 
-    - name: Show SR-IOV Operator pods
+    - name: Debug SR-IOV Operator pods
       ansible.builtin.debug:
         var: sriov_pods.resources
