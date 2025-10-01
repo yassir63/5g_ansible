@@ -9,23 +9,44 @@
 
 - name: Install dependencies and deploy SR-IOV Operator
   ansible.builtin.shell: |
+    set -e
+
     # Install kubectl if missing
     if ! command -v kubectl &> /dev/null; then
+      echo "Installing kubectl..."
       curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
       install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
     fi
 
     # Install kustomize if missing
     if ! command -v kustomize &> /dev/null; then
+      echo "Installing kustomize..."
       curl -sLo /tmp/kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.1.0/kustomize_v5.1.0_linux_amd64
       chmod +x /tmp/kustomize
       mv /tmp/kustomize /usr/local/bin/kustomize
     fi
 
-    # Deploy CRDs
-    kubectl apply -f <(kustomize build /root/sriov-network-operator/config/crd/bases)
+    # Verify directories exist
+    if [ ! -d /root/sriov-network-operator/config/crd/bases ]; then
+      echo "CRD directory not found: /root/sriov-network-operator/config/crd/bases"
+      exit 1
+    fi
 
-    # Deploy the SR-IOV Operator manifests
-    kubectl apply -f <(kustomize build /root/sriov-network-operator/config/default)
+    if [ ! -d /root/sriov-network-operator/deployment/sriov-network-operator-chart ]; then
+      echo "Operator chart directory not found: /root/sriov-network-operator/deployment/sriov-network-operator-chart"
+      exit 1
+    fi
+
+    # Deploy CRDs
+    echo "Deploying SR-IOV CRDs..."
+    kubectl apply -k /root/sriov-network-operator/config/crd/bases
+
+    # Deploy SR-IOV Operator manifests
+    echo "Deploying SR-IOV Operator manifests..."
+    kubectl apply -k /root/sriov-network-operator/deployment/sriov-network-operator-chart
+
+    # Wait for operator pods to be ready
+    echo "Waiting for SR-IOV Operator pods to be ready..."
+    kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
   args:
     executable: /bin/bash
