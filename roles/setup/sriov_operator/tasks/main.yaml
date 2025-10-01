@@ -7,86 +7,32 @@
     update_cache: yes
   become: true
 
-- name: Deploy SR-IOV Network Operator
+- name: Setup SR-IOV Network Operator
   block:
 
-    - name: Ensure required packages
-      apt:
-        name:
-          - git
-          - curl
-          - wget
-          - build-essential
-          - apt-transport-https
-          - ca-certificates
-          - software-properties-common
+    - name: Install git (if not installed)
+      ansible.builtin.package:
+        name: git
         state: present
-        update_cache: yes
+      become: yes
 
-    - name: Download Go
-      get_url:
-        url: "https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz"
-        dest: /tmp/go1.24.6.linux-amd64.tar.gz
-        mode: '0644'
-
-    - name: Extract Go to /usr/local
-      unarchive:
-        src: /tmp/go1.24.6.linux-amd64.tar.gz
-        dest: /usr/local
-        remote_src: yes
-        creates: /usr/local/go
-
-    - name: Create GOPATH directory
-      file:
-        path: /opt/gopath
-        state: directory
-        mode: '0755'
-
-    - name: Set up Go environment
-      copy:
-        content: |
-          export GOROOT=/usr/local/go
-          export GOPATH=/opt/gopath
-          export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
-        dest: /etc/profile.d/golang.sh
-        mode: '0755'
-
-    - name: Symlink go binary
-      file:
-        src: /usr/local/go/bin/go
-        dest: /usr/local/bin/go
-        state: link
-
-    - name: Clean up Go tarball
-      file:
-        path: /tmp/go1.24.6.linux-amd64.tar.gz
-        state: absent
-
-    - name: Clone SR-IOV Network Operator repository
-      git:
+    - name: Clone SR-IOV Network Operator repo
+      ansible.builtin.git:
         repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /root/sriov-network-operator
-        clone: yes
-        update: yes
         version: master
+        update: yes
 
     - name: Install Go dependency for SR-IOV operator
-      shell: /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
+      ansible.builtin.shell: |
+        /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
       args:
         chdir: /root/sriov-network-operator
 
-    - name: Apply CRDs individually
-      find:
-        paths: /root/sriov-network-operator/config/crd/bases
-        patterns: "*.yaml"
-        file_type: file
-      register: crd_files
-
-    - name: Apply each CRD
+    - name: Ensure cert-manager is installed
       kubernetes.core.k8s:
         state: present
-        src: "{{ item.path }}"
-      loop: "{{ crd_files.files }}"
+        src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
     - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
@@ -94,15 +40,6 @@
         kind: Namespace
         name: sriov-network-operator
         state: present
-
-    - name: Ensure cert-manager is installed
-      kubernetes.core.k8s:
-        state: present
-        src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
-
-    - name: Wait for 15 seconds
-      pause:
-        seconds: 15
 
     - name: Apply Issuer and Certificates
       kubernetes.core.k8s:
@@ -140,24 +77,38 @@
             issuerRef:
               name: sriov-network-operator-selfsigned-issuer
 
-    - name: Wait for 15 seconds
+    - name: Wait 15 seconds for cert-manager resources
       pause:
         seconds: 15
 
+    - name: Find all CRD YAML files (excluding kustomization.yaml)
+      find:
+        paths: /root/sriov-network-operator/config/crd/bases
+        patterns: "*.yaml"
+        excludes: "kustomization.yaml"
+        file_type: file
+      register: crd_files
+
+    - name: Apply each CRD individually
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item.path }}"
+      loop: "{{ crd_files.files }}"
+
     - name: Deploy SR-IOV Operator via Make
-      shell: |
+      ansible.builtin.shell: |
         export ADMISSION_CONTROLLERS_ENABLED=true
         export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
         make deploy-setup-k8s
       args:
         chdir: /root/sriov-network-operator
 
-    - name: Verify SR-IOV Operator pods
+    - name: Verify SR-IOV Network Operator pods
       kubernetes.core.k8s_info:
         kind: Pod
         namespace: sriov-network-operator
       register: sriov_pods
 
     - name: Debug deployed pods
-      debug:
+      ansible.builtin.debug:
         var: sriov_pods.resources
