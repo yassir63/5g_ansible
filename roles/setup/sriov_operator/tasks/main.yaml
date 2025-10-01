@@ -32,16 +32,16 @@
 
     # Create missing kustomization.yaml for CRDs
     cat <<EOF > "$TMPDIR/sriov-operator/config/crd/bases/kustomization.yaml"
-    apiVersion: kustomize.config.k8s.io/v1beta1
-    kind: Kustomization
-    resources:
-      - ovsnetworks.sriovnetwork.openshift.io.yaml
-      - sriovibnetworks.sriovnetwork.openshift.io.yaml
-      - sriovnetworknodepolicies.sriovnetwork.openshift.io.yaml
-      - sriovnetworknodestates.sriovnetwork.openshift.io.yaml
-      - sriovnetworkpoolconfigs.sriovnetwork.openshift.io.yaml
-      - sriovnetworks.sriovnetwork.openshift.io.yaml
-      - sriovoperatorconfigs.sriovnetwork.openshift.io.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ovsnetworks.sriovnetwork.openshift.io.yaml
+  - sriovibnetworks.sriovnetwork.openshift.io.yaml
+  - sriovnetworknodepolicies.sriovnetwork.openshift.io.yaml
+  - sriovnetworknodestates.sriovnetwork.openshift.io.yaml
+  - sriovnetworkpoolconfigs.sriovnetwork.openshift.io.yaml
+  - sriovnetworks.sriovnetwork.openshift.io.yaml
+  - sriovoperatorconfigs.sriovnetwork.openshift.io.yaml
 EOF
 
     # Apply CRDs
