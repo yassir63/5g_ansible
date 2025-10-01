@@ -7,56 +7,111 @@
     update_cache: yes
   become: true
 
-- name: Deploy SR-IOV Operator on Ubuntu 22.04
+- name: Deploy SR-IOV Network Operator
   block:
+    - name: Ensure required packages are installed
+      ansible.builtin.apt:
+        name:
+          - curl
+          - git
+          - apt-transport-https
+          - ca-certificates
+        state: present
+        update_cache: yes
+      become: true
 
     - name: Ensure kubectl is installed
-      ansible.builtin.apt:
-        name: kubectl
-        state: present
+      ansible.builtin.shell: |
+        if ! command -v kubectl >/dev/null 2>&1; then
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+        fi
+      args:
+        executable: /bin/bash
       become: true
-      update_cache: yes
 
     - name: Ensure kustomize is installed
-      ansible.builtin.get_url:
-        url: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.1.1/kustomize_v5.1.1_linux_amd64.tar.gz
-        dest: /tmp/kustomize.tar.gz
+      ansible.builtin.shell: |
+        if ! command -v kustomize >/dev/null 2>&1; then
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          install -o root -g root -m 0755 kustomize /usr/local/bin/kustomize
+        fi
+      args:
+        executable: /bin/bash
       become: true
 
-    - name: Extract kustomize binary
-      ansible.builtin.unarchive:
-        src: /tmp/kustomize.tar.gz
-        dest: /usr/local/bin/
-        remote_src: yes
-        copy: no
-      become: true
+    - name: Ensure Go is installed
+      block:
+        - name: Download Go
+          ansible.builtin.get_url:
+            url: https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
+            dest: /tmp/go1.24.6.linux-amd64.tar.gz
+            mode: '0644'
+          become: true
 
-    - name: Clone SR-IOV Operator repository
+        - name: Extract Go
+          ansible.builtin.unarchive:
+            src: /tmp/go1.24.6.linux-amd64.tar.gz
+            dest: /usr/local
+            remote_src: yes
+            creates: /usr/local/go
+          become: true
+
+        - name: Create GOPATH directory
+          ansible.builtin.file:
+            path: /opt/gopath
+            state: directory
+            mode: '0755'
+          become: true
+
+        - name: Set Go environment
+          ansible.builtin.copy:
+            content: |
+              export GOROOT=/usr/local/go
+              export GOPATH=/opt/gopath
+              export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+            dest: /etc/profile.d/golang.sh
+            mode: '0755'
+          become: true
+
+        - name: Symlink Go binary
+          ansible.builtin.file:
+            src: /usr/local/go/bin/go
+            dest: /usr/local/bin/go
+            state: link
+          become: true
+
+        - name: Clean up Go archive
+          ansible.builtin.file:
+            path: /tmp/go1.24.6.linux-amd64.tar.gz
+            state: absent
+          become: true
+
+    - name: Clone SR-IOV Network Operator repository
       ansible.builtin.git:
         repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /root/sriov-network-operator
-        version: main
+        version: master
+        update: yes
 
-    - name: Apply SR-IOV CRDs (ignore kustomization.yaml)
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ item }}"
-      loop:
-        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovoperatorconfigs.yaml
-        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovnetworks.yaml
-        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovnetworkpoolconfigs.yaml
-        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovnetworknodestates.yaml
-        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovnetworknodepolicies.yaml
-        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovibnetworks.yaml
-        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_ovsnetworks.yaml
+    - name: Apply all SR-IOV CRDs individually
+      ansible.builtin.shell: |
+        for crd in /root/sriov-network-operator/config/crd/bases/*.yaml; do
+          kubectl apply -f "$crd"
+        done
+      args:
+        executable: /bin/bash
+      become: true
 
-    - name: Deploy SR-IOV Operator via Kustomize
+    - name: Deploy SR-IOV Operator using Make
       ansible.builtin.shell: |
         export ADMISSION_CONTROLLERS_ENABLED=true
         export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
-        kustomize build /root/sriov-network-operator/deployment/sriov-network-operator-chart | kubectl apply -f -
+        make deploy-setup-k8s
       args:
+        chdir: /root/sriov-network-operator
         executable: /bin/bash
+      become: true
 
     - name: Verify SR-IOV Operator pods
       kubernetes.core.k8s_info:
