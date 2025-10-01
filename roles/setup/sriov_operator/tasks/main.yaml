@@ -7,39 +7,39 @@
     update_cache: yes
   become: true
 
-- name: Install SR-IOV Network Operator
-  hosts: sopnode-f1
-  become: yes
-  tasks:
-    - name: Install kubectl if missing
-      shell: |
-        if ! command -v kubectl &>/dev/null; then
-          curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
-          install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
-        fi
+- name: Install and deploy SR-IOV Network Operator
+  shell: |
+    set -e
 
-    - name: Install kustomize if missing
-      shell: |
-        if ! command -v kustomize &>/dev/null; then
-          curl -sLo /tmp/kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.1.0/kustomize_v5.1.0_linux_amd64
-          chmod +x /tmp/kustomize
-          mv /tmp/kustomize /usr/local/bin/kustomize
-        fi
+    # Install kubectl if missing
+    if ! command -v kubectl &> /dev/null; then
+      echo "Installing kubectl..."
+      curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
+      install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+    fi
 
-    - name: Clone SR-IOV Network Operator repository
-      git:
-        repo: 'https://github.com/k8snetworkplumbingwg/sriov-network-operator.git'
-        dest: '/root/sriov-network-operator'
-        depth: 1
+    # Install kustomize if missing
+    if ! command -v kustomize &> /dev/null; then
+      echo "Installing kustomize..."
+      curl -sLo /tmp/kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.1.0/kustomize_v5.1.0_linux_amd64
+      chmod +x /tmp/kustomize
+      mv /tmp/kustomize /usr/local/bin/kustomize
+    fi
 
-    - name: Deploy SR-IOV CRDs
-      shell: |
-        kubectl apply -k /root/sriov-network-operator/config/crd/bases
+    # Create temporary directory and clone the operator repo
+    TMPDIR=$(mktemp -d)
+    git clone --depth 1 https://github.com/k8snetworkplumbingwg/sriov-network-operator.git "$TMPDIR/sriov-operator"
 
-    - name: Deploy SR-IOV Operator
-      shell: |
-        kubectl apply -k /root/sriov-network-operator/deployments
+    # Apply CRDs
+    kubectl apply -k "$TMPDIR/sriov-operator/config/crd/bases"
 
-    - name: Wait for SR-IOV Operator pods to be ready
-      shell: |
-        kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
+    # Deploy the operator
+    kubectl apply -k "$TMPDIR/sriov-operator/deployments"
+
+    # Wait for operator pods to be ready
+    kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
+
+    # Cleanup
+    rm -rf "$TMPDIR"
+  args:
+    executable: /bin/bash
