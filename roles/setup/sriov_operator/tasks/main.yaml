@@ -7,57 +7,33 @@
     update_cache: yes
   become: true
 
-- name: Deploy SR-IOV Operator (robust)
+- name: Deploy SR-IOV Operator
   block:
     - name: Ensure kubectl is installed
-      ansible.builtin.shell: |
-        if ! command -v kubectl >/dev/null; then
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-        fi
-      args:
-        executable: /bin/bash
-      become: true
+      ansible.builtin.apt:
+        name: kubectl
+        state: present
+        update_cache: yes
 
     - name: Ensure kustomize is installed
       ansible.builtin.shell: |
-        if ! command -v kustomize >/dev/null; then
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          install -o root -g root -m 0755 kustomize /usr/local/bin/kustomize
-        fi
+        curl -sLo /usr/local/bin/kustomize https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize_5.1.1_linux_amd64
+        chmod +x /usr/local/bin/kustomize
+      args:
+        creates: /usr/local/bin/kustomize
+
+    - name: Ensure skopeo is installed
+      ansible.builtin.apt:
+        name: skopeo
+        state: present
+        update_cache: yes
+
+    - name: Apply SR-IOV CRDs
+      ansible.builtin.shell: kubectl apply -f /root/sriov-network-operator/config/crd/bases
       args:
         executable: /bin/bash
-      become: true
-
-    - name: Clone SR-IOV Operator repository
-      ansible.builtin.git:
-        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
-        dest: /root/sriov-network-operator
-        version: master
-        update: yes
-
-    - name: Apply SR-IOV CRDs individually
-      ansible.builtin.shell: |
-        for f in /root/sriov-network-operator/config/crd/bases/*.yaml; do
-          kubectl apply -f "$f"
-        done
-      args:
-        executable: /bin/bash
-      become: true
 
     - name: Deploy SR-IOV Operator manifests via kustomize
-      ansible.builtin.shell: |
-        kustomize build /root/sriov-network-operator/deployment/sriov-network-operator | kubectl apply -f -
+      ansible.builtin.shell: kustomize build /root/sriov-network-operator/config/default | kubectl apply -f -
       args:
         executable: /bin/bash
-      become: true
-
-    - name: Verify SR-IOV pods
-      kubernetes.core.k8s_info:
-        kind: Pod
-        namespace: sriov-network-operator
-      register: sriov_pods
-
-    - name: Debug SR-IOV pods
-      ansible.builtin.debug:
-        var: sriov_pods.resources
