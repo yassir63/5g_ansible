@@ -7,113 +7,64 @@
     update_cache: yes
   become: true
 
-- name: Deploy SR-IOV Network Operator
-  block:
-    - name: Install git if missing
-      ansible.builtin.package:
-        name: git
-        state: present
+# -------------------------------
+# Setup SR-IOV Network Operator
+# -------------------------------
+- name: Ensure git is installed
+  ansible.builtin.package:
+    name: git
+    state: present
 
-    - name: Clone SR-IOV Network Operator repository
-      ansible.builtin.git:
-        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
-        dest: /root/sriov-network-operator
-        clone: yes
-        update: yes
-        version: master
+- name: Clone SR-IOV Network Operator repository
+  ansible.builtin.git:
+    repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
+    dest: /root/sriov-network-operator
+    version: master
+    update: yes
 
-    - name: Install Go dependency for SR-IOV operator
-      ansible.builtin.shell: |
-        /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
-      args:
-        chdir: /root/sriov-network-operator
+- name: Install Go dependency for sriov-network-operator
+  ansible.builtin.shell: |
+    /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
+  args:
+    chdir: /root/sriov-network-operator
 
-    - name: Ensure cert-manager is installed
-      kubernetes.core.k8s:
-        state: present
-        src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
+- name: Ensure cert-manager is installed
+  kubernetes.core.k8s:
+    state: present
+    src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
-    - name: Wait 10 seconds for cert-manager
-      pause:
-        seconds: 10
+- name: Wait for cert-manager to be ready
+  pause:
+    seconds: 10
 
-    - name: Create sriov-network-operator namespace
-      kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: sriov-network-operator
-        state: present
+- name: Create sriov-network-operator namespace
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: sriov-network-operator
+    state: present
 
-    - name: Wait 10 seconds for namespace
-      pause:
-        seconds: 10
+- name: Wait for namespace creation
+  pause:
+    seconds: 5
 
-    - name: Apply Issuer and Certificates for operator webhook
-      kubernetes.core.k8s:
-        state: present
-        definition: |
-          apiVersion: cert-manager.io/v1
-          kind: Issuer
-          metadata:
-            name: sriov-network-operator-selfsigned-issuer
-            namespace: sriov-network-operator
-          spec:
-            selfSigned: {}
-          ---
-          apiVersion: cert-manager.io/v1
-          kind: Certificate
-          metadata:
-            name: operator-webhook-cert
-            namespace: sriov-network-operator
-          spec:
-            secretName: operator-webhook-cert
-            dnsNames:
-            - operator-webhook-service.sriov-network-operator.svc
-            issuerRef:
-              name: sriov-network-operator-selfsigned-issuer
-          ---
-          apiVersion: cert-manager.io/v1
-          kind: Certificate
-          metadata:
-            name: network-resources-injector-cert
-            namespace: sriov-network-operator
-          spec:
-            secretName: network-resources-injector-cert
-            dnsNames:
-            - network-resources-injector-service.sriov-network-operator.svc
-            issuerRef:
-              name: sriov-network-operator-selfsigned-issuer
+- name: Apply CRDs individually (exclude kustomization.yaml)
+  find:
+    paths: /root/sriov-network-operator/config/crd/bases
+    patterns: "*.yaml"
+    excludes: "kustomization.yaml"
+    file_type: file
+  register: crd_yaml_files
 
-    - name: Wait 15 seconds for certificates
-      pause:
-        seconds: 15
+- name: Apply each CRD YAML
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item.path }}"
+  loop: "{{ crd_yaml_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
 
-    - name: Apply CRDs individually
-      find:
-        paths: /root/sriov-network-operator/config/crd/bases
-        patterns: "*.yaml"
-        file_type: file
-      register: crd_yaml_files
-
-    - name: Apply each CRD YAML
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ item.path }}"
-      loop: "{{ crd_yaml_files.files }}"
-      loop_control:
-        label: "{{ item.path }}"
-
-    - name: Apply SR-IOV Network Operator manifests
-      find:
-        paths: /root/sriov-network-operator/deployment/sriov-network-operator-chart
-        patterns: "*.yaml"
-        file_type: file
-      register: operator_yaml_files
-
-    - name: Apply each operator manifest YAML
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ item.path }}"
-      loop: "{{ operator_yaml_files.files }}"
-      loop_control:
-        label: "{{ item.path }}"
+- name: Apply SR-IOV Network Operator manifests
+  kubernetes.core.k8s:
+    state: present
+    src: /root/sriov-network-operator/deployment/sriov-network-operator-chart
