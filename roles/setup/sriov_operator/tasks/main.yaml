@@ -7,33 +7,40 @@
     update_cache: yes
   become: true
 
-- name: Setup SR-IOV Network Operator
+- name: Deploy SR-IOV Network Operator (fixed)
   block:
-
-    - name: Install git (if not installed)
+    # Ensure git is installed
+    - name: Install git
       ansible.builtin.package:
         name: git
         state: present
-      become: yes
 
-    - name: Clone SR-IOV Network Operator repo
+    # Clone the operator repo
+    - name: Clone SR-IOV Network Operator
       ansible.builtin.git:
         repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /root/sriov-network-operator
-        version: master
         update: yes
+        version: master
 
+    # Install Go dependency for the operator
     - name: Install Go dependency for SR-IOV operator
       ansible.builtin.shell: |
         /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
       args:
         chdir: /root/sriov-network-operator
 
-    - name: Ensure cert-manager is installed
+    # Ensure cert-manager is installed
+    - name: Install cert-manager
       kubernetes.core.k8s:
         state: present
         src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
+    - name: Wait for cert-manager to be ready
+      pause:
+        seconds: 10
+
+    # Create operator namespace
     - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
         api_version: v1
@@ -41,7 +48,12 @@
         name: sriov-network-operator
         state: present
 
-    - name: Apply Issuer and Certificates
+    - name: Wait for namespace creation
+      pause:
+        seconds: 5
+
+    # Apply Issuer and Certificates
+    - name: Apply self-signed issuer and operator certificates
       kubernetes.core.k8s:
         state: present
         definition: |
@@ -77,11 +89,12 @@
             issuerRef:
               name: sriov-network-operator-selfsigned-issuer
 
-    - name: Wait 15 seconds for cert-manager resources
+    - name: Wait for certificates to be ready
       pause:
         seconds: 15
 
-    - name: Find all CRD YAML files (excluding kustomization.yaml)
+    # Apply all CRDs individually (skip kustomization.yaml)
+    - name: Find CRDs
       find:
         paths: /root/sriov-network-operator/config/crd/bases
         patterns: "*.yaml"
@@ -89,26 +102,16 @@
         file_type: file
       register: crd_files
 
-    - name: Apply each CRD individually
+    - name: Apply CRDs
       kubernetes.core.k8s:
         state: present
         src: "{{ item.path }}"
       loop: "{{ crd_files.files }}"
+      loop_control:
+        label: "{{ item.path }}"
 
-    - name: Deploy SR-IOV Operator via Make
-      ansible.builtin.shell: |
-        export ADMISSION_CONTROLLERS_ENABLED=true
-        export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
-        make deploy-setup-k8s
-      args:
-        chdir: /root/sriov-network-operator
-
-    - name: Verify SR-IOV Network Operator pods
-      kubernetes.core.k8s_info:
-        kind: Pod
-        namespace: sriov-network-operator
-      register: sriov_pods
-
-    - name: Debug deployed pods
-      ansible.builtin.debug:
-        var: sriov_pods.resources
+    # Deploy the operator manifests
+    - name: Apply SR-IOV Network Operator manifests
+      kubernetes.core.k8s:
+        state: present
+        src: /root/sriov-network-operator/deployment/sriov-network-operator-chart
