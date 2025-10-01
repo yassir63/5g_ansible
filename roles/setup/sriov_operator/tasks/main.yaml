@@ -66,6 +66,24 @@
     src: "{{ item.path }}"
   loop: "{{ crd_files.files }}"
 
+
+- name: Build list of all files to copy (CRDs + kustomization.yaml)
+  set_fact:
+    all_files_to_copy: |
+      {% set files = [] %}
+      {% for file in crd_files.files %}
+      {%   set _ = files.append(file.path) %}
+      {% endfor %}
+      {% set _ = files.append('/root/sriov-network-operator/config/crd/bases/kustomization.yaml') %}
+      {{ files }}
+
+- name: Copy all YAML files (including kustomization.yaml) to crd directory on remote
+  copy:
+    src: "{{ item }}"
+    dest: /root/sriov-network-operator/config/crd/
+    remote_src: yes
+  loop: "{{ all_files_to_copy }}"
+      
 # ------------------------
 # Deploy SR-IOV Operator using Kustomize
 # ------------------------
