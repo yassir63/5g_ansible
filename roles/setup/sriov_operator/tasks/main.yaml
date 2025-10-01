@@ -46,15 +46,12 @@ resources:
 EOF
 
     # Apply CRDs
-    echo "Applying SR-IOV CRDs..."
     kubectl apply -k "$TMPDIR/sriov-operator/config/crd/bases"
 
     # Deploy the operator manifests
-    echo "Deploying SR-IOV Operator..."
     kubectl apply -k "$TMPDIR/sriov-operator/deployment/sriov-network-operator"
 
     # Wait for operator pods to be ready
-    echo "Waiting for SR-IOV Operator pods..."
     kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
 
     # Cleanup
