@@ -7,52 +7,62 @@
     update_cache: yes
   become: true
 
+- name: Ensure required packages are installed
+  apt:
+    name:
+      - curl
+      - ca-certificates
+      - apt-transport-https
+      - git
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Ensure kubectl is installed
+  ansible.builtin.shell: |
+    if ! command -v kubectl > /dev/null; then
+      curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    fi
+  args:
+    warn: false
+  become: yes
+
+- name: Ensure kustomize is installed
+  ansible.builtin.shell: |
+    if ! command -v kustomize > /dev/null; then
+      curl -sLo kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize_linux_amd64.tar.gz
+      tar -xzf kustomize.tar.gz
+      install -o root -g root -m 0755 kustomize /usr/local/bin/kustomize
+      rm kustomize kustomize.tar.gz
+    fi
+  args:
+    warn: false
+  become: yes
+
+- name: Create sriov-network-operator namespace
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: sriov-network-operator
+    state: present
+
 - name: Deploy SR-IOV Operator
-  block:
+  ansible.builtin.shell: |
+    git clone https://github.com/k8snetworkplumbingwg/sriov-network-operator.git /tmp/sriov-network-operator --depth 1
+    kubectl apply -k /tmp/sriov-network-operator/deployment/sriov-network-operator-chart
+  args:
+    warn: false
 
-    - name: Ensure kubectl is installed
-      ansible.builtin.package:
-        name: kubectl
-        state: present
+- name: Wait for SR-IOV Operator pods to be running
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: sriov-network-operator
+  register: sriov_pods
+  until: sriov_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+  retries: 10
+  delay: 10
 
-    - name: Ensure kustomize is installed
-      ansible.builtin.package:
-        name: kustomize
-        state: present
-
-    - name: Ensure cert-manager is installed
-      kubernetes.core.k8s:
-        state: present
-        src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
-
-    - name: Create SR-IOV Operator namespace
-      kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: sriov-network-operator
-        state: present
-
-    - name: Clone SR-IOV Network Operator repo
-      ansible.builtin.git:
-        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
-        dest: /root/sriov-network-operator
-        update: yes
-
-    - name: Deploy SR-IOV Operator using kustomize
-      ansible.builtin.shell: |
-        kubectl apply -k /root/sriov-network-operator/deployment/sriov-network-operator-chart
-      args:
-        warn: false
-
-    - name: Wait for SR-IOV pods to be ready
-      kubernetes.core.k8s_info:
-        kind: Pod
-        namespace: sriov-network-operator
-      register: sriov_pods
-      until: sriov_pods.resources | length > 0
-      retries: 10
-      delay: 10
-
-    - name: Debug SR-IOV pods
-      ansible.builtin.debug:
-        var: sriov_pods.resources
+- name: Show SR-IOV Operator pods
+  ansible.builtin.debug:
+    var: sriov_pods.resources
