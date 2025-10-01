@@ -7,64 +7,84 @@
     update_cache: yes
   become: true
 
-# -------------------------------
-# Setup SR-IOV Network Operator
-# -------------------------------
 - name: Ensure git is installed
   ansible.builtin.package:
     name: git
     state: present
+  become: yes
 
-- name: Clone SR-IOV Network Operator repository
+- name: Install Kustomize
+  block:
+    - name: Download Kustomize
+      ansible.builtin.get_url:
+        url: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.2.0/kustomize_v5.2.0_linux_amd64.tar.gz
+        dest: /tmp/kustomize.tar.gz
+        mode: '0644'
+        validate_certs: yes
+
+    - name: Extract Kustomize
+      ansible.builtin.unarchive:
+        src: /tmp/kustomize.tar.gz
+        dest: /usr/local/bin
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+        mode: '0755'
+
+    - name: Remove Kustomize archive
+      ansible.builtin.file:
+        path: /tmp/kustomize.tar.gz
+        state: absent
+  become: yes
+
+- name: Clone SR-IOV Network Operator repo
   ansible.builtin.git:
     repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
     dest: /root/sriov-network-operator
     version: master
-    update: yes
+    force: yes
 
-- name: Install Go dependency for sriov-network-operator
+- name: Install Go dependency for SR-IOV operator
   ansible.builtin.shell: |
     /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
   args:
     chdir: /root/sriov-network-operator
 
-- name: Ensure cert-manager is installed
-  kubernetes.core.k8s:
-    state: present
-    src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
-
-- name: Wait for cert-manager to be ready
-  pause:
-    seconds: 10
-
-- name: Create sriov-network-operator namespace
-  kubernetes.core.k8s:
-    api_version: v1
-    kind: Namespace
-    name: sriov-network-operator
-    state: present
-
-- name: Wait for namespace creation
-  pause:
-    seconds: 5
-
-- name: Apply CRDs individually (exclude kustomization.yaml)
-  find:
+# ------------------------
+# Apply CRDs individually
+# ------------------------
+- name: Find CRD YAML files
+  ansible.builtin.find:
     paths: /root/sriov-network-operator/config/crd/bases
     patterns: "*.yaml"
     excludes: "kustomization.yaml"
     file_type: file
-  register: crd_yaml_files
+  register: crd_files
 
-- name: Apply each CRD YAML
+- name: Apply CRDs
   kubernetes.core.k8s:
     state: present
     src: "{{ item.path }}"
-  loop: "{{ crd_yaml_files.files }}"
-  loop_control:
-    label: "{{ item.path }}"
+  loop: "{{ crd_files.files }}"
 
-- name: Apply SR-IOV Network Operator manifests
+# ------------------------
+# Deploy SR-IOV Operator using Kustomize
+# ------------------------
+- name: Build SR-IOV Operator manifests with Kustomize
+  ansible.builtin.shell: |
+    kustomize build /root/sriov-network-operator/deployment/sriov-network-operator-chart
+  register: kustomize_output
+
+- name: Apply SR-IOV Operator manifests
   kubernetes.core.k8s:
     state: present
-    src: /root/sriov-network-operator/deployment/sriov-network-operator-chart
+    definition: "{{ kustomize_output.stdout }}"
+
+- name: Verify deployed pods
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: sriov-network-operator
+  register: sriov_pods
+
+- name: Debug deployed pods
+  ansible.builtin.debug:
+    var: sriov_pods.resources
