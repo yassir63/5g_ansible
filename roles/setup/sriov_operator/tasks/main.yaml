@@ -7,52 +7,57 @@
     update_cache: yes
   become: true
 
-- name: Deploy SR-IOV Operator on Ubuntu 22.04
+- name: Deploy SR-IOV Network Operator
   block:
 
-    - name: Ensure kubectl is installed
-      ansible.builtin.shell: |
-        if ! command -v kubectl >/dev/null 2>&1; then
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-        fi
-      args:
-        _uses_shell: yes
+    - name: Ensure required tools are installed
+      apt:
+        name:
+          - git
+          - curl
+          - wget
+          - kubectl
+        state: present
+        update_cache: yes
+      become: true
 
-    - name: Ensure kustomize is installed
-      ansible.builtin.shell: |
-        if ! command -v kustomize >/dev/null 2>&1; then
-          curl -LO https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize_linux_amd64.tar.gz
-          tar -xzf kustomize_linux_amd64.tar.gz
-          install -o root -g root -m 0755 kustomize /usr/local/bin/kustomize
-        fi
-      args:
-        _uses_shell: yes
+    - name: Download Kustomize binary
+      ansible.builtin.get_url:
+        url: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz
+        dest: /tmp/kustomize.tar.gz
+        mode: '0755'
 
-    - name: Clone SR-IOV Network Operator
-      ansible.builtin.git:
+    - name: Extract Kustomize
+      ansible.builtin.unarchive:
+        src: /tmp/kustomize.tar.gz
+        dest: /usr/local/bin/
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+      become: true
+
+    - name: Clone SR-IOV Network Operator repository
+      git:
         repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /root/sriov-network-operator
-        clone: yes
-        update: yes
         version: master
+        force: yes
 
-    - name: Deploy SR-IOV Operator using Make
-      ansible.builtin.shell: |
-        export ADMISSION_CONTROLLERS_ENABLED=true
-        export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
-        make deploy-setup-k8s
-      args:
-        chdir: /root/sriov-network-operator
-        _uses_shell: yes
+    - name: Apply SR-IOV CRDs
+      command: >
+        kubectl apply -f /root/sriov-network-operator/config/crd/bases
+      become: true
 
-    - name: Verify SR-IOV Operator pods
-      ansible.builtin.shell: |
-        kubectl get pods -n sriov-network-operator -o wide
+    - name: Deploy SR-IOV Operator via Kustomize
+      command: >
+        kustomize build /root/sriov-network-operator/deployment/sriov-network-operator-chart | kubectl apply -f -
+      become: true
+
+    - name: Verify SR-IOV Operator Pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: sriov-network-operator
       register: sriov_pods
-      args:
-        _uses_shell: yes
 
-    - name: Show deployed SR-IOV pods
-      ansible.builtin.debug:
-        var: sriov_pods.stdout_lines
+    - name: Show deployed pods
+      debug:
+        var: sriov_pods.resources
