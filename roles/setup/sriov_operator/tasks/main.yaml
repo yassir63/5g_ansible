@@ -7,57 +7,63 @@
     update_cache: yes
   become: true
 
-- name: Deploy SR-IOV Network Operator
+- name: Deploy SR-IOV Operator on Ubuntu 22.04
   block:
 
-    - name: Ensure required tools are installed
-      apt:
-        name:
-          - git
-          - curl
-          - wget
-          - kubectl
+    - name: Ensure kubectl is installed
+      ansible.builtin.apt:
+        name: kubectl
         state: present
-        update_cache: yes
+      become: true
+      update_cache: yes
+
+    - name: Ensure kustomize is installed
+      ansible.builtin.get_url:
+        url: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.1.1/kustomize_v5.1.1_linux_amd64.tar.gz
+        dest: /tmp/kustomize.tar.gz
       become: true
 
-    - name: Download Kustomize binary
-      ansible.builtin.get_url:
-        url: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz
-        dest: /tmp/kustomize.tar.gz
-        mode: '0755'
-
-    - name: Extract Kustomize
+    - name: Extract kustomize binary
       ansible.builtin.unarchive:
         src: /tmp/kustomize.tar.gz
         dest: /usr/local/bin/
         remote_src: yes
-        extra_opts: [--strip-components=1]
+        copy: no
       become: true
 
-    - name: Clone SR-IOV Network Operator repository
-      git:
+    - name: Clone SR-IOV Operator repository
+      ansible.builtin.git:
         repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /root/sriov-network-operator
-        version: master
-        force: yes
+        version: main
 
-    - name: Apply SR-IOV CRDs
-      command: >
-        kubectl apply -f /root/sriov-network-operator/config/crd/bases
-      become: true
+    - name: Apply SR-IOV CRDs (ignore kustomization.yaml)
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+      loop:
+        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovoperatorconfigs.yaml
+        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovnetworks.yaml
+        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovnetworkpoolconfigs.yaml
+        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovnetworknodestates.yaml
+        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovnetworknodepolicies.yaml
+        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_sriovibnetworks.yaml
+        - /root/sriov-network-operator/config/crd/bases/sriovnetwork.openshift.io_ovsnetworks.yaml
 
     - name: Deploy SR-IOV Operator via Kustomize
-      command: >
+      ansible.builtin.shell: |
+        export ADMISSION_CONTROLLERS_ENABLED=true
+        export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
         kustomize build /root/sriov-network-operator/deployment/sriov-network-operator-chart | kubectl apply -f -
-      become: true
+      args:
+        executable: /bin/bash
 
-    - name: Verify SR-IOV Operator Pods
+    - name: Verify SR-IOV Operator pods
       kubernetes.core.k8s_info:
         kind: Pod
         namespace: sriov-network-operator
       register: sriov_pods
 
-    - name: Show deployed pods
-      debug:
+    - name: Debug deployed pods
+      ansible.builtin.debug:
         var: sriov_pods.resources
