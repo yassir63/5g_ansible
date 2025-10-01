@@ -7,8 +7,8 @@
     update_cache: yes
   become: true
 
-- name: Install and deploy SR-IOV Network Operator
-  shell: |
+- name: Install SR-IOV Network Operator
+  ansible.builtin.shell: |
     set -e
 
     # Install kubectl if missing
@@ -30,13 +30,30 @@
     TMPDIR=$(mktemp -d)
     git clone --depth 1 https://github.com/k8snetworkplumbingwg/sriov-network-operator.git "$TMPDIR/sriov-operator"
 
+    # Create missing kustomization.yaml for CRDs
+    cat <<EOF > "$TMPDIR/sriov-operator/config/crd/bases/kustomization.yaml"
+    apiVersion: kustomize.config.k8s.io/v1beta1
+    kind: Kustomization
+    resources:
+      - ovsnetworks.sriovnetwork.openshift.io.yaml
+      - sriovibnetworks.sriovnetwork.openshift.io.yaml
+      - sriovnetworknodepolicies.sriovnetwork.openshift.io.yaml
+      - sriovnetworknodestates.sriovnetwork.openshift.io.yaml
+      - sriovnetworkpoolconfigs.sriovnetwork.openshift.io.yaml
+      - sriovnetworks.sriovnetwork.openshift.io.yaml
+      - sriovoperatorconfigs.sriovnetwork.openshift.io.yaml
+EOF
+
     # Apply CRDs
+    echo "Applying SR-IOV CRDs..."
     kubectl apply -k "$TMPDIR/sriov-operator/config/crd/bases"
 
-    # Deploy the operator
-    kubectl apply -k "$TMPDIR/sriov-operator/deployments"
+    # Deploy the operator manifests
+    echo "Deploying SR-IOV Operator..."
+    kubectl apply -k "$TMPDIR/sriov-operator/deployment/sriov-network-operator"
 
     # Wait for operator pods to be ready
+    echo "Waiting for SR-IOV Operator pods..."
     kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
 
     # Cleanup
