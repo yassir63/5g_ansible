@@ -7,62 +7,70 @@
     update_cache: yes
   become: true
 
-- name: Ensure required packages are installed
-  apt:
-    name:
-      - curl
-      - ca-certificates
-      - apt-transport-https
-      - git
-    state: present
-    update_cache: yes
+- name: Deploy SR-IOV Operator on Ubuntu 22.04
+  hosts: all
   become: yes
+  tasks:
 
-- name: Ensure kubectl is installed
-  ansible.builtin.shell: |
-    if ! command -v kubectl >/dev/null 2>&1; then
-      curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-      install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-    fi
-  args:
-    _uses_shell: yes
-  become: yes
+    - name: Ensure kubectl is installed
+      ansible.builtin.shell: |
+        if ! command -v kubectl >/dev/null 2>&1; then
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+        fi
+      args:
+        _uses_shell: yes
 
-- name: Ensure kustomize is installed
-  ansible.builtin.shell: |
-    if ! command -v kustomize > /dev/null; then
-      curl -sLo kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize_linux_amd64.tar.gz
-      tar -xzf kustomize.tar.gz
-      install -o root -g root -m 0755 kustomize /usr/local/bin/kustomize
-      rm kustomize kustomize.tar.gz
-    fi
-  args:
-    warn: false
-  become: yes
+    - name: Ensure kustomize is installed
+      ansible.builtin.shell: |
+        if ! command -v kustomize >/dev/null 2>&1; then
+          curl -sLo kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.1.1/kustomize_v5.1.1_linux_amd64.tar.gz
+          tar -xzf kustomize.tar.gz
+          install -o root -g root -m 0755 kustomize /usr/local/bin/kustomize
+          rm kustomize kustomize.tar.gz
+        fi
+      args:
+        _uses_shell: yes
 
-- name: Create sriov-network-operator namespace
-  kubernetes.core.k8s:
-    api_version: v1
-    kind: Namespace
-    name: sriov-network-operator
-    state: present
+    - name: Ensure Go is installed (for building operator)
+      ansible.builtin.shell: |
+        if ! command -v go >/dev/null 2>&1; then
+          curl -LO https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf go1.24.6.linux-amd64.tar.gz
+          rm go1.24.6.linux-amd64.tar.gz
+        fi
+      args:
+        _uses_shell: yes
 
-- name: Deploy SR-IOV Operator
-  ansible.builtin.shell: |
-    git clone https://github.com/k8snetworkplumbingwg/sriov-network-operator.git /tmp/sriov-network-operator --depth 1
-    kubectl apply -k /tmp/sriov-network-operator/deployment/sriov-network-operator-chart
-  args:
-    warn: false
+    - name: Clone SR-IOV Network Operator
+      ansible.builtin.git:
+        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
+        dest: /root/sriov-network-operator
+        clone: yes
+        update: yes
+        version: master
 
-- name: Wait for SR-IOV Operator pods to be running
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: sriov-network-operator
-  register: sriov_pods
-  until: sriov_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
-  retries: 10
-  delay: 10
+    - name: Apply SR-IOV Operator CRDs
+      kubernetes.core.k8s:
+        state: present
+        src: /root/sriov-network-operator/config/crd/bases
 
-- name: Show SR-IOV Operator pods
-  ansible.builtin.debug:
-    var: sriov_pods.resources
+    - name: Deploy SR-IOV Operator
+      ansible.builtin.shell: |
+        export ADMISSION_CONTROLLERS_ENABLED=true
+        export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
+        make deploy-setup-k8s
+      args:
+        chdir: /root/sriov-network-operator
+        _uses_shell: yes
+
+    - name: Verify deployed SR-IOV Operator pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: sriov-network-operator
+      register: sriov_pods
+
+    - name: Show SR-IOV Operator pods
+      ansible.builtin.debug:
+        var: sriov_pods.resources
