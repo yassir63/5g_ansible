@@ -13,39 +13,33 @@
 
     # Install kubectl if missing
     if ! command -v kubectl &> /dev/null; then
-      echo "Installing kubectl..."
       curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
       install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
     fi
 
     # Install kustomize if missing
     if ! command -v kustomize &> /dev/null; then
-      echo "Installing kustomize..."
       curl -sLo /tmp/kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.1.0/kustomize_v5.1.0_linux_amd64
       chmod +x /tmp/kustomize
       mv /tmp/kustomize /usr/local/bin/kustomize
     fi
 
-    # Create a temporary directory
     TMPDIR=$(mktemp -d)
-    echo "Using temporary directory $TMPDIR"
 
-    # Download the SR-IOV operator manifests
+    # Clone the SR-IOV Operator repository
     git clone --depth 1 https://github.com/k8snetworkplumbingwg/sriov-network-operator.git $TMPDIR/sriov-operator
 
-    # Deploy CRDs
-    echo "Deploying SR-IOV CRDs..."
-    kubectl apply -k $TMPDIR/sriov-operator/config/crd/bases
+    # Apply all CRDs individually
+    for crd in $TMPDIR/sriov-operator/config/crd/bases/*.yaml; do
+      kubectl apply -f "$crd"
+    done
 
-    # Deploy the operator
-    echo "Deploying SR-IOV Operator..."
-    kubectl apply -k $TMPDIR/sriov-operator/deployment/sriov-network-operator
+    # Deploy the operator manifests
+    kubectl apply -f $TMPDIR/sriov-operator/deployments/
 
-    # Wait for the operator pods to be ready
-    echo "Waiting for SR-IOV Operator pods to be ready..."
+    # Wait for operator pods
     kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
 
-    # Cleanup
     rm -rf $TMPDIR
   args:
     executable: /bin/bash
