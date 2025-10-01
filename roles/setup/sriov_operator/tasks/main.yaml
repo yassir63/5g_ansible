@@ -26,14 +26,13 @@
       mv /tmp/kustomize /usr/local/bin/kustomize
     fi
 
-    # Create temporary directory and clone the operator repo
+    # Create temporary directory and clone operator repo
     TMPDIR=$(mktemp -d)
     git clone --depth 1 https://github.com/k8snetworkplumbingwg/sriov-network-operator.git "$TMPDIR/sriov-operator"
 
-    # Create missing kustomization.yaml for CRDs
+    # Generate kustomization.yaml safely
     mkdir -p "$TMPDIR/sriov-operator/config/crd/bases"
-    cat > "$TMPDIR/sriov-operator/config/crd/bases/kustomization.yaml" << 'EOF'
-apiVersion: kustomize.config.k8s.io/v1beta1
+    echo "apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ovsnetworks.sriovnetwork.openshift.io.yaml
@@ -42,16 +41,15 @@ resources:
   - sriovnetworknodestates.sriovnetwork.openshift.io.yaml
   - sriovnetworkpoolconfigs.sriovnetwork.openshift.io.yaml
   - sriovnetworks.sriovnetwork.openshift.io.yaml
-  - sriovoperatorconfigs.sriovnetwork.openshift.io.yaml
-EOF
+  - sriovoperatorconfigs.sriovnetwork.openshift.io.yaml" > "$TMPDIR/sriov-operator/config/crd/bases/kustomization.yaml"
 
     # Apply CRDs
     kubectl apply -k "$TMPDIR/sriov-operator/config/crd/bases"
 
-    # Deploy the operator manifests
+    # Deploy operator manifests
     kubectl apply -k "$TMPDIR/sriov-operator/deployment/sriov-network-operator"
 
-    # Wait for operator pods to be ready
+    # Wait for operator pods
     kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
 
     # Cleanup
