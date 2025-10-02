@@ -8,9 +8,40 @@
         name:
           - git
           - make
-          - golang-go
+          - wget
+          - tar
         state: present
         update_cache: yes
+      become: true
+
+    - name: Download Go 1.23.2 tarball
+      ansible.builtin.get_url:
+        url: https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
+        dest: /tmp/go1.23.2.linux-amd64.tar.gz
+        mode: '0644'
+
+    - name: Remove old Go installation if exists
+      ansible.builtin.file:
+        path: /usr/local/go
+        state: absent
+      become: true
+
+    - name: Install Go 1.23.2
+      ansible.builtin.unarchive:
+        src: /tmp/go1.23.2.linux-amd64.tar.gz
+        dest: /usr/local
+        remote_src: true
+      become: true
+
+    - name: Add Go to PATH for all users
+      ansible.builtin.copy:
+        dest: /etc/profile.d/go.sh
+        content: |
+          export PATH=/usr/local/go/bin:$PATH
+          export GOPATH=$HOME/go
+      mode: '0644'
+      owner: root
+      group: root
       become: true
 
     - name: Clone sriov-network-operator repo
