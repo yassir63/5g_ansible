@@ -3,14 +3,23 @@
   ansible.builtin.meta: noop
 
 - block:
+    - name: Check if kubectl is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/kubectl
+      register: kubectl_bin
+
     - name: Ensure kubectl is installed
       ansible.builtin.get_url:
         url: "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
         dest: /usr/local/bin/kubectl
         mode: '0755'
       become: true
-      args:
-        creates: /usr/local/bin/kubectl
+      when: not kubectl_bin.stat.exists
+
+    - name: Check if kustomize is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/kustomize
+      register: kustomize_bin
 
     - name: Ensure kustomize is installed
       ansible.builtin.get_url:
@@ -18,8 +27,7 @@
         dest: /usr/local/bin/kustomize
         mode: '0755'
       become: true
-      args:
-        creates: /usr/local/bin/kustomize
+      when: not kustomize_bin.stat.exists
 
     - name: Clone sriov-network-operator repo
       ansible.builtin.git:
