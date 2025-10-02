@@ -51,14 +51,15 @@
         version: master
         force: true
 
-    - name: Run make deploy-setup
-      ansible.builtin.command:
-        cmd: make deploy-setup
+    - name: Deploy SR-IOV Operator on Kubernetes
+      ansible.builtin.shell: |
+        export CLUSTER_TYPE=kubernetes
+        export NAMESPACE=sriov-network-operator
+        make deploy-setup
+      args:
         chdir: /tmp/sriov-operator
-      environment:
-        PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
-        GOPATH: "{{ ansible_env.HOME }}/go"
-      changed_when: true
+        executable: /bin/bash
+      become: true
 
     - name: Run make deploy-operator
       ansible.builtin.command:
