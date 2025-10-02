@@ -40,7 +40,6 @@
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
-    - role: setup/sriov_operator
 
 - name: Configure GRE Tunnel From Core Node to RAN Node
   hosts: core_node
@@ -122,6 +121,7 @@
   hosts: ran_node
   become: true
   roles:
+    - role: setup/sriov_operator
     - role: setup/optimization/nic
     - role: setup/netplan
     - role: benetel/ptp

@@ -2,57 +2,41 @@
 - name: RESTART_HERE
   ansible.builtin.meta: noop
 
-- name: Update APT package cache
-  apt:
-    update_cache: yes
-  become: true
+- block:
+    - name: Ensure kubectl is installed
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ lookup('url', 'https://dl.k8s.io/release/stable.txt') }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+      become: true
+      args:
+        creates: /usr/local/bin/kubectl
 
-- name: Install SR-IOV Network Operator
-  ansible.builtin.shell: |
-    set -e
+    - name: Ensure kustomize is installed
+      ansible.builtin.get_url:
+        url: "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.1.0/kustomize_v5.1.0_linux_amd64"
+        dest: /usr/local/bin/kustomize
+        mode: '0755'
+      become: true
+      args:
+        creates: /usr/local/bin/kustomize
 
-    # Install kubectl if missing
-    if ! command -v kubectl &> /dev/null; then
-      echo "Installing kubectl..."
-      curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
-      install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
-    fi
+    - name: Clone sriov-network-operator repo
+      ansible.builtin.git:
+        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
+        dest: /tmp/sriov-operator
+        version: master
+        depth: 1
 
-    # Install kustomize if missing
-    if ! command -v kustomize &> /dev/null; then
-      echo "Installing kustomize..."
-      curl -sLo /tmp/kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.1.0/kustomize_v5.1.0_linux_amd64
-      chmod +x /tmp/kustomize
-      mv /tmp/kustomize /usr/local/bin/kustomize
-    fi
+    - name: Apply CRDs
+      ansible.builtin.command:
+        cmd: kubectl apply -k /tmp/sriov-operator/config/crd/bases
 
-    # Create temporary directory and clone operator repo
-    TMPDIR=$(mktemp -d)
-    git clone --depth 1 https://github.com/k8snetworkplumbingwg/sriov-network-operator.git "$TMPDIR/sriov-operator"
+    - name: Deploy SR-IOV operator
+      ansible.builtin.command:
+        cmd: kubectl apply -k /tmp/sriov-operator/deployment/sriov-network-operator
 
-    # Generate kustomization.yaml safely
-    mkdir -p "$TMPDIR/sriov-operator/config/crd/bases"
-    echo "apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - ovsnetworks.sriovnetwork.openshift.io.yaml
-  - sriovibnetworks.sriovnetwork.openshift.io.yaml
-  - sriovnetworknodepolicies.sriovnetwork.openshift.io.yaml
-  - sriovnetworknodestates.sriovnetwork.openshift.io.yaml
-  - sriovnetworkpoolconfigs.sriovnetwork.openshift.io.yaml
-  - sriovnetworks.sriovnetwork.openshift.io.yaml
-  - sriovoperatorconfigs.sriovnetwork.openshift.io.yaml" > "$TMPDIR/sriov-operator/config/crd/bases/kustomization.yaml"
-
-    # Apply CRDs
-    kubectl apply -k "$TMPDIR/sriov-operator/config/crd/bases"
-
-    # Deploy operator manifests
-    kubectl apply -k "$TMPDIR/sriov-operator/deployment/sriov-network-operator"
-
-    # Wait for operator pods
-    kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
-
-    # Cleanup
-    rm -rf "$TMPDIR"
-  args:
-    executable: /bin/bash
+    - name: Wait for SR-IOV operator pod
+      ansible.builtin.command:
+        cmd: kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
+  delegate_to: "{{ groups['ran_node'][0] }}"
