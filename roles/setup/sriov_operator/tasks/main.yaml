@@ -2,77 +2,69 @@
 - name: RESTART_HERE
   ansible.builtin.meta: noop
 
-- block:
-    - name: Ensure build dependencies are installed
-      ansible.builtin.apt:
-        name:
-          - git
-          - make
-          - wget
-          - tar
-        state: present
-        update_cache: yes
-      become: true
+---
+- name: Ensure required packages are installed
+  apt:
+    name:
+      - wget
+      - tar
+      - curl
+      - git
+      - make
+      - gcc
+      - build-essential
+    state: present
+    update_cache: yes
 
-    - name: Download Go 1.23.2 tarball
-      ansible.builtin.get_url:
-        url: https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
-        dest: /tmp/go1.23.2.linux-amd64.tar.gz
-        mode: '0644'
+- name: Install Go 1.23
+  shell: |
+    wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz -O /tmp/go1.23.linux-amd64.tar.gz
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf /tmp/go1.23.linux-amd64.tar.gz
+    ln -sf /usr/local/go/bin/go /usr/local/bin/go
+  args:
+    creates: /usr/local/go/bin/go
+  become: true
 
-    - name: Remove old Go installation if exists
-      ansible.builtin.file:
-        path: /usr/local/go
-        state: absent
-      become: true
+- name: Ensure Go is in PATH for all users
+  lineinfile:
+    path: /etc/profile.d/go.sh
+    line: 'export PATH=$PATH:/usr/local/go/bin'
+    create: yes
+  become: true
 
-    - name: Install Go 1.23.2
-      ansible.builtin.unarchive:
-        src: /tmp/go1.23.2.linux-amd64.tar.gz
-        dest: /usr/local
-        remote_src: true
-      become: true
+- name: Verify Go installation
+  command: go version
+  register: go_version
+  changed_when: false
 
-    - name: Add Go to PATH for all users
-      ansible.builtin.copy:
-        dest: /etc/profile.d/go.sh
-        content: |
-          export PATH=/usr/local/go/bin:$PATH
-          export GOPATH=$HOME/go
-        owner: root
-        group: root
-        mode: '0644'
-      become: true
+- name: Install kubectl
+  shell: |
+    curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    mv kubectl /usr/local/bin/kubectl
+  args:
+    creates: /usr/local/bin/kubectl
+  become: true
 
-    - name: Clone sriov-network-operator repo
-      ansible.builtin.git:
-        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
-        dest: /tmp/sriov-operator
-        version: master
-        force: true
+- name: Clone SR-IOV Operator repository
+  git:
+    repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
+    dest: /tmp/sriov-operator
+    version: main
+    update: yes
 
-    - name: Deploy SR-IOV Operator on Kubernetes
-      ansible.builtin.shell: |
-        export CLUSTER_TYPE=kubernetes
-        export NAMESPACE=sriov-network-operator
-        make deploy-setup
-      args:
-        chdir: /tmp/sriov-operator
-        executable: /bin/bash
-      become: true
+- name: Fix go.mod Go version
+  shell: sed -i 's/go 1.23.0/go 1.23/' /tmp/sriov-operator/go.mod
+  args:
+    chdir: /tmp/sriov-operator
 
-    - name: Run make deploy-operator
-      ansible.builtin.command:
-        cmd: make deploy-operator
-        chdir: /tmp/sriov-operator
-      environment:
-        PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
-        GOPATH: "{{ ansible_env.HOME }}/go"
-      changed_when: true
-
-    - name: Wait for SR-IOV operator to be ready
-      ansible.builtin.command:
-        cmd: kubectl -n sriov-network-operator wait --for=condition=Available deployment/sriov-network-operator --timeout=300s
-      changed_when: false
-
-  delegate_to: "{{ groups['ran_node'][0] }}"
+- name: Deploy SR-IOV Operator on Kubernetes
+  shell: |
+    export CLUSTER_TYPE=kubernetes
+    export NAMESPACE=sriov-network-operator
+    make deploy-setup
+  args:
+    chdir: /tmp/sriov-operator
+    executable: /bin/bash
+  become: true
