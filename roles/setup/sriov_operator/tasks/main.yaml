@@ -3,47 +3,14 @@
   ansible.builtin.meta: noop
 
 - block:
-    - name: Check if kubectl is already installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/kubectl
-      register: kubectl_bin
-
-    - name: Install kubectl if missing
-      ansible.builtin.shell: |
-        set -e
-        VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
-        curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/$VERSION/bin/linux/amd64/kubectl
-        install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
-      args:
-        executable: /bin/bash
-      when: not kubectl_bin.stat.exists
-      become: true
-
-    - name: Check if kustomize is already installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/kustomize
-      register: kustomize_bin
-
-    - name: Download kustomize tarball
-      ansible.builtin.get_url:
-        url: "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.1.0/kustomize_v5.1.0_linux_amd64.tar.gz"
-        dest: /tmp/kustomize.tar.gz
-        mode: '0644'
-      when: not kustomize_bin.stat.exists
-
-    - name: Extract kustomize binary
-      ansible.builtin.unarchive:
-        src: /tmp/kustomize.tar.gz
-        dest: /usr/local/bin/
-        remote_src: true
-      when: not kustomize_bin.stat.exists
-      become: true
-
-    - name: Ensure kustomize binary is executable
-      ansible.builtin.file:
-        path: /usr/local/bin/kustomize
-        mode: '0755'
-      when: not kustomize_bin.stat.exists
+    - name: Ensure build dependencies are installed
+      ansible.builtin.apt:
+        name:
+          - git
+          - make
+          - golang-go
+        state: present
+        update_cache: yes
       become: true
 
     - name: Clone sriov-network-operator repo
@@ -51,26 +18,29 @@
         repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
         dest: /tmp/sriov-operator
         version: master
-        depth: 1
         force: true
 
-    - name: Apply SR-IOV CRDs
+    - name: Run make deploy-setup
       ansible.builtin.command:
-        cmd: kubectl apply -k /tmp/sriov-operator/config/crd/bases
+        cmd: make deploy-setup
+        chdir: /tmp/sriov-operator
+      environment:
+        PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
+        GOPATH: "{{ ansible_env.HOME }}/go"
       changed_when: true
 
-    - name: Deploy SR-IOV operator
+    - name: Run make deploy-operator
       ansible.builtin.command:
-        cmd: kubectl apply -k /tmp/sriov-operator/deployment/sriov-network-operator
+        cmd: make deploy-operator
+        chdir: /tmp/sriov-operator
+      environment:
+        PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
+        GOPATH: "{{ ansible_env.HOME }}/go"
       changed_when: true
 
-    - name: Wait for SR-IOV operator pod to be ready
+    - name: Wait for SR-IOV operator to be ready
       ansible.builtin.command:
-        cmd: kubectl -n sriov-network-operator wait --for=condition=Ready pod -l name=sriov-network-operator --timeout=300s
+        cmd: kubectl -n sriov-network-operator wait --for=condition=Available deployment/sriov-network-operator --timeout=300s
       changed_when: false
 
-    - name: Cleanup sriov-operator repo
-      ansible.builtin.file:
-        path: /tmp/sriov-operator
-        state: absent
   delegate_to: "{{ groups['ran_node'][0] }}"
