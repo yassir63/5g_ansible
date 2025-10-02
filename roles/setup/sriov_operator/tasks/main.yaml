@@ -39,9 +39,9 @@
         content: |
           export PATH=/usr/local/go/bin:$PATH
           export GOPATH=$HOME/go
-      mode: '0644'
-      owner: root
-      group: root
+        owner: root
+        group: root
+        mode: '0644'
       become: true
 
     - name: Clone sriov-network-operator repo
