@@ -18,6 +18,26 @@
   when: item.metadata.name is match('^open5gs-upf2-')
   no_log: true
 
+- name: Wait for UPF1 pod to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: open5gs
+    name: "{{ upf1_pod }}"
+  register: upf1_status
+  until: upf1_status.resources[0].status.containerStatuses[0].ready
+  retries: 20
+  delay: 5
+
+- name: Wait for UPF2 pod to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: open5gs
+    name: "{{ upf2_pod }}"
+  register: upf2_status
+  until: upf2_status.resources[0].status.containerStatuses[0].ready
+  retries: 20
+  delay: 5
+
 - name: Install iperf3 on UPF1
   shell: |
     kubectl -n open5gs exec {{ upf1_pod }} -- bash -c '
