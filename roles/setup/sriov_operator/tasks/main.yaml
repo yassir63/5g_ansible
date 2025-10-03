@@ -85,12 +85,12 @@
           - app.kubernetes.io/instance=cert-manager
       register: cert_manager_pods
       until: cert_manager_pods.resources | length > 0 and
-             (cert_manager_pods.resources
-              | selectattr('status.containerStatuses', 'defined')
-              | selectattr('status.containerStatuses', 'defined')
-              | selectattr('status.containerStatuses', 'none', True) 
-              | list | length
-             ) == cert_manager_pods.resources | length
+           (cert_manager_pods.resources
+            | map(attribute='status.containerStatuses')
+            | map('map', attribute='ready')
+            | map('all')
+            | all
+           )
       retries: 30
       delay: 5
 
