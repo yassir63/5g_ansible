@@ -1,4 +1,3 @@
----
 - hosts: faraday
   gather_facts: false
   tasks:
@@ -10,18 +9,17 @@
       include_role:
         name: r2lab/ue/setup
 
-    - name: Stop all UEs previous connections in parallel
-      block:
-        - name: Stop UE
-          include_role:
-            name: r2lab/ue/stop
-          vars:
-            ue: "{{ item }}"
+    # Async UE stop per item
+    - name: Stop UE previous connections (async per UE)
+      include_role:
+        name: r2lab/ue/stop
+      vars:
+        ue: "{{ item }}"
+      async: 1800
+      poll: 0
       loop: "{{ groups['qhats'] }}"
       loop_control:
         label: "{{ item }}"
-      async: 1800
-      poll: 0
       ignore_errors: true
 
     - name: Power ON RRU
