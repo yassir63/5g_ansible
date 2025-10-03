@@ -88,8 +88,8 @@
            (cert_manager_pods.resources
             | map(attribute='status.containerStatuses')
             | map('map', attribute='ready')
-            | map('all')
-            | all
+            | map('min')          # min=True means all containers in this pod are ready
+            | min                  # min=True means all pods are ready
            )
       retries: 30
       delay: 5
