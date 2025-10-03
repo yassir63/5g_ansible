@@ -155,11 +155,10 @@
         namespace: sriov-network-operator
       register: sriov_certs
       until: >
-        sriov_certs.resources |
-        selectattr('status.conditions', 'defined') |
-        selectattr('status.conditions[0].type', 'equalto', 'Ready') |
-        selectattr('status.conditions[0].status', 'equalto', 'True') |
-        list | length > 0
+        sriov_certs.resources | selectattr('status.conditions', 'defined')
+        | selectattr('status.conditions', 'search', 'Ready')
+        | selectattr('status.conditions', 'search', 'True')
+        | list | length > 0
       retries: 30
       delay: 10
 
