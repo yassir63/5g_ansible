@@ -184,7 +184,7 @@
         PATH: "{{ ansible_env.PATH }}:/root/sriov-network-operator/bin"
 
     - name: Apply CRDs via kustomize
-      command: ./bin/kustomize build config/crd | kubectl apply -f -
+      ansible.builtin.shell: ./bin/kustomize build config/crd | kubectl apply -f -
       args:
         chdir: /root/sriov-network-operator
 
