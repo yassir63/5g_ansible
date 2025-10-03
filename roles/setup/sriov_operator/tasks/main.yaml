@@ -77,9 +77,18 @@
         state: present
         src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
-    - name: Wait 10 seconds
-      pause:
-        seconds: 10
+    - name: Wait until cert-manager pods are ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: cert-manager
+        label_selectors:
+          - app=cert-manager
+      register: cert_manager_pods
+      until: cert_manager_pods.resources | length > 0 and
+             cert_manager_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length == (cert_manager_pods.resources | length) and
+             cert_manager_pods.resources | selectattr('status.containerStatuses', 'defined') | selectattr('status.containerStatuses', 'selectattr("ready","equalto",True)') | list | length == (cert_manager_pods.resources | length)
+      retries: 30
+      delay: 5
 
     - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
