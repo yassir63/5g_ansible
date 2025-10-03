@@ -2,68 +2,194 @@
 - name: RESTART_HERE
   ansible.builtin.meta: noop
 
-- name: Ensure required packages are installed
+- name: Update APT package cache
   apt:
-    name:
-      - wget
-      - tar
-      - curl
-      - git
-      - make
-      - gcc
-      - build-essential
-    state: present
     update_cache: yes
-
-- name: Install Go 1.23
-  shell: |
-    wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz -O /tmp/go1.23.linux-amd64.tar.gz
-    rm -rf /usr/local/go
-    tar -C /usr/local -xzf /tmp/go1.23.linux-amd64.tar.gz
-    ln -sf /usr/local/go/bin/go /usr/local/bin/go
-  args:
-    creates: /usr/local/go/bin/go
   become: true
 
-- name: Ensure Go is in PATH for all users
-  lineinfile:
-    path: /etc/profile.d/go.sh
-    line: 'export PATH=$PATH:/usr/local/go/bin'
-    create: yes
-  become: true
+- name: Install Go
+  become: yes
+  block:
+    - name: Download Go
+      ansible.builtin.get_url:
+        url: https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
+        dest: /tmp/go1.24.6.linux-amd64.tar.gz
+        mode: '0644'
+        timeout: 60
+        validate_certs: yes
 
-- name: Verify Go installation
-  command: go version
-  register: go_version
-  changed_when: false
+    - name: Extract Go to /usr/local
+      ansible.builtin.unarchive:
+        src: /tmp/go1.24.6.linux-amd64.tar.gz
+        dest: /usr/local
+        remote_src: yes
+        creates: /usr/local/go
 
-- name: Install kubectl
-  shell: |
-    curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-    chmod +x kubectl
-    mv kubectl /usr/local/bin/kubectl
-  args:
-    creates: /usr/local/bin/kubectl
-  become: true
+    - name: Create GOPATH directory
+      ansible.builtin.file:
+        path: /opt/gopath
+        state: directory
+        mode: '0755'
 
-- name: Clone SR-IOV Operator repository
-  git:
-    repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
-    dest: /tmp/sriov-operator
-    version: main
-    update: yes
+    - name: Set up Go environment via profile script
+      ansible.builtin.copy:
+        content: |
+          export GOROOT=/usr/local/go
+          export GOPATH=/opt/gopath
+          export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+        dest: /etc/profile.d/golang.sh
+        mode: '0755'
 
-- name: Fix go.mod Go version
-  shell: sed -i 's/go 1.23.0/go 1.23/' /tmp/sriov-operator/go.mod
-  args:
-    chdir: /tmp/sriov-operator
+    - name: Create symbolic link from /usr/local/go/bin/go to /usr/local/bin/go
+      file:
+        src: /usr/local/go/bin/go
+        dest: /usr/local/bin/go
+        state: link   
 
-- name: Deploy SR-IOV Operator on Kubernetes
-  shell: |
-    export CLUSTER_TYPE=kubernetes
-    export NAMESPACE=sriov-network-operator
-    make deploy-setup
-  args:
-    chdir: /tmp/sriov-operator
-    executable: /bin/bash
-  become: true
+    - name: Clean up downloaded archive
+      ansible.builtin.file:
+        path: /tmp/go1.24.6.linux-amd64.tar.gz
+        state: absent
+
+- name: Deploy SR-IOV Network Operator
+  block:
+    - name: Install git (if not already installed)
+      ansible.builtin.package:
+        name: git
+        state: present   
+
+    - name: Clone SR-IOV Network Operator
+      ansible.builtin.git:
+        repo: https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
+        dest: /root/sriov-network-operator
+        clone: yes
+        update: yes
+        version: master
+
+    - name: Install Go dependency for sriov-network-operator
+      ansible.builtin.shell: |
+        /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
+      args:
+        chdir: /root/sriov-network-operator
+
+    - name: Ensure cert-manager is installed
+      kubernetes.core.k8s:
+        state: present
+        src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
+
+    - name: Wait 10 seconds
+      pause:
+        seconds: 10
+
+    - name: Create namespace sriov-network-operator
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: sriov-network-operator
+        state: present
+
+    - name: Wait 10 seconds 
+      pause:
+        seconds: 10
+
+    - name: Apply Issuer and Certificates
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: cert-manager.io/v1
+          kind: Issuer
+          metadata:
+            name: sriov-network-operator-selfsigned-issuer
+            namespace: sriov-network-operator
+          spec:
+            selfSigned: {}
+          ---
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: operator-webhook-cert
+            namespace: sriov-network-operator
+          spec:
+            secretName: operator-webhook-cert
+            dnsNames:
+            - operator-webhook-service.sriov-network-operator.svc
+            issuerRef:
+              name: sriov-network-operator-selfsigned-issuer
+          ---
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: network-resources-injector-cert
+            namespace: sriov-network-operator
+          spec:
+            secretName: network-resources-injector-cert
+            dnsNames:
+            - network-resources-injector-service.sriov-network-operator.svc
+            issuerRef:
+              name: sriov-network-operator-selfsigned-issuer
+
+    - name: Wait 15 seconds 
+      pause:
+        seconds: 15
+
+    - name: Ensure source and destination directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - /root/sriov-network-operator/config/crd/bases
+        - /root/sriov-network-operator/config/crd
+
+    - name: Find all CRD YAML files in bases (exclude kustomization.yaml)
+      find:
+        paths: /root/sriov-network-operator/config/crd/bases
+        patterns: "*.yaml"
+        excludes: "kustomization.yaml"
+        file_type: file
+      register: crd_files
+
+    - name: Create kustomization.yaml in bases directory
+      copy:
+        content: |
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+          {% for file in crd_files.files %}
+            - {{ file.path | basename }}
+          {% endfor %}
+        dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
+
+    - name: Build list of all files to copy (CRDs + kustomization.yaml)
+      set_fact:
+        all_files_to_copy: |
+          {% set files = [] %}
+          {% for file in crd_files.files %}
+          {%   set _ = files.append(file.path) %}
+          {% endfor %}
+          {% set _ = files.append('/root/sriov-network-operator/config/crd/bases/kustomization.yaml') %}
+          {{ files }}
+
+    - name: Copy all YAML files (including kustomization.yaml) to crd directory on remote
+      copy:
+        src: "{{ item }}"
+        dest: /root/sriov-network-operator/config/crd/
+        remote_src: yes
+      loop: "{{ all_files_to_copy }}"
+      
+    - name: Deploy SR-IOV Operator via Make
+      ansible.builtin.shell: |
+        export ADMISSION_CONTROLLERS_ENABLED=true
+        export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
+        make deploy-setup-k8s
+      args:
+        chdir: /root/sriov-network-operator
+
+- name: Verify SR-IOV Network Operator deployment
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: sriov-network-operator
+  register: sriov_pods
+
+- name: Debug deployed pods
+  ansible.builtin.debug:
+    var: sriov_pods.resources
