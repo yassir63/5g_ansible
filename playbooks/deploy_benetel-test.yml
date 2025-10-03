@@ -33,7 +33,6 @@
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
-    - role: setup/optimization/cpu
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
@@ -56,6 +55,19 @@
   roles:
     - role: setup/gre_tunnel
 
+- name: Join Kubernetes Cluster on Workers
+  hosts: k8s_workers
+  become: true
+  roles:
+    - role: setup/k8s/cluster_join
+      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+
+- name: Setup Sopnodes
+  hosts: sopnodes
+  roles:
+    - role: setup/optimization/cpu
+
+
 - name: Deploy Open5gs Core
   hosts: core_node
   roles:
@@ -66,13 +78,6 @@
   gather_facts: false
   roles:
     - role: scenarios/iperf/upf
-
-- name: Join Kubernetes Cluster on Workers
-  hosts: k8s_workers
-  become: true
-  roles:
-    - role: setup/k8s/cluster_join
-      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
 
 - name: Apply specific tuning on RAN Node if AW2s RRUs are used
   hosts: ran_node
