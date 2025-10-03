@@ -53,15 +53,6 @@
 
 - name: Deploy SR-IOV Operator with CRDs and Certificates
   block:
-    - name: Ensure Kustomization CRD exists
-      command: kubectl get crd kustomizations.kustomize.toolkit.fluxcd.io
-      register: kustomization_crd
-      ignore_errors: true
-
-    - name: Fail if Kustomization CRD is missing
-      fail:
-        msg: "Kustomization CRD not found. Please install it first."
-      when: kustomization_crd.rc != 0
 
     - name: Generate and apply SR-IOV CRDs
       shell: |
