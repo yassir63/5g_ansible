@@ -1,5 +1,5 @@
 ---
-# ------------------ Block1 Part 1: Run pos reset ------------------
+# ------------------ Block1 Part 1: Run pos reset asynchronously ------------------
 - hosts: webshell
   gather_facts: false
   tasks:
@@ -30,43 +30,50 @@
 - hosts: faraday
   gather_facts: false
   tasks:
-    - name: Cleanup R2Lab (run normally)
+    # Cleanup and UE setup run synchronously
+    - name: Cleanup R2Lab
       include_role:
         name: r2lab/cleanup
 
-    - name: Setup UEs on R2Lab (run normally)
+    - name: Setup UEs on R2Lab
       include_role:
         name: r2lab/ue/setup
 
-    - name: Stop all UEs previous connections on R2Lab asynchronously
-      include_role:
-        name: r2lab/ue/stop
-      vars:
-        ue: "{{ item }}"
+    # Stop all UEs asynchronously (per UE using mini playbook stop_ue.yml)
+    - name: Stop all UEs previous connections asynchronously
+      ansible.builtin.command: >
+        ansible-playbook -i inventory/hosts-test.ini playbooks/stop_ue.yml --extra-vars "ue={{ item }}" -c local
+      args:
+        chdir: "{{ playbook_dir | dirname }}"
+      async: 1800
+      poll: 0
       loop: "{{ groups['qhats'] }}"
       loop_control:
         label: "{{ item }}"
-      ignore_errors: true
-      async: 1800
-      poll: 0
-      register: block2_ue_stop_jobs
+      register: stop_ue_jobs
 
-    - name: Wait for all UE stops
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Wait for all UE stop jobs
       async_status:
         jid: "{{ item.ansible_job_id }}"
-      loop: "{{ block2_ue_stop_jobs.results }}"
+      loop: "{{ hostvars['faraday']['stop_ue_jobs'].results }}"
       loop_control:
         label: "{{ item.item }}"
-      register: block2_ue_stop_results
-      until: block2_ue_stop_results.finished
+      register: stop_ue_results
+      until: stop_ue_results.finished
       retries: 100
       delay: 10
 
-    - name: Power ON RRU on R2Lab (after previous tasks complete)
+- hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Power ON RRU
       include_role:
         name: r2lab/rru
 
-# ------------------ Block1 Part 2: sequential roles ------------------
+# ------------------ Block1 Part 2: Sequential roles ------------------
 - hosts: sopnodes
   roles:
     - role: setup/common
