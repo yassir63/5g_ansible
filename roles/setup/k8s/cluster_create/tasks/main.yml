@@ -25,9 +25,12 @@
     remote_src: yes
     mode: '0600'
 
-- name: Wait 10 seconds for cluster to be ready
-  pause:
-    seconds: 10
+- name: Wait for CoreDNS pods to be Ready
+  shell: kubectl wait --namespace=kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
+  register: coredns_wait
+  retries: 3
+  delay: 10
+  until: coredns_wait.rc == 0
 
 - name: Remove NoSchedule taint from master node
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
