@@ -2,7 +2,6 @@
 - name: RESTART_HERE
   ansible.builtin.meta: noop
 
----
 - name: Ensure required packages are installed
   apt:
     name:
