@@ -77,22 +77,22 @@
         state: present
         src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
 
+
     - name: Wait until cert-manager pods are ready
       kubernetes.core.k8s_info:
         kind: Pod
         namespace: cert-manager
         label_selectors:
-          - app.kubernetes.io/instance=cert-manager
+          - app=cert-manager
       register: cert_manager_pods
       until: cert_manager_pods.resources | length > 0 and
-           (cert_manager_pods.resources
-            | map(attribute='status.containerStatuses')
-            | map('map', attribute='ready')
-            | map('min')          # min=True means all containers in this pod are ready
-            | min                  # min=True means all pods are ready
-           )
+             (cert_manager_pods.resources
+               | map(attribute='status.containerStatuses')
+               | map('map', attribute='ready')
+               | map('min')
+               | min)
       retries: 30
-      delay: 5
+      delay: 10
 
     - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
@@ -149,7 +149,11 @@
         name: operator-webhook-cert
       register: operator_webhook_cert
       until: operator_webhook_cert.resources[0].status.conditions is defined and
-             operator_webhook_cert.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+             operator_webhook_cert.resources[0].status.conditions
+               | selectattr('type','equalto','Ready')
+               | selectattr('status','equalto','True')
+               | list
+               | length > 0
       retries: 30
       delay: 5
 
@@ -161,13 +165,13 @@
         name: network-resources-injector-cert
       register: nri_cert
       until: nri_cert.resources[0].status.conditions is defined and
-             nri_cert.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+             nri_cert.resources[0].status.conditions
+               | selectattr('type','equalto','Ready')
+               | selectattr('status','equalto','True')
+               | list
+               | length > 0
       retries: 30
       delay: 5
-  
-    - name: Wait 15 seconds 
-      pause:
-        seconds: 15
 
     - name: Generate manifests and CRDs using Makefile
       command: make install
