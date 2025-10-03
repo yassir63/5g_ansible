@@ -46,6 +46,11 @@
       register: tuned_profile
       changed_when: "'Current active profile: throughput-performance' not in tuned_profile.stdout"
 
+    - name: Get current tuned profile
+      command: tuned-adm active
+      register: tuned_profile
+      changed_when: false
+
     - name: Show current tuned profile
       debug:
         msg: "{{ tuned_profile.stdout }}"
