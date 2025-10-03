@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ANSIBLE_PLAYBOOK="/usr/bin/ansible-playbook"
-INVENTORY="/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/inventory/hosts-test.ini"
+INVENTORY="/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/inventory/hosts-test.ini"
 BLOCK2_PLAYBOOK="/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/block2_r2lab.yml"
 LOG_FILE="/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/block2.log"
 
