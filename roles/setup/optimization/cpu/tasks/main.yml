@@ -77,3 +77,29 @@
           debug:
             msg: "{{ ht_check.stdout }}"
       when: inventory_hostname == "sopnode-f3"
+
+    - block:
+        - name: Disable all CPU sleep/idle states
+          shell: cpupower idle-set -d
+          register: cpupower_idle_disable
+          changed_when: "'Setting idle states' in cpupower_idle_disable.stdout"
+          ignore_errors: true
+
+        - name: Show CPU idle states after disabling
+          shell: cpupower idle-info
+          register: cpupower_idle_info
+          changed_when: false
+
+        - name: Display CPU idle states
+          debug:
+            msg: "{{ cpupower_idle_info.stdout_lines }}"
+
+        - name: Show current idle-set
+          shell: cpupower idle-set
+          register: cpupower_idle_set
+          changed_when: false
+
+        - name: Display current idle-set
+          debug:
+            msg: "{{ cpupower_idle_set.stdout }}"
+      when: inventory_hostname == "sopnode-f3"
