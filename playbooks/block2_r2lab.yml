@@ -6,7 +6,7 @@
       include_role:
         name: r2lab/cleanup
 
-    - name: Setup UEs
+    - name: Setup UEs on R2Lab
       include_role:
         name: r2lab/ue/setup
 
@@ -23,4 +23,6 @@
     - name: Power ON RRU
       include_role:
         name: r2lab/rru
+
+
 
