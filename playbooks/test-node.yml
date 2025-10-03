@@ -1,7 +1,6 @@
 ---
 - name: Configure CPU and tuned profile on Ubuntu 22.04
   hosts: all
-  become: true
   tasks:
     - name: Install cpufrequtils and tuned
       apt:
