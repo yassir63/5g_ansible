@@ -23,10 +23,6 @@
     state: patched
   delegate_to: "{{ groups['core_node'][0] }}"   # run from control/master node
 
-#- name: Debug ran_node vars
-#  debug:
-#    msg: "ran_node dpdk_interface_c={{ ran_vars.dpdk_interface_c | default('NOT DEFINED') }}"
-#  run_once: true
 
 - name: Wait until SR-IOV operator detects NICs on the node
   kubernetes.core.k8s_info:
@@ -90,4 +86,28 @@
         nicSelector:
           pfNames: ["{{ ran_vars.dpdk_interface_u }}"]
           #rootDevices: ["{{ ran_vars.pci_dpdk_interface }}"]
+
+- name: Show PFs, VFs, and MTU for RAN NIC 
+  shell: |
+    NIC={{ ran_vars.dpdk_interface }}
+    if [ ! -d /sys/class/net/$NIC ]; then
+      echo "NIC $NIC does not exist, skipping"
+      exit 0
+    fi
+    PF_PATH=/sys/class/net/$NIC/device
+    PF_PCI=$(basename $(readlink -f $PF_PATH))
+    MTU=$(cat /sys/class/net/$NIC/mtu)
+    echo "PF: $NIC ($PF_PCI), MTU: $MTU"
+    for vf in $PF_PATH/virtfn*; do
+      [ -e "$vf" ] || continue
+      VF_PCI=$(basename $(readlink -f "$vf"))
+      echo "  -> VF: $VF_PCI"
+    done
+  register: nic_vf_info
+  changed_when: false
+
+- name: Display PF, VF, and MTU information
+  debug:
+    msg: "{{ nic_vf_info.stdout_lines }}"
+  
 
