@@ -29,6 +29,7 @@
   hosts: sopnodes
   roles:
     - role: setup/common
+    - role: setup/netplan
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
@@ -122,7 +123,6 @@
   roles:
     - role: setup/sriov_operator
     - role: setup/optimization/nic
-    - role: setup/netplan
     - role: benetel/ptp
     - role: benetel/dpdk_install
     - role: benetel/dpdk_config
