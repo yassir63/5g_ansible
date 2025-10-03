@@ -26,15 +26,12 @@
       retries: 100
       delay: 10
 
-# ------------------ Start Block2 concurrently ------------------
+# ------------------ Start Block2 concurrently via wrapper script ------------------
 - hosts: localhost
   gather_facts: false
   tasks:
-    - name: Start Block2 R2Lab playbook fully in background
-      ansible.builtin.shell: >
-        setsid {{ ansible_playbook_python | dirname }}/ansible-playbook
-        -i {{ playbook_dir }}/inventory/hosts-test.ini
-        {{ playbook_dir }}/block2_r2lab.yml -c local > {{ playbook_dir }}/block2.log 2>&1 < /dev/null &
+    - name: Start Block2 R2Lab playbook fully in background via wrapper
+      ansible.builtin.shell: "{{ playbook_dir }}/start_block2.sh"
       async: 0
       poll: 0
 
