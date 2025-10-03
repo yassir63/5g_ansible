@@ -53,6 +53,26 @@
     - name: Check if hyperthreading is disabled
       shell: |
         physical=$(lscpu | awk '/^Core\(s\) per socket:/ {cores=$4}
+                                 /^Socket\(s\):/ {sockets=$2}
+                                 END {print cores * sockets}')
+        logical=$(lscpu | awk '/^CPU\(s\):/ {print $2}')
+        if [ "$logical" -eq "$physical" ]; then
+          echo "Hyperthreading is disabled"
+        else
+          echo "Hyperthreading is enabled"
+        fi
+      register: ht_check
+      changed_when: false
+      failed_when: false
+
+    - name: Show hyperthreading status
+      debug:
+        msg: "{{ ht_check.stdout }}"
+
+
+    - name: Check if hyperthreading is disabled
+      shell: |
+        physical=$(lscpu | awk '/^Core\(s\) per socket:/ {cores=$4}
                                    /^Socket\(s\):/ {sockets=$2}
                                    END {print cores * sockets}')
         logical=$(lscpu | awk '/^CPU\(s\):/ {print $2}')
