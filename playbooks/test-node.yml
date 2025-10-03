@@ -69,26 +69,3 @@
       debug:
         msg: "{{ ht_check.stdout }}"
 
-
-    - name: Check if hyperthreading is disabled
-      shell: |
-        physical=$(lscpu | awk '/^Core\(s\) per socket:/ {cores=$4}
-                                   /^Socket\(s\):/ {sockets=$2}
-                                   END {print cores * sockets}')
-        logical=$(lscpu | awk '/^CPU\(s\):/ {print $2}')
-        if [ "$logical" -eq "$physical" ]; then
-          echo "Hyperthreading is disabled"
-          exit 0
-        else
-          echo "Hyperthreading is enabled"
-          exit 1
-        fi
-      register: ht_check
-      changed_when: false
-      failed_when: ht_check.rc != 0
-      when: inventory_hostname == "sopnode-f3"
-
-    - name: Show hyperthreading status
-      debug:
-        msg: "{{ ht_check.stdout }}"
-      when: inventory_hostname == "sopnode-f3"
