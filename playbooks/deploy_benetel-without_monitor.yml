@@ -5,9 +5,7 @@
   tasks:
     - name: Run pos reset in parallel for each sopnode to reset
       ansible.builtin.command: >
-        ansible-playbook -i {{ playbook_dir }}/inventory/hosts-test.ini {{ playbook_dir }}/run_pos.yml --extra-vars "node={{ item }}" -c local
-      args:
-        chdir: "{{ playbook_dir | dirname }}"
+        /usr/bin/ansible-playbook -i /home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/inventory/hosts-test.ini /home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
       async: 1800
       poll: 0
       loop: "{{ groups['sopnodes_to_reset'] }}"
@@ -26,12 +24,12 @@
       retries: 100
       delay: 10
 
-# ------------------ Start Block2 concurrently via wrapper script ------------------
+# ------------------ Start Block2 concurrently ------------------
 - hosts: localhost
   gather_facts: false
   tasks:
     - name: Start Block2 R2Lab playbook fully in background via wrapper
-      ansible.builtin.shell: "{{ playbook_dir }}/start_block2.sh"
+      ansible.builtin.shell: "/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/start_block2.sh"
       async: 0
       poll: 0
 
