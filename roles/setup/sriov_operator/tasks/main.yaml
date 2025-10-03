@@ -84,9 +84,12 @@
         label_selectors:
           - app=cert-manager
       register: cert_manager_pods
-      until: cert_manager_pods.resources | length > 0 and
-             cert_manager_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length == (cert_manager_pods.resources | length) and
-             cert_manager_pods.resources | selectattr('status.containerStatuses', 'defined') | selectattr('status.containerStatuses', 'selectattr("ready","equalto",True)') | list | length == (cert_manager_pods.resources | length)
+      until: >
+        cert_manager_pods.resources | length > 0 and
+        (
+          cert_manager_pods.resources | map(attribute='status.containerStatuses') |
+          map('map', attribute='ready') | map('all') | all
+        )
       retries: 30
       delay: 5
 
