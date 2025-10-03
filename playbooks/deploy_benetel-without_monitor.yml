@@ -1,5 +1,5 @@
 ---
-# ------------------ Block1 Part 1: Run pos reset asynchronously ------------------
+# ------------------ Block1: Main playbook ------------------
 - hosts: webshell
   gather_facts: false
   tasks:
@@ -26,54 +26,18 @@
       retries: 100
       delay: 10
 
-# ------------------ Block2: R2Lab tasks ------------------
-- hosts: faraday
-  gather_facts: false
-  tasks:
-    # Cleanup and UE setup run synchronously
-    - name: Cleanup R2Lab
-      include_role:
-        name: r2lab/cleanup
-
-    - name: Setup UEs on R2Lab
-      include_role:
-        name: r2lab/ue/setup
-
-    # Stop all UEs asynchronously (per UE using mini playbook stop_ue.yml)
-    - name: Stop all UEs previous connections asynchronously
-      ansible.builtin.command: >
-        ansible-playbook -i inventory/hosts-test.ini playbooks/stop_ue.yml --extra-vars "ue={{ item }}" -c local
-      args:
-        chdir: "{{ playbook_dir | dirname }}"
-      async: 1800
-      poll: 0
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        label: "{{ item }}"
-      register: stop_ue_jobs
-
+# ------------------ Start Block2 asynchronously ------------------
 - hosts: localhost
   gather_facts: false
   tasks:
-    - name: Wait for all UE stop jobs
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      loop: "{{ hostvars['faraday']['stop_ue_jobs'].results }}"
-      loop_control:
-        label: "{{ item.item }}"
-      register: stop_ue_results
-      until: stop_ue_results.finished
-      retries: 100
-      delay: 10
+    - name: Start Block2 R2Lab playbook asynchronously
+      ansible.builtin.command: >
+        ansible-playbook -i inventory/hosts-test.ini playbooks/block2_r2lab.yml -c local
+      async: 3600
+      poll: 0
+      register: block2_job
 
-- hosts: faraday
-  gather_facts: false
-  tasks:
-    - name: Power ON RRU
-      include_role:
-        name: r2lab/rru
-
-# ------------------ Block1 Part 2: Sequential roles ------------------
+# ------------------ Block1 sequential roles continue ------------------
 - hosts: sopnodes
   roles:
     - role: setup/common
@@ -143,7 +107,19 @@
   roles:
     - role: benetel/sriov_nnp_create
 
-# ------------------ Continue after Block1 and Block2 complete ------------------
+# ------------------ Wait for Block2 completion before dependent tasks ------------------
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Wait for Block2 R2Lab playbook to finish
+      async_status:
+        jid: "{{ block2_job.ansible_job_id }}"
+      register: block2_result
+      until: block2_result.finished
+      retries: 200
+      delay: 10
+
+# ------------------ Continue after both blocks complete ------------------
 - hosts: ran_node
   roles:
     - role: 5g/ran
