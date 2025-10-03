@@ -128,70 +128,46 @@
             issuerRef:
               name: sriov-network-operator-selfsigned-issuer
 
+    - name: Wait until operator-webhook-cert is Ready
+      kubernetes.core.k8s_info:
+        api_version: cert-manager.io/v1
+        kind: Certificate
+        namespace: sriov-network-operator
+        name: operator-webhook-cert
+      register: operator_webhook_cert
+      until: operator_webhook_cert.resources[0].status.conditions is defined and
+             operator_webhook_cert.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+      retries: 30
+      delay: 5
+
+    - name: Wait until network-resources-injector-cert is Ready
+      kubernetes.core.k8s_info:
+        api_version: cert-manager.io/v1
+        kind: Certificate
+        namespace: sriov-network-operator
+        name: network-resources-injector-cert
+      register: nri_cert
+      until: nri_cert.resources[0].status.conditions is defined and
+             nri_cert.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+      retries: 30
+      delay: 5
+  
     - name: Wait 15 seconds 
       pause:
         seconds: 15
 
-    - name: Ensure source and destination directories exist
-      file:
-        path: "{{ item }}"
-        state: directory
-      loop:
-        - /root/sriov-network-operator/config/crd/bases
-        - /root/sriov-network-operator/config/crd
-
-    - name: Find all CRD YAML files in bases (exclude kustomization.yaml)
-      find:
-        paths: /root/sriov-network-operator/config/crd/bases
-        patterns: "*.yaml"
-        excludes: "kustomization.yaml"
-        file_type: file
-      register: crd_files
-
-    - name: Create kustomization.yaml in bases directory
-      copy:
-        content: |
-          apiVersion: kustomize.config.k8s.io/v1beta1
-          kind: Kustomization
-          resources:
-          {% for file in crd_files.files %}
-            - {{ file.path | basename }}
-          {% endfor %}
-        dest: /root/sriov-network-operator/config/crd/bases/kustomization.yaml
-
-    - name: Build list of all files to copy (CRDs + kustomization.yaml)
-      set_fact:
-        all_files_to_copy: |
-          {% set files = [] %}
-          {% for file in crd_files.files %}
-          {%   set _ = files.append(file.path) %}
-          {% endfor %}
-          {% set _ = files.append('/root/sriov-network-operator/config/crd/bases/kustomization.yaml') %}
-          {{ files }}
-
-    - name: Copy all YAML files (including kustomization.yaml) to crd directory on remote
-      copy:
-        src: "{{ item }}"
-        dest: /root/sriov-network-operator/config/crd/
-        remote_src: yes
-      loop: "{{ all_files_to_copy }}"
-
     - name: Generate manifests and CRDs using Makefile
-      command: make manifests kustomize
+      command: make install
       args:
         chdir: /root/sriov-network-operator
       environment:
         PATH: "{{ ansible_env.PATH }}:/root/sriov-network-operator/bin"
 
-    - name: Apply CRDs via kustomize
-      ansible.builtin.shell: ./bin/kustomize build config/crd | kubectl apply -f -
-      args:
-        chdir: /root/sriov-network-operator
-
     - name: Deploy SR-IOV Operator via Make
       ansible.builtin.shell: |
         export ADMISSION_CONTROLLERS_ENABLED=true
         export ADMISSION_CONTROLLERS_CERTIFICATES_CERT_MANAGER_ENABLED=true
+        make install
         make deploy-setup-k8s
       args:
         chdir: /root/sriov-network-operator
