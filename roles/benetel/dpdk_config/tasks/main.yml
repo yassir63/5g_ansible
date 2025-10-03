@@ -1,5 +1,11 @@
 ---
  
+- name: Ensure pciutils is installed
+  ansible.builtin.apt:
+    name: pciutils
+    state: present
+    update_cache: true
+
 - name: Ensure iavf module is present
   ansible.builtin.modprobe:
     name: iavf
