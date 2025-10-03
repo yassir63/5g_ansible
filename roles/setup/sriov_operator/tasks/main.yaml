@@ -87,9 +87,8 @@
       until: cert_manager_pods.resources | length > 0 and
              (cert_manager_pods.resources
               | selectattr('status.containerStatuses', 'defined')
-              | selectattr('status.containerStatuses',
-                           'select',
-                           lambda cs: cs | selectattr('ready','equalto',True) | list | length == cs | length)
+              | selectattr('status.containerStatuses', 'defined')
+              | selectattr('status.containerStatuses', 'none', True) 
               | list | length
              ) == cert_manager_pods.resources | length
       retries: 30
