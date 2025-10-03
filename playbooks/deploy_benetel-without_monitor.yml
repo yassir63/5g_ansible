@@ -30,11 +30,11 @@
 - hosts: localhost
   gather_facts: false
   tasks:
-    - name: Start Block2 R2Lab playbook in background
+    - name: Start Block2 R2Lab playbook fully in background
       ansible.builtin.shell: >
-        nohup {{ ansible_playbook_python | dirname }}/ansible-playbook \
-        -i {{ playbook_dir }}/inventory/hosts-test.ini \
-        {{ playbook_dir }}/block2_r2lab.yml -c local > {{ playbook_dir }}/block2.log 2>&1 &
+        setsid {{ ansible_playbook_python | dirname }}/ansible-playbook
+        -i {{ playbook_dir }}/inventory/hosts-test.ini
+        {{ playbook_dir }}/block2_r2lab.yml -c local > {{ playbook_dir }}/block2.log 2>&1 < /dev/null &
       async: 0
       poll: 0
 

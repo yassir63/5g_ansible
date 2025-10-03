@@ -24,5 +24,8 @@
       include_role:
         name: r2lab/rru
 
-
+    - name: Mark Block2 as done
+      file:
+        path: "{{ playbook_dir }}/block2.done"
+        state: touch
 
