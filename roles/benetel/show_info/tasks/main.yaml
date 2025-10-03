@@ -1,0 +1,24 @@
+- name: Show PFs, VFs, and MTU for RAN NIC 
+  shell: |
+    NIC={{ nic_interface }}
+    if [ ! -d /sys/class/net/$NIC ]; then
+      echo "NIC $NIC does not exist, skipping"
+      exit 0
+    fi
+    PF_PATH=/sys/class/net/$NIC/device
+    PF_PCI=$(basename $(readlink -f $PF_PATH))
+    MTU=$(cat /sys/class/net/$NIC/mtu)
+    echo "PF: $NIC ($PF_PCI), MTU: $MTU"
+    for vf in $PF_PATH/virtfn*; do
+      [ -e "$vf" ] || continue
+      VF_PCI=$(basename $(readlink -f "$vf"))
+      echo "  -> VF: $VF_PCI"
+    done
+  register: nic_vf_info
+  changed_when: false
+  when: inventory_hostname == "sopnode-f3" and nic_interface is defined
+
+- name: Display PF, VF, and MTU information
+  debug:
+    msg: "{{ nic_vf_info.stdout_lines }}"
+  when: inventory_hostname == "sopnode-f3" and nic_interface is defined
