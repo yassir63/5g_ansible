@@ -30,21 +30,15 @@
 - hosts: faraday
   gather_facts: false
   tasks:
-    - name: Cleanup R2Lab async
+    - name: Cleanup R2Lab (run normally)
       include_role:
         name: r2lab/cleanup
-      async: 1800
-      poll: 0
-      register: block2_cleanup_job
 
-    - name: Setup UEs async
+    - name: Setup UEs on R2Lab (run normally)
       include_role:
         name: r2lab/ue/setup
-      async: 1800
-      poll: 0
-      register: block2_ue_job
 
-    - name: Stop all UEs previous connections async
+    - name: Stop all UEs previous connections on R2Lab asynchronously
       include_role:
         name: r2lab/ue/stop
       vars:
@@ -55,50 +49,22 @@
       ignore_errors: true
       async: 1800
       poll: 0
-      register: block2_ue_stop_job
+      register: block2_ue_stop_jobs
 
-    - name: Power ON RRU (waits for previous tasks)
+    - name: Wait for all UE stops
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ block2_ue_stop_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: block2_ue_stop_results
+      until: block2_ue_stop_results.finished
+      retries: 100
+      delay: 10
+
+    - name: Power ON RRU on R2Lab (after previous tasks complete)
       include_role:
         name: r2lab/rru
-      async: 1800
-      poll: 0
-      register: block2_rru_job
-
-# ------------------ Wait for Block2 tasks ------------------
-- hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Wait for R2Lab cleanup
-      async_status:
-        jid: "{{ hostvars['faraday']['block2_cleanup_job'].ansible_job_id }}"
-      register: block2_cleanup_result
-      until: block2_cleanup_result.finished
-      retries: 100
-      delay: 10
-
-    - name: Wait for UE setup
-      async_status:
-        jid: "{{ hostvars['faraday']['block2_ue_job'].ansible_job_id }}"
-      register: block2_ue_result
-      until: block2_ue_result.finished
-      retries: 100
-      delay: 10
-
-    - name: Wait for UE stop
-      async_status:
-        jid: "{{ hostvars['faraday']['block2_ue_stop_job'].ansible_job_id }}"
-      register: block2_ue_stop_result
-      until: block2_ue_stop_result.finished
-      retries: 100
-      delay: 10
-
-    - name: Wait for RRU power-on
-      async_status:
-        jid: "{{ hostvars['faraday']['block2_rru_job'].ansible_job_id }}"
-      register: block2_rru_result
-      until: block2_rru_result.finished
-      retries: 100
-      delay: 10
 
 # ------------------ Block1 Part 2: sequential roles ------------------
 - hosts: sopnodes
