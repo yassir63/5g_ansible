@@ -28,6 +28,7 @@
 
     - name: Mark Block2 as done
       file:
-        path: "{{ playbook_dir }}/block2.done"
+        path: "/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/block2.done"
         state: touch
+
 

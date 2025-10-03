@@ -1,5 +1,5 @@
 ---
-# ------------------ Block1: Main playbook ------------------
+# ------------------ Block1: POS reset → Benetel sriov_nnp_create ------------------
 - hosts: webshell
   gather_facts: false
   tasks:
@@ -24,16 +24,130 @@
       retries: 100
       delay: 10
 
-# ------------------ Start Block2 concurrently ------------------
+# ------------------ Start Block2 concurrently in background ------------------
 - hosts: localhost
   gather_facts: false
   tasks:
-    - name: Start Block2 R2Lab playbook fully in background via wrapper
-      ansible.builtin.shell: "/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/start_block2.sh"
+    - name: Start Block2 R2Lab playbook fully detached
+      ansible.builtin.shell: "/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/run_block2_bg.sh"
       async: 0
       poll: 0
 
-# ------------------ Block1 sequential roles continue ------------------
+# ------------------ Continue Block1 sequential roles ------------------
+- hosts: sopnodes
+  roles:
+    - role: setup/common
+    - role: setup/netplan
+    - role: setup/containerd
+    - role: setup/k8s/k8s_setup
+    - role: setup/ovs
+    - role: setup/optimization/cpu
+
+- hosts: core_node
+  roles:
+    - role: setup/k8s/cluster_create
+    - role: setup/cni
+    - role: setup/storage
+
+- hosts: core_node
+  vars:
+    ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+
+- hosts: ran_node
+  vars:
+    ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+
+- hosts: k8s_workers
+  become: true
+  roles:
+    - role: setup/k8s/cluster_join
+      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+
+- hosts: core_node
+  roles:
+    - role: 5g/core
+
+- hosts: core_node
+  gather_facts: false
+  roles:
+    - role: scenarios/iperf/upf
+
+- hosts: ran_node
+  become: true
+  roles:
+    - role: setup/k8s/aw2s_specific_tuning
+      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
+    - role: setup/k8s/aw2s_specific_tuning_f3
+      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']
+    - role: setup/k8s/benetel_specific_tuning_f3
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and groups['ran_node'][0] in ['sopnode-f3']
+
+- hosts: monitor_node
+  roles:
+    - role: monarch/deploy
+
+- hosts: ran_node
+  become: true
+  roles:
+    - role: setup/sriov_operator
+    - role: setup/optimization/nic
+    - role: benetel/ptp
+    - role: benetel/dpdk_install
+    - role: benetel/dpdk_config
+
+- hosts: core_node
+  roles:
+    - role: benetel/sriov_nnp_create
+
+# ------------------ Continue after Block1 completes ------------------
+- hosts: ran_node
+  roles:
+    - role: 5g/ran
+
+- hosts: monitor_node
+  roles:
+    - role: monarch/monitoring
+
+---
+# ------------------ Block1: POS reset → Benetel sriov_nnp_create ------------------
+- hosts: webshell
+  gather_facts: false
+  tasks:
+    - name: Run pos reset in parallel for each sopnode to reset
+      ansible.builtin.command: >
+        /usr/bin/ansible-playbook -i /home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/inventory/hosts-test.ini /home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+      async: 1800
+      poll: 0
+      loop: "{{ groups['sopnodes_to_reset'] }}"
+      loop_control:
+        label: "{{ item }}"
+      register: block1_jobs
+
+    - name: Wait for all pos reset jobs
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ block1_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: block1_results
+      until: block1_results.finished
+      retries: 100
+      delay: 10
+
+# ------------------ Start Block2 concurrently in background ------------------
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Start Block2 R2Lab playbook fully detached
+      ansible.builtin.shell: "/home/turletti/xp/post5g-beta/ptp_test/5g_ansible/playbooks/run_block2_bg.sh"
+      async: 0
+      poll: 0
+
+# ------------------ Continue Block1 sequential roles ------------------
 - hosts: sopnodes
   roles:
     - role: setup/common
