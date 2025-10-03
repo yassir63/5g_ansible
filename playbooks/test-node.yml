@@ -1,6 +1,6 @@
 ---
 - name: Configure CPU and tuned profile on Ubuntu 22.04
-  hosts: all
+  hosts: sopnodes
   tasks:
     - name: Install cpufrequtils and tuned
       apt:
