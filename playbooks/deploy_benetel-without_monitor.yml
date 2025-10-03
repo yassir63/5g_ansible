@@ -5,7 +5,7 @@
   tasks:
     - name: Run pos reset in parallel for each sopnode to reset
       ansible.builtin.command: >
-        ansible-playbook -i {{ playbook_dir }}/inventory/hosts-test.ini {{ playbook_dir }}/playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+        ansible-playbook -i {{ playbook_dir }}/inventory/hosts-test.ini {{ playbook_dir }}/run_pos.yml --extra-vars "node={{ item }}" -c local
       args:
         chdir: "{{ playbook_dir | dirname }}"
       async: 1800
@@ -32,9 +32,9 @@
   tasks:
     - name: Start Block2 R2Lab playbook in background
       ansible.builtin.shell: >
-        nohup {{ ansible_playbook_python | dirname }}/ansible-playbook 
-        -i {{ playbook_dir }}/inventory/hosts-test.ini 
-        {{ playbook_dir }}/playbooks/block2_r2lab.yml -c local > {{ playbook_dir }}/block2.log 2>&1 &
+        nohup {{ ansible_playbook_python | dirname }}/ansible-playbook \
+        -i {{ playbook_dir }}/inventory/hosts-test.ini \
+        {{ playbook_dir }}/block2_r2lab.yml -c local > {{ playbook_dir }}/block2.log 2>&1 &
       async: 0
       poll: 0
 
