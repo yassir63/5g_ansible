@@ -1,0 +1,185 @@
+---
+# --- Run Block1 and Block2 in parallel ---
+- hosts: localhost
+  gather_facts: false
+  tasks:
+
+    - name: Start Block1 asynchronously (Sopnodes reset → Benetel sriov_nnp_create)
+      block:
+        # --- Run pos reset ---
+        - name: Run pos reset in parallel for each sopnode to reset
+          ansible.builtin.command: >
+            ansible-playbook -i inventory/hosts-test.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+          args:
+            chdir: "{{ playbook_dir | dirname }}"
+          async: 1800
+          poll: 0
+          loop: "{{ groups['sopnodes_to_reset'] }}"
+          loop_control:
+            label: "{{ item }}"
+          register: block1_jobs
+
+        - name: Wait for all Sopnodes used to be reset
+          async_status:
+            jid: "{{ item.ansible_job_id }}"
+          register: block1_results
+          until: block1_results.finished
+          retries: 100
+          delay: 10
+          loop: "{{ block1_jobs.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        # --- Sopnodes Setup ---
+        - name: Setup Sopnodes
+          hosts: sopnodes
+          roles:
+            - role: setup/common
+            - role: setup/netplan
+            - role: setup/containerd
+            - role: setup/k8s/k8s_setup
+            - role: setup/ovs
+            - role: setup/optimization/cpu
+
+        # --- K8s cluster on master ---
+        - name: Create and Setup Kubernetes Cluster On Master
+          hosts: core_node
+          roles:
+            - role: setup/k8s/cluster_create
+            - role: setup/cni
+            - role: setup/storage
+
+        # --- GRE tunnels ---
+        - name: Configure GRE Tunnel From Core Node to RAN Node
+          hosts: core_node
+          vars:
+            ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
+          roles:
+            - role: setup/gre_tunnel
+
+        - name: Configure GRE Tunnel From RAN Node to Core Node
+          hosts: ran_node
+          vars:
+            ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+          roles:
+            - role: setup/gre_tunnel
+
+        # --- Join K8s workers ---
+        - name: Join Kubernetes Cluster on Workers
+          hosts: k8s_workers
+          become: true
+          roles:
+            - role: setup/k8s/cluster_join
+              when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+
+        # --- Deploy Open5gs Core ---
+        - name: Deploy Open5gs Core
+          hosts: core_node
+          roles:
+            - role: 5g/core
+
+        # --- iperf3 on UPFs ---
+        - name: Setup iperf3 on UPFs
+          hosts: core_node
+          gather_facts: false
+          roles:
+            - role: scenarios/iperf/upf
+
+        # --- RAN tuning ---
+        - name: Apply specific tuning on RAN Node if AW2s RRUs are used
+          hosts: ran_node
+          become: true
+          roles:
+            - role: setup/k8s/aw2s_specific_tuning
+              when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
+            - role: setup/k8s/aw2s_specific_tuning_f3
+              when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']
+            - role: setup/k8s/benetel_specific_tuning_f3
+              when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and groups['ran_node'][0] in ['sopnode-f3']
+
+        # --- 5G-Monarch ---
+        - name: Deploy 5G-Monarch for monitoring
+          hosts: monitor_node
+          roles:
+            - role: monarch/deploy
+
+        # --- Benetel PTP & DPDK setup ---
+        - name: Benetel PTP and DPDK setup
+          hosts: ran_node
+          become: true
+          roles:
+            - role: setup/sriov_operator
+            - role: setup/optimization/nic
+            - role: benetel/ptp
+            - role: benetel/dpdk_install
+            - role: benetel/dpdk_config
+
+        # --- Benetel sriov NNP create (last task of Block1) ---
+        - name: Create and Setup Kubernetes Cluster On Master
+          hosts: core_node
+          roles:
+            - role: benetel/sriov_nnp_create
+
+      async: 7200
+      poll: 0
+      register: block1_async
+
+    - name: Start Block2 asynchronously (R2Lab cleanup → RRU)
+      block:
+        - name: Cleanup R2Lab
+          hosts: faraday
+          roles:
+            - role: r2lab/cleanup
+
+        - name: Setup UEs on R2Lab
+          hosts: faraday
+          roles:
+            - role: r2lab/ue/setup
+
+        - hosts: faraday
+          tasks:
+            - name: Stop all UEs previous connections on R2Lab
+              include_role:
+                name: r2lab/ue/stop
+              vars:
+                ue: "{{ item }}"
+              loop: "{{ groups['qhats'] }}"
+              loop_control:
+                label: "{{ item }}"
+              ignore_errors: true
+
+        - name: Power ON RRU on R2Lab
+          hosts: faraday
+          roles:
+            - role: r2lab/rru
+
+      async: 7200
+      poll: 0
+      register: block2_async
+
+    - name: Wait for Block1 to finish
+      async_status:
+        jid: "{{ block1_async.ansible_job_id }}"
+      register: block1_final
+      until: block1_final.finished
+      retries: 100
+      delay: 15
+
+    - name: Wait for Block2 to finish
+      async_status:
+        jid: "{{ block2_async.ansible_job_id }}"
+      register: block2_final
+      until: block2_final.finished
+      retries: 100
+      delay: 15
+
+# --- Continue with tasks after both blocks ---
+- name: Deploy OAI RAN
+  hosts: ran_node
+  roles:
+    - role: 5g/ran
+
+- name: Launch 5G-Monarch monitoring
+  hosts: monitor_node
+  roles:
+    - role: monarch/monitoring
