@@ -102,8 +102,8 @@
 
     - name: Fetch init container logs for Kyverno pods
       ansible.builtin.shell: |
-        kubectl logs -n kyverno {{ item.metadata.name }} -c {{ c.name }} --tail=50
-      loop: "{{ kyverno_pods.resources | subelements('spec.initContainers') }}"
+        kubectl logs -n kyverno {{ item.0.metadata.name }} -c {{ item.1.name }} --tail=50
+      loop: "{{ kyverno_pods.resources | subelements('spec.initContainers', skip_missing=True) }}"
       loop_control:
         label: "{{ item.0.metadata.name }} / {{ item.1.name }}"
       register: init_logs
