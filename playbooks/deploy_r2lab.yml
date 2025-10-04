@@ -1,0 +1,27 @@
+---
+- name: Cleanup R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab/cleanup
+
+- name: Setup UEs on R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab/ue/setup
+
+- hosts: faraday
+  tasks:
+    - name: Stop all UEs previous connections on R2Lab
+      include_role:
+        name: r2lab/ue/stop
+      vars:
+        ue: "{{ item }}"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        label: "{{ item }}"
+      ignore_errors: true
+
+- name: Power ON RRU on R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab/rru
