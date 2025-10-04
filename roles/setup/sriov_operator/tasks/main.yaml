@@ -72,6 +72,17 @@
       args:
         chdir: /root/sriov-network-operator
 
+    - name: Ensure python3-pip is installed
+      ansible.builtin.package:
+        name: python3-pip
+        state: present
+
+    - name: Install required Python Kubernetes library
+      ansible.builtin.pip:
+        name: kubernetes
+        state: present
+        executable: pip3
+
     - name: Ensure cert-manager is installed
       kubernetes.core.k8s:
         state: present
