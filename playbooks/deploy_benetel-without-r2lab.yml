@@ -106,8 +106,8 @@
     - role: benetel/dpdk_install
     - role: benetel/dpdk_config
 
-- name: Create and Setup Kubernetes Cluster On Master
-  hosts: core_node
+- name: Create SR-IOV Node Policies and Show Status
+  hosts: ran_node
   roles:
     - role: benetel/sriov_nnp_create    
 
