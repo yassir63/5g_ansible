@@ -3,14 +3,14 @@
 - hosts: webshell
   gather_facts: false
   tasks:
-    - name: Run pos reset in parallel for each sopnode to reset
+    - name: Run pos reset in parallel for each sopnode
       ansible.builtin.command: >
         ansible-playbook -i inventory/hosts-test.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
       args:
         chdir: "{{ playbook_dir | dirname }}"
       async: 1800
       poll: 0
-      loop: "{{ groups['sopnodes_to_reset'] }}"
+      loop: "{{ groups['sopnodes'] }}"
       loop_control:
         label: "{{ item }}"
       register: prepare_jobs
