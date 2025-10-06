@@ -1,13 +1,20 @@
 ---
 - name: Upload kubeadm config to the master node
   copy:
-    src: kubeadm-config.yaml
+    src: >-
+      {{ 'kubeadm-config-rt.yaml' 
+         if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] 
+         else 'kubeadm-config.yaml' }}
     dest: /root/kubeadm-config.yaml
     mode: '0644'
   become: true
 
 - name: Initialize Kubernetes cluster with kubeadm config
-  command: kubeadm init --config kubeadm-config.yaml
+  command: >-
+    kubeadm init --config
+    {{ 'kubeadm-config-rt.yaml' 
+       if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] 
+       else 'kubeadm-config.yaml' }}
   register: kubeadm_init
   failed_when: kubeadm_init.rc != 0
   changed_when: kubeadm_init.rc == 0
