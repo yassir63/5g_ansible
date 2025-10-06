@@ -41,6 +41,8 @@
         - { key: net.core.wmem_max,            val: '134217728' }
         - { key: net.core.netdev_max_backlog,  val: '5000'      }
         - { key: net.core.optmem_max,          val: '524288'    }
+        - { key: kernel.sched_rt_runtime_us,   val: '-1'        }
+        - { key: kernel.timer_migration,       val: '0'         }
 
     - name: Create /etc/sysctl.d/rt.conf and apply real-time settings
       block:
@@ -49,15 +51,17 @@
             dest: /etc/sysctl.d/rt.conf
             content: |
               kernel.sched_rt_runtime_us=-1
-              kernel.sched_isolate_cpu=1
+              kernel.timer_migration=0
             owner: root
             group: root
             mode: '0644'
+          when: inventory_hostname == "sopnode-f3"
 
         - name: Apply sysctl settings from /etc/sysctl.d/rt.conf
           ansible.builtin.command: sysctl -p /etc/sysctl.d/rt.conf
           register: sysctl_apply
           changed_when: "'apply' in sysctl_apply.stdout or 'set' in sysctl_apply.stdout"
+          when: inventory_hostname == "sopnode-f3"
 
     - block:
 #        - name: Set tuned profile to realtime
