@@ -1,11 +1,10 @@
-
 ---
 - hosts: webshell
   gather_facts: false
   tasks:
     - name: Run pos reset in parallel for each sopnode
       ansible.builtin.command: >
-        ansible-playbook -i inventory/hosts-test.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+        ansible-playbook -i inventory/hosts-f1-f3.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
       args:
         chdir: "{{ playbook_dir | dirname }}"
       async: 1800

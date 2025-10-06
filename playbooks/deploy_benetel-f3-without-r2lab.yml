@@ -2,8 +2,28 @@
 - hosts: webshell
   gather_facts: false
   tasks:
-    - name: do nothing as sopnode-f3 runs RT u22.04 kernel
-      ansible.builtin.meta: noop
+    - name: Run pos reset in parallel for each sopnode
+      ansible.builtin.command: >
+        ansible-playbook -i inventory/hosts-f3.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+      args:
+        chdir: "{{ playbook_dir | dirname }}"
+      async: 1800
+      poll: 0
+      loop: "{{ groups['sopnodes'] }}"
+      loop_control:
+        label: "{{ item }}"
+      register: prepare_jobs
+
+    - name: Wait for all Sopnodes used to be reset
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ prepare_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
 
 - name: Setup Sopnodes
   hosts: sopnodes
@@ -13,7 +33,6 @@
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
-    - role: setup/optimization/cpu
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
@@ -36,6 +55,19 @@
   roles:
     - role: setup/gre_tunnel
 
+#- name: Join Kubernetes Cluster on Workers
+#  hosts: k8s_workers
+#  become: true
+#  roles:
+#    - role: setup/k8s/cluster_join
+#      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+
+- name: Setup Sopnodes
+  hosts: sopnodes
+  roles:
+    - role: setup/optimization/cpu
+
+
 - name: Deploy Open5gs Core
   hosts: core_node
   roles:
@@ -47,13 +79,6 @@
   roles:
     - role: scenarios/iperf/upf
 
-#- name: Join Kubernetes Cluster on Workers
-#  hosts: k8s_workers
-#  become: true
-#  roles:
-#    - role: setup/k8s/cluster_join
-#      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
-
 - name: Apply specific tuning on RAN Node if AW2s RRUs are used
   hosts: ran_node
   become: true
@@ -64,39 +89,11 @@
       when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']
     - role: setup/k8s/benetel_specific_tuning_f3
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and groups['ran_node'][0] in ['sopnode-f3']
-      
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
   roles:
     - role: monarch/deploy
-
-#- name: Cleanup R2Lab
-#  hosts: faraday
-#  roles:
-#    - role: r2lab/cleanup
-
-#- name: Setup UEs on R2Lab
-#  hosts: faraday
-#  roles:
-#    - role: r2lab/ue/setup
-
-#- hosts: faraday
-#  tasks:
-#    - name: Stop all UEs previous connections on R2Lab
-#      include_role:
-#        name: r2lab/ue/stop
-#      vars:
-#        ue: "{{ item }}"
-#      loop: "{{ groups['qhats'] }}"
-#      loop_control:
-#        label: "{{ item }}"
-#      ignore_errors: true
-
-#- name: Power ON RRU on R2Lab
-#  hosts: faraday
-#  roles:
-##    - role: r2lab/rru
 
 - name: Benetel PTP and DPDK setup
   hosts: ran_node
@@ -108,8 +105,8 @@
     - role: benetel/dpdk_install
     - role: benetel/dpdk_config
 
-- name: Create and Setup Kubernetes Cluster On Master
-  hosts: core_node
+- name: Create SR-IOV Node Policies and Show Status
+  hosts: ran_node
   roles:
     - role: benetel/sriov_nnp_create    
 
@@ -122,15 +119,3 @@
   hosts: monitor_node
   roles:
     - role: monarch/monitoring
-
-#- hosts: faraday
-#  tasks:
-#    - name: Connect UEs on R2Lab to 5g network
-#      include_role:
-#        name: r2lab/ue/connect
-#      vars:
-#        ue: "{{ item }}"
-#      loop: "{{ groups['qhats'] }}"
-#      loop_control:
-#        label: "{{ item }}"
-#      ignore_errors: true
