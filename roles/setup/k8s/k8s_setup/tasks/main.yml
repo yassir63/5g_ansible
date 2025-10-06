@@ -32,3 +32,44 @@
       - kubeadm
       - kubectl
     state: latest
+
+- name: Create kubeadm configuration directory
+  file:
+    path: /root/kubeadm
+    state: directory
+    mode: '0755'
+
+- name: Create kubeadm configuration file with CPU/topology tuning
+  copy:
+    dest: /root/kubeadm/kubeadm-config.yaml
+    mode: '0644'
+    content: |
+      apiVersion: kubeadm.k8s.io/v1beta3
+      kind: ClusterConfiguration
+      kubernetesVersion: v1.30.0
+      controlPlaneEndpoint: "{{ ansible_default_ipv4.address }}:6443"
+      networking:
+        podSubnet: "10.244.0.0/16"
+
+      ---
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      cgroupDriver: systemd
+      cpuManagerPolicy: static
+      cpuManagerPolicyOptions:
+        "full-pcpus-only": "true"
+      reservedSystemCPUs: "0-5"
+      memorySwap: {}
+      topologyManagerPolicy: "best-effort"
+      failSwapOn: false
+      containerLogMaxSize: 50Mi
+      featureGates:
+        CPUManager: true
+        CPUManagerPolicyOptions: true
+        CPUManagerPolicyBetaOptions: true
+
+- name: Initialize Kubernetes cluster using tuned kubeadm config
+  command: kubeadm init --config /root/kubeadm/kubeadm-config.yaml
+  register: kubeadm_init
+  failed_when: kubeadm_init.rc != 0
+  changed_when: kubeadm_init.rc == 0
