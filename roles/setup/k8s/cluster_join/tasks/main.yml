@@ -1,4 +1,40 @@
 ---
+- name: Check if node is already part of a Kubernetes cluster
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Reset node if already part of a cluster
+  command: kubeadm reset -f
+  when: kubelet_conf.stat.exists
+  ignore_errors: true
+
+- name: Remove Kubernetes CNI configuration
+  file:
+    path: /etc/cni/net.d
+    state: absent
+  when: kubelet_conf.stat.exists
+
+- name: Remove kubelet data directory
+  file:
+    path: /var/lib/kubelet
+    state: absent
+  when: kubelet_conf.stat.exists
+
+- name: Remove Kubernetes manifest directory
+  file:
+    path: /etc/kubernetes/manifests
+    state: absent
+  when: kubelet_conf.stat.exists
+
+- name: Restart container runtime (containerd)
+  service:
+    name: containerd
+    state: restarted
+  when: kubelet_conf.stat.exists
+  ignore_errors: true
+
+
 - name: Read kubeadm join command from file
   set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
