@@ -15,6 +15,19 @@
   failed_when: kubeadm_init.rc != 0
   changed_when: kubeadm_init.rc == 0
 
+- name: Verify reservedSystemCPUs in kubelet config
+  become: true
+  command: grep 'reservedSystemCPUs' /var/lib/kubelet/config.yaml
+  register: kubelet_reserved
+  failed_when: "'0-5' not in kubelet_reserved.stdout"
+  changed_when: false
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+
+- name: Show verification result
+  debug:
+    msg: "reservedSystemCPUs is correctly set to 0-5 in kubelet config"
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+
 - name: Create .kube directory in user's home
   file:
     path: "{{ ansible_env.HOME }}/.kube"
@@ -132,15 +145,45 @@
   register: taint_out
   failed_when: false
 
+# Set a flag for whether we need the custom kubelet parameters
+- name: Determine if custom kubelet parameters are needed
+  set_fact:
+    use_custom_join_config: "{{ hostvars[groups['faraday'][0]].rru in ['benetel1','benetel2'] }}"
+  run_once: true
+
+# Generate the base kubeadm join command on the master
 - name: Generate kubeadm join command
   shell: kubeadm token create --print-join-command
   register: join_command
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
 
-- name: Save join command to control node
+# Save join command to a known location for workers
+- name: Save kubeadm join command for workers
   copy:
-    content: "{{ join_command.stdout }}"
+    content: |
+      {% if use_custom_join_config %}
+      {{ join_command.stdout }} \
+      --config <(cat <<EOF
+      apiVersion: kubeadm.k8s.io/v1beta3
+      kind: JoinConfiguration
+      nodeRegistration:
+        kubeletExtraArgs:
+          cgroup-driver: systemd
+          cpu-manager-policy: static
+          cpu-manager-policy-options: "full-pcpus-only=true"
+          reserved-system-cpus: 0-5
+          topology-manager-policy: best-effort
+          fail-swap-on: "false"
+          container-log-max-size: 50Mi
+          feature-gates: CPUManager=true,CPUManagerPolicyOptions=true,CPUManagerPolicyBetaOptions=true
+      EOF
+      )
+      {% else %}
+      {{ join_command.stdout }}
+      {% endif %}
     dest: /tmp/kubeadm_join_command.txt
+    mode: '0644'
   delegate_to: localhost
   run_once: true
+
