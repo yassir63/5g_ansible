@@ -10,11 +10,7 @@
   become: true
 
 - name: Initialize Kubernetes cluster with kubeadm config
-  command: >-
-    kubeadm init --config
-    {{ 'kubeadm-config-rt.yaml' 
-       if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] 
-       else 'kubeadm-config.yaml' }}
+  command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
   failed_when: kubeadm_init.rc != 0
   changed_when: kubeadm_init.rc == 0
