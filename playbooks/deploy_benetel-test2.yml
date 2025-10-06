@@ -133,7 +133,7 @@
     - role: benetel/dpdk_config
 
 - name: Create and Setup Kubernetes Cluster On Master
-  hosts: core_node
+  hosts: ran_node
   roles:
     - role: benetel/sriov_nnp_create    
 
