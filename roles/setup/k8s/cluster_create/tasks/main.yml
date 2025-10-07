@@ -23,10 +23,9 @@
     - /var/lib/kubelet
   become: true
 
-# --- Upload correct kubeadm config
 - name: Upload kubeadm config to master node
   copy:
-    src: "{{ 'playbooks/kubeadm-config-rt.yaml' if is_rt else 'playbooks/kubeadm-config.yaml' }}"
+    src: "{{ 'kubeadm-config-rt.yaml' if is_rt else 'kubeadm-config.yaml' }}"
     dest: /root/kubeadm-config.yaml
     mode: '0644'
   become: true
