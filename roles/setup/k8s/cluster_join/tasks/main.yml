@@ -73,6 +73,13 @@
   debug:
     var: kubeadm_join_command
 
+- name: Wait for kubelet config to appear
+  ansible.builtin.wait_for:
+    path: /var/lib/kubelet/config.yaml
+    state: present
+    timeout: 60
+  become: true
+
 # Realtime k8s configuration for Benetel scenarios
 - name: Detect if RT setup is required
   set_fact:
