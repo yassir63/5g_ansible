@@ -10,7 +10,7 @@ Usage: $0 <target>
 Targets (explicit):
 
   oai_r2lab         → deploy_oai.sh
-      Runs OAI core + OAI gNB (RFSIM emulation).
+      Runs OAI core + OAI gNB (on R2lab testbed).
 
   open5gs_oai       → deploy.sh
       Runs Open5GS core + OAI (on R2lab testbed).
