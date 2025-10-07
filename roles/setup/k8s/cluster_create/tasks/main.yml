@@ -138,17 +138,6 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
-# --- Wait for CoreDNS pods to be ready
-- name: Wait for CoreDNS pods to be Ready
-  shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
-  register: coredns_wait
-  retries: 5
-  delay: 10
-  until: coredns_wait.rc == 0
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  become: true
-
 # --- Install Multus after CoreDNS is ready
 - name: Upload Multus DaemonSet manifest
   copy:
@@ -182,6 +171,18 @@
   become: true
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
+
+# --- Wait for CoreDNS pods to be ready
+- name: Wait for CoreDNS pods to be Ready
+  shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
+  register: coredns_wait
+  retries: 5
+  delay: 10
+  until: coredns_wait.rc == 0
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  become: true
+
 
 # --- Remove master taint to allow scheduling
 - name: Remove NoSchedule taint from control-plane node
