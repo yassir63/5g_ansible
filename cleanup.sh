@@ -56,6 +56,20 @@ echo "=== Removing kube config ==="
 rm -rf ~/.kube
 rm -rf /root/.kube
 
+echo "=== Removing leftover veth interfaces ==="
+for iface in $(ip -o link show | awk -F': ' '{print $2}' | grep '^veth'); do
+    echo "Deleting interface $iface"
+    ip link delete $iface || true
+done
+
+echo "=== Removing OVS bridges and GRE/tunnel interfaces ==="
+OVS_IFACES=("ovs-system" "n2br" "n3br" "n4br" "gre0" "gretap0" "erspan0" "gre_sys")
+for iface in "${OVS_IFACES[@]}"; do
+    if ip link show "$iface" &>/dev/null; then
+        echo "Deleting interface $iface"
+        ip link delete "$iface" || true
+    fi
+done
 
 echo "Restarting containerd..."
 sudo systemctl restart containerd
