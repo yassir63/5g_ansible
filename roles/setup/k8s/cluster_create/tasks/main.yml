@@ -1,78 +1,103 @@
 ---
-- name: Upload kubeadm config to the master node
+# =============================
+# Kubernetes Cluster Initialization
+# =============================
+
+- name: Detect if RT (Benetel) setup is required
+  set_fact:
+    is_rt: "{{ hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] }}"
+
+# --- Safety cleanup (if previous kubeadm init failed)
+- name: Reset Kubernetes if a previous init was attempted
+  command: kubeadm reset -f
+  ignore_errors: yes
+  become: true
+
+- name: Remove old Kubernetes data directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/kubernetes/pki
+    - /etc/kubernetes/manifests
+    - /var/lib/etcd
+  become: true
+
+# --- Upload correct kubeadm config
+- name: Upload kubeadm config to master node
   copy:
-    src: >-
-      {{ 'kubeadm-config-rt.yaml' 
-         if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] 
-         else 'kubeadm-config.yaml' }}
+    src: "{{ 'kubeadm-config-rt.yaml' if is_rt else 'kubeadm-config.yaml' }}"
     dest: /root/kubeadm-config.yaml
     mode: '0644'
   become: true
 
+# --- Initialize Kubernetes cluster
 - name: Initialize Kubernetes cluster with kubeadm config
   command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
   failed_when: kubeadm_init.rc != 0
   changed_when: kubeadm_init.rc == 0
-
-- name: Verify reservedSystemCPUs in kubelet config
   become: true
+
+# --- Verify RT-specific kubelet CPU isolation
+- name: Verify reservedSystemCPUs in kubelet config
   command: grep 'reservedSystemCPUs' /var/lib/kubelet/config.yaml
   register: kubelet_reserved
   failed_when: "'0-5' not in kubelet_reserved.stdout"
   changed_when: false
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+  when: is_rt
+  become: true
 
 - name: Show verification result
   debug:
-    msg: "reservedSystemCPUs is correctly set to 0-5 in kubelet config"
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+    msg: "✅ reservedSystemCPUs is correctly set to 0-5 in kubelet config"
+  when: is_rt
 
-- name: Create .kube directory in user's home
+# --- Configure kubectl access for current user
+- name: Create .kube directory
   file:
     path: "{{ ansible_env.HOME }}/.kube"
     state: directory
     mode: '0700'
 
-- name: Copy admin.conf to user's kube config
+- name: Copy admin.conf to kube config
   copy:
     src: /etc/kubernetes/admin.conf
     dest: "{{ ansible_env.HOME }}/.kube/config"
     remote_src: yes
     mode: '0600'
+  become: true
 
-# Install flannel CNI before CoreDNS
-- name: Ensure pip is installed
-  ansible.builtin.apt:
-    name: python3-pip
+# --- Install Flannel (CNI)
+- name: Ensure dependencies for Helm/Flannel
+  apt:
+    name:
+      - python3-pip
+      - curl
     state: present
     update_cache: yes
+  become: true
 
-- name: Ensure Python Kubernetes client is there to install flannel
-  ansible.builtin.pip:
+- name: Install Kubernetes Python client
+  pip:
     name: kubernetes
     executable: pip3
-
-- name: Create kube-flannel namespace 
-  kubernetes.core.k8s:
-    name: kube-flannel
-    api_version: v1
-    kind: Namespace
-    state: present
   become: true
 
 - name: Download Helm install script
-  ansible.builtin.get_url:
+  get_url:
     url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
     dest: /tmp/get-helm-3
     mode: '0755'
+  become: true
 
-- name: Install Helm
-  ansible.builtin.command: /tmp/get-helm-3
+- name: Install Helm (if not already)
+  command: /tmp/get-helm-3
   args:
     creates: /usr/local/bin/helm
+  become: true
 
-- name: Apply namespace with pod-security label
+- name: Create kube-flannel namespace with pod-security label
   kubernetes.core.k8s:
     definition:
       apiVersion: v1
@@ -84,12 +109,16 @@
     state: present
     apply: yes
   become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Add Flannel Helm repo
   kubernetes.core.helm_repository:
     name: flannel
     repo_url: https://flannel-io.github.io/flannel/
   become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Install Flannel via Helm
   kubernetes.core.helm:
@@ -101,27 +130,34 @@
     wait: true
     wait_timeout: 300s
   become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Wait for CoreDNS pods to be Ready
-  shell: kubectl wait --namespace=kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
+  shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
   register: coredns_wait
   retries: 3
   delay: 10
   until: coredns_wait.rc == 0
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  become: true
 
-# Install Multus
-- name: Upload Multus DaemonSet manifest with patched resources to the master node
+# --- Install Multus
+- name: Upload Multus DaemonSet manifest
   copy:
     src: multus-daemonset.yml
     dest: /root/multus-daemonset.yml
     mode: '0644'
   become: true
 
-- name: Install Multus DaemonSet
+- name: Apply Multus DaemonSet
   kubernetes.core.k8s:
     state: present
     src: /root/multus-daemonset.yml
   become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Wait for Multus DaemonSet to be ready
   kubernetes.core.k8s_info:
@@ -132,39 +168,35 @@
   register: multus_ds_info
   until:
     - multus_ds_info.resources | length > 0
-    - multus_ds_info.resources[0].status.desiredNumberScheduled is defined
-    - multus_ds_info.resources[0].status.numberReady is defined
-    - multus_ds_info.resources[0].status.desiredNumberScheduled == multus_ds_info.resources[0].status.numberReady
+    - multus_ds_info.resources[0].status.desiredNumberScheduled | default(0) > 0
+    - multus_ds_info.resources[0].status.numberReady | default(0) ==
+      multus_ds_info.resources[0].status.desiredNumberScheduled
   retries: 40
   delay: 15
   become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
-# Resume k8s master node setup
-- name: Remove NoSchedule taint from master node
+# --- Remove master taint (allow scheduling)
+- name: Remove NoSchedule taint from control-plane node
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
-  register: taint_out
   failed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  become: true
 
-# Set a flag for whether we need the custom kubelet parameters to pass kubelet parameters to the workers
-- name: Determine if custom kubelet parameters are needed
-  set_fact:
-    use_custom_join_config: "{{ hostvars[groups['faraday'][0]].rru in ['benetel1','benetel2'] }}"
-  run_once: true
-
-# Generate the base kubeadm join command on the master
+# --- Generate kubeadm join command for workers
 - name: Generate kubeadm join command
   shell: kubeadm token create --print-join-command
   register: join_command
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
+  become: true
 
-# Save join command to a known location for workers
-- name: Save kubeadm join command for workers
+- name: Create custom join configuration for RT setup
   copy:
+    dest: /tmp/join-config.yaml
     content: |
-      {% if use_custom_join_config %}
-      {{ join_command.stdout }} \
-      --config <(cat <<EOF
       apiVersion: kubeadm.k8s.io/v1beta3
       kind: JoinConfiguration
       nodeRegistration:
@@ -177,13 +209,21 @@
           fail-swap-on: "false"
           container-log-max-size: 50Mi
           feature-gates: CPUManager=true,CPUManagerPolicyOptions=true,CPUManagerPolicyBetaOptions=true
-      EOF
-      )
+  when: is_rt
+  become: true
+  run_once: true
+  delegate_to: "{{ groups['core_node'][0] }}"
+
+- name: Save final join command to file
+  copy:
+    dest: /tmp/kubeadm_join_command.txt
+    content: |
+      {% if is_rt %}
+      {{ join_command.stdout }} --config /tmp/join-config.yaml
       {% else %}
       {{ join_command.stdout }}
       {% endif %}
-    dest: /tmp/kubeadm_join_command.txt
     mode: '0644'
-  delegate_to: localhost
   run_once: true
+  delegate_to: localhost
 
