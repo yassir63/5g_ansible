@@ -37,7 +37,7 @@
   ignore_errors: true
 
 
-- name: Create .kube directory on worker node
+- name: CreateEnsure .kube directory exists on worker node
   file:
     path: /root/.kube
     state: directory
@@ -67,12 +67,6 @@
   debug:
     var: kubeadm_join_command
 
-- name: Wait for kubelet to start and become active
-  systemd:
-    name: kubelet
-    state: started
-    enabled: yes
-
 # Realtime k8s configuration for Benetel scenarios
 - name: Detect if RT setup is required
   set_fact:
@@ -91,30 +85,31 @@
       --container-log-max-size=50Mi \
       --fail-swap-on=false"
   become: true
-  when: is_rt | default(false)
+  when: is_rt 
 
-- name: Restart kubelet
-  systemd:
-    name: kubelet
-    state: restarted
-    daemon_reload: true
+- name: Join Kubernetes cluster
+  shell: "{{ kubeadm_join_command }} --v=5"
   become: true
-  when: is_rt | default(false)
+  register: join_result
+  failed_when: join_result.rc != 0
+  retries: 5
+  delay: 10
+  until: join_result.rc == 0
 
 - name: Restart kubelet to apply new configuration
   systemd:
     name: kubelet
     state: restarted
-    enabled: yes
-  when: is_rt
+    daemon_reload: true
   become: true
+  when: is_rt 
 
-- name: Show reservedSystemCPUs
+- name: Verify reservedSystemCPUs
   ansible.builtin.shell: "grep '^  reservedSystemCPUs:' /var/lib/kubelet/config.yaml || echo 'not set'"
   register: reserved_cpus
-  ignore_errors: true
+  failed_when: false
+  changed_when: false
 
-- name: Print reservedSystemCPUs
-  ansible.builtin.debug:
+- name: Show reservedSystemCPUs
+  debug:
     msg: "✅ Worker {{ inventory_hostname }} reservedSystemCPUs: {{ reserved_cpus.stdout }}"
-  when: is_rt
