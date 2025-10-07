@@ -67,49 +67,54 @@
   debug:
     var: kubeadm_join_command
 
-# Realtime k8s configuration for Benetel scenarios
-- name: Detect if RT setup is required
-  set_fact:
-    is_rt: "{{ (hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']) and (inventory_hostname == groups['ran_node'][0]) }}"
-
-- name: Set KUBELET_EXTRA_ARGS for RT parameters
+- name: Ensure RT kubelet config exists on worker node
   copy:
-    dest: /etc/default/kubelet
+    dest: /etc/kubernetes/kubelet-config-rt.yaml
     content: |
-      KUBELET_EXTRA_ARGS="--cgroup-driver=systemd \
-      --cpu-manager-policy=static \
-      --cpu-manager-policy-options=full-pcpus-only=true \
-      --reserved-cpus=0-5 \
-      --topology-manager-policy=best-effort \
-      --feature-gates=CPUManager=true,CPUManagerPolicyOptions=true,CPUManagerPolicyBetaOptions=true \
-      --container-log-max-size=50Mi \
-      --fail-swap-on=false"
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      cgroupDriver: systemd
+      cpuManagerPolicy: static
+      cpuManagerPolicyOptions:
+        full-pcpus-only: true
+      reservedSystemCPUs: 0-5
+      topologyManagerPolicy: best-effort
+      failSwapOn: false
+      containerLogMaxSize: 50Mi
+      featureGates:
+        CPUManager: true
+        CPUManagerPolicyOptions: true
+        CPUManagerPolicyBetaOptions: true
   become: true
-  when: is_rt 
+  when: is_rt
 
-- name: Join Kubernetes cluster
-  shell: "{{ kubeadm_join_command }} --v=5"
+- name: Join Kubernetes cluster with RT kubelet config
+  shell: >
+    {{ kubeadm_join_command }} --config /etc/kubernetes/kubelet-config-rt.yaml
   become: true
-  register: join_result
-  failed_when: join_result.rc != 0
   retries: 5
   delay: 10
+  register: join_result
   until: join_result.rc == 0
+  when: is_rt
 
-- name: Restart kubelet to apply new configuration
-  systemd:
-    name: kubelet
-    state: restarted
-    daemon_reload: true
+- name: Join Kubernetes cluster (classical way) else
+  shell: "{{ kubeadm_join_command }}"
   become: true
-  when: is_rt 
+  retries: 5
+  delay: 10
+  register: join_result
+  until: join_result.rc == 0
+  when: not is_rt
 
 - name: Verify reservedSystemCPUs
   ansible.builtin.shell: "grep '^  reservedSystemCPUs:' /var/lib/kubelet/config.yaml || echo 'not set'"
   register: reserved_cpus
   failed_when: false
   changed_when: false
+  when: is_rt
 
 - name: Show reservedSystemCPUs
   debug:
     msg: "✅ Worker {{ inventory_hostname }} reservedSystemCPUs: {{ reserved_cpus.stdout }}"
+  when: is_rt
