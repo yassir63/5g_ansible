@@ -1,0 +1,100 @@
+---
+- hosts: webshell
+  gather_facts: false
+  tasks:
+    - name: Run pos reset in parallel for each sopnode
+      ansible.builtin.command: >
+        ansible-playbook -i inventory/hosts.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+      args: 
+        chdir: "{{ playbook_dir | dirname }}"
+      async: 1800
+      poll: 0
+      loop: "{{ groups['sopnodes'] }}"
+      loop_control:
+        label: "{{ item }}"
+      register: prepare_jobs
+
+    - name: Wait for all Sopnodes used to be reset
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 100
+      delay: 10
+      loop: "{{ prepare_jobs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+- name: Setup Sopnodes
+  hosts: sopnodes
+  roles:
+    - role: setup/common
+    - role: setup/containerd
+    - role: setup/k8s/k8s_setup
+#    - role: setup/ovs
+    - role: setup/optimization/cpu
+
+- name: Create and Setup Kubernetes Cluster On Master
+  hosts: core_node
+  roles:
+    - role: setup/k8s/cluster_create
+    - role: setup/cni
+    - role: setup/storage
+    - role: setup/netplan
+
+- name: Configure GRE Tunnel From Core Node to RAN Node
+  hosts: core_node
+  vars:
+    ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+
+- name: Configure GRE Tunnel From RAN Node to Core Node
+  hosts: ran_node
+  vars:
+    ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+
+- name: Deploy OAI Core & RAN
+  hosts: core_node
+  vars:
+    rru: "n300"
+    conf: "gnb.sa.band78.106prb.n310.7ds2u.conf"
+  roles:
+    - role: 5g/core/core_oai
+  #  - role: 5g/ran
+#    - role: 5g/rfsim_oai
+
+
+#- name: Setup iperf3 on UPFs
+#  hosts: core_node
+#  gather_facts: false
+#  roles:
+#    - role: scenarios/iperf/upf
+
+- name: Join Kubernetes Cluster on Workers
+  hosts: k8s_workers
+  become: true
+  roles:
+    - role: setup/k8s/cluster_join
+      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+      
+#- name: Deploy 5G-Monarch for monitoring
+#  hosts: monitor_node
+#  roles:
+#    - role: monarch/deploy
+
+#- name: Deploy OAI RAN
+#  hosts: ran_node
+#  vars:
+#    rru: "rfsim"
+#    conf: "gnb.sa.band78.106prb.rfsim.conf"
+#  roles:
+#    - role: 5g/ran
+#    - role: 5g/rfsim
+
+#- name: Launch 5G-Monarch monitoring
+#  hosts: monitor_node
+#  roles:
+#    - role: monarch/monitoring

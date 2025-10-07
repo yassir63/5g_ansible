@@ -9,7 +9,10 @@ Usage: $0 <target>
 
 Targets (explicit):
 
-  r2lab             → deploy.sh
+  oai_r2lab         → deploy_oai.sh
+      Runs OAI core + OAI gNB (RFSIM emulation).
+
+  open5gs_oai       → deploy.sh
       Runs Open5GS core + OAI (on R2lab testbed).
 
   oai_rfsim         → deploy_rfsim_oai_core.sh
@@ -25,7 +28,8 @@ Targets (explicit):
       Runs Open5GS core + UERANSIM gNB + emulated UEs.
 
 Examples:
-  $0 r2lab
+  $0 oai_r2lab
+  $0 open5gs_oai
   $0 oai_rfsim
   $0 open5gs_rfsim
   $0 open5gs_srsran
@@ -37,7 +41,10 @@ EOF
 target="${1:-}"
 
 case "$target" in
-  r2lab)
+  oai_r2lab)
+    "$DEPLOY_DIR/deploy_oai.sh"
+    ;;
+  open5gs_oai)
     "$DEPLOY_DIR/deploy.sh"
     ;;
   oai_rfsim)
