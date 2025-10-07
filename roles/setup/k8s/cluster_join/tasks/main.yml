@@ -87,7 +87,7 @@
       kind: JoinConfiguration
       discovery:
         bootstrapToken:
-          apiServerEndpoint: "{{ hostvars[groups['core_node'][0]].ansible_host }}:6443"
+          apiServerEndpoint: "{{ hostvars[groups['core_node'][0]].ip }}:6443"
           token: "{{ kubeadm_rt_token.stdout }}"
           caCertHashes:
             - "{{ lookup('file', '/tmp/kubeadm_join_ca_hash.txt') }}"
