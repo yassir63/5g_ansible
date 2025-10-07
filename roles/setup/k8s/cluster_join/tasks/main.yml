@@ -76,7 +76,7 @@
 # Realtime k8s configuration for Benetel scenarios
 - name: Detect if RT setup is required
   set_fact:
-    is_rt: "{{ hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] }}" and {{ node }} == groups['ran_node'][0]
+    is_rt: "{{ (hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']) and (node == groups['ran_node'][0]) }}"
     
 - name: Define kubelet config parameters
   set_fact:
