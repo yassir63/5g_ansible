@@ -33,6 +33,30 @@ echo "Removing old Kubernetes data directories..."
 sudo rm -rf /etc/kubernetes /var/lib/etcd /var/lib/kubelet /root/.kube
 sudo rm -rf /var/lib/containerd/io.containerd.runtime.v2.task/k8s.io || true
 
+echo "=== Removing Kubernetes directories ==="
+rm -rf /etc/kubernetes
+rm -rf /var/lib/etcd
+rm -rf /var/lib/kubelet
+rm -rf /var/lib/cni/
+rm -rf /var/run/kubernetes
+
+echo "=== Removing CNI configs and network state ==="
+rm -rf /etc/cni/net.d/*
+rm -rf /var/lib/cni/networks/*
+
+echo "=== Deleting leftover CNI/bridge/vxlan interfaces ==="
+for iface in cni0 flannel.1 vxlan.calico cbr0 n3; do
+    if ip link show $iface &>/dev/null; then
+        echo "Deleting interface $iface"
+        ip link delete $iface || true
+    fi
+done
+
+echo "=== Removing kube config ==="
+rm -rf ~/.kube
+rm -rf /root/.kube
+
+
 echo "Restarting containerd..."
 sudo systemctl restart containerd
 sudo systemctl enable kubelet
