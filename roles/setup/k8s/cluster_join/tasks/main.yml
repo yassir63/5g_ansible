@@ -35,38 +35,53 @@
   ignore_errors: true
 
 
-#- name: Read kubeadm join command from file
-#  set_fact:
-#    kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
-#
-#- name: Debug join command
-#  debug:
-#    var: kubeadm_join_command
+- name: Read kubeadm join command from file
+  set_fact:
+    kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
 
-- name: Fetch join-config.yaml from control-plane
-  fetch:
-    src: /tmp/join-config.yaml
-    dest: ./join-config.yaml
-    flat: yes
-  delegate_to: "{{ groups['core_node'][0] }}"
-  run_once: true
+- name: Debug join command
+  debug:
+    var: kubeadm_join_command
 
-- name: Copy join-config.yaml to worker
-  copy:
-    src: ./join-config.yaml
-    dest: /tmp/join-config.yaml
-    mode: '0644'
+# --- Patch kubelet configuration on RT nodes
+- name: Define kubelet config parameters
+  set_fact:
+    kubelet_config_params:
+      cgroupDriver: systemd
+      cpuManagerPolicy: static
+      cpuManagerPolicyOptions: "full-pcpus-only=true"
+      reservedSystemCPUs: 0-5
+      topologyManagerPolicy: best-effort
+      failSwapOn: false
+      containerLogMaxSize: 50Mi
+      featureGates: "CPUManager=true,CPUManagerPolicyOptions=true,CPUManagerPolicyBetaOptions=true"
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
 
-- name: Join the node to the cluster
-  command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
-
-- name: Verify reservedSystemCPUs in kubelet config on the worker
+- name: Update kubelet config with RT parameters
+  lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: "^{{ item.key }}:"
+    line: "{{ item.key }}: {{ item.value }}"
+    backrefs: no
+  loop: "{{ kubelet_config_params | dict2items }}"
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
   become: true
+
+- name: Restart kubelet to apply new configuration
+  systemd:
+    name: kubelet
+    state: restarted
+    enabled: yes
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+  become: true
+
+- name: Verify kubelet configuration after restart
   command: grep 'reservedSystemCPUs' /var/lib/kubelet/config.yaml
   register: kubelet_reserved
   failed_when: "'0-5' not in kubelet_reserved.stdout"
   changed_when: false
   when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+  become: true
 
 - name: Show verification result
   debug:
