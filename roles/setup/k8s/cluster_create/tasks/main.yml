@@ -145,7 +145,7 @@
   register: taint_out
   failed_when: false
 
-# Set a flag for whether we need the custom kubelet parameters
+# Set a flag for whether we need the custom kubelet parameters to pass kubelet parameters to the workers
 - name: Determine if custom kubelet parameters are needed
   set_fact:
     use_custom_join_config: "{{ hostvars[groups['faraday'][0]].rru in ['benetel1','benetel2'] }}"

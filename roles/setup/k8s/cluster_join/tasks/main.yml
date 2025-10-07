@@ -46,6 +46,19 @@
 - name: Join the node to the cluster
   command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
 
+- name: Verify reservedSystemCPUs in kubelet config on the worker
+  become: true
+  command: grep 'reservedSystemCPUs' /var/lib/kubelet/config.yaml
+  register: kubelet_reserved
+  failed_when: "'0-5' not in kubelet_reserved.stdout"
+  changed_when: false
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+
+- name: Show verification result
+  debug:
+    msg: "reservedSystemCPUs is correctly set to 0-5 in kubelet config"
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+
 - name: Create .kube directory on worker node
   file:
     path: /root/.kube
