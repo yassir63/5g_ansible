@@ -67,6 +67,11 @@
   debug:
     var: kubeadm_join_command
 
+# Add realtime k8s configuration for Benetel scenarios
+- name: Detect if RT setup is required
+  set_fact:
+    is_rt: "{{ (hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']) and (inventory_hostname == groups['ran_node'][0]) }}"
+
 - name: Ensure RT kubelet config exists on worker node
   copy:
     dest: /etc/kubernetes/kubelet-config-rt.yaml
