@@ -227,7 +227,7 @@
     dest: /tmp/kubeadm_join_command.txt
     content: |
       {% if is_rt %}
-      {{ join_command.stdout }} --config /tmp/join-config.yaml
+      kubeadm join --config /tmp/join-config.yaml
       {% else %}
       {{ join_command.stdout }}
       {% endif %}
