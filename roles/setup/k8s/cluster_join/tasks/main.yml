@@ -116,15 +116,12 @@
   when: is_rt
   become: true
 
-- name: Check reservedSystemCPUs on workers
-  become: true
-  tasks:
-    - name: Show reservedSystemCPUs
-      ansible.builtin.shell: "grep '^  reservedSystemCPUs:' /var/lib/kubelet/config.yaml || echo 'not set'"
-      register: reserved_cpus
-      ignore_errors: true
+- name: Show reservedSystemCPUs
+  ansible.builtin.shell: "grep '^  reservedSystemCPUs:' /var/lib/kubelet/config.yaml || echo 'not set'"
+  register: reserved_cpus
+  ignore_errors: true
 
-    - name: Print reservedSystemCPUs
-      ansible.builtin.debug:
-        msg: "✅ Worker {{ inventory_hostname }} reservedSystemCPUs: {{ reserved_cpus.stdout }}"
+- name: Print reservedSystemCPUs
+  ansible.builtin.debug:
+    msg: "✅ Worker {{ inventory_hostname }} reservedSystemCPUs: {{ reserved_cpus.stdout }}"
   when: is_rt
