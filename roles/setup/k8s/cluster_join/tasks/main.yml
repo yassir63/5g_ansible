@@ -1,4 +1,6 @@
 ---
+# Safety cleanup (e.g., if previous join made)
+
 - name: Check if node is already part of a Kubernetes cluster
   stat:
     path: /etc/kubernetes/kubelet.conf
@@ -35,59 +37,6 @@
   ignore_errors: true
 
 
-- name: Read kubeadm join command from file
-  set_fact:
-    kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
-
-- name: Debug join command
-  debug:
-    var: kubeadm_join_command
-
-# --- Patch kubelet configuration on RT nodes
-- name: Define kubelet config parameters
-  set_fact:
-    kubelet_config_params:
-      cgroupDriver: systemd
-      cpuManagerPolicy: static
-      cpuManagerPolicyOptions: "full-pcpus-only=true"
-      reservedSystemCPUs: 0-5
-      topologyManagerPolicy: best-effort
-      failSwapOn: false
-      containerLogMaxSize: 50Mi
-      featureGates: "CPUManager=true,CPUManagerPolicyOptions=true,CPUManagerPolicyBetaOptions=true"
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
-
-- name: Update kubelet config with RT parameters
-  lineinfile:
-    path: /var/lib/kubelet/config.yaml
-    regexp: "^{{ item.key }}:"
-    line: "{{ item.key }}: {{ item.value }}"
-    backrefs: no
-  loop: "{{ kubelet_config_params | dict2items }}"
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
-  become: true
-
-- name: Restart kubelet to apply new configuration
-  systemd:
-    name: kubelet
-    state: restarted
-    enabled: yes
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
-  become: true
-
-- name: Verify kubelet configuration after restart
-  command: grep 'reservedSystemCPUs' /var/lib/kubelet/config.yaml
-  register: kubelet_reserved
-  failed_when: "'0-5' not in kubelet_reserved.stdout"
-  changed_when: false
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
-  become: true
-
-- name: Show verification result
-  debug:
-    msg: "reservedSystemCPUs is correctly set to 0-5 in kubelet config"
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
-
 - name: Create .kube directory on worker node
   file:
     path: /root/.kube
@@ -115,3 +64,60 @@
     name: kubelet
     state: started
     enabled: yes
+
+- name: Read kubeadm join command from file
+  set_fact:
+    kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
+
+- name: Debug join command
+  debug:
+    var: kubeadm_join_command
+
+# Realtime k8s configuration for Benetel scenarios
+- name: Detect if RT setup is required
+  set_fact:
+    is_rt: "{{ hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] }}" and {{ node }} == groups['ran_node'][0]
+    
+- name: Define kubelet config parameters
+  set_fact:
+    kubelet_config_params:
+      cgroupDriver: systemd
+      cpuManagerPolicy: static
+      cpuManagerPolicyOptions: "full-pcpus-only=true"
+      reservedSystemCPUs: 0-5
+      topologyManagerPolicy: best-effort
+      failSwapOn: false
+      containerLogMaxSize: 50Mi
+      featureGates: "CPUManager=true,CPUManagerPolicyOptions=true,CPUManagerPolicyBetaOptions=true"
+  when: is_rt
+
+- name: Update kubelet config with RT parameters
+  lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: "^{{ item.key }}:"
+    line: "{{ item.key }}: {{ item.value }}"
+    backrefs: no
+  loop: "{{ kubelet_config_params | dict2items }}"
+  when: is_rt
+  become: true
+
+- name: Restart kubelet to apply new configuration
+  systemd:
+    name: kubelet
+    state: restarted
+    enabled: yes
+  when: is_rt
+  become: true
+
+- name: Verify kubelet new configuration after restart
+  command: grep 'reservedSystemCPUs' /var/lib/kubelet/config.yaml
+  register: cores_reserved
+  failed_when: "'0-5' not in cores_reserved.stdout"
+  changed_when: false
+  when: is_rt
+  become: true
+
+- name: Show verification result
+  debug:
+    msg: "✅ reservedSystemCPUs is correctly set to 0-5 in kubelet config"
+  when: is_rt

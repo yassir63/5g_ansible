@@ -1,12 +1,6 @@
-# =============================
-# Kubernetes Cluster Initialization
-# =============================
+---
+# Safety cleanup (e.g., if previous kubeadm init failed)
 
-- name: Detect if RT (Benetel) setup is required
-  set_fact:
-    is_rt: "{{ hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] }}"
-
-# --- Safety cleanup (if previous kubeadm init failed)
 - name: Reset Kubernetes if a previous init was attempted
   command: kubeadm reset -f
   ignore_errors: yes
@@ -25,12 +19,11 @@
 
 - name: Upload kubeadm config to master node
   copy:
-    src: "{{ 'kubeadm-config-rt.yaml' if is_rt else 'kubeadm-config.yaml' }}"
+    src: "{{ 'kubeadm-config.yaml' }}"
     dest: /root/kubeadm-config.yaml
     mode: '0644'
   become: true
 
-# --- Initialize Kubernetes cluster
 - name: Initialize Kubernetes cluster with kubeadm config
   command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
@@ -38,22 +31,7 @@
   changed_when: kubeadm_init.rc == 0
   become: true
 
-# --- Verify RT-specific kubelet CPU isolation
-- name: Verify reservedSystemCPUs in kubelet config
-  command: grep 'reservedSystemCPUs' /var/lib/kubelet/config.yaml
-  register: kubelet_reserved
-  failed_when: "'0-5' not in kubelet_reserved.stdout"
-  changed_when: false
-  when: is_rt
-  become: true
-
-- name: Show verification result
-  debug:
-    msg: "✅ reservedSystemCPUs is correctly set to 0-5 in kubelet config"
-  when: is_rt
-
-# --- Configure kubectl access for current user
-- name: Create .kube directory
+- name: Create .kube directory in user's home
   file:
     path: "{{ ansible_env.HOME }}/.kube"
     state: directory
@@ -66,12 +44,6 @@
     remote_src: yes
     mode: '0600'
   become: true
-
-# --- Apply sysctl for RT nodes safely
-- name: Apply RT sysctl settings
-  shell: sysctl -p /etc/sysctl.d/rt.conf || true
-  become: true
-  when: is_rt
 
 # --- Install Flannel (CNI) before CoreDNS
 - name: Ensure dependencies for Helm/Flannel
@@ -163,16 +135,15 @@
   register: multus_ds_info
   until:
     - multus_ds_info.resources | length > 0
-    - multus_ds_info.resources[0].status.desiredNumberScheduled | default(0) > 0
-    - multus_ds_info.resources[0].status.numberReady | default(0) ==
-      multus_ds_info.resources[0].status.desiredNumberScheduled
+    - multus_ds_info.resources[0].status.desiredNumberScheduled is defined
+    - multus_ds_info.resources[0].status.numberReady is defined
+    - multus_ds_info.resources[0].status.desiredNumberScheduled == multus_ds_info.resources[0].status.numberReady
   retries: 40
   delay: 15
   become: true
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
-# --- Wait for CoreDNS pods to be ready
 - name: Wait for CoreDNS pods to be Ready
   shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
   register: coredns_wait
@@ -183,7 +154,6 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
 
-
 # --- Remove master taint to allow scheduling
 - name: Remove NoSchedule taint from control-plane node
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
@@ -192,18 +162,16 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
 
-# --- Generate kubeadm join command for workers
 - name: Generate kubeadm join command
   shell: kubeadm token create --print-join-command
   register: join_command
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
-  become: true
 
 - name: Save join command to file
   copy:
-    dest: /tmp/kubeadm_join_command.txt
     content: "{{ join_command.stdout }}"
+    dest: /tmp/kubeadm_join_command.txt
     mode: '0644'
   run_once: true
   delegate_to: localhost
