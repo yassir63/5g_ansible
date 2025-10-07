@@ -53,7 +53,7 @@
   become: true
 
 
-# Read the standard join command
+# Retrieve the join command
 - name: Read kubeadm join command from file
   set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
@@ -62,73 +62,58 @@
   debug:
     var: kubeadm_join_command
 
+- name: Join the node to the cluster
+  command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
 
-# Detect if RT setup is required
-- name: Detect if RT setup is required
+- name: Detect if realtime setup is needed
   set_fact:
     is_rt: "{{ (hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']) and (inventory_hostname == groups['ran_node'][0]) }}"
 
-
-# Generate a kubeadm token dynamically (on master)
-- name: Generate kubeadm token for RT join
-  command: kubeadm token create
-  register: kubeadm_rt_token
-  delegate_to: "{{ groups['core_node'][0] }}"
-  run_once: true
-  when: is_rt
-
-
-# Create the RT kubeadm join config on the worker
-- name: Generate RT kubeadm join config
+- name: Configure kubelet if needed
   copy:
-    dest: /tmp/kubeadm-join-rt.yaml
     content: |
-      apiVersion: kubeadm.k8s.io/v1beta3
-      kind: JoinConfiguration
-      discovery:
-        bootstrapToken:
-          apiServerEndpoint: "{{ hostvars[groups['core_node'][0]].ip }}:6443"
-          token: "{{ kubeadm_rt_token.stdout }}"
-          caCertHashes:
-            - "{{ lookup('file', '/tmp/kubeadm_join_ca_hash.txt') }}"
-      nodeRegistration:
-        kubeletExtraArgs:
-          cgroup-driver: systemd
-          cpu-manager-policy: static
-          cpu-manager-policy-options: "full-pcpus-only=true"
-          reserved-cpus: "0-5"
-          topology-manager-policy: best-effort
-          fail-swap-on: "false"
-          container-log-max-size: 50Mi
-          feature-gates: "CPUManager=true,CPUManagerPolicyOptions=true,CPUManagerPolicyBetaOptions=true"
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      cgroupDriver: systemd
+      cpuManagerPolicy: static
+      cpuManagerPolicyOptions:
+        full-pcpus-only: "true"
+      reservedSystemCPUs: 0-5
+      topologyManagerPolicy: best-effort
+      failSwapOn: false
+      containerLogMaxSize: 50Mi
+      featureGates:
+        CPUManager: true
+        CPUManagerPolicyOptions: true
+        CPUManagerPolicyBetaOptions: true
+    dest: /var/lib/kubelet/config.yaml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart kubelet
   when: is_rt
-  become: true
 
+- name: Redémarrer kubelet pour appliquer la configuration
+  systemd:
+    name: kubelet
+    state: restarted
+  when: is_rt
 
-# Join cluster
-- name: Join Kubernetes cluster
-  shell: >-
-    {% if is_rt %}
-    kubeadm join --config /tmp/kubeadm-join-rt.yaml
-    {% else %}
-    {{ kubeadm_join_command }}
-    {% endif %}
-  become: true
-  register: join_result
-  retries: 5
-  delay: 10
-  until: join_result.rc == 0
-
-
-# Verify reserved CPUs (RT only)
-- name: Verify reserved CPUs (RT nodes only)
-  shell: "grep reserved-cpus /etc/default/kubelet || echo 'not set'"
-  register: reserved_cpus
+# Then check if reservedSystemCPUs is indeed set to 0-5
+- name: Ensure that config.yaml file exists on the worker node
+  stat:
+    path: /var/lib/kubelet/config.yaml
+  register: kubelet_config_file
+  when: is_rt
+  
+- name: Check if reservedSystemCPUs is set to 0-5
+  command: grep -E "^\\s*reservedSystemCPUs:\\s*0-5$" /var/lib/kubelet/config.yaml
+  register: check_reserved_cpus
   changed_when: false
-  failed_when: false
-  when: is_rt
+  ignore_errors: yes
+  when: is_rt and kubelet_config_file.stat.exists
 
-- name: Show reserved CPUs
+- name: Show a warning if reservedSystemCPUs is not set to 0-5
   debug:
-    msg: "✅ Worker {{ inventory_hostname }} reserved CPUs: {{ reserved_cpus.stdout }}"
-  when: is_rt
+    msg: "⚠️ reservedSystemCPUs is not set to '0-5'. Check your configuration!"
+  when: is_rt and check_reserved_cpus is defined and check_reserved_cpus is failed
