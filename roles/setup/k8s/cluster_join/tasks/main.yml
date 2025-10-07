@@ -1,6 +1,5 @@
 ---
-# Safety cleanup (e.g., if previous join made)
-
+# Cleanup if the node was already part of a cluster
 - name: Check if node is already part of a Kubernetes cluster
   stat:
     path: /etc/kubernetes/kubelet.conf
@@ -23,12 +22,6 @@
     state: absent
   when: kubelet_conf.stat.exists
 
-- name: Remove Kubernetes manifest directory
-  file:
-    path: /etc/kubernetes/manifests
-    state: absent
-  when: kubelet_conf.stat.exists
-
 - name: Restart container runtime (containerd)
   service:
     name: containerd
@@ -37,7 +30,8 @@
   ignore_errors: true
 
 
-- name: CreateEnsure .kube directory exists on worker node
+# Base setup
+- name: Ensure .kube directory exists on worker node
   file:
     path: /root/.kube
     state: directory
@@ -49,16 +43,17 @@
     dest: ./admin.conf
     flat: yes
   delegate_to: "{{ groups['core_node'][0] }}"
-  when: inventory_hostname == groups['k8s_workers'][0] # avoid checksum conflict error
+  when: inventory_hostname == groups['k8s_workers'][0]
 
 - name: Copy admin.conf from control machine to worker node
   copy:
     src: ./admin.conf
     dest: /root/.kube/config
     mode: '0644'
-    force: yes
   become: true
 
+
+# Read the standard join command
 - name: Read kubeadm join command from file
   set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
@@ -67,12 +62,23 @@
   debug:
     var: kubeadm_join_command
 
-# Add realtime k8s configuration for Benetel scenarios
+
+# Detect if RT setup is required
 - name: Detect if RT setup is required
   set_fact:
     is_rt: "{{ (hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']) and (inventory_hostname == groups['ran_node'][0]) }}"
 
-# For RT Benetel nodes: create a full join config YAML
+
+# Generate a kubeadm token dynamically (on master)
+- name: Generate kubeadm token for RT join
+  command: kubeadm token create
+  register: kubeadm_rt_token
+  delegate_to: "{{ groups['core_node'][0] }}"
+  run_once: true
+  when: is_rt
+
+
+# Create the RT kubeadm join config on the worker
 - name: Generate RT kubeadm join config
   copy:
     dest: /tmp/kubeadm-join-rt.yaml
@@ -81,8 +87,8 @@
       kind: JoinConfiguration
       discovery:
         bootstrapToken:
-          apiServerEndpoint: "{{ hostvars[groups['core_node'][0]].ip }}:6443"
-          token: "{{ lookup('file', '/tmp/kubeadm_join_token.txt') }}"
+          apiServerEndpoint: "{{ hostvars[groups['core_node'][0]].ansible_host }}:6443"
+          token: "{{ kubeadm_rt_token.stdout }}"
           caCertHashes:
             - "{{ lookup('file', '/tmp/kubeadm_join_ca_hash.txt') }}"
       nodeRegistration:
@@ -98,28 +104,31 @@
   when: is_rt
   become: true
 
+
 # Join cluster
 - name: Join Kubernetes cluster
   shell: >-
     {% if is_rt %}
     kubeadm join --config /tmp/kubeadm-join-rt.yaml
     {% else %}
-    "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
+    {{ kubeadm_join_command }}
     {% endif %}
   become: true
+  register: join_result
   retries: 5
   delay: 10
-  register: join_result
   until: join_result.rc == 0
 
-- name: VerifyCheck reservedSystemCPUs
-  ansible.builtin.shell: "ps -ef | grep kubelet | grep -v grep | grep reserved-cpus || echo 'not set'"
+
+# Verify reserved CPUs (RT only)
+- name: Verify reserved CPUs (RT nodes only)
+  shell: "grep reserved-cpus /etc/default/kubelet || echo 'not set'"
   register: reserved_cpus
-  failed_when: false
   changed_when: false
+  failed_when: false
   when: is_rt
 
-- name: Display reservedSystemCPUs
+- name: Show reserved CPUs
   debug:
-    msg: "✅ Worker {{ inventory_hostname }} reservedSystemCPUs: {{ reserved_cpus.stdout }}"
+    msg: "✅ Worker {{ inventory_hostname }} reserved CPUs: {{ reserved_cpus.stdout }}"
   when: is_rt
