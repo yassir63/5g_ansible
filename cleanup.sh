@@ -71,6 +71,25 @@ for iface in "${OVS_IFACES[@]}"; do
     fi
 done
 
+echo "=== Removing OVS bridges ==="
+for br in ovs-system n2br n3br n4br; do
+    if ovs-vsctl br-exists $br &>/dev/null; then
+        echo "Deleting OVS bridge $br"
+        ovs-vsctl --if-exists del-br $br
+    fi
+done
+
+echo "=== Deleting remaining tunnels ==="
+for tun in gre0 gretap0 erspan0 gre_sys; do
+    if ip link show "$tun" &>/dev/null; then
+        echo "Deleting tunnel $tun"
+        ip link delete "$tun"
+    fi
+done
+
+echo "=== Remaining network interfaces ==="
+ip link
+
 echo "Restarting containerd..."
 sudo systemctl restart containerd
 sudo systemctl enable kubelet
