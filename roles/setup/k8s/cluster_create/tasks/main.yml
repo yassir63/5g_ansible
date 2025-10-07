@@ -1,4 +1,3 @@
----
 # =============================
 # Kubernetes Cluster Initialization
 # =============================
@@ -21,12 +20,13 @@
     - /etc/kubernetes/pki
     - /etc/kubernetes/manifests
     - /var/lib/etcd
+    - /var/lib/kubelet
   become: true
 
 # --- Upload correct kubeadm config
 - name: Upload kubeadm config to master node
   copy:
-    src: "{{ 'kubeadm-config-rt.yaml' if is_rt else 'kubeadm-config.yaml' }}"
+    src: "{{ 'playbooks/kubeadm-config-rt.yaml' if is_rt else 'playbooks/kubeadm-config.yaml' }}"
     dest: /root/kubeadm-config.yaml
     mode: '0644'
   become: true
@@ -68,7 +68,13 @@
     mode: '0600'
   become: true
 
-# --- Install Flannel (CNI)
+# --- Apply sysctl for RT nodes safely
+- name: Apply RT sysctl settings
+  shell: sysctl -p /etc/sysctl.d/rt.conf || true
+  become: true
+  when: is_rt
+
+# --- Install Flannel (CNI) before CoreDNS
 - name: Ensure dependencies for Helm/Flannel
   apt:
     name:
@@ -133,17 +139,18 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
+# --- Wait for CoreDNS pods to be ready
 - name: Wait for CoreDNS pods to be Ready
-  shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
+  shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
   register: coredns_wait
-  retries: 3
+  retries: 5
   delay: 10
   until: coredns_wait.rc == 0
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
 
-# --- Install Multus
+# --- Install Multus after CoreDNS is ready
 - name: Upload Multus DaemonSet manifest
   copy:
     src: multus-daemonset.yml
@@ -177,7 +184,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
-# --- Remove master taint (allow scheduling)
+# --- Remove master taint to allow scheduling
 - name: Remove NoSchedule taint from control-plane node
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
   failed_when: false
@@ -193,6 +200,7 @@
   delegate_to: "{{ groups['core_node'][0] }}"
   become: true
 
+# --- Create custom join configuration for RT setup
 - name: Create custom join configuration for RT setup
   copy:
     dest: /tmp/join-config.yaml
