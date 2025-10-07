@@ -59,12 +59,6 @@
     force: yes
   become: true
 
-- name: Wait for kubelet to start and become active
-  systemd:
-    name: kubelet
-    state: started
-    enabled: yes
-
 - name: Read kubeadm join command from file
   set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
@@ -73,12 +67,11 @@
   debug:
     var: kubeadm_join_command
 
-- name: Wait for kubelet config to appear
-  ansible.builtin.wait_for:
-    path: /var/lib/kubelet/config.yaml
-    state: present
-    timeout: 60
-  become: true
+- name: Wait for kubelet to start and become active
+  systemd:
+    name: kubelet
+    state: started
+    enabled: yes
 
 # Realtime k8s configuration for Benetel scenarios
 - name: Detect if RT setup is required
