@@ -90,14 +90,14 @@
     owner: root
     group: root
     mode: '0644'
-  notify: restart kubelet
+  register: restart_kubelet
   when: is_rt
 
-- name: Redémarrer kubelet pour appliquer la configuration
+- name: Restart kubelet if needed
   systemd:
     name: kubelet
     state: restarted
-  when: is_rt
+  when: is_rt and restart_kubelet.changed
 
 # Then check if reservedSystemCPUs is indeed set to 0-5
 - name: Ensure that config.yaml file exists on the worker node
