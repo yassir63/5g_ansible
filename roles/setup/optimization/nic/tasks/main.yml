@@ -1,9 +1,8 @@
 ---
-- name: Install cpufrequtils and tuned
+- name: Install ethtool
   apt:
     name:
       - ethtool
-      - tuned
     state: present
     update_cache: yes
   become: true
@@ -11,6 +10,15 @@
 - name: Increase NIC ring buffers on {{ nic_interface }}
   command: ethtool -G {{ nic_interface }} tx 8160 rx 8160
   become: true
+
+- name: Install tuned
+  apt:
+    name:
+      - tuned
+    state: present
+    update_cache: yes
+  become: true
+  when: inventory_hostname != "sopnode-f3"
 
 - name: Activate throughput-performance tuned profile
   command: tuned-adm profile throughput-performance
