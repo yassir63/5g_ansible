@@ -43,13 +43,14 @@
     ip link set {{ dpdk_interface }} vf 1 mac {{ dpdk_du_c_plane_mac }} vlan {{ dpdk_vlan }} mtu {{ dpdk_mtu }}
   changed_when: true
 
-- name: Unbind U plane VF from kernel driver
-  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --unbind {{ dpdk_u_plane_pci }}
-  changed_when: true
-
-- name: Unbind C plane VF from kernel driver
-  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --unbind {{ dpdk_c_plane_pci }}
-  changed_when: true
+# option --bind délie automatiquement le pilote actuel si nécessaire. Inutile de unbind manuellement.
+#- name: Unbind U plane VF from kernel driver
+#  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --unbind {{ dpdk_u_plane_pci }}
+#  changed_when: true
+#
+#- name: Unbind C plane VF from kernel driver
+#  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --unbind {{ dpdk_c_plane_pci }}
+#  changed_when: true
 
 - name: Bind U plane VF to DPDK driver
   ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ dpdk_driver }} {{ dpdk_u_plane_pci }}
