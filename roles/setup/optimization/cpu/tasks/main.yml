@@ -5,22 +5,21 @@
     - name: CPU_CHECK
       ansible.builtin.meta: noop
   
-    - name: Install cpufrequtils and tuned
-      apt:
-        name:
-          - cpufrequtils
-          - tuned
-        state: present
-        update_cache: yes
-
     - name: Install cpupower utility
       package:
         name:
           - linux-tools-common
           - linux-tools-{{ ansible_kernel }}
           - cpufrequtils
-          - tuned-utils # Sagar adviced not to use it.
         state: present
+
+    - name: Install tuned if needed
+      apt:
+        name:
+          - tuned
+        state: present
+        update_cache: yes
+      when: inventory_hostname != "sopnode-f3"
 
     - name: Set CPU governor to performance on every core
       shell: bash -c 'for ((i=0;i<$(nproc);i++)); do cpufreq-set -c $i -r -g performance; done'
