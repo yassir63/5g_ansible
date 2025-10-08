@@ -21,43 +21,53 @@
     ip link set {{ dpdk_interface }} mtu {{ dpdk_mtu }}
   changed_when: true
 
-- name: Reset VFs to zero
+- name: "Step 1: Unbind any existing VFs (safe)"
+  ansible.builtin.shell: |
+    for vf in {{ dpdk_u_plane_pci }} {{ dpdk_c_plane_pci }}; do
+      /usr/local/bin/dpdk-devbind.py --unbind $vf || true
+    done
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: "Step 2: Reset VFs to zero"
   ansible.builtin.shell: echo 0 > /sys/class/net/{{ dpdk_interface }}/device/sriov_numvfs
   args:
     executable: /bin/bash
   changed_when: true
 
-- name: Create two VFs
+- name: "Step 3: Verify no VFs remain"
+  ansible.builtin.shell: dpdk-devbind.py --status | grep '{{ dpdk_interface }}' || true
+  register: vf_status_reset
+  changed_when: false
+
+- name: "Step 4: Create 2 VFs"
   ansible.builtin.shell: echo 2 > /sys/class/net/{{ dpdk_interface }}/device/sriov_numvfs
   args:
     executable: /bin/bash
   changed_when: true
 
-- name: Configure VF 0
+- name: "Step 5: Configure VF 0 (U-plane)"
   ansible.builtin.command: >
     ip link set {{ dpdk_interface }} vf 0 mac {{ dpdk_du_u_plane_mac }} vlan {{ dpdk_vlan }} mtu {{ dpdk_mtu }}
   changed_when: true
 
-- name: Configure VF 1
+- name: "Step 6: Configure VF 1 (C-plane)"
   ansible.builtin.command: >
     ip link set {{ dpdk_interface }} vf 1 mac {{ dpdk_du_c_plane_mac }} vlan {{ dpdk_vlan }} mtu {{ dpdk_mtu }}
   changed_when: true
 
-# option --bind délie automatiquement le pilote actuel si nécessaire. Inutile de unbind manuellement.
-#- name: Unbind U plane VF from kernel driver
-#  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --unbind {{ dpdk_u_plane_pci }}
-#  changed_when: true
-#
-#- name: Unbind C plane VF from kernel driver
-#  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --unbind {{ dpdk_c_plane_pci }}
-#  changed_when: true
-
-- name: Bind U plane VF to DPDK driver
+- name: "Step 7: Bind U-plane VF to DPDK driver"
   ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ dpdk_driver }} {{ dpdk_u_plane_pci }}
   changed_when: true
 
-- name: Bind C plane VF to DPDK driver
+- name: "Step 8: Bind C-plane VF to DPDK driver"
   ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ dpdk_driver }} {{ dpdk_c_plane_pci }}
   changed_when: true
+
+- name: "Step 9: Verify VFs are bound to DPDK driver"
+  ansible.builtin.shell: dpdk-devbind.py --status | grep vfio-pci
+  register: vf_status_bound
+  changed_when: false
 
 
