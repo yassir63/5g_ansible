@@ -15,11 +15,14 @@
 - name: Activate throughput-performance tuned profile
   command: tuned-adm profile throughput-performance
   become: true
+  when: inventory_hostname != "sopnode-f3"
 
 - name: Show active tuned profile
   command: tuned-adm active
   register: tuned_status
   become: true
+  when: inventory_hostname != "sopnode-f3"
 
 - debug:
     msg: "{{ tuned_status.stdout }}"
+  when: inventory_hostname != "sopnode-f3"

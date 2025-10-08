@@ -1,4 +1,12 @@
 ---
+- name: Clean up existing GRE tunnel if present
+  shell: ovs-vsctl --if-exists del-port n3br gre0
+  ignore_errors: yes
+  
 - name: Create GRE Tunnel Between Core and RAN Node
   shell: ovs-vsctl add-port n3br gre0 -- set interface gre0 type=gre options:remote_ip={{ ip }}
   ignore_errors: true
+
+- name: Pause pour débogage
+  ansible.builtin.pause:
+    prompt: "Appuyez sur Entrée pour continuer après inspection"
