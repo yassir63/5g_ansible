@@ -110,4 +110,54 @@
   debug:
     msg: "{{ nic_vf_info.stdout_lines }}"
   
+- name: Verify C-PLANE VFs bound to vfio-pci
+  shell: |
+    NIC="{{ ran_vars.dpdk_interface_c }}"
+    PF_PATH="/sys/class/net/${NIC}/device"
 
+    echo "🔍 Checking VFs for ${NIC}:"
+    for vf in ${PF_PATH}/virtfn*; do
+      [ -e "$vf" ] || continue
+      pci=$(basename "$(readlink -f "$vf")")
+      driver=$(basename "$(readlink -f /sys/bus/pci/devices/$pci/driver 2>/dev/null || echo none)")
+      echo "  $pci -> $driver"
+    done | tee /tmp/vfio_${NIC}.txt
+
+    if grep -vq "vfio-pci" /tmp/vfio_${NIC}.txt; then
+      echo "❌ ${NIC}: One or more VFs not bound to vfio-pci"
+      exit 1
+    else
+      echo "✅ ${NIC}: All VFs bound to vfio-pci"
+    fi
+  register: vfio_check_c
+  changed_when: false
+  failed_when: vfio_check_c.rc != 0
+
+- name: Verify U-PLANE VFs bound to vfio-pci
+  shell: |
+    NIC="{{ ran_vars.dpdk_interface_u }}"
+    PF_PATH="/sys/class/net/${NIC}/device"
+
+    echo "🔍 Checking VFs for ${NIC}:"
+    for vf in ${PF_PATH}/virtfn*; do
+      [ -e "$vf" ] || continue
+      pci=$(basename "$(readlink -f "$vf")")
+      driver=$(basename "$(readlink -f /sys/bus/pci/devices/$pci/driver 2>/dev/null || echo none)")
+      echo "  $pci -> $driver"
+    done | tee /tmp/vfio_${NIC}.txt
+
+    if grep -vq "vfio-pci" /tmp/vfio_${NIC}.txt; then
+      echo "❌ ${NIC}: One or more VFs not bound to vfio-pci"
+      exit 1
+    else
+      echo "✅ ${NIC}: All VFs bound to vfio-pci"
+    fi
+  register: vfio_check_u
+  changed_when: false
+  failed_when: vfio_check_u.rc != 0
+
+- name: Display VFIO binding summary
+  debug:
+    msg:
+      - "{{ vfio_check_c.stdout_lines }}"
+      - "{{ vfio_check_u.stdout_lines }}"
