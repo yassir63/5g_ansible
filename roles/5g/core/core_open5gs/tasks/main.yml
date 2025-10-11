@@ -70,6 +70,16 @@
   changed_when: "'Synchronizing submodule url' in result.stdout"
   register: result
 
+- name: Checkout submodule branch for test
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ ansible_env.HOME }}/open5gs-k8s/k8s_srsran_open5gs"
+    git fetch --all
+    git checkout -B srsRAN_metrics --track origin/srsRAN_metrics
+    git pull origin srsRAN_metrics
+  args:
+    executable: /bin/bash
+
 - name: Ensure {{ open5gs_ns }} namespace exists
   kubernetes.core.k8s:
     api_version: v1

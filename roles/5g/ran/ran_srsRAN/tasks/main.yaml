@@ -69,11 +69,22 @@
   changed_when: false
   failed_when: false
 
+#- name: Start gNB in background
+#  when: gnb_running.rc != 0
+#  ansible.builtin.command: >
+#    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ gnb_pod_name }} -- /bin/sh -lc
+#    'nohup /srsran/config/start_gnb.sh > /var/log/gnb.log 2>&1 &
+#     echo $! > /tmp/gnb.pid'
+#  register: gnb_start
+#  changed_when: gnb_start.rc == 0
+#  failed_when: gnb_start.rc != 0
+
+
 - name: Start gNB in background
   when: gnb_running.rc != 0
   ansible.builtin.command: >
     {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ gnb_pod_name }} -- /bin/sh -lc
-    'nohup /srsran/config/start_gnb.sh > /var/log/gnb.log 2>&1 &
+    'nohup /usr/local/bin/gnb -c /srsran/config/srsran-gnb.yaml > /var/log/gnb.log 2>&1 &
      echo $! > /tmp/gnb.pid'
   register: gnb_start
   changed_when: gnb_start.rc == 0
