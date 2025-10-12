@@ -1,4 +1,7 @@
 ---
+repo_url: "https://github.com/yassir63/open5gs-k8s.git"
+version: main
+
 ran_ns: open5gs
 open5gs_ns: "open5gs"
 
