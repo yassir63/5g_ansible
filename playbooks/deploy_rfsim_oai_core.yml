@@ -31,7 +31,7 @@
     - role: setup/common
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
-    - role: setup/ovs
+#    - role: setup/ovs
     - role: setup/optimization/cpu
 
 - name: Create and Setup Kubernetes Cluster On Master
@@ -40,6 +40,7 @@
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
+    - role: setup/netplan
 
 - name: Configure GRE Tunnel From Core Node to RAN Node
   hosts: core_node
@@ -55,18 +56,22 @@
   roles:
     - role: setup/gre_tunnel
 
-- name: Deploy Open5gs Core
+- name: Deploy OAI Core & RAN
   hosts: core_node
+  vars:
+    rru: "rfsim"
+    conf: "gnb.sa.band78.106prb.rfsim.2x2.conf"
   roles:
-    - role: 5g/core/core_open5gs
-      vars:
-        version: "main"
+    - role: 5g/core/core_oai
+  #  - role: 5g/ran
+#    - role: 5g/rfsim_oai
 
-- name: Setup iperf3 on UPFs
-  hosts: core_node
-  gather_facts: false
-  roles:
-    - role: scenarios/iperf/upf
+
+#- name: Setup iperf3 on UPFs
+#  hosts: core_node
+#  gather_facts: false
+#  roles:
+#    - role: scenarios/iperf/upf
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
@@ -80,14 +85,14 @@
 #  roles:
 #    - role: monarch/deploy
 
-- name: Deploy OAI RAN
-  hosts: ran_node
-  vars:
-    rru: "rfsim"
-    conf: "gnb.sa.band78.106prb.rfsim.conf"
-  roles:
-    - role: 5g/ran/ran_r2lab
-    - role: 5g/ran/rfsim
+#- name: Deploy OAI RAN
+#  hosts: ran_node
+#  vars:
+#    rru: "rfsim"
+#    conf: "gnb.sa.band78.106prb.rfsim.conf"
+#  roles:
+#    - role: 5g/ran
+#    - role: 5g/rfsim
 
 #- name: Launch 5G-Monarch monitoring
 #  hosts: monitor_node

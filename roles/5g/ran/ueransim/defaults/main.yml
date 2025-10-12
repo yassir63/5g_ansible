@@ -1,0 +1,7 @@
+---
+ran_ns: open5gs
+open5gs_ns: "open5gs"
+repo_dest: "~/open5gs-k8s"
+timeout_duration: 10
+gnb_kustomize_dir: "ueransim/ueransim-gnb"
+ue_kustomize_dir: "ueransim/ueransim-ue"

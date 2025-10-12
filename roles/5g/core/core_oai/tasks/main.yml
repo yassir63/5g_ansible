@@ -1,0 +1,178 @@
+---
+- name: Clone open5gs-k8s repo
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: main
+    update: yes
+    force: yes
+
+- name: Update NS variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^NS='
+    line: "NS=\"{{ ran_ns }}\""
+    backrefs: true
+
+- name: Update RUN_MODE variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^RUN_MODE='
+    line: "RUN_MODE=\"full\""
+    backrefs: true
+
+- name: Update HOST_GNB variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^HOST_GNB='
+    line: "HOST_GNB=\"{{ ansible_hostname }}\""
+    backrefs: true
+
+- name: Update RRU variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^RRU='
+    line: "RRU=\"rfsim\""
+    backrefs: true   
+
+- name: Update HOST_AMF_UPF variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^HOST_AMF_UPF='
+    line: "HOST_AMF_UPF=\"{{ ansible_hostname }}\""
+    backrefs: true   
+
+- name: Update LOCAL_INTERFACE variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^LOCAL_INTERFACE='
+    line: "LOCAL_INTERFACE=\"{{ nic_interface }}\""
+    backrefs: true
+
+# - name: Disable FLEXRIC in prepare-demo-oai.sh if using aw2s gnb image
+#   ansible.builtin.lineinfile:
+#     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+#     regexp: '^FLEXRIC='
+#     line: "FLEXRIC=false"
+#     backrefs: true
+#   when: rru in ['jaguar', 'panther']
+
+- name: Run prepare-demo-oai.sh to pull & configure OAI RAN charts
+  ansible.builtin.command: "{{ script_path }} -a -R {{ rru }} -F {{ conf }}"
+  args:
+    chdir: "{{ repo_dest }}/oai-ran"
+  register: ran_script
+  changed_when: "'OAI5G charts are now configured' in ran_script.stdout"
+
+#- name: Install OAI FlexRIC chart using Helm
+#  kubernetes.core.helm:
+#    name: oai-flexric
+#    chart_ref: "{{ charts_base }}/oai-5g-ran/oai-flexric"
+#    release_namespace: "{{ ran_ns }}"
+#    create_namespace: true
+#    state: present
+#    wait: true
+#  register: helm_flex
+
+#- name: Install OAI CORE chart using Helm
+#  kubernetes.core.helm:
+#    name: oai-
+#    chart_ref: "{{ charts_base }}/oai-5g-ran/oai-gnb"
+#    release_namespace: "{{ ran_ns }}"
+#    create_namespace: true
+#    state: present
+#    wait: true
+#  register: helm_gnb
+
+- name: Check for demo-oai.sh
+  ansible.builtin.stat:
+    path: "{{ repo_dest }}/oai-ran/demo-oai.sh"
+  register: demo_oai_stat
+
+- name: Fail if demo-oai.sh is missing
+  ansible.builtin.fail:
+    msg: "demo-oai.sh not found in {{ repo_dest }}/oai-ran"
+  when: not demo_oai_stat.stat.exists
+
+- name: Ensure demo-oai.sh is executable
+  ansible.builtin.file:
+   path: "{{ repo_dest }}/oai-ran/demo-oai.sh"
+   mode: "0755"
+
+- name: Run demo-oai.sh start (bash)
+  ansible.builtin.shell: |
+    set -Eeuo pipefail
+    ./demo-oai.sh start
+  args:
+    chdir: "{{ repo_dest }}/oai-ran"
+    executable: /bin/bash
+  register: demo_oai_run
+  changed_when: >
+    demo_oai_run.rc == 0 and
+    ('already running' not in (demo_oai_run.stdout | lower)) and
+    ('already running' not in (demo_oai_run.stderr | lower))
+
+- name: Show demo-oai.sh output
+  ansible.builtin.debug:
+    var: demo_oai_run.stdout
+
+- name: Get list of NR-UE pods
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: oai
+  register: ue_pods
+  no_log: true
+
+- set_fact:
+    ue1_pod: "{{ item.metadata.name }}"
+  loop: "{{ ue_pods.resources }}"
+  when: item.metadata.name is match('^oai-nr-ue-')
+  no_log: true
+
+- set_fact:
+    ue2_pod: "{{ item.metadata.name }}"
+  loop: "{{ ue_pods.resources }}"
+  when: item.metadata.name is match('^oai-nr-ue2-')
+  no_log: true
+
+#- set_fact:
+#    ue3_pod: "{{ item.metadata.name }}"
+#  loop: "{{ ue_pods.resources }}"
+#  when: item.metadata.name is match('^oai-nr-ue3-')
+#  no_log: true
+
+- name: Install iperf3 on NR-UE
+  shell: |
+    kubectl -n oai exec {{ ue1_pod }} -- bash -c '
+      set -euo pipefail
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        yum update -y -qq &&
+        yum install -y -qq iperf3
+      fi
+    '
+  register: ue1_install
+  changed_when: false
+
+- name: Install iperf3 on NR-UE2
+  shell: |
+    kubectl -n oai exec {{ ue2_pod }} -- bash -c '
+      set -euo pipefail
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        yum update -y -qq &&
+        yum install -y -qq iperf3
+      fi
+    '
+  register: ue2_install
+  changed_when: false
+
+#- name: Install iperf3 on NR-UE3
+#  shell: |
+#    kubectl -n open5gs exec {{ ue3_pod }} -- bash -c '
+#      set -euo pipefail
+#      if ! command -v iperf3 >/dev/null 2>&1; then
+#        yum update -y -qq &&
+#        yum install -y -qq iperf3
+#      fi
+#    '
+#  register: ue3_install
+#  changed_when: false

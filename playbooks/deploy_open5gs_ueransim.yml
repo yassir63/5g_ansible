@@ -60,7 +60,7 @@
   roles:
     - role: 5g/core/core_open5gs
       vars:
-        version: "main"
+        version: "ueransim"
 
 - name: Setup iperf3 on UPFs
   hosts: core_node
@@ -80,14 +80,19 @@
 #  roles:
 #    - role: monarch/deploy
 
-- name: Deploy OAI RAN
+- name: Deploy UERANSIM RAN
   hosts: ran_node
-  vars:
-    rru: "rfsim"
-    conf: "gnb.sa.band78.106prb.rfsim.conf"
   roles:
-    - role: 5g/ran/ran_r2lab
-    - role: 5g/ran/rfsim
+    - role: 5g/ran/ueransim
+
+#- name: Deploy OAI RAN
+#  hosts: ran_node
+#  vars:
+#    rru: "rfsim"
+#    conf: "gnb.sa.band78.106prb.rfsim.conf"
+#  roles:
+#    - role: 5g/ran
+#    - role: 5g/rfsim
 
 #- name: Launch 5G-Monarch monitoring
 #  hosts: monitor_node
