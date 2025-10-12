@@ -4,7 +4,7 @@
     repo: "{{ repo_url }}"
     dest: "{{ repo_dest }}"
     version: "{{ version | default('main') }}"
-    update: yes
+    update: no
     force: yes
     recursive: yes            # clone submodules (like --recursive)
     track_submodules: yes     # keep submodules updated on pulls
