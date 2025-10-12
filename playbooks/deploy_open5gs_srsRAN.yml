@@ -79,6 +79,8 @@
   hosts: monitor_node
   roles:
     - role: monarch/deploy
+     vars:
+        branch: srsRAN_metrics
 
 - name: Deploy srsRAN RAN
   hosts: ran_node
