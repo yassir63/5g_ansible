@@ -88,7 +88,7 @@
   hosts: monitor_node
   roles:
     - role: monarch/deploy
-     vars:
+      vars:
         branch: with_data_persistance_for_sopnodes
 
 - name: Cleanup R2Lab
