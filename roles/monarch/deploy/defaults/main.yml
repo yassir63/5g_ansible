@@ -1,6 +1,7 @@
 ---
 repo_url: "https://github.com/Ziyad-Mabrouk/5g-monarch.git"
 repo_dest: "~/5g-monarch"
-branch: "with_data_persistance_for_sopnodes"
+branch: "srsRAN_metrics"
+#branch: "with_data_persistance_for_sopnodes"
 #branch: "main"
 monarch_ns: "monarch"
