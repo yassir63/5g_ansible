@@ -11,7 +11,7 @@ srs_ue_rel:  "ues/srsue"
 
 srs_gnb_label_selectors:
   - "app=srsran"
-  - "component=gnb"
+  - "nf=gnb"
 
 srs_ue_label_selectors:
   - "app=srsran"
