@@ -59,7 +59,7 @@
 - name: Deploy OAI Core & RAN
   hosts: core_node
   vars:
-    rru: "n300"
+    rru: "{{ rru }}"
     conf: "gnb.sa.band78.106prb.n310.7ds2u.conf"
   roles:
     - role: 5g/core/core_oai

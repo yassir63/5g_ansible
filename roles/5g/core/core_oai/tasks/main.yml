@@ -32,7 +32,7 @@
   ansible.builtin.lineinfile:
     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
     regexp: '^RRU='
-    line: "RRU=\"n300\""
+    line: "RRU=\"{{ rru }}\""
     backrefs: true   
 
 - name: Update HOST_AMF_UPF variable in prepare-demo-oai.sh
