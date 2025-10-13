@@ -130,3 +130,10 @@
     msg: "Starting deployment of Monarch NSS components..."
 
 - import_tasks: deploy_nss.yml
+
+- name: Deploy Kepler for monitoring (if enabled)
+  ansible.builtin.debug:
+    msg: "Starting deployment of Kepler for monitoring..."
+
+- import_tasks: deploy_kepler.yml
+  when: enable_kepler
