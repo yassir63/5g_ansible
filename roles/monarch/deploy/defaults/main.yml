@@ -5,3 +5,4 @@ branch: "srsRAN_metrics"
 #branch: "with_data_persistance_for_sopnodes"
 #branch: "main"
 monarch_ns: "monarch"
+enable_kepler: true
