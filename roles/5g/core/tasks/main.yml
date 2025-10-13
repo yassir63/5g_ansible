@@ -85,34 +85,34 @@
   delay: 15
   ignore_errors: yes
 
-#- name: Debug Kyverno deployment and pods if not ready
-#  block:
-#    - debug:
-#        var: kyverno_status.resources[0].status
-#
-#    - name: List Kyverno pods
-#      kubernetes.core.k8s_info:
-#        api_version: v1
-#        kind: Pod
-#        namespace: kyverno
-#      register: kyverno_pods
-#
-#    - debug:
-#        var: kyverno_pods.resources
-#
-#    - name: Fetch init container logs for Kyverno pods
-#      ansible.builtin.shell: |
-#        kubectl logs -n kyverno {{ item.0.metadata.name }} -c {{ item.1.name }} --tail=50
-#      loop: "{{ (kyverno_pods.resources | d([])) | subelements('spec.initContainers', skip_missing=True) }}"
-#      loop_control:
-#        label: "{{ item.0.metadata.name }} / {{ item.1.name }}"
-#      register: init_logs
-#      ignore_errors: yes
-#
-#    - name: Display init container logs
-#      debug:
-#        var: init_logs.results
-#  when: kyverno_status is failed
+- name: Debug Kyverno deployment and pods if not ready
+  block:
+    - debug:
+        var: kyverno_status.resources[0].status
+
+    - name: List Kyverno pods
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: kyverno
+      register: kyverno_pods
+
+    - debug:
+        var: kyverno_pods.resources
+
+    - name: Fetch init container logs for Kyverno pods
+      ansible.builtin.shell: |
+        kubectl logs -n kyverno {{ item.0.metadata.name }} -c {{ item.1.name }} --tail=50
+      loop: "{{ (kyverno_pods.resources | d([])) | subelements('spec.initContainers', skip_missing=True) }}"
+      loop_control:
+        label: "{{ item.0.metadata.name }} / {{ item.1.name }}"
+      register: init_logs
+      ignore_errors: yes
+
+    - name: Display init container logs
+      debug:
+        var: init_logs.results
+  when: kyverno_status is failed
 
 - name: Copy Kyverno policy to force Open5GS pods to {{ groups['core_node'][0] }}
   copy:
