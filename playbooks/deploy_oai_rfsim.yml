@@ -63,15 +63,7 @@
     conf: "gnb.sa.band78.106prb.rfsim.2x2.conf"
   roles:
     - role: 5g/core/core_oai
-  #  - role: 5g/ran
-#    - role: 5g/rfsim_oai
-
-
-#- name: Setup iperf3 on UPFs
-#  hosts: core_node
-#  gather_facts: false
-#  roles:
-#    - role: scenarios/iperf/upf
+ 
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
@@ -80,10 +72,6 @@
     - role: setup/k8s/cluster_join
       when: inventory_hostname != groups['core_node'][0]
       
-#- name: Deploy 5G-Monarch for monitoring
-#  hosts: monitor_node
-#  roles:
-#    - role: monarch/deploy
 
 #- name: Deploy OAI RAN
 #  hosts: ran_node
@@ -94,7 +82,4 @@
 #    - role: 5g/ran
 #    - role: 5g/rfsim
 
-#- name: Launch 5G-Monarch monitoring
-#  hosts: monitor_node
-#  roles:
-#    - role: monarch/monitoring
+
