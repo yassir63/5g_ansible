@@ -168,7 +168,7 @@ echo
 # ========== Generate hosts.ini ==========
 echo "Generating hosts.ini..."
 
-cat > hosts.ini <<EOF
+cat > ./inventory/hosts.ini <<EOF
 [webshell]
 localhost ansible_connection=local
 
@@ -180,7 +180,7 @@ $ran_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$r
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
-cat >> hosts.ini <<EOF
+cat >> ./inventory/hosts.ini <<EOF
 
 [monitor_node]
 $monitor_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=sda1
@@ -188,7 +188,7 @@ EOF
 fi
 
 if [[ "$platform" == "r2lab" ]]; then
-cat >> hosts.ini <<EOF
+cat >> ./inventory/hosts.ini <<EOF
 
 [faraday]
 faraday.inria.fr ansible_user=$R2LAB_USERNAME rru=$R2LAB_RU conf=gnb.sa.band78.106prb.n310.7ds2u.conf
@@ -197,17 +197,17 @@ faraday.inria.fr ansible_user=$R2LAB_USERNAME rru=$R2LAB_RU conf=gnb.sa.band78.1
 EOF
 
 for ue in "${R2LAB_UES[@]}"; do
-  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr'" >> hosts.ini
+  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr'" >> ./inventory/hosts.ini
 done
 
-cat >> hosts.ini <<EOF
+cat >> ./inventory/hosts.ini <<EOF
 
 [fit_nodes]
 fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
 EOF
 fi
 
-cat >> hosts.ini <<EOF
+cat >> ./inventory/hosts.ini <<EOF
 
 [sopnodes:children]
 core_node
@@ -215,10 +215,10 @@ ran_node
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
-  echo "monitor_node" >> hosts.ini
+  echo "monitor_node" >> ./inventory/hosts.ini
 fi
 
-cat >> hosts.ini <<EOF
+cat >> ./inventory/hosts.ini <<EOF
 
 [k8s_workers:children]
 ran_node
