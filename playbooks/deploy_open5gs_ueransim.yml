@@ -74,27 +74,12 @@
   roles:
     - role: setup/k8s/cluster_join
       when: inventory_hostname != groups['core_node'][0]
-      
-#- name: Deploy 5G-Monarch for monitoring
-#  hosts: monitor_node
-#  roles:
-#    - role: monarch/deploy
 
 - name: Deploy UERANSIM RAN
   hosts: ran_node
   roles:
     - role: 5g/ran/ueransim
 
-#- name: Deploy OAI RAN
-#  hosts: ran_node
-#  vars:
-#    rru: "rfsim"
-#    conf: "gnb.sa.band78.106prb.rfsim.conf"
-#  roles:
-#    - role: 5g/ran
-#    - role: 5g/rfsim
 
-#- name: Launch 5G-Monarch monitoring
-#  hosts: monitor_node
-#  roles:
-#    - role: monarch/monitoring
+
+
