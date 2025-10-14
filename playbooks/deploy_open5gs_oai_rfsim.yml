@@ -73,12 +73,14 @@
   become: true
   roles:
     - role: setup/k8s/cluster_join
-      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+      when: inventory_hostname != groups['core_node'][0]
       
-#- name: Deploy 5G-Monarch for monitoring
-#  hosts: monitor_node
-#  roles:
-#    - role: monarch/deploy
+- name: Deploy 5G-Monarch for monitoring
+  hosts: monitor_node
+  roles:
+    - role: monarch/deploy
+      vars:
+        branch: with_data_persistance_for_sopnodes
 
 - name: Deploy OAI RAN
   hosts: ran_node
@@ -89,7 +91,7 @@
     - role: 5g/ran/ran_r2lab
     - role: 5g/ran/rfsim
 
-#- name: Launch 5G-Monarch monitoring
-#  hosts: monitor_node
-#  roles:
-#    - role: monarch/monitoring
+- name: Launch 5G-Monarch monitoring
+ hosts: monitor_node
+ roles:
+   - role: monarch/monitoring
