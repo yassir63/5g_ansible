@@ -5,7 +5,7 @@ version: main
 ran_ns: open5gs
 open5gs_ns: "open5gs"
 
-repo_dest: "~/open5gs-k8s"
+repo_dest: "~/srsran-k8s"
 
 srs_gnb_label_selectors:
   - "app=srsran"
