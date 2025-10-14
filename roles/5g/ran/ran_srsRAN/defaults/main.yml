@@ -1,20 +1,15 @@
 ---
-repo_url: "https://github.com/yassir63/open5gs-k8s.git"
+repo_url: "https://github.com/Ziyad-Mabrouk/srsran-k8s.git"
 version: main
 
 ran_ns: open5gs
 open5gs_ns: "open5gs"
 
 repo_dest: "~/open5gs-k8s"
-srs_repo_rel: "k8s_srsran_open5gs/configs"
-
-srs_gnb_rel: "srsRAN/srsran-gnb"
-srs_ue_rel:  "ues/srsue"
-
 
 srs_gnb_label_selectors:
   - "app=srsran"
-  - "nf=gnb"
+  - "component=gnb"
 
 srs_ue_label_selectors:
   - "app=srsran"
