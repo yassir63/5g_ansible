@@ -1,4 +1,21 @@
 ---
+- name: Clone repo Open5GS (branch + submodules)
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: "{{ version | default('main') }}"
+    update: no
+    force: yes
+    recursive: yes            # clone submodules (like --recursive)
+    track_submodules: yes     # keep submodules updated on pulls
+
+- name: Sync submodule URLs
+  ansible.builtin.command:
+    cmd: git submodule sync --recursive
+    chdir: "{{ repo_dest }}"
+  changed_when: "'Synchronizing submodule url' in result.stdout"
+  register: result
+  
 # ------------------------------
 # Namespace
 # ------------------------------
