@@ -15,3 +15,17 @@
 - name: Apply netplan config
   command: netplan apply
   become: true
+
+- name: Ensure lldpd is installed and running
+  become: true
+  tasks:
+    - name: Install lldpd
+      ansible.builtin.package:
+        name: lldpd
+        state: present
+
+    - name: Enable and start lldpd service
+      ansible.builtin.service:
+        name: lldpd
+        enabled: true
+        state: started
