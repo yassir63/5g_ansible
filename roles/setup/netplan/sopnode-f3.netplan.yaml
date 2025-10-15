@@ -5,6 +5,7 @@ network:
       mtu: 9216
       dhcp4: false
     ens15f2:
+      id: 802
       mtu: 9216
       dhcp4: true
   vlans:
