@@ -108,7 +108,7 @@ case "$platform_choice" in
   *) echo "Invalid platform"; exit 1 ;;
 esac
 
-R2LAB_RU=""
+R2LAB_RU="$platform"
 R2LAB_UES=()
 
 if [[ "$platform" == "r2lab" ]]; then
