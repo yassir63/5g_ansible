@@ -2,7 +2,7 @@
 ptp_domain_number: 24
 ptp_slave_only: 1
 ptp_time_stamping: hardware
-ptp_tx_timestamp_timeout: 120
+ptp_tx_timestamp_timeout: 220
 ptp_logging_level: 6
 ptp_summary_interval: 0
 ptp_interface: ens15f2
