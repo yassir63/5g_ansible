@@ -54,3 +54,18 @@
 - name: Apply sysctl parameters
   command: sysctl --system
   become: true
+
+# ptp on ran-node will use Etc/UTC time zone, core-node must do the same
+- name: Set time zone to Etc/UTC
+  command: timedatectl set-timezone Etc/UTC
+  changed_when: true
+  register: timezone_result
+
+- name: Verify time zone setting
+  command: timedatectl
+  register: timedatectl_output
+  changed_when: false
+
+- name: Display timedatectl output
+  debug:
+    msg: "{{ timedatectl_output.stdout_lines }}"
