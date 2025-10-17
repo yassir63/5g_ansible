@@ -78,6 +78,7 @@
   gather_facts: false
   roles:
     - role: scenarios/iperf/upf
+    - role: setup/sriov_operator
 
 - name: Apply specific tuning on RAN Node if AW2s RRUs are used
   hosts: ran_node
@@ -99,7 +100,6 @@
   hosts: ran_node
   become: true
   roles:
-    - role: setup/sriov_operator
     - role: setup/optimization/nic
     - role: benetel/ptp
     - role: benetel/dpdk_install
