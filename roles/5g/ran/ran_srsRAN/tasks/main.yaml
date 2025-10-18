@@ -1,20 +1,11 @@
 ---
-- name: Clone repo Open5GS (branch + submodules)
+- name: Clone repo srsRAN-K8S
   ansible.builtin.git:
     repo: "{{ repo_url }}"
     dest: "{{ repo_dest }}"
     version: "{{ version | default('main') }}"
     update: no
     force: yes
-    recursive: yes            # clone submodules (like --recursive)
-    track_submodules: yes     # keep submodules updated on pulls
-
-- name: Sync submodule URLs
-  ansible.builtin.command:
-    cmd: git submodule sync --recursive
-    chdir: "{{ repo_dest }}"
-  changed_when: "'Synchronizing submodule url' in result.stdout"
-  register: result
   
 # ------------------------------
 # Namespace
@@ -31,7 +22,7 @@
 # ------------------------------
 - name: Apply srsRAN gNB manifests (kubectl -k)
   ansible.builtin.command: >
-    {{ kubectl_bin }} apply -k "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_gnb_rel }}" -n {{ open5gs_ns }}
+    {{ kubectl_bin }} apply -k "{{ repo_dest }}/srsran-gnb" -n {{ open5gs_ns }}
   register: srs_gnb_apply
   changed_when: >
     ('configured' in (srs_gnb_apply.stdout | default(''))) or
@@ -75,50 +66,31 @@
   ansible.builtin.set_fact:
     gnb_pod_name: "{{ (srs_gnb_pods.resources | first).metadata.name }}"
 
-# ------------------------------
-# gNB start (DETACHED + idempotent)
-# ------------------------------
-- name: Check if gNB already running (PID exists and alive)
-  ansible.builtin.command: >
-    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ gnb_pod_name }} -- /bin/sh -lc
-    'test -f /tmp/gnb.pid && kill -0 $(cat /tmp/gnb.pid) 2>/dev/null'
-  register: gnb_running
-  changed_when: false
-  failed_when: false
+# gNB starts automatically via its entrypoint
 
-- name: Start gNB in background
-  when: gnb_running.rc != 0
+# ------------------------------
+# Deploy telegraf for gNB monitoring
+# ------------------------------
+
+- name: Apply telegraf manifests (kubectl -k)
   ansible.builtin.command: >
-    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ gnb_pod_name }} -- /bin/sh -lc
-    'nohup /srsran/config/start_gnb.sh > /var/log/gnb.log 2>&1 &
-     echo $! > /tmp/gnb.pid'
-  register: gnb_start
-  changed_when: gnb_start.rc == 0
-  failed_when: gnb_start.rc != 0
+    {{ kubectl_bin }} apply -k "{{ repo_dest }}/telegraf" -n {{ open5gs_ns }}
+  register: telegraf_apply
+  changed_when: >
+    ('configured' in (telegraf_apply.stdout | default(''))) or
+    ('created' in (telegraf_apply.stdout | default('')))
+  failed_when: telegraf_apply.rc != 0
 
 # ------------------------------
 # Deploy srsRAN UEs (tmux-managed in a single pod)
 # ------------------------------
-
-# Ensure UE kustomize dir exists
-- name: Check UE kustomize dir exists
-  ansible.builtin.stat:
-    path: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
-  register: ue_dir
-
-- name: Fail if UE kustomize dir missing
-  ansible.builtin.fail:
-    msg: >
-      UE kustomize directory not found:
-      {{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}
-  when: not ue_dir.stat.exists
 
 # Apply UE manifests (kustomize)
 - name: Apply srsRAN UE manifests (kubectl -k .)
   ansible.builtin.command: >
     {{ kubectl_bin }} apply -k . -n {{ open5gs_ns }}
   args:
-    chdir: "{{ repo_dest }}/{{ srs_repo_rel }}/{{ srs_ue_rel }}"
+    chdir: "{{ repo_dest }}/srsue"
   register: srs_ue_apply
   changed_when: >
     ('configured' in (srs_ue_apply.stdout | default(''))) or
@@ -180,13 +152,8 @@
 # ------------------------------
 # Ensure tmux inside the UE pod
 # ------------------------------
-- name: Install tmux in UE pod
-  ansible.builtin.command: >
-    {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/sh -lc
-    "apt-get update && apt-get install -y tmux"
-  register: tmux_install
-  changed_when: "'Setting up tmux' in tmux_install.stdout or 'tmux is already the newest version' in tmux_install.stdout"
-  failed_when: tmux_install.rc != 0
+
+# Tmux already installed in the srsue image
 
 # Build ue indices 1..N
 - name: Build ue indices
