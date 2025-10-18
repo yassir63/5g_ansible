@@ -86,6 +86,7 @@
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
+  when: monitoring_enabled
   roles:
     - role: monarch/deploy
       vars:
@@ -127,6 +128,7 @@
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
+  when: monitoring_enabled
   roles:
     - role: monarch/monitoring
 
