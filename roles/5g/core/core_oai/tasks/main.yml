@@ -32,7 +32,7 @@
   ansible.builtin.lineinfile:
     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
     regexp: '^RRU='
-    line: "RRU=\"rfsim\""
+    line: "RRU=\"{{ rru }}\""
     backrefs: true   
 
 - name: Update HOST_AMF_UPF variable in prepare-demo-oai.sh
@@ -122,24 +122,28 @@
     namespace: oai
   register: ue_pods
   no_log: true
+  when: rru == 'rfsim'
 
 - set_fact:
     ue1_pod: "{{ item.metadata.name }}"
   loop: "{{ ue_pods.resources }}"
   when: item.metadata.name is match('^oai-nr-ue-')
   no_log: true
+  when: rru == 'rfsim'
 
 - set_fact:
     ue2_pod: "{{ item.metadata.name }}"
   loop: "{{ ue_pods.resources }}"
   when: item.metadata.name is match('^oai-nr-ue2-')
   no_log: true
+  when: rru == 'rfsim'
 
-#- set_fact:
-#    ue3_pod: "{{ item.metadata.name }}"
-#  loop: "{{ ue_pods.resources }}"
-#  when: item.metadata.name is match('^oai-nr-ue3-')
-#  no_log: true
+- set_fact:
+   ue3_pod: "{{ item.metadata.name }}"
+  loop: "{{ ue_pods.resources }}"
+  when: item.metadata.name is match('^oai-nr-ue3-')
+  no_log: true
+  when: rru == 'rfsim'
 
 - name: Install iperf3 on NR-UE
   shell: |
@@ -152,6 +156,7 @@
     '
   register: ue1_install
   changed_when: false
+  when: rru == 'rfsim'
 
 - name: Install iperf3 on NR-UE2
   shell: |
@@ -164,6 +169,7 @@
     '
   register: ue2_install
   changed_when: false
+  when: rru == 'rfsim'
 
 #- name: Install iperf3 on NR-UE3
 #  shell: |
