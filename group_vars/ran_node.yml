@@ -13,7 +13,7 @@ ptp_domain_number: 24
 dpdk_interface: ens15f2
 dpdk_max_ring_buffer_size: 8160
 dpdk_mtu: 9216 # was 9600
-dpdk_vlan: 3 # 801 for benetel1, 802 for benetel2, 3 is benetel default
+dpdk_vlan: 801 # 801 for benetel1, 802 for benetel2, 3 is benetel default
 
 dpdk_du_u_plane_mac: "00:11:22:33:44:66"
 dpdk_du_c_plane_mac: "00:11:22:33:44:67"
