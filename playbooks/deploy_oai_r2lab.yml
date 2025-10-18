@@ -31,7 +31,7 @@
     - role: setup/common
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
-    - role: setup/ovs
+#    - role: setup/ovs
     - role: setup/optimization/cpu
 
 - name: Create and Setup Kubernetes Cluster On Master
@@ -40,6 +40,7 @@
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
+    - role: setup/netplan
 
 - name: Configure GRE Tunnel From Core Node to RAN Node
   hosts: core_node
@@ -55,31 +56,29 @@
   roles:
     - role: setup/gre_tunnel
 
-- name: Deploy Open5gs Core
+- name: Deploy OAI Core & RAN
   hosts: core_node
+  vars:
+    rru: "{{ rru }}"
+    conf: "gnb.sa.band78.106prb.n310.7ds2u.conf"
   roles:
-    - role: 5g/core/core_open5gs
-      vars:
-        version: "ueransim"
-
-- name: Setup iperf3 on UPFs
-  hosts: core_node
-  gather_facts: false
-  roles:
-    - role: scenarios/iperf/upf
+    - role: 5g/core/core_oai
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
   become: true
   roles:
     - role: setup/k8s/cluster_join
-      when: inventory_hostname != groups['core_node'][0]
-
-- name: Deploy UERANSIM RAN
-  hosts: ran_node
-  roles:
-    - role: 5g/ran/ueransim
+      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+      
 
 
-
+#- name: Deploy OAI RAN
+#  hosts: ran_node
+#  vars:
+#    rru: "rfsim"
+#    conf: "gnb.sa.band78.106prb.rfsim.conf"
+#  roles:
+#    - role: 5g/ran
+#    - role: 5g/rfsim
 

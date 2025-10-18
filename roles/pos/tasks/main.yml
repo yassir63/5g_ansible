@@ -12,12 +12,12 @@
 - name: (POS) Set boot parameters on {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
   shell: >
     pos nodes bootparameter {{ node }} {{ boot_parameters }}
-  when: node == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and node in ['sopnode-f1', 'sopnode-f2']
+  when: rru != 'rfsim' and node == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and node in ['sopnode-f1', 'sopnode-f2']
 
 - name: (POS) Set boot parameters on sopnode-f3 for RRU {{ hostvars[groups['faraday'][0]].rru }}
   shell: >
     pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
-  when: node == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and node in ['sopnode-f3']
+  when: rru != 'rfsim' and node == groups['ran_node'][0] and hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and node in ['sopnode-f3']
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
