@@ -40,6 +40,7 @@
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
+    - role: setup/sriov_operator
 
 - name: Configure GRE Tunnel From Core Node to RAN Node
   hosts: core_node
@@ -78,7 +79,6 @@
   gather_facts: false
   roles:
     - role: scenarios/iperf/upf
-    - role: setup/sriov_operator
 
 - name: Apply specific tuning on RAN Node if AW2s RRUs are used
   hosts: ran_node
