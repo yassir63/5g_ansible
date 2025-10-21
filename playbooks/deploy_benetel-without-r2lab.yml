@@ -34,12 +34,26 @@
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
 
+- name: Setup Sopnodes
+  hosts: sopnodes
+  roles:
+    - role: setup/optimization/cpu
+
+- name: PTP setup on ran_node for benetel scenarios
+  hosts: ran_node
+  become: true
+  roles:
+    - role: setup/optimization/nic
+    - role: benetel/ptp
+
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
   roles:
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
+    - role: setup/sriov_operator
+
 
 - name: Configure GRE Tunnel From Core Node to RAN Node
   hosts: core_node
@@ -61,12 +75,6 @@
   roles:
     - role: setup/k8s/cluster_join
       when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
-
-- name: Setup Sopnodes
-  hosts: sopnodes
-  roles:
-    - role: setup/optimization/cpu
-
 
 - name: Deploy Open5gs Core
   hosts: core_node
@@ -95,17 +103,10 @@
   roles:
     - role: monarch/deploy
 
-- name: Create sriov_operator
-  hosts: core_node
-  roles:
-    - role: setup/sriov_operator
-
 - name: Benetel PTP and DPDK setup
   hosts: ran_node
   become: true
   roles:
-    - role: setup/optimization/nic
-    - role: benetel/ptp
     - role: benetel/dpdk_install
     - role: benetel/dpdk_config
 
