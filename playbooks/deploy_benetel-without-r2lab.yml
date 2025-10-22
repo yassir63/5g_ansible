@@ -56,6 +56,7 @@
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
   roles:
+    - role: setup/ntp
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage

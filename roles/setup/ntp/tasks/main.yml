@@ -1,0 +1,19 @@
+---
+- name: Install and configure chrony to sync with sopnode-f3
+      block:
+        - name: Install chrony
+          apt:
+            name: chrony
+            state: present
+            update_cache: yes
+        - name: Configure chrony to use sopnode-f3
+          lineinfile:
+            path: /etc/chrony/chrony.conf
+            regexp: '^(server|pool)'
+            line: 'server 172.28.2.95 iburst'
+            state: present
+        - name: Restart and enable chrony service
+          service:
+            name: chrony
+            state: restarted
+            enabled: yes
