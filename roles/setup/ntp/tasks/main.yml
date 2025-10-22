@@ -1,24 +1,21 @@
 ---
-- name: Synchronize NTP of sopnode-f1 with sopnode-f3
-  hosts: sopnode-f1
-  become: yes
-  tasks:
-    - name: Install and configure chrony
-      block:
-        - name: Install chrony
-          apt:
-            name: chrony
-            state: present
-            update_cache: yes
-          when: ansible_distribution == "Ubuntu"
-        - name: Configure chrony to use sopnode-f3
-          lineinfile:
-            path: /etc/chrony/chrony.conf
-            regexp: '^(server|pool)'
-            line: 'server 172.28.2.95 iburst'
-            state: present
-        - name: Restart and enable chrony service
-          service:
-            name: chrony
-            state: restarted
-            enabled: yes
+- name: Install and configure chrony
+  block:
+    - name: Install chrony
+      apt:
+        name: chrony
+        state: present
+        update_cache: yes
+
+    - name: Configure chrony to use sopnode-f3
+      lineinfile:
+        path: /etc/chrony/chrony.conf
+        regexp: '^(server|pool)'
+        line: 'server 172.28.2.95 iburst'
+        state: present
+
+    - name: Restart and enable chrony service
+      service:
+        name: chrony
+        state: restarted
+        enabled: yes
