@@ -1,38 +1,32 @@
 ---
-- name: Configure PTP on sopnode-f1 to sync with sopnode-f3
+- name: Set sopnode-f1 clock to match sopnode-f3
   block:
-    - name: Install linuxptp
-      apt:
-        name: linuxptp
-        state: present
-        update_cache: yes
-    - name: Stop and disable chrony to avoid conflicts
-      service:
-        name: chrony
-        state: stopped
-        enabled: no
+    - name: Stop chrony on sopnode-f1 to avoid conflicts
+      command: ssh sopnode-f1 sudo systemctl stop chrony
+      delegate_to: localhost
       ignore_errors: yes
-    - name: Create ptp4l configuration for sopnode-f3
-      copy:
-        content: |
-          [global]
-          serverOnly 0
-          clientOnly 1
-          domainNumber 0
-          time_stamping hardware
-          [ens21f0]
-          network_transport UDP
-          masterOnly 0
-        dest: /etc/linuxptp/ptp4l.conf
-        mode: '0644'
-    - name: Start and enable ptp4l service
-      service:
-        name: ptp4l
-        state: started
-        enabled: yes
-    - name: Start and enable phc2sys service
-      service:
-        name: phc2sys
-        state: started
-        enabled: yes
-  become: yes
+      changed_when: true
+    - name: Disable chrony on sopnode-f1
+      command: ssh sopnode-f1 sudo systemctl disable chrony
+      delegate_to: localhost
+      ignore_errors: yes
+      changed_when: true
+    - name: Stop systemd-timesyncd on sopnode-f1 to avoid conflicts
+      command: ssh sopnode-f1 sudo systemctl stop systemd-timesyncd
+      delegate_to: localhost
+      ignore_errors: yes
+      changed_when: true
+    - name: Disable systemd-timesyncd on sopnode-f1
+      command: ssh sopnode-f1 sudo systemctl disable systemd-timesyncd
+      delegate_to: localhost
+      ignore_errors: yes
+      changed_when: true
+    - name: Fetch current date from sopnode-f3
+      command: ssh sopnode-f3 date --iso-8601=seconds
+      delegate_to: localhost
+      register: f3_date
+      changed_when: false
+    - name: Set sopnode-f1 date to match sopnode-f3
+      command: ssh sopnode-f1 sudo date --set "{{ f3_date.stdout }}"
+      delegate_to: localhost
+      changed_when: true
