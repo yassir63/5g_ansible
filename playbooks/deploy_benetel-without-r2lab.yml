@@ -35,6 +35,16 @@
     - role: setup/ovs
     - role: setup/optimization/cpu
 
+- name: Apply specific tuning on RAN Node
+  hosts: ran_node
+  become: true
+  roles:
+    - role: setup/k8s/aw2s_specific_tuning
+      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
+    - role: setup/k8s/aw2s_specific_tuning_f3
+      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']
+    - role: setup/k8s/benetel_specific_tuning_f3
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and groups['ran_node'][0] in ['sopnode-f3']
 
 - name: PTP setup on ran_node for benetel scenarios
   hosts: ran_node
@@ -49,7 +59,6 @@
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
-    - role: setup/sriov_operator
 
 
 - name: Configure GRE Tunnel From Core Node to RAN Node
@@ -84,17 +93,6 @@
   roles:
     - role: scenarios/iperf/upf
 
-- name: Apply specific tuning on RAN Node if AW2s RRUs are used
-  hosts: ran_node
-  become: true
-  roles:
-    - role: setup/k8s/aw2s_specific_tuning
-      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
-    - role: setup/k8s/aw2s_specific_tuning_f3
-      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']
-    - role: setup/k8s/benetel_specific_tuning_f3
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and groups['ran_node'][0] in ['sopnode-f3']
-
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
   roles:
@@ -104,6 +102,7 @@
   hosts: ran_node
   become: true
   roles:
+    - role: setup/sriov_operator
     - role: benetel/dpdk_install
     - role: benetel/dpdk_config
 
