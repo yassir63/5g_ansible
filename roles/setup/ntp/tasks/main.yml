@@ -1,32 +1,32 @@
 ---
-- name: Set sopnode-f1 clock to match sopnode-f3
+- name: Set {{ groups['core_node'][0] }} clock to match {{ groups['ran_node'][0] }}
   block:
-    - name: Stop chrony on sopnode-f1 to avoid conflicts
-      command: ssh sopnode-f1 sudo systemctl stop chrony
+    - name: Stop chrony on {{ groups['core_node'][0] }} to avoid conflicts
+      command: ssh {{ groups['core_node'][0] }} sudo systemctl stop chrony
       delegate_to: localhost
       ignore_errors: yes
       changed_when: true
-    - name: Disable chrony on sopnode-f1
-      command: ssh sopnode-f1 sudo systemctl disable chrony
+    - name: Disable chrony on {{ groups['core_node'][0] }}
+      command: ssh {{ groups['core_node'][0] }} sudo systemctl disable chrony
       delegate_to: localhost
       ignore_errors: yes
       changed_when: true
-    - name: Stop systemd-timesyncd on sopnode-f1 to avoid conflicts
-      command: ssh sopnode-f1 sudo systemctl stop systemd-timesyncd
+    - name: Stop systemd-timesyncd on {{ groups['core_node'][0] }} to avoid conflicts
+      command: ssh {{ groups['core_node'][0] }} sudo systemctl stop systemd-timesyncd
       delegate_to: localhost
       ignore_errors: yes
       changed_when: true
-    - name: Disable systemd-timesyncd on sopnode-f1
-      command: ssh sopnode-f1 sudo systemctl disable systemd-timesyncd
+    - name: Disable systemd-timesyncd on {{ groups['core_node'][0] }}
+      command: ssh {{ groups['core_node'][0] }} sudo systemctl disable systemd-timesyncd
       delegate_to: localhost
       ignore_errors: yes
       changed_when: true
-    - name: Fetch current date from sopnode-f3
-      command: ssh sopnode-f3 date --iso-8601=seconds
+    - name: Fetch current date from {{ groups['ran_node'][0] }}
+      command: ssh {{ groups['ran_node'][0] }} date --iso-8601=seconds
       delegate_to: localhost
       register: f3_date
       changed_when: false
-    - name: Set sopnode-f1 date to match sopnode-f3
-      command: ssh sopnode-f1 sudo date --set "{{ f3_date.stdout }}"
+    - name: Set {{ groups['core_node'][0] }} date to match {{ groups['ran_node'][0] }}
+      command: ssh {{ groups['core_node'][0] }} sudo date --set "{{ f3_date.stdout }}"
       delegate_to: localhost
       changed_when: true
