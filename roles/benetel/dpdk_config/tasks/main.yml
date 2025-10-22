@@ -21,6 +21,13 @@
     ip link set {{ dpdk_interface }} mtu {{ dpdk_mtu }}
   changed_when: true
 
+- name: Restart ptp4l service after network configuration
+  ansible.builtin.service:
+    name: ptp4l@{{ dpdk_interface }}
+    state: restarted
+    enabled: yes
+  ignore_errors: yes
+
 - name: "Step 1: Unbind any existing VFs (safe)"
   ansible.builtin.shell: |
     for vf in {{ dpdk_u_plane_pci }} {{ dpdk_c_plane_pci }}; do
