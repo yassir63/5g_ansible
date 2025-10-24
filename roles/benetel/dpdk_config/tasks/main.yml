@@ -13,8 +13,7 @@
 
 - name: Set maximum ring buffers
   ansible.builtin.command: >
-    ethtool -G {{ ran_vars.dpdk_interface }} rx {{ ran_vars.dpdk_max_ring_buffer_size }} \
-    tx {{ ran_vars.dpdk_max_ring_buffer_size }}
+    ethtool -G {{ ran_vars.dpdk_interface }} rx {{ ran_vars.dpdk_max_ring_buffer_size }} tx {{ ran_vars.dpdk_max_ring_buffer_size }}
   changed_when: true
 
 - name: Set MTU on physical interface
