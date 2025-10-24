@@ -106,8 +106,6 @@
   hosts: ran_node
   become: true
   gather_facts: true
-  vars_files:
-    - group_vars/ran_node.yml
   roles:
     - role: setup/sriov_operator
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
