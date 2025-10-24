@@ -10,10 +10,10 @@ ptp_interface: ens15f2
 ptp_domain_number: 24
 
 # DPDK NIC and tuning
-dpdk_interface: ens15f2
+dpdk_interface: ens15f1 # vlan801 is on ifname Ethernet1/35 from sopnode-sw5-rt
 dpdk_max_ring_buffer_size: 8160
 dpdk_mtu: 9216 # was 9600
-dpdk_vlan: 3 #801 # 801 for benetel1, 802 for benetel2, 3 is benetel default
+dpdk_vlan: 801 # 801 for benetel1, 802 for benetel2
 
 dpdk_du_u_plane_mac: "00:11:22:33:44:66"
 dpdk_du_c_plane_mac: "00:11:22:33:44:67"
@@ -27,7 +27,7 @@ sriovResourceNameUplane: "ruvfiou"
 
 dpdk_interface_c: ens15f2#0-1
 dpdk_interface_u: ens15f2#2-3
-pci_dpdk_interface: "0000:3a:00.2" # retrieved with dmesg |grep ens15f2 on sopnode-f3
+pci_dpdk_interface: "0000:3a:00.1" # retrieved with dmesg |grep ens15f1 on sopnode-f3
 
 
 
