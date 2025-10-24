@@ -106,6 +106,27 @@
   hosts: ran_node
   become: true
   gather_facts: true
+  tasks:
+    - name: Debug dpdk_interface
+      ansible.builtin.debug:
+        msg: "dpdk_interface is {{ dpdk_interface | default('undefined') }}"
+    - name: Debug inventory variables
+      ansible.builtin.debug:
+        msg: "nic_interface is {{ nic_interface | default('undefined') }}"
+  roles:
+    - role: setup/sriov_operator
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+    - role: benetel/dpdk_install
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+    - role: benetel/dpdk_config
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+    - role: benetel/sriov_nnp_create    
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+
+- name: Benetel PTP, DPDK and SRIOV setup
+  hosts: ran_node
+  become: true
+  gather_facts: true
   roles:
     - role: setup/sriov_operator
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
