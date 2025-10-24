@@ -52,11 +52,13 @@
   roles:
     - role: setup/optimization/nic
     - role: benetel/ptp
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
   roles:
-    - role: setup/ntp
+    - role: setup/ntp # forces core-node to have similar date than ran-node, else possible k8s certificate issues
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: setup/k8s/cluster_create
     - role: setup/cni
     - role: setup/storage
@@ -99,18 +101,15 @@
   roles:
     - role: monarch/deploy
 
-- name: Benetel PTP and DPDK setup
+- name: Benetel PTP, DPDK and SRIOV setup
   hosts: ran_node
   become: true
   roles:
     - role: setup/sriov_operator
     - role: benetel/dpdk_install
     - role: benetel/dpdk_config
-
-- name: Create SR-IOV Node Policies and Show Status
-  hosts: ran_node
-  roles:
     - role: benetel/sriov_nnp_create    
+  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
 
 - name: Deploy OAI RAN
   hosts: ran_node

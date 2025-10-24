@@ -24,6 +24,15 @@
       kernel.timer_migration=0
     marker: "# {mark} RAN tuning"
 
+- name: Ensure /var/lib/kubelet directory exists
+  ansible.builtin.file:
+    path: /var/lib/kubelet
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: yes
+
 - name: Write kubelet config and apply static CPU options
   copy:
     dest: /var/lib/kubelet/config.yaml
