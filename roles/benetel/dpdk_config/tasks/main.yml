@@ -12,42 +12,49 @@
     state: present
   become: yes
 
-- name: Debug dpdk_interface
-  ansible.builtin.debug:
-    msg: "dpdk_interface is {{ dpdk_interface | default('undefined') }}"
-
-- name: Debug nic_interface
-  ansible.builtin.debug:
-    msg: "nic_interface is {{ nic_interface | default('undefined') }}"
-
-- name: Fail if dpdk_interface or nic_interface is undefined
+- name: Fail if required variables are undefined
   ansible.builtin.fail:
-    msg: "dpdk_interface or nic_interface must be defined in group_vars/ran_node.yml or inventory"
-  when: dpdk_interface is not defined and nic_interface is not defined
+    msg: "Required variable {{ item }} is undefined in group_vars/ran_node.yml"
+  when: vars[item] is not defined
+  loop:
+    - dpdk_interface
+    - dpdk_max_ring_buffer_size
+    - dpdk_mtu
+    - dpdk_vlan
+    - dpdk_du_u_plane_mac
+    - dpdk_du_c_plane_mac
+    - dpdk_u_plane_pci
+    - dpdk_c_plane_pci
+    - dpdk_driver
+    - ptp_interface
+
+- name: Debug variables
+  ansible.builtin.debug:
+    msg: "Using dpdk_interface: {{ dpdk_interface }}, U-plane PCI: {{ dpdk_u_plane_pci }}, C-plane PCI: {{ dpdk_c_plane_pci }}, Driver: {{ dpdk_driver }}"
 
 - name: Set maximum ring buffers
   ansible.builtin.command: >
-    ethtool -G {{ dpdk_interface | default(nic_interface | default('ens15f1')) }} rx {{ dpdk_max_ring_buffer_size | default(8160) }} tx {{ dpdk_max_ring_buffer_size | default(8160) }}
+    ethtool -G {{ dpdk_interface }} rx {{ dpdk_max_ring_buffer_size }} tx {{ dpdk_max_ring_buffer_size }}
   changed_when: true
   become: yes
 
 - name: Set MTU on physical interface
   ansible.builtin.command: >
-    ip link set {{ dpdk_interface | default(nic_interface | default('ens15f1')) }} mtu {{ dpdk_mtu | default(9216) }}
+    ip link set {{ dpdk_interface }} mtu {{ dpdk_mtu }}
   changed_when: true
   become: yes
 
 - name: Restart ptp4l service after network configuration
   ansible.builtin.service:
-    name: ptp4l@{{ ptp_interface | default('ens15f2') }}
+    name: ptp4l@{{ ptp_interface }}
     state: restarted
     enabled: yes
   ignore_errors: yes
   become: yes
 
-- name: "Step 1: Unbind any existing VFs (safe)"
+- name: "Step 1: Unbind any existing VFs"
   ansible.builtin.shell: |
-    for vf in {{ dpdk_u_plane_pci | default('0000:3a:11.0') }} {{ dpdk_c_plane_pci | default('0000:3a:11.1') }}; do
+    for vf in {{ dpdk_u_plane_pci }} {{ dpdk_c_plane_pci }}; do
       /usr/local/bin/dpdk-devbind.py --unbind $vf || true
     done
   args:
@@ -56,55 +63,55 @@
   become: yes
 
 - name: "Step 2: Reset VFs to zero"
-  ansible.builtin.shell: echo 0 > /sys/class/net/{{ dpdk_interface | default(nic_interface | default('ens15f1')) }}/device/sriov_numvfs
+  ansible.builtin.shell: echo 0 > /sys/class/net/{{ dpdk_interface }}/device/sriov_numvfs
   args:
     executable: /bin/bash
   changed_when: true
   become: yes
+  ignore_errors: yes
 
 - name: "Step 3: Verify no VFs remain"
-  ansible.builtin.shell: dpdk-devbind.py --status | grep '{{ dpdk_interface | default(nic_interface | default('ens15f1')) }}' || true
+  ansible.builtin.shell: dpdk-devbind.py --status | grep '{{ dpdk_interface }}' || true
   register: vf_status_reset
   changed_when: false
   become: yes
 
 - name: "Step 4: Create 2 VFs"
-  ansible.builtin.shell: echo 2 > /sys/class/net/{{ dpdk_interface | default(nic_interface | default('ens15f1')) }}/device/sriov_numvfs
+  ansible.builtin.shell: echo 2 > /sys/class/net/{{ dpdk_interface }}/device/sriov_numvfs
   args:
     executable: /bin/bash
   changed_when: true
   become: yes
+  ignore_errors: yes
 
 - name: "Step 5: Configure VF 0 (U-plane)"
   ansible.builtin.command: >
-    ip link set {{ dpdk_interface | default(nic_interface | default('ens15f1')) }} vf 0 mac {{ dpdk_du_u_plane_mac | default('00:11:22:33:44:66') }} vlan {{ dpdk_vlan | default(801) }} mtu {{ dpdk_mtu | default(9216) }}
+    ip link set {{ dpdk_interface }} vf 0 mac {{ dpdk_du_u_plane_mac }} vlan {{ dpdk_vlan }} mtu {{ dpdk_mtu }}
   changed_when: true
   become: yes
 
 - name: "Step 6: Configure VF 1 (C-plane)"
   ansible.builtin.command: >
-    ip link set {{ dpdk_interface | default(nic_interface | default('ens15f1')) }} vf 1 mac {{ dpdk_du_c_plane_mac | default('00:11:22:33:44:67') }} vlan {{ dpdk_vlan | default(801) }} mtu {{ dpdk_mtu | default(9216) }}
+    ip link set {{ dpdk_interface }} vf 1 mac {{ dpdk_du_c_plane_mac }} vlan {{ dpdk_vlan }} mtu {{ dpdk_mtu }}
   changed_when: true
   become: yes
 
 - name: "Step 7: Bind U-plane VF to DPDK driver"
-  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ dpdk_driver | default('vfio-pci') }} {{ dpdk_u_plane_pci | default('0000:3a:11.0') }}
+  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ dpdk_driver }} {{ dpdk_u_plane_pci }}
   changed_when: true
   become: yes
 
 - name: "Step 8: Bind C-plane VF to DPDK driver"
-  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ dpdk_driver | default('vfio-pci') }} {{ dpdk_c_plane_pci | default('0000:3a:11.1') }}
+  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ dpdk_driver }} {{ dpdk_c_plane_pci }}
   changed_when: true
   become: yes
 
 - name: "Step 9: Verify VFs are bound to DPDK driver"
-  ansible.builtin.shell: dpdk-devbind.py --status | grep {{ dpdk_driver | default('vfio-pci') }}
+  ansible.builtin.shell: dpdk-devbind.py --status | grep {{ dpdk_driver }}
   register: vf_status_bound
   changed_when: false
   become: yes
 
-- name: Debug DPDK PCI addresses
+- name: Debug VF binding status
   ansible.builtin.debug:
-    msg: "U-plane PCI: {{ dpdk_u_plane_pci | default('0000:3a:11.0') }}, C-plane PCI: {{ dpdk_c_plane_pci | default('0000:3a:11.1') }}"
-  when: dpdk_u_plane_pci is defined or dpdk_c_plane_pci is defined
-  become: yes
+    msg: "U-plane PCI: {{ dpdk_u_plane_pci }}, C-plane PCI: {{ dpdk_c_plane_pci }}"
