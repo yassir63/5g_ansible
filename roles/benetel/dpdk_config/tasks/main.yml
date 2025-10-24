@@ -16,7 +16,6 @@
       dpdk_u_plane_pci: {{ dpdk_u_plane_pci }}
       dpdk_c_plane_pci: {{ dpdk_c_plane_pci }}
       dpdk_driver: {{ dpdk_driver }}
-      ptp_interface: {{ ptp_interface }}
       
 - name: Ensure pciutils is installed
   ansible.builtin.apt:
@@ -45,14 +44,6 @@
   ansible.builtin.command: >
     ip link set {{ dpdk_interface }} mtu {{ dpdk_mtu }}
   changed_when: true
-  become: yes
-
-- name: Restart ptp4l service after network configuration
-  ansible.builtin.service:
-    name: ptp4l@{{ ptp_interface }}
-    state: restarted
-    enabled: yes
-  ignore_errors: yes
   become: yes
 
 - name: "Step 1: Unbind any existing VFs"

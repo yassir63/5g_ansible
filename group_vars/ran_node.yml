@@ -8,11 +8,9 @@ dpdk_du_c_plane_mac: "00:11:22:33:44:67"
 dpdk_u_plane_pci: "0000:3a:09.0"
 dpdk_c_plane_pci: "0000:3a:09.1"
 dpdk_driver: vfio-pci
-ptp_interface: ens15f2
 sriovNetworkNamespace: sriov-network-operator
 sriovResourceNameCplane: ruvfioc
 sriovResourceNameUplane: ruvfiou
 dpdk_interface_c: ens15f1v0
 dpdk_interface_u: ens15f1v1
 pci_dpdk_interface: "0000:3a:00.1"
-ran_sopnode: sopnode-f3

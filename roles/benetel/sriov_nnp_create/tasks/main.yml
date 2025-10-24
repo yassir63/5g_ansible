@@ -10,11 +10,11 @@
   run_once: true
   delegate_to: localhost
 
-- name: Label node {{ ran_vars.ran_sopnode }} as SR-IOV capable
+- name: Label node {{ inventory_hostname }} as SR-IOV capable
   kubernetes.core.k8s:
     api_version: v1
     kind: Node
-    name: "{{ ran_vars.ran_sopnode }}"
+    name: "{{ inventory_hostname }}"
     definition:
       metadata:
         labels:
@@ -28,7 +28,7 @@
   kubernetes.core.k8s_info:
     api_version: sriovnetwork.openshift.io/v1
     kind: SriovNetworkNodeState
-    name: "{{ ran_vars.ran_sopnode }}"
+    name: "{{ inventory_hostname }}"
     namespace: "{{ ran_vars.sriovNetworkNamespace }}"
   register: sriov_node_state
   until: >
