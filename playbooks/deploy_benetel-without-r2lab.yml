@@ -35,17 +35,6 @@
     - role: setup/ovs
     - role: setup/optimization/cpu
 
-- name: Apply specific tuning on RAN Node
-  hosts: ran_node
-  become: true
-  roles:
-    - role: setup/k8s/aw2s_specific_tuning
-      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
-    - role: setup/k8s/aw2s_specific_tuning_f3
-      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']
-    - role: setup/k8s/benetel_specific_tuning_f3
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and groups['ran_node'][0] in ['sopnode-f3']
-
 - name: PTP setup on ran_node for benetel scenarios
   hosts: ran_node
   become: true
@@ -85,6 +74,17 @@
   roles:
     - role: setup/k8s/cluster_join
       when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+
+- name: Apply specific tuning on RAN Node
+  hosts: ran_node
+  become: true
+  roles:
+    - role: setup/k8s/aw2s_specific_tuning
+      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
+    - role: setup/k8s/aw2s_specific_tuning_f3
+      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']
+    - role: setup/k8s/benetel_specific_tuning_f3
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and groups['ran_node'][0] in ['sopnode-f3']
 
 - name: Deploy Open5gs Core
   hosts: core_node
