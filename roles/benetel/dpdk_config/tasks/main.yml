@@ -1,25 +1,28 @@
 ---
- 
 - name: Ensure pciutils is installed
   ansible.builtin.apt:
     name: pciutils
     state: present
     update_cache: true
+  become: yes
 
 - name: Ensure iavf module is present
   ansible.builtin.modprobe:
     name: iavf
     state: present
+  become: yes
 
 - name: Set maximum ring buffers
   ansible.builtin.command: >
     ethtool -G {{ ran_vars.dpdk_interface }} rx {{ ran_vars.dpdk_max_ring_buffer_size }} tx {{ ran_vars.dpdk_max_ring_buffer_size }}
   changed_when: true
+  become: yes
 
 - name: Set MTU on physical interface
   ansible.builtin.command: >
     ip link set {{ ran_vars.dpdk_interface }} mtu {{ ran_vars.dpdk_mtu }}
   changed_when: true
+  become: yes
 
 - name: Restart ptp4l service after network configuration
   ansible.builtin.service:
@@ -27,6 +30,7 @@
     state: restarted
     enabled: yes
   ignore_errors: yes
+  become: yes
 
 - name: "Step 1: Unbind any existing VFs (safe)"
   ansible.builtin.shell: |
@@ -36,49 +40,58 @@
   args:
     executable: /bin/bash
   changed_when: true
+  become: yes
 
 - name: "Step 2: Reset VFs to zero"
   ansible.builtin.shell: echo 0 > /sys/class/net/{{ ran_vars.dpdk_interface }}/device/sriov_numvfs
   args:
     executable: /bin/bash
   changed_when: true
+  become: yes
 
 - name: "Step 3: Verify no VFs remain"
   ansible.builtin.shell: dpdk-devbind.py --status | grep '{{ ran_vars.dpdk_interface }}' || true
   register: vf_status_reset
   changed_when: false
+  become: yes
 
 - name: "Step 4: Create 2 VFs"
   ansible.builtin.shell: echo 2 > /sys/class/net/{{ ran_vars.dpdk_interface }}/device/sriov_numvfs
   args:
     executable: /bin/bash
   changed_when: true
+  become: yes
 
 - name: "Step 5: Configure VF 0 (U-plane)"
   ansible.builtin.command: >
-    ip link set {{ ran_vars.dpdk_interface }} vf 0 mac {{ ran_vars.dpdk_du_u_plane_mac }} \
-    vlan {{ ran_vars.dpdk_vlan }} mtu {{ ran_vars.dpdk_mtu }}
+    ip link set {{ ran_vars.dpdk_interface }} vf 0 mac {{ ran_vars.dpdk_du_u_plane_mac }} vlan {{ ran_vars.dpdk_vlan }} mtu {{ ran_vars.dpdk_mtu }}
   changed_when: true
+  become: yes
 
 - name: "Step 6: Configure VF 1 (C-plane)"
   ansible.builtin.command: >
-    ip link set {{ ran_vars.dpdk_interface }} vf 1 mac {{ ran_vars.dpdk_du_c_plane_mac }} \
-    vlan {{ ran_vars.dpdk_vlan }} mtu {{ ran_vars.dpdk_mtu }}
+    ip link set {{ ran_vars.dpdk_interface }} vf 1 mac {{ ran_vars.dpdk_du_c_plane_mac }} vlan {{ ran_vars.dpdk_vlan }} mtu {{ ran_vars.dpdk_mtu }}
   changed_when: true
+  become: yes
 
 - name: "Step 7: Bind U-plane VF to DPDK driver"
-  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ ran_vars.dpdk_driver }} \
-  {{ ran_vars.dpdk_u_plane_pci }}
+  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ ran_vars.dpdk_driver }} {{ ran_vars.dpdk_u_plane_pci }}
   changed_when: true
+  become: yes
 
 - name: "Step 8: Bind C-plane VF to DPDK driver"
-  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ ran_vars.dpdk_driver }} \
-  {{ ran_vars.dpdk_c_plane_pci }}
+  ansible.builtin.command: /usr/local/bin/dpdk-devbind.py --bind {{ ran_vars.dpdk_driver }} {{ ran_vars.dpdk_c_plane_pci }}
   changed_when: true
+  become: yes
 
 - name: "Step 9: Verify VFs are bound to DPDK driver"
   ansible.builtin.shell: dpdk-devbind.py --status | grep {{ ran_vars.dpdk_driver }}
   register: vf_status_bound
   changed_when: false
+  become: yes
 
-
+- name: Debug DPDK PCI addresses
+  ansible.builtin.debug:
+    msg: "U-plane PCI: {{ ran_vars.dpdk_u_plane_pci }}, C-plane PCI: {{ ran_vars.dpdk_c_plane_pci }}"
+  when: ran_vars.dpdk_u_plane_pci is defined and ran_vars.dpdk_c_plane_pci is defined
+  become: yes
