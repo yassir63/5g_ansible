@@ -51,8 +51,9 @@
   become: true
   roles:
     - role: setup/optimization/nic
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: benetel/ptp
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
@@ -106,10 +107,13 @@
   become: true
   roles:
     - role: setup/sriov_operator
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: benetel/dpdk_install
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: benetel/dpdk_config
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: benetel/sriov_nnp_create    
-  when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
 
 - name: Deploy OAI RAN
   hosts: ran_node
