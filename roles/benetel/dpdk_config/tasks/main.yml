@@ -19,7 +19,7 @@
 - name: Fail if dpdk_interface is undefined
   ansible.builtin.fail:
     msg: "Required variable dpdk_interface is undefined in group_vars/ran_node.yml"
-    when: dpdk_interface is not defined
+    when: vars['dpdk_interface'] is not defined
 
 - name: Debug variables
   ansible.builtin.debug:
