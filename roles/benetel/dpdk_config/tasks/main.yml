@@ -1,23 +1,4 @@
 ---
-- name: Load variables from group_vars/ran_node.yml
-  ansible.builtin.include_vars:
-    file: /home/turletti/xp/post5g-beta/ptp_test/5g_ansible/group_vars/ran_node.yml
-
-- name: Debug loaded variables
-  ansible.builtin.debug:
-    msg: |
-      Loaded variables:
-      dpdk_interface: {{ dpdk_interface }}
-      dpdk_max_ring_buffer_size: {{ dpdk_max_ring_buffer_size }}
-      dpdk_mtu: {{ dpdk_mtu }}
-      dpdk_vlan: {{ dpdk_vlan }}
-      dpdk_du_u_plane_mac: {{ dpdk_du_u_plane_mac }}
-      dpdk_du_c_plane_mac: {{ dpdk_du_c_plane_mac }}
-      dpdk_u_plane_pci: {{ dpdk_u_plane_pci }}
-      dpdk_c_plane_pci: {{ dpdk_c_plane_pci }}
-      dpdk_driver: {{ dpdk_driver }}
-      ptp_interface: {{ ptp_interface }}
-      
 - name: Ensure pciutils is installed
   ansible.builtin.apt:
     name: pciutils
@@ -30,15 +11,6 @@
     name: iavf
     state: present
   become: yes
-
-- name: Load variables from group_vars/ran_node.yml
-  ansible.builtin.include_vars:
-    file: /home/turletti/xp/post5g-beta/ptp_test/5g_ansible/group_vars/ran_node.yml
-
-- name: Fail if dpdk_interface is undefined
-  ansible.builtin.fail:
-    msg: "Required variable dpdk_interface is undefined in group_vars/ran_node.yml"
-    when: vars['dpdk_interface'] is not defined
 
 - name: Debug variables
   ansible.builtin.debug:
