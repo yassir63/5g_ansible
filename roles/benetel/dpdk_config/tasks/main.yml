@@ -16,21 +16,10 @@
   ansible.builtin.include_vars:
     file: /home/turletti/xp/post5g-beta/ptp_test/5g_ansible/group_vars/ran_node.yml
 
-- name: Fail if required variables are undefined
+- name: Fail if dpdk_interface is undefined
   ansible.builtin.fail:
-    msg: "Required variable {{ item }} is undefined in group_vars/ran_node.yml"
-    when: lookup('vars', item, default=None) is none
-    loop:
-      - dpdk_interface
-      - dpdk_max_ring_buffer_size
-      - dpdk_mtu
-      - dpdk_vlan
-      - dpdk_du_u_plane_mac
-      - dpdk_du_c_plane_mac
-      - dpdk_u_plane_pci
-      - dpdk_c_plane_pci
-      - dpdk_driver
-      - ptp_interface
+    msg: "Required variable dpdk_interface is undefined in group_vars/ran_node.yml"
+    when: dpdk_interface is not defined
 
 - name: Debug variables
   ansible.builtin.debug:
