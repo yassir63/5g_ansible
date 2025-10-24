@@ -1,33 +1,19 @@
 ---
-# Defaults for all hosts in group 'ran_node'
-ran_sopnode: sopnode-f3
-
-# RT Ubuntu runs as root only
-ansible_user: root
-
-# PTP
-ptp_interface: ens15f2
-ptp_domain_number: 24
-
-# DPDK NIC and tuning
-dpdk_interface: ens15f1 # vlan801 is on ifname Ethernet1/35 from sopnode-sw5-rt
+dpdk_interface: ens15f1
 dpdk_max_ring_buffer_size: 8160
-dpdk_mtu: 9216 # was 9600
-dpdk_vlan: 801 # 801 for benetel1, 802 for benetel2
-
+dpdk_mtu: 9216
+dpdk_vlan: 801
 dpdk_du_u_plane_mac: "00:11:22:33:44:66"
 dpdk_du_c_plane_mac: "00:11:22:33:44:67"
 dpdk_u_plane_pci: "0000:3a:09.0"
 dpdk_c_plane_pci: "0000:3a:09.1"
-dpdk_driver: "vfio-pci"
-
-sriovNetworkNamespace: "sriov-network-operator"
-sriovResourceNameCplane: "ruvfioc"
-sriovResourceNameUplane: "ruvfiou"
-
+dpdk_driver: vfio-pci
+ptp_interface: ens15f2
+sriovNetworkNamespace: sriov-network-operator
+sriovResourceNameCplane: ruvfioc
+sriovResourceNameUplane: ruvfiou
 dpdk_interface_c: ens15f1v0
 dpdk_interface_u: ens15f1v1
-pci_dpdk_interface: "0000:3a:00.1" # retrieved with dmesg |grep ens15f1 on sopnode-f3
-
+pci_dpdk_interface: "0000:3a:00.1"
 
 
