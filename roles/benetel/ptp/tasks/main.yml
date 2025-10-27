@@ -10,60 +10,29 @@
   ignore_errors: yes
   become: yes
 
-- name: Install linuxptp build dependencies
+- name: Install linuxptp build dependencies and git
   ansible.builtin.apt:
     name:
       - gcc
       - make
       - libpcap-dev
       - linux-headers-{{ ansible_kernel }}
-      - gnupg
+      - git
     state: present
     update_cache: true
   become: yes
 
-- name: Download linuxptp 4.4 source from SourceForge
-  ansible.builtin.get_url:
-    url: https://sourceforge.net/projects/linuxptp/files/v4.4/linuxptp-4.4.tar.gz/download
-    dest: /tmp/linuxptp-4.4.tar.gz
-    mode: '0644'
-  become: yes
-
-- name: Download linuxptp 4.4 GPG signature
-  ansible.builtin.get_url:
-    url: https://sourceforge.net/projects/linuxptp/files/v4.4/linuxptp-4.4.tar.gz.asc/download
-    dest: /tmp/linuxptp-4.4.tar.gz.asc
-    mode: '0644'
-  become: yes
-
-- name: Import linuxptp GPG key for verification
-  ansible.builtin.shell: |
-    gpg --keyserver keyserver.ubuntu.com --recv-keys 0xB4C8C1C7
-  args:
-    executable: /bin/bash
-    creates: /root/.gnupg/pubring.kbx
-  become: yes
-  ignore_errors: yes
-
-- name: Verify linuxptp 4.4 source signature
-  ansible.builtin.shell: |
-    gpg --verify /tmp/linuxptp-4.4.tar.gz.asc /tmp/linuxptp-4.4.tar.gz
-  args:
-    executable: /bin/bash
-  become: yes
-  ignore_errors: yes
-
-- name: Extract linuxptp 4.4 source
-  ansible.builtin.unarchive:
-    src: /tmp/linuxptp-4.4.tar.gz
-    dest: /tmp
-    remote_src: yes
-    creates: /tmp/linuxptp-4.4
+- name: Clone linuxptp Git repository
+  ansible.builtin.git:
+    repo: git://git.code.sf.net/p/linuxptp/code
+    dest: /tmp/linuxptp
+    version: v4.4
+    depth: 1
   become: yes
 
 - name: Build and install linuxptp 4.4
   ansible.builtin.shell: |
-    cd /tmp/linuxptp-4.4
+    cd /tmp/linuxptp
     make
     make install
   args:
