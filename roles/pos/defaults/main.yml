@@ -18,7 +18,7 @@ boot_parameters_f3: >-
   tsc=nowatchdog nmi_watchdog=0 softlockup_panic=0 audit=0
 # Boot parameters for ran node on rt ubuntu for Benetel RRUs
 boot_parameters_rt: >-
-  isolcpus=managed_irq,6-35 nohz_full=6-35 nohz=on rcu_nocbs=6-35
+  isolcpus=managed_irq,6-63 nohz_full=6-63 nohz=on rcu_nocbs=6-63
   kthread_cpus=0-5 irqaffinity=0-5 rcu_nocb_poll selinux=0 enforcing=0
   crashkernel=auto intel_pstate=disable nosoftlockup hugepagesz=1G
   hugepages=40 hugepagesz=2M hugepages=0 default_hugepagesz=1G
