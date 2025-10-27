@@ -22,13 +22,15 @@
     update_cache: true
   become: yes
 
-- name: Clone linuxptp Git repository
+- name: Clone linuxptp Git repository using HTTP
   ansible.builtin.git:
-    repo: git://git.code.sf.net/p/linuxptp/code
+    repo: http://git.code.sf.net/p/linuxptp/code
     dest: /tmp/linuxptp
     version: v4.4
     depth: 1
   become: yes
+  register: git_clone
+  ignore_errors: yes
 
 - name: Build and install linuxptp 4.4
   ansible.builtin.shell: |
