@@ -1,15 +1,4 @@
 ---
-- name: Disable NTP services to avoid conflicts with PTP
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: stopped
-    enabled: no
-  loop:
-    - systemd-timesyncd
-    - chronyd
-  ignore_errors: yes
-  become: yes
-
 - name: Install linuxptp build dependencies and git
   ansible.builtin.apt:
     name:
@@ -61,10 +50,29 @@
     mode: '0644'
   become: yes
 
-- name: Ensure phc2sys is enabled and running
+- name: Install phc2sys systemd unit
+  ansible.builtin.template:
+    src: phc2sys.service.j2
+    dest: /usr/lib/systemd/system/phc2sys.service
+    mode: '0644'
+
+- name: Disable NTP via timedatectl
+  ansible.builtin.command: timedatectl set-ntp false
+  changed_when: false
+
+- name: Reload systemd daemon
   ansible.builtin.systemd:
-    name: phc2sys@{{ ptp_interface }}
+    daemon_reload: true
+
+- name: Enable and start ptp4l
+  ansible.builtin.service:
+    name: ptp4l
+    enabled: true
     state: started
-    enabled: yes
-  become: yes
-  ignore_errors: yes
+
+- name: Enable and start phc2sys
+  ansible.builtin.service:
+    name: phc2sys
+    enabled: true
+    state: started
+
