@@ -1,26 +1,9 @@
 ---
 - name: Set {{ groups['core_node'][0] }} clock to match {{ groups['ran_node'][0] }}
   block:
-    - name: Stop chrony on {{ groups['core_node'][0] }} to avoid conflicts
-      command: ssh {{ groups['core_node'][0] }} sudo systemctl stop chrony
-      delegate_to: localhost
-      ignore_errors: yes
-      changed_when: true
-    - name: Disable chrony on {{ groups['core_node'][0] }}
-      command: ssh {{ groups['core_node'][0] }} sudo systemctl disable chrony
-      delegate_to: localhost
-      ignore_errors: yes
-      changed_when: true
-    - name: Stop systemd-timesyncd on {{ groups['core_node'][0] }} to avoid conflicts
-      command: ssh {{ groups['core_node'][0] }} sudo systemctl stop systemd-timesyncd
-      delegate_to: localhost
-      ignore_errors: yes
-      changed_when: true
-    - name: Disable systemd-timesyncd on {{ groups['core_node'][0] }}
-      command: ssh {{ groups['core_node'][0] }} sudo systemctl disable systemd-timesyncd
-      delegate_to: localhost
-      ignore_errors: yes
-      changed_when: true
+    - name: Disable NTP via timedatectl
+      ansible.builtin.command: timedatectl set-ntp false
+      changed_when: false
     - name: Fetch current date from {{ groups['ran_node'][0] }}
       command: ssh {{ groups['ran_node'][0] }} date --iso-8601=seconds
       delegate_to: localhost
