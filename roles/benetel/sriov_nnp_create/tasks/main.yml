@@ -85,5 +85,5 @@
         linkType: eth
         nicSelector:
           pfNames: ["{{ ran_vars.dpdk_interface_u }}"]
-          rootDevices: ["{{ ran_vars.pci_dpdk_interface }}"]
+          #rootDevices: ["{{ ran_vars.pci_dpdk_interface }}"]
 
