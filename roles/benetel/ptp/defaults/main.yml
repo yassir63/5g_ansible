@@ -5,10 +5,10 @@ ptp_time_stamping: hardware
 ptp_tx_timestamp_timeout: 10
 ptp_logging_level: 6
 ptp_summary_interval: 0
-ptp_log_announce_interval 1
-ptp_log_sync_interval -4
-ptp_verbose 1
+ptp_log_announce_interval: 1
+ptp_log_sync_interval: -4
+ptp_verbose: 1
 ptp_interface: ens15f2
-ptp_network_trasnport L2
+ptp_network_transport: L2
 
 
