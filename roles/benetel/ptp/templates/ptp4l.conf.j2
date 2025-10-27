@@ -5,23 +5,12 @@ time_stamping           {{ ptp_time_stamping }}
 tx_timestamp_timeout    {{ ptp_tx_timestamp_timeout }}
 logging_level           {{ ptp_logging_level }}
 summary_interval        {{ ptp_summary_interval }}
-logAnnounceInterval     1
-logSyncInterval         -3
-logMinDelayReqInterval  -3
-transportSpecific       0
-fault_reset_interval    10
-clock_servo             pi
-pi_proportional_const   0.9
-pi_integral_const       0.4
-first_step_threshold    0.000050
-step_threshold          0.000050
-clockClass              6
-priority1               128
-priority2               128
-
+logAnnounceInterval     {{ ptp_ptp_log_announce_interval }}
+logSyncInterval         {{ ptp_log_sync_interval }}
+verbose                 {{ ptp_verbose }}
 
 [{{ ptp_interface }}]
-network_transport       L2
-hybrid_e2e              0
+network_transport       {{ ptp_network_transport }}
+
 
 

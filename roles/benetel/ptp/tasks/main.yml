@@ -1,65 +1,100 @@
 ---
+- name: Disable NTP services to avoid conflicts with PTP
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop:
+    - systemd-timesyncd
+    - chronyd
+  ignore_errors: yes
+  become: yes
 
-- name: Ensure linuxptp is installed
+- name: Install linuxptp build dependencies
   ansible.builtin.apt:
-    name: linuxptp
+    name:
+      - gcc
+      - make
+      - libpcap-dev
+      - linux-headers-{{ ansible_kernel }}
+      - gnupg
     state: present
     update_cache: true
+  become: yes
+
+- name: Download linuxptp 4.4 source from SourceForge
+  ansible.builtin.get_url:
+    url: https://sourceforge.net/projects/linuxptp/files/v4.4/linuxptp-4.4.tar.gz/download
+    dest: /tmp/linuxptp-4.4.tar.gz
+    mode: '0644'
+  become: yes
+
+- name: Download linuxptp 4.4 GPG signature
+  ansible.builtin.get_url:
+    url: https://sourceforge.net/projects/linuxptp/files/v4.4/linuxptp-4.4.tar.gz.asc/download
+    dest: /tmp/linuxptp-4.4.tar.gz.asc
+    mode: '0644'
+  become: yes
+
+- name: Import linuxptp GPG key for verification
+  ansible.builtin.shell: |
+    gpg --keyserver keyserver.ubuntu.com --recv-keys 0xB4C8C1C7
+  args:
+    executable: /bin/bash
+    creates: /root/.gnupg/pubring.kbx
+  become: yes
+  ignore_errors: yes
+
+- name: Verify linuxptp 4.4 source signature
+  ansible.builtin.shell: |
+    gpg --verify /tmp/linuxptp-4.4.tar.gz.asc /tmp/linuxptp-4.4.tar.gz
+  args:
+    executable: /bin/bash
+  become: yes
+  ignore_errors: yes
+
+- name: Extract linuxptp 4.4 source
+  ansible.builtin.unarchive:
+    src: /tmp/linuxptp-4.4.tar.gz
+    dest: /tmp
+    remote_src: yes
+    creates: /tmp/linuxptp-4.4
+  become: yes
+
+- name: Build and install linuxptp 4.4
+  ansible.builtin.shell: |
+    cd /tmp/linuxptp-4.4
+    make
+    make install
+  args:
+    creates: /usr/local/sbin/ptp4l
+  become: yes
 
 - name: Ensure /etc/sysconfig exists
   ansible.builtin.file:
     path: /etc/sysconfig
     state: directory
     mode: '0755'
+  become: yes
 
 - name: Install ptp4l.conf
   ansible.builtin.template:
     src: ptp4l.conf.j2
     dest: /etc/ptp4l.conf
     mode: '0644'
+  become: yes
 
 - name: Install /etc/sysconfig/ptp4l
   ansible.builtin.template:
     src: sysconfig_ptp4l.j2
     dest: /etc/sysconfig/ptp4l
     mode: '0644'
+  become: yes
 
-- name: Install /etc/sysconfig/phc2sys
-  ansible.builtin.template:
-    src: sysconfig_phc2sys.j2
-    dest: /etc/sysconfig/phc2sys
-    mode: '0644'
-
-- name: Install ptp4l systemd unit
-  ansible.builtin.template:
-    src: ptp4l.service.j2
-    dest: /usr/lib/systemd/system/ptp4l.service
-    mode: '0644'
-
-- name: Install phc2sys systemd unit
-  ansible.builtin.template:
-    src: phc2sys.service.j2
-    dest: /usr/lib/systemd/system/phc2sys.service
-    mode: '0644'
-
-- name: Disable NTP via timedatectl
-  ansible.builtin.command: timedatectl set-ntp false
-  changed_when: false
-
-- name: Reload systemd daemon
+- name: Ensure phc2sys is enabled and running
   ansible.builtin.systemd:
-    daemon_reload: true
-
-- name: Enable and start ptp4l
-  ansible.builtin.service:
-    name: ptp4l
-    enabled: true
+    name: phc2sys@{{ ptp_interface }}
     state: started
-
-- name: Enable and start phc2sys
-  ansible.builtin.service:
-    name: phc2sys
-    enabled: true
-    state: started
-
-
+    enabled: yes
+  become: yes
+  ignore_errors: yes
