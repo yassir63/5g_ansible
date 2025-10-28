@@ -90,8 +90,6 @@
     ue_count: 4
   roles:
     - role: 5g/ran/ran_srsRAN
-      vars:
-        version: "srsRAN"
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
