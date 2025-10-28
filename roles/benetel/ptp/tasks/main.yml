@@ -109,6 +109,11 @@
   changed_when: false
   become: yes
 
+- name: Set timezone to Europe/Paris
+  community.general.timezone:
+    name: Europe/Paris
+  become: yes
+
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: true
