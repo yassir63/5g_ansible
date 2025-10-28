@@ -27,13 +27,13 @@
   register: git_clone
   ignore_errors: yes
 
-- name: Build and install linuxptp v4.4
+- name: Build and install linuxptp v4.4 to /usr/sbin
   ansible.builtin.shell: |
     cd /tmp/linuxptp
     make -j$(nproc)
-    make install
+    make install DESTDIR=/usr
   args:
-    creates: /usr/local/sbin/ptp4l
+    creates: /usr/sbin/ptp4l
   become: yes
 
 # ------------------------------------------------------------
