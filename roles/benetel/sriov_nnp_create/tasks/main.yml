@@ -99,5 +99,5 @@
           feature.node.kubernetes.io/network-sriov.capable: "true"
         numVfs: 4
         priority: 11
-        resourceName: "{{ ran_vars.sriovResourceNameCplane }}"
+        resourceName: "{{ ran_vars.sriovResourceNameUplane }}"
 
