@@ -48,8 +48,8 @@
       apiVersion: sriovnetwork.openshift.io/v1
       kind: SriovNetworkNodePolicy
       metadata:
-        name: {{ ran_vars.sriovResourceNameCplane }}
-        namespace: {{ ran_vars.sriovNetworkNamespace }}
+        name: "{{ ran_vars.sriovResourceNameCplane }}"
+        namespace: "{{ ran_vars.sriovNetworkNamespace }}"
       spec:
         deviceType: vfio-pci
         isRdma: false
@@ -57,9 +57,9 @@
         mtu: 9216
         nicSelector:
           pfNames:
-          - {{ ran_vars.dpdk_interface_c }}
+          - "{{ ran_vars.dpdk_interface_c }}"
           rootDevices:
-          - {{ ran_vars.pci_dpdk_interface }}
+          - "{{ ran_vars.pci_dpdk_interface }}"
         nodeSelector:
           feature.node.kubernetes.io/network-sriov.capable: "true"
         numVfs: 4
@@ -73,8 +73,8 @@
       apiVersion: sriovnetwork.openshift.io/v1
       kind: SriovNetworkNodePolicy
       metadata:
-        name: {{ ran_vars.sriovResourceNameUplane }}
-        namespace: {{ ran_vars.sriovNetworkNamespace }}
+        name: "{{ ran_vars.sriovResourceNameUplane }}"
+        namespace: "{{ ran_vars.sriovNetworkNamespace }}"
       spec:
         deviceType: vfio-pci
         isRdma: false
@@ -82,9 +82,9 @@
         mtu: 9216
         nicSelector:
           pfNames:
-          - {{ ran_vars.dpdk_interface_u }}
+          - "{{ ran_vars.dpdk_interface_u }}"
           rootDevices:
-          - {{ ran_vars.pci_dpdk_interface }}
+          - "{{ ran_vars.pci_dpdk_interface }}"
         nodeSelector:
           feature.node.kubernetes.io/network-sriov.capable: "true"
         numVfs: 4
