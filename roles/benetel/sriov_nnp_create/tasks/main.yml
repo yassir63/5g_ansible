@@ -10,6 +10,13 @@
   run_once: true
   delegate_to: localhost
 
+- name: Install Python kubernetes library on worker ran_node
+  ansible.builtin.pip:
+    name: kubernetes
+    executable: pip3
+    state: present
+  become: yes
+
 - name: Label node {{ inventory_hostname }} as SR-IOV capable
   kubernetes.core.k8s:
     api_version: v1
