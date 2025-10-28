@@ -48,21 +48,23 @@
       apiVersion: sriovnetwork.openshift.io/v1
       kind: SriovNetworkNodePolicy
       metadata:
-        name: "{{ ran_vars.sriovResourceNameCplane }}"
-        namespace: "{{ ran_vars.sriovNetworkNamespace }}"
+        name: {{ ran_vars.sriovResourceNameCplane }}
+        namespace: {{ ran_vars.sriovNetworkNamespace }}
       spec:
-        resourceName: "{{ ran_vars.sriovResourceNameCplane }}"
-        nodeSelector:
-          feature.node.kubernetes.io/network-sriov.capable: "true"
-        priority: 12
-        mtu: 9216
         deviceType: vfio-pci
         isRdma: false
-        numVfs: 4
         linkType: eth
+        mtu: 9216
         nicSelector:
-          pfNames: ["{{ ran_vars.dpdk_interface_c }}"]
-          rootDevices: ["{{ ran_vars.pci_dpdk_interface }}"]
+          pfNames:
+          - {{ ran_vars.dpdk_interface_c }}
+          rootDevices:
+          - {{ ran_vars.pci_dpdk_interface }}
+        nodeSelector:
+          feature.node.kubernetes.io/network-sriov.capable: "true"
+        numVfs: 4
+        priority: 12
+        resourceName: "{{ ran_vars.sriovResourceNameCplane }}"
 
 - name: Create SR-IOV Node Policies for U_PLANE
   kubernetes.core.k8s:
@@ -71,19 +73,21 @@
       apiVersion: sriovnetwork.openshift.io/v1
       kind: SriovNetworkNodePolicy
       metadata:
-        name: "{{ ran_vars.sriovResourceNameUplane }}"
-        namespace: "{{ ran_vars.sriovNetworkNamespace }}"
+        name: {{ ran_vars.sriovResourceNameUplane }}
+        namespace: {{ ran_vars.sriovNetworkNamespace }}
       spec:
-        resourceName: "{{ ran_vars.sriovResourceNameUplane }}"
-        nodeSelector:
-          feature.node.kubernetes.io/network-sriov.capable: "true"
-        priority: 11
-        mtu: 9216
         deviceType: vfio-pci
         isRdma: false
-        numVfs: 4
         linkType: eth
+        mtu: 9216
         nicSelector:
-          pfNames: ["{{ ran_vars.dpdk_interface_u }}"]
-          #rootDevices: ["{{ ran_vars.pci_dpdk_interface }}"]
+          pfNames:
+          - {{ ran_vars.dpdk_interface_u }}
+          rootDevices:
+          - {{ ran_vars.pci_dpdk_interface }}
+        nodeSelector:
+          feature.node.kubernetes.io/network-sriov.capable: "true"
+        numVfs: 4
+        priority: 11
+        resourceName: "{{ ran_vars.sriovResourceNameCplane }}"
 
