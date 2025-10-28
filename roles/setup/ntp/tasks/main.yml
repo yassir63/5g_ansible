@@ -4,6 +4,9 @@
     - name: Disable NTP via timedatectl
       ansible.builtin.command: timedatectl set-ntp false
       changed_when: false
+    - name: Set timezone to Europe/Paris
+      community.general.timezone:
+        name: Europe/Paris
     - name: Fetch current date from {{ groups['ran_node'][0] }}
       command: ssh {{ groups['ran_node'][0] }} date --iso-8601=seconds
       delegate_to: localhost
