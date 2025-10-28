@@ -23,7 +23,6 @@
     state: patched
   delegate_to: "{{ groups['core_node'][0] }}"   # run from control/master node
 
-
 - name: Wait until SR-IOV operator detects NICs on the node
   kubernetes.core.k8s_info:
     api_version: sriovnetwork.openshift.io/v1
@@ -31,15 +30,19 @@
     name: "{{ inventory_hostname }}"
     namespace: "{{ ran_vars.sriovNetworkNamespace }}"
   register: sriov_node_state
-  until: >
-    sriov_node_state.resources | length > 0 and
-    (
-      sriov_node_state.resources[0].status.interfaces | default([]) |
-      selectattr('name', 'equalto', ran_vars.dpdk_interface_c.split('#')[0]) |
-      list | length
-    ) > 0
-  retries: 20     # give it more time to reconcile
-  delay: 10
+  until:
+    - sriov_node_state.resources is defined
+    - sriov_node_state.resources | length > 0
+    - sriov_node_state.resources[0].status is defined
+    - sriov_node_state.resources[0].status.interfaces is defined
+    - >
+      sriov_node_state.resources[0].status.interfaces
+      | selectattr('name', 'equalto', ran_vars.dpdk_interface_c.split('#')[0])
+      | list | length > 0
+  retries: 30
+  delay: 15
+  failed_when: false
+  delegate_to: "{{ groups['core_node'][0] }}"
 
 - name: Create SR-IOV Node Policies for C_PLANE
   kubernetes.core.k8s:
