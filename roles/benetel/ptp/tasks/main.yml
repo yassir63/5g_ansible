@@ -27,32 +27,28 @@
   register: git_clone
   ignore_errors: yes
 
-- name: Build and install linuxptp v4.4 to /usr/sbin
+- name: Build and install linuxptp v4.4 to /usr/local/sbin
   ansible.builtin.shell: |
     cd /tmp/linuxptp
     make -j$(nproc)
-    make install DESTDIR=/usr
+    make install 
   args:
-    creates: /usr/sbin/ptp4l
+    creates: /usr/local/sbin/ptp4l
   become: yes
 
 # ------------------------------------------------------------
-# 3. Verify binaries are installed
+# 3. Copy binaries to /usr/sbin
 # ------------------------------------------------------------
-- name: Verify ptp4l and phc2sys are in /usr/local/sbin
-  ansible.builtin.stat:
-    path: "{{ item }}"
+- name: Copy ptp4l and phc2sys to /usr/sbin
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: '0755'
+    remote_src: yes
   loop:
-    - /usr/local/sbin/ptp4l
-    - /usr/local/sbin/phc2sys
-  register: ptp_bins
+    - { src: '/usr/local/sbin/ptp4l', dest: '/usr/sbin/ptp4l' }
+    - { src: '/usr/local/sbin/phc2sys', dest: '/usr/sbin/phc2sys' }
   become: yes
-
-- name: Fail if binaries are missing
-  ansible.builtin.fail:
-    msg: "linuxptp v4.4 binary {{ item.item }} not found after install"
-  when: not item.stat.exists
-  loop: "{{ ptp_bins.results }}"
 
 # ------------------------------------------------------------
 # 4. Ensure /etc/sysconfig exists
