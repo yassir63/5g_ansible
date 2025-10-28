@@ -1,5 +1,8 @@
 ---
-- name: Install linuxptp build dependencies and git
+# ------------------------------------------------------------
+# 1. Install build dependencies
+# ------------------------------------------------------------
+- name: Install build dependencies for linuxptp v4.4
   ansible.builtin.apt:
     name:
       - gcc
@@ -11,7 +14,10 @@
     update_cache: true
   become: yes
 
-- name: Clone linuxptp Git repository from GitHub
+# ------------------------------------------------------------
+# 2. Clone and build linuxptp v4.4 from source
+# ------------------------------------------------------------
+- name: Clone linuxptp v4.4
   ansible.builtin.git:
     repo: https://github.com/richardcochran/linuxptp.git
     dest: /tmp/linuxptp
@@ -19,16 +25,38 @@
     depth: 1
   become: yes
   register: git_clone
+  ignore_errors: yes
 
-- name: Build and install linuxptp 4.4
+- name: Build and install linuxptp v4.4
   ansible.builtin.shell: |
     cd /tmp/linuxptp
-    make
+    make -j$(nproc)
     make install
   args:
     creates: /usr/local/sbin/ptp4l
   become: yes
 
+# ------------------------------------------------------------
+# 3. Verify binaries are installed
+# ------------------------------------------------------------
+- name: Verify ptp4l and phc2sys are in /usr/local/sbin
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/local/sbin/ptp4l
+    - /usr/local/sbin/phc2sys
+  register: ptp_bins
+  become: yes
+
+- name: Fail if binaries are missing
+  ansible.builtin.fail:
+    msg: "linuxptp v4.4 binary {{ item.item }} not found after install"
+  when: not item.stat.exists
+  loop: "{{ ptp_bins.results }}"
+
+# ------------------------------------------------------------
+# 4. Ensure /etc/sysconfig exists
+# ------------------------------------------------------------
 - name: Ensure /etc/sysconfig exists
   ansible.builtin.file:
     path: /etc/sysconfig
@@ -36,6 +64,9 @@
     mode: '0755'
   become: yes
 
+# ------------------------------------------------------------
+# 5. Install configuration files
+# ------------------------------------------------------------
 - name: Install ptp4l.conf
   ansible.builtin.template:
     src: ptp4l.conf.j2
@@ -50,29 +81,53 @@
     mode: '0644'
   become: yes
 
+- name: Install /etc/sysconfig/phc2sys
+  ansible.builtin.template:
+    src: sysconfig_phc2sys.j2
+    dest: /etc/sysconfig/phc2sys
+    mode: '0644'
+  become: yes
+
+# ------------------------------------------------------------
+# 6. Install systemd units 
+# ------------------------------------------------------------
+- name: Install ptp4l systemd unit
+  ansible.builtin.template:
+    src: ptp4l.service.j2
+    dest: /usr/lib/systemd/system/ptp4l.service
+    mode: '0644'
+  become: yes
+
 - name: Install phc2sys systemd unit
   ansible.builtin.template:
     src: phc2sys.service.j2
     dest: /usr/lib/systemd/system/phc2sys.service
     mode: '0644'
+  become: yes
 
+# ------------------------------------------------------------
+# 7. Reload systemd and start services
+# ------------------------------------------------------------
 - name: Disable NTP via timedatectl
   ansible.builtin.command: timedatectl set-ntp false
   changed_when: false
+  become: yes
 
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: true
+  become: yes
 
 - name: Enable and start ptp4l
   ansible.builtin.service:
     name: ptp4l
     enabled: true
     state: started
+  become: yes
 
 - name: Enable and start phc2sys
   ansible.builtin.service:
     name: phc2sys
     enabled: true
     state: started
-
+  become: yes
