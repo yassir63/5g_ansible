@@ -17,4 +17,4 @@
       kind: KubeProxyConfiguration
       ipvs:
         strictARP: true
-  when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']
+  when: rru in ['jaguar', 'panther']
