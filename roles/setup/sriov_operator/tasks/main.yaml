@@ -53,7 +53,7 @@
       become: yes
 
     # ----------------------------------------------------------------------
-    # Fix: kubernetes Python lib + PEP-668 + pip3 path
+    # Fix: kubernetes Python lib + venv + correct pip path
     # ----------------------------------------------------------------------
     - name: Install python3-venv and python3-pip
       ansible.builtin.apt:
@@ -69,11 +69,11 @@
         creates: /opt/ansible-k8s-venv/bin/activate
       become: yes
 
-    - name: Install kubernetes Python library in venv
+    - name: Install kubernetes Python library in venv using venv's pip
       ansible.builtin.pip:
         name: kubernetes
         state: present
-        executable: /usr/local/bin/pip3
+        executable: /opt/ansible-k8s-venv/bin/pip
       become: yes
 
     - name: Set ansible_python_interpreter to use venv
