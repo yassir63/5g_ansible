@@ -43,45 +43,13 @@
         clone: yes
         version: master
 
-#    - name: Install Go dependency for sriov-network-operator
-#      ansible.builtin.shell: |
-#        /usr/local/go/bin/go get github.com/k8snetworkplumbingwg/sriov-network-operator
-#      args:
-#        chdir: /root/sriov-network-operator
-
-#    - name: Ensure python3-pip is installed
-#      ansible.builtin.package:
-#        name: python3-pip
-#        state: present
-
-#    - name: Install required Python Kubernetes library
-#      ansible.builtin.pip:
-#        name: kubernetes
-#       state: present
-#        executable: pip3
-
-#    - name: Ensure cert-manager is installed
-#      kubernetes.core.k8s:
-#        state: present
-#        src: https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
-
-
-#    - name: Wait until cert-manager pods are ready
-#      kubernetes.core.k8s_info:
-#        kind: Pod
-#        namespace: cert-manager
-#        label_selectors:
-#          - app=cert-manager
-#      register: cert_manager_pods
-#      until: cert_manager_pods.resources | length > 0 and
-#             (cert_manager_pods.resources
-#               | map(attribute='status.containerStatuses')
-#               | map('map', attribute='ready')
-#               | map('min')
-#               | min)
-#      retries: 30
-#      delay: 10
-
+    - name: Install kubernetes Python library (required for k8s modules)
+      ansible.builtin.pip:
+        name: kubernetes
+        state: present
+        executable: /usr/bin/pip3
+      become: yes
+  
     - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
         api_version: v1
