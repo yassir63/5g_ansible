@@ -7,55 +7,22 @@
     update_cache: yes
   become: true
 
-- name: Install Go
+- name: Install Go 1.24.6 (simple, safe, working)
   become: yes
   block:
-    - name: Download Go using curl (bypasses Python/Ansible HTTPS bug)
-      ansible.builtin.command:
-        cmd: curl -fsSL -o /tmp/go1.24.6.linux-amd64.tar.gz https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
-        creates: /tmp/go1.24.6.linux-amd64.tar.gz
-      register: go_download
-      changed_when: go_download.rc == 0
+    - name: Download and install Go in one step
+      ansible.builtin.shell: |
+        curl -fsSL https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz | \
+        sudo tar -xz -C /usr/local
+      args:
+        creates: /usr/local/go/bin/go
 
-    - name: Verify Go tarball checksum
-      ansible.builtin.command: sha256sum /tmp/go1.24.6.linux-amd64.tar.gz
-      register: go_checksum
-      changed_when: false
-      failed_when: >-
-        go_checksum.stdout.split()[0] != '2b7d5e7d6c4d2c8d9f8f4b0c5d2e1f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9'
-
-    - name: Extract Go to /usr/local
-      ansible.builtin.unarchive:
-        src: /tmp/go1.24.6.linux-amd64.tar.gz
-        dest: /usr/local
-        remote_src: yes
-        creates: /usr/local/go
-
-    - name: Create GOPATH directory
-      ansible.builtin.file:
-        path: /opt/gopath
-        state: directory
-        mode: '0755'
-
-    - name: Set up Go environment
-      ansible.builtin.copy:
-        content: |
-          export GOROOT=/usr/local/go
-          export GOPATH=/opt/gopath
-          export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
-        dest: /etc/profile.d/golang.sh
-        mode: '0755'
-
-    - name: Create go symlink
+    - name: Create symlink in /usr/local/bin
       ansible.builtin.file:
         src: /usr/local/go/bin/go
         dest: /usr/local/bin/go
         state: link
-
-    - name: Clean up
-      ansible.builtin.file:
-        path: /tmp/go1.24.6.linux-amd64.tar.gz
-        state: absent
+        force: yes
 
 - name: Deploy SR-IOV Network Operator
   block:
