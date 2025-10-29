@@ -10,16 +10,21 @@
 - name: Install Go
   become: yes
   block:
-    - name: Download Go using uri (avoids urllib3 cert_file bug)
+    - name: Download Go using uri (avoids urllib3 bug)
       ansible.builtin.uri:
         url: https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
         dest: /tmp/go1.24.6.linux-amd64.tar.gz
         mode: '0644'
         timeout: 60
         validate_certs: no
-        checksum: sha256:2b7d5e7d6c4d2c8d9f8f4b0c5d2e1f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9
-      become: yes
       register: go_download
+
+    - name: Verify Go tarball checksum
+      ansible.builtin.command: sha256sum /tmp/go1.24.6.linux-amd64.tar.gz
+      register: go_checksum
+      changed_when: false
+      failed_when: >-
+        go_checksum.stdout.split()[0] != '2b7d5e7d6c4d2c8d9f8f4b0c5d2e1f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9'
 
     - name: Extract Go to /usr/local
       ansible.builtin.unarchive:
@@ -27,7 +32,6 @@
         dest: /usr/local
         remote_src: yes
         creates: /usr/local/go
-      when: go_download.changed
 
     - name: Create GOPATH directory
       ansible.builtin.file:
