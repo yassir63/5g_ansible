@@ -1,5 +1,5 @@
 pos_image: ubuntu-jammy-slices@2025-04-02T01:33:28+00:00
-pos_rt_image: ubuntu-questing-rt@2025-10-29T18:20:50+00:00
+pos_rt_image: ubuntu-questing-rt@2025-10-29T19:34:30+00:00
 # Boot parameters for ran node on f1 or f2 with USRP N3XX or AW2S RRUs
 boot_parameters_f1f2: >-
   biosdevname=0 net.ifnames=0 mitigations=off intel_iommu=on iommu=pt
