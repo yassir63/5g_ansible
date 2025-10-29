@@ -1,5 +1,5 @@
 ---
-dpdk_interface: ens15f1
+dpdk_interface: ens15f1np1
 dpdk_max_ring_buffer_size: 8160
 dpdk_mtu: 9216
 dpdk_vlan: 801
@@ -11,6 +11,6 @@ dpdk_driver: vfio-pci
 sriovNetworkNamespace: sriov-network-operator
 sriovResourceNameCplane: ruvfioc
 sriovResourceNameUplane: ruvfiou
-dpdk_interface_c: ens15f1#0-1
-dpdk_interface_u: ens15f1#2-3
+dpdk_interface_c: ens15f1np1#0-1
+dpdk_interface_u: ens15f1np1#2-3
 pci_dpdk_interface: "0000:3a:00.1"
