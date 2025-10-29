@@ -211,10 +211,30 @@
   loop_control:
     label: "{{ item }}"
 
+- name: Install python3-venv (required for venv)
+  ansible.builtin.apt:
+    name: python3-venv
+    state: present
+  become: yes
+
+- name: Create Python virtual environment for Open5GS admin scripts
+  ansible.builtin.command:
+    cmd: python3 -m venv "{{ repo_dest }}/venv"
+    creates: "{{ repo_dest }}/venv/bin/activate"
+  become: yes
+
+- name: Upgrade pip in virtualenv
+  ansible.builtin.pip:
+    name: pip
+    state: latest
+    executable: "{{ repo_dest }}/venv/bin/pip"
+  become: yes
+
 - name: Install Python requirements for admin script
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
-    virtualenv: "{{ repo_dest }}/venv"
+    executable: "{{ repo_dest }}/venv/bin/pip"
+  become: yes
 
 - name: Deploy Open5GS Web UI with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}//open5gs-webui" -n {{ open5gs_ns }}
