@@ -32,12 +32,16 @@
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Add Docker GPG apt key
-  ansible.builtin.apt_key:
-    url: https://download.docker.com/linux/ubuntu/gpg
-    state: present
+- name: Add Docker GPG key via keyring (Debian/Ubuntu)
+  ansible.builtin.shell: |
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg \
+      | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+  args:
+    creates: /etc/apt/keyrings/docker.gpg
   become: true
-  when: ansible_facts.os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Add Docker APT repository
   ansible.builtin.apt_repository:
