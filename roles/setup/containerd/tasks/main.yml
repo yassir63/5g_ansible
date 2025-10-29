@@ -43,46 +43,34 @@
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Add Docker APT repository
-  ansible.builtin.apt_repository:
-    repo: deb https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
-    state: present
-    filename: docker
-  become: true
+- name: Set Docker repo codename (jammy or noble)
+  ansible.builtin.set_fact:
+    docker_repo_codename: >-
+      {% if ansible_distribution_release == 'jammy' %}
+      jammy
+      {% else %}
+      noble
+      {% endif %}
   when: ansible_facts.os_family == 'Debian'
 
-- name: Install containerd (Debian/Ubuntu)
-  ansible.builtin.apt:
-    name: containerd.io
+- name: Add Docker APT repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.gpg]
+      https://download.docker.com/linux/ubuntu
+      {{ docker_repo_codename }} stable
     state: present
+    filename: docker
     update_cache: yes
   become: true
   when: ansible_facts.os_family == 'Debian'
 
-# RHEL/CentOS/Alma/Rocky
-- name: Install prerequisites (RHEL family)
-  yum:
-    name:
-      - dnf-plugins-core
-      - curl
-      - ca-certificates
-    state: present
-  become: true
-  when: ansible_facts['os_family'] == 'RedHat'
-
-- name: Add Docker repo (RHEL family)
-  command: dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-  args:
-    creates: /etc/yum.repos.d/docker-ce.repo
-  become: true
-  when: ansible_facts['os_family'] == 'RedHat'
-
-- name: Install containerd (RHEL family)
-  yum:
+- name: Install containerd
+  ansible.builtin.apt:
     name: containerd.io
     state: present
   become: true
-  when: ansible_facts['os_family'] == 'RedHat'
+  when: ansible_facts.os_family == 'Debian'
 
 - name: Create /etc/containerd directory
   file:
