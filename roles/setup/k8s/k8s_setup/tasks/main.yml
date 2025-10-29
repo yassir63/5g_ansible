@@ -1,24 +1,41 @@
 ---
-- name: Add Kubernetes apt key
-  ansible.builtin.apt_key:
-    url: https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key
-    keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    state: present
 
-- name: Add Kubernetes apt repository
+- name: Create /etc/apt/keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  become: true
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Download Kubernetes GPG key and convert to keyring
+  ansible.builtin.shell: |
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key \
+      | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  become: true
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Add Kubernetes APT repository
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /"
-    filename: kubernetes
+    repo: >-
+      deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg]
+      https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /
     state: present
-
-- name: Update apt cache
-  apt:
+    filename: kubernetes
     update_cache: yes
+  become: true
+  when: ansible_facts.os_family == 'Debian'
 
-- name: Install kubelet, kubeadm, and kubectl
-  apt:
+- name: Install kubelet, kubeadm, kubectl
+  ansible.builtin.apt:
     name:
       - kubelet
       - kubeadm
       - kubectl
     state: latest
+    update_cache: yes
+  become: true
+  when: ansible_facts.os_family == 'Debian'
