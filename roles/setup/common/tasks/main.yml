@@ -11,13 +11,10 @@
       - iperf3
       - tcpdump
       - python3-pip
+      - python3-venv        # Replaces virtualenv (PEP-668 safe)
       - jq
     state: present
     update_cache: yes
-
-- name: Install virtualenv using pip3
-  pip:
-    name: virtualenv
 
 - name: Disable swap
   shell: |
