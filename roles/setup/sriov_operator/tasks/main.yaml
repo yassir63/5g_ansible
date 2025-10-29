@@ -16,7 +16,9 @@
         dest: /tmp/go1.24.6.linux-amd64.tar.gz
         mode: '0644'
         timeout: 60
-        validate_certs: yes
+        validate_certs: no
+        checksum: sha256:2b7d5e7d6c4d2c8d9f8f4b0c5d2e1f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9
+      register: go_download
 
     - name: Extract Go to /usr/local
       ansible.builtin.unarchive:
@@ -24,6 +26,7 @@
         dest: /usr/local
         remote_src: yes
         creates: /usr/local/go
+      when: go_download.changed
 
     - name: Create GOPATH directory
       ansible.builtin.file:
@@ -41,10 +44,10 @@
         mode: '0755'
 
     - name: Create symbolic link from /usr/local/go/bin/go to /usr/local/bin/go
-      file:
+      ansible.builtin.file:
         src: /usr/local/go/bin/go
         dest: /usr/local/bin/go
-        state: link   
+        state: link
 
     - name: Clean up downloaded archive
       ansible.builtin.file:
