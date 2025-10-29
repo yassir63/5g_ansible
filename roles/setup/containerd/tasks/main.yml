@@ -65,7 +65,7 @@
   become: true
   when: ansible_facts.os_family == 'Debian'
 
-- name: Install containerd (questing: containerd, jammy: containerd.io)
+- name: Install containerd on questing: containerd, on jammy: containerd.io
   ansible.builtin.apt:
     name: >-
       {% if ansible_distribution_release == 'questing' %}
