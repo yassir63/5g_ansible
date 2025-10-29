@@ -10,22 +10,19 @@
 - name: Install Go
   become: yes
   block:
-    - name: Upgrade urllib3 to fix HTTPS bug (Python 3.13 + Ansible)
-      ansible.builtin.pip:
-        name: urllib3
-        state: latest
-        extra_args: --break-system-packages
-      become: yes
-
-    - name: Download Go (urllib3 fixed)
-      ansible.builtin.get_url:
-        url: https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
-        dest: /tmp/go1.24.6.linux-amd64.tar.gz
-        mode: '0644'
-        timeout: 60
-        checksum: sha256:2b7d5e7d6c4d2c8d9f8f4b0c5d2e1f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9
-      become: yes
+    - name: Download Go using curl (bypasses Python/Ansible HTTPS bug)
+      ansible.builtin.command:
+        cmd: curl -fsSL -o /tmp/go1.24.6.linux-amd64.tar.gz https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz
+        creates: /tmp/go1.24.6.linux-amd64.tar.gz
       register: go_download
+      changed_when: go_download.rc == 0
+
+    - name: Verify Go tarball checksum
+      ansible.builtin.command: sha256sum /tmp/go1.24.6.linux-amd64.tar.gz
+      register: go_checksum
+      changed_when: false
+      failed_when: >-
+        go_checksum.stdout.split()[0] != '2b7d5e7d6c4d2c8d9f8f4b0c5d2e1f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9'
 
     - name: Extract Go to /usr/local
       ansible.builtin.unarchive:
@@ -33,7 +30,6 @@
         dest: /usr/local
         remote_src: yes
         creates: /usr/local/go
-      when: go_download.changed
 
     - name: Create GOPATH directory
       ansible.builtin.file:
@@ -41,7 +37,7 @@
         state: directory
         mode: '0755'
 
-    - name: Set up Go environment via profile script
+    - name: Set up Go environment
       ansible.builtin.copy:
         content: |
           export GOROOT=/usr/local/go
@@ -50,13 +46,13 @@
         dest: /etc/profile.d/golang.sh
         mode: '0755'
 
-    - name: Create symbolic link from /usr/local/go/bin/go to /usr/local/bin/go
+    - name: Create go symlink
       ansible.builtin.file:
         src: /usr/local/go/bin/go
         dest: /usr/local/bin/go
         state: link
 
-    - name: Clean up downloaded archive
+    - name: Clean up
       ansible.builtin.file:
         path: /tmp/go1.24.6.linux-amd64.tar.gz
         state: absent
