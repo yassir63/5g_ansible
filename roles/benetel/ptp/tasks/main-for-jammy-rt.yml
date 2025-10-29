@@ -17,11 +17,11 @@
 # ------------------------------------------------------------
 # 2. Clone and build linuxptp v4.4 from source
 # ------------------------------------------------------------
-- name: Clone latest linuxptp
+- name: Clone linuxptp v4.4
   ansible.builtin.git:
     repo: https://github.com/richardcochran/linuxptp.git
     dest: /tmp/linuxptp
-    version: master
+    version: v4.4
     depth: 1
   become: yes
   register: git_clone
