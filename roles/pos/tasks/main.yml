@@ -10,7 +10,7 @@
     pos_image_cmd: >-
       {% if node == groups['ran_node'][0]
          and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
-      pos node image {{ node }} boot-local
+      pos nodes image --staging {{ node }} {{ pos_rt_image }}
       {% else %}
       pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
