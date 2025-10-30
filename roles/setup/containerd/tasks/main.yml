@@ -1,9 +1,9 @@
 ---
-- name: "=== CONTAINERD SETUP (jammy + questing) ==="
+- name: "=== CONTAINERD SETUP (jammy + questing) – FINAL FIXED ==="
   block:
 
-    # 1. Clean old Docker repos
-    - name: Force-remove old Docker repo files
+    # --- 1. Clean old Docker repos ---
+    - name: Remove old Docker repo files
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -14,9 +14,8 @@
         - /etc/apt/trusted.gpg.d/docker.gpg
         - /etc/apt/keyrings/docker.asc
       become: true
-      when: ansible_facts.os_family == 'Debian'
 
-    # 2. Install prerequisites
+    # --- 2. Install prerequisites ---
     - name: Install apt prerequisites
       ansible.builtin.apt:
         name:
@@ -27,9 +26,8 @@
         state: present
         update_cache: yes
       become: true
-      when: ansible_facts.os_family == 'Debian'
 
-    # 3. Add Docker GPG key (curl + idempotent)
+    # --- 3. Add Docker GPG key (curl) ---
     - name: Ensure /etc/apt/keyrings exists
       ansible.builtin.file:
         path: /etc/apt/keyrings
@@ -37,31 +35,27 @@
         mode: "0755"
       become: true
 
-    - name: Download & install Docker GPG key
+    - name: Download Docker GPG key
       ansible.builtin.shell: |
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
         gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
         chmod a+r /etc/apt/keyrings/docker.gpg
       args:
         creates: /etc/apt/keyrings/docker.gpg
-        executable: /bin/bash
       become: true
-      register: docker_gpg_download
-      until: docker_gpg_download is succeeded
+      register: docker_gpg
+      until: docker_gpg is succeeded
       retries: 5
       delay: 10
-      changed_when: >
-        docker_gpg_download.rc == 0 and
-        ('skipped' not in docker_gpg_download or not docker_gpg_download.skipped)
+      changed_when: "'skipped' not in docker_gpg or not docker_gpg.skipped"
 
-    # 4. Set repo codename
+    # --- 4. Set repo codename ---
     - name: Set Docker repo codename
       ansible.builtin.set_fact:
         docker_repo_codename: >-
           {% if ansible_distribution_release == 'jammy' %}jammy{% else %}noble{% endif %}
-      when: ansible_facts.os_family == 'Debian'
 
-    # 5. Add Docker repo (only for jammy)
+    # --- 5. Add Docker repo (jammy only) ---
     - name: Add Docker APT repository (jammy only)
       ansible.builtin.apt_repository:
         repo: >-
@@ -72,11 +66,9 @@
         filename: docker
         update_cache: yes
       become: true
-      when:
-        - ansible_facts.os_family == 'Debian'
-        - ansible_distribution_release == 'jammy'
+      when: ansible_distribution_release == 'jammy'
 
-    # 6. Install containerd (questing) or containerd.io (jammy)
+    # --- 6. Install containerd ---
     - name: Install containerd (questing) or containerd.io (jammy)
       ansible.builtin.apt:
         name: >-
@@ -88,70 +80,71 @@
         state: present
         update_cache: yes
       become: true
-      when: ansible_facts.os_family == 'Debian'
 
-    # 7. Create config dir
-    - name: Ensure /etc/containerd directory exists
+    # --- 7. Create config dir ---
+    - name: Ensure /etc/containerd exists
       ansible.builtin.file:
         path: /etc/containerd
         state: directory
         mode: "0755"
       become: true
 
-    # 8. Generate default config
+    # --- 8. Generate default config ---
     - name: Generate default containerd config
       ansible.builtin.command: containerd config default
-      register: containerd_default
+      register: containerd_cfg
       changed_when: false
       become: true
 
-    - name: Write config.toml
+    - name: Write default config.toml
       ansible.builtin.copy:
         dest: /etc/containerd/config.toml
-        content: "{{ containerd_default.stdout }}"
+        content: "{{ containerd_cfg.stdout }}"
         mode: "0644"
       become: true
 
-    # 9. Disable overlayfs, use native
-    - name: Disable overlayfs snapshotter
-      ansible.builtin.replace:
+    # --- 9. APPLY CONFIG FIXES SAFELY (NO DUPLICATES) ---
+    - name: Configure containerd – disable overlayfs, use native
+      ansible.builtin.blockinfile:
         path: /etc/containerd/config.toml
-        regexp: '^\s*\[plugins\."io\.containerd\.snapshotter\.v1\.overlayfs"\]'
-        replace: |
+        marker: "# {mark} ANSIBLE MANAGED: SNAPSHOTTER CONFIG"
+        block: |
           [plugins."io.containerd.snapshotter.v1.overlayfs"]
             disabled = true
 
           [plugins."io.containerd.snapshotter.v1.native"]
-      become: true
-
-    # 10. Enable async_remove
-    - name: Enable async_remove for native
-      ansible.builtin.lineinfile:
-        path: /etc/containerd/config.toml
-        regexp: '^\s*\[plugins\."io\.containerd\.snapshotter\.v1\.native"\]'
-        line: |
-          [plugins."io.containerd.snapshotter.v1.native"]
             async_remove = true
-        insertafter: '^\s*\[plugins\."io\.containerd\.snapshotter\.v1\.native"\]'
+        insertafter: EOF
+        create: no
       become: true
+      notify: validate and restart containerd
 
-    # 11. Enable systemd cgroup
-    - name: Enable systemd cgroup driver
+    - name: Enable systemd cgroup
       ansible.builtin.replace:
         path: /etc/containerd/config.toml
         regexp: '^\s*SystemdCgroup\s*=\s*false'
         replace: 'SystemdCgroup = true'
       become: true
+      notify: validate and restart containerd
 
-    # 12. Set pause image
-    - name: Set pause sandbox image to 3.10
+    - name: Set pause image to 3.10
       ansible.builtin.replace:
         path: /etc/containerd/config.toml
         regexp: '^\s*sandbox_image\s*=.*'
         replace: '            sandbox_image = "registry.k8s.io/pause:3.10"'
       become: true
+      notify: validate and restart containerd
 
-    # 13. Restart containerd
+    # --- 10. Validate config BEFORE restart ---
+    - name: Validate containerd config
+      ansible.builtin.command: containerd config default > /dev/null
+      changed_when: false
+      become: true
+      ignore_errors: yes
+      register: config_test
+      failed_when: config_test.rc != 0
+
+    # --- 11. Restart containerd (only if config is valid) ---
     - name: Restart and enable containerd
       ansible.builtin.systemd:
         name: containerd
@@ -159,5 +152,10 @@
         enabled: yes
         daemon_reload: yes
       become: true
+      when: config_test.rc == 0
 
   when: ansible_facts.os_family == 'Debian'
+
+  handlers:
+    - name: validate and restart containerd
+      ansible.builtin.meta: flush_handlers
