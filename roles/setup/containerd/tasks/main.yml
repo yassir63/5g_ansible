@@ -1,7 +1,4 @@
 ---
-# Simple, minimal containerd setup – jammy + questing
-# No handlers, no complex logic, 100% idempotent
-
 - name: Remove old Docker repo files
   ansible.builtin.file:
     path: "{{ item }}"
@@ -28,10 +25,9 @@
     mode: "0755"
   become: true
 
-- name: Download Docker GPG key (curl)
+- name: Download Docker GPG key
   ansible.builtin.shell: |
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-    gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
   args:
     creates: /etc/apt/keyrings/docker.gpg
   become: true
@@ -94,54 +90,28 @@
   become: true
   register: config_changed
 
-
-
-# --- SIMPLE CONFIG FIXES (idempotent replace) ---
-- name: Disable overlayfs + enable native
-  ansible.builtin.replace:
-    path: /etc/containerd/config.toml
-    regexp: '(\s*)\[plugins\."io\.containerd\.snapshotter\.v1\.overlayfs"\]'
-    replace: |
-      \1[plugins."io.containerd.snapshotter.v1.overlayfs"]
-      \1  disabled = true
-
-      \1[plugins."io.containerd.snapshotter.v1.native"]
-      \1  async_remove = true
-  become: true
-  register: snapshotter_fix
-
-- name: Enable systemd cgroup
-  ansible.builtin.replace:
-    path: /etc/containerd/config.toml
-    regexp: 'SystemdCgroup = false'
-    replace: 'SystemdCgroup = true'
-  become: true
-  register: cgroup_fix
-
-- name: Set pause image to 3.10
-  ansible.builtin.replace:
-    path: /etc/containerd/config.toml
-    regexp: 'sandbox_image = .*'
-    replace: 'sandbox_image = "registry.k8s.io/pause:3.10"'
-  become: true
-  register: pause_fix
-
-- name: Fix containerd.service to use --config
-  ansible.builtin.replace:
+# === FINAL FIX: UNIT + PERMISSIONS + RESTART ===
+- name: Ensure correct ExecStart in containerd.service (idempotent)
+  ansible.builtin.lineinfile:
     path: /lib/systemd/system/containerd.service
-    regexp: '^ExecStart=/usr/bin/containerd$'
-    replace: 'ExecStart=/usr/bin/containerd --config /etc/containerd/config.toml'
+    regexp: '^ExecStart=.*'
+    line: 'ExecStart=/usr/bin/containerd --config /etc/containerd/config.toml'
+    state: present
   become: true
   register: unit_fixed
 
-- name: Reload systemd daemon if unit changed
+- name: Fix config.toml permissions
+  ansible.builtin.file:
+    path: /etc/containerd/config.toml
+    mode: "0644"
+    owner: root
+    group: root
+  become: true
+  when: config_changed.changed
+
+- name: Reload daemon and restart containerd
   ansible.builtin.systemd:
     daemon_reload: yes
-  become: true
-  when: unit_fixed.changed
-
-- name: Restart containerd if config or unit changed
-  ansible.builtin.systemd:
     name: containerd
     state: restarted
     enabled: yes
