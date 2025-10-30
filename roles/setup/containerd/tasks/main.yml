@@ -1,18 +1,4 @@
 ---
-# ONLY CONTAINERD. NO K8S. NO APT FAILURES.
-
-# === TEMPORARILY DISABLE BROKEN K8S REPO ===
-- name: Disable broken Kubernetes repo
-  ansible.builtin.replace:
-    path: /etc/apt/sources.list.d/kubernetes.list
-    regexp: '^deb '
-    replace: '#deb '
-    backup: yes
-  become: true
-  when: ansible_facts.os_family == 'Debian'
-  ignore_errors: yes
-
-# === CONTAINERD SETUP ===
 - name: Remove old Docker repo junk
   ansible.builtin.file:
     path: "{{ item }}"
@@ -116,13 +102,3 @@
     enabled: yes
   become: true
   when: config_changed.changed or unit_fixed.changed
-
-# === RE-ENABLE K8S REPO ===
-- name: Re-enable Kubernetes repo
-  ansible.builtin.replace:
-    path: /etc/apt/sources.list.d/kubernetes.list
-    regexp: '^#deb '
-    replace: 'deb '
-  become: true
-  when: ansible_facts.os_family == 'Debian'
-  ignore_errors: yes
