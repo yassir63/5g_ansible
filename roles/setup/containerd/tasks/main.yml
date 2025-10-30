@@ -15,7 +15,7 @@
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Install prerequisites
+- name: Install prerequisites (NO update_cache)
   ansible.builtin.apt:
     name:
       - ca-certificates
@@ -23,7 +23,7 @@
       - gnupg
       - lsb-release
     state: present
-    update_cache: yes
+    # update_cache: yes  REMOVED
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
