@@ -1,19 +1,18 @@
 ---
-# Original task list — FIXED for jammy + questing (Ubuntu 22.04 + 25.10)
-# Only containerd. No K8s. No errors.
+# roles/setup/containerd/tasks/main.yml
+# ONLY CONTAINERD. NO K8S. NO APT UPDATE ERRORS.
 
-- name: Force remove any Docker repo definitions
+- name: Remove old Docker repo junk
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
     - /etc/apt/sources.list.d/docker.list
     - /etc/apt/sources.list.d/docker.repo
-    - /etc/apt/sources.list.d/*docker*
-    - /etc/apt/trusted.gpg.d/docker.gpg
     - /etc/apt/keyrings/docker.asc
+    - /etc/apt/trusted.gpg.d/docker.gpg
   become: true
-  when: ansible_facts['os_family'] == 'Debian'
+  when: ansible_facts.os_family == 'Debian'
 
 - name: Install prerequisites (NO update_cache)
   ansible.builtin.apt:
@@ -23,11 +22,10 @@
       - gnupg
       - lsb-release
     state: present
-    # update_cache: yes  REMOVED
   become: true
-  when: ansible_facts['os_family'] == 'Debian'
+  when: ansible_facts.os_family == 'Debian'
 
-- name: Add Docker GPG key
+- name: Create keyrings dir and add Docker GPG key
   ansible.builtin.shell: |
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
@@ -36,52 +34,57 @@
   args:
     creates: /etc/apt/keyrings/docker.gpg
   become: true
-  when: ansible_facts['os_family'] == 'Debian'
+  when: ansible_facts.os_family == 'Debian'
 
-- name: Set Docker repo codename (jammy or noble)
+- name: Set Docker repo codename
   ansible.builtin.set_fact:
     docker_repo_codename: >-
       {% if ansible_distribution_release == 'jammy' %}jammy{% else %}noble{% endif %}
   when: ansible_facts.os_family == 'Debian'
 
-- name: Add Docker APT repository
+- name: Add Docker APT repository (NO update_cache)
   ansible.builtin.apt_repository:
     repo: >-
-      deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.gpg]
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg]
       https://download.docker.com/linux/ubuntu
       {{ docker_repo_codename }} stable
     state: present
     filename: docker
-    update_cache: yes
   become: true
   when: ansible_facts.os_family == 'Debian'
 
-- name: Install containerd
+- name: Install containerd (NO update_cache)
   ansible.builtin.apt:
     name: >-
       {% if ansible_distribution_release == 'questing' %}containerd{% else %}containerd.io{% endif %}
     state: present
+  become: true
+  when: ansible_facts.os_family == 'Debian'
+
+# === ONLY ONE APT UPDATE — AFTER DOCKER REPO ===
+- name: Update apt cache ONCE
+  ansible.builtin.apt:
     update_cache: yes
   become: true
   when: ansible_facts.os_family == 'Debian'
 
-- name: Create /etc/containerd directory
+- name: Create /etc/containerd
   ansible.builtin.file:
     path: /etc/containerd
     state: directory
   become: true
 
-- name: Generate default containerd config
+- name: Generate default config
   ansible.builtin.command: containerd config default
-  register: containerd_cfg
+  register: cfg
   changed_when: false
   become: true
 
-- name: Write config.toml
+- name: Write fixed config.toml
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
     content: |
-      {{ containerd_cfg.stdout
+      {{ cfg.stdout
          | regex_replace('default_snapshotter = "overlayfs"', 'default_snapshotter = "native"')
          | regex_replace('disabled_snapshotter = ""', 'disabled_snapshotter = "overlayfs"')
          | regex_replace('SystemdCgroup = false', 'SystemdCgroup = true')
@@ -92,7 +95,7 @@
   become: true
   register: config_changed
 
-- name: Fix containerd.service to use --config
+- name: Fix containerd.service
   ansible.builtin.lineinfile:
     path: /lib/systemd/system/containerd.service
     regexp: '^ExecStart=.*'
@@ -100,7 +103,7 @@
   become: true
   register: unit_fixed
 
-- name: Reload daemon and restart containerd
+- name: Reload and restart containerd
   ansible.builtin.systemd:
     daemon_reload: yes
     name: containerd
@@ -109,7 +112,7 @@
   become: true
   when: config_changed.changed or unit_fixed.changed
 
-- name: Delete stuck kube-proxy pods after containerd fix
+- name: Clean stuck kube-proxy pods
   kubernetes.core.k8s:
     state: absent
     kind: Pod
@@ -122,3 +125,4 @@
     - "'realtime' in ansible_kernel | lower"
     - groups['control_plane'] is defined
   ignore_errors: yes
+  
