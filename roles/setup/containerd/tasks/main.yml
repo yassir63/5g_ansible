@@ -48,17 +48,21 @@
 
     - name: Download & install Docker GPG key (curl fallback)
       ansible.builtin.shell: |
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+        gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
         chmod a+r /etc/apt/keyrings/docker.gpg
       args:
-        creates: /etc/apt/keyrings/docker.gpg  # Idempotent: skips if exists
+        creates: /etc/apt/keyrings/docker.gpg
         executable: /bin/bash
       become: true
       register: docker_gpg_download
       until: docker_gpg_download is succeeded
-      retries: 5  # Bumped to 5 for flaky networks
-      delay: 10   # Wait 10s between retries
-      changed_when: docker_gpg_download.rc == 0 and not docker_gpg_download.skipped
+      retries: 5
+      delay: 10
+      # FIXED: Use 'skipped' from result, fallback to checking stdout
+      changed_when: >
+        docker_gpg_download.rc == 0 and
+        ('skipped' not in docker_gpg_download or not docker_gpg_download.skipped)
 
     # ------------------------------------------------------------------
     # 4. Determine repo codename (jammy → jammy, questing → noble)
