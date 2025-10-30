@@ -10,6 +10,53 @@
     - /etc/apt/trusted.gpg.d/docker.gpg
     - /etc/apt/keyrings/docker.asc
   become: true
+  
+# ------------------------------------------------------------------
+# Kubernetes APT Repo Setup (v1.30) – jammy + questing
+# ------------------------------------------------------------------
+- name: Ensure /etc/apt/keyrings for Kubernetes exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Download Kubernetes GPG key (v1.30)
+  ansible.builtin.shell: |
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | \
+    gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    chmod a+r /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    executable: /bin/bash
+  become: true
+  register: k8s_gpg_result
+  until: k8s_gpg_result is succeeded
+  retries: 5
+  delay: 10
+  changed_when: >
+    k8s_gpg_result.rc == 0 and
+    ('skipped' not in k8s_gpg_result or not k8s_gpg_result.skipped)
+
+- name: Add Kubernetes APT repository (v1.30)
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg]
+      https://pkgs.k8s.io/core:/stable:/v1.30/deb /
+    state: present
+    filename: kubernetes
+    update_cache: yes
+  become: true
+
+- name: Install Kubernetes packages (kubeadm, kubelet, kubectl)
+  ansible.builtin.apt:
+    name:
+      - kubeadm=1.30.0-1.1
+      - kubelet=1.30.0-1.1
+      - kubectl=1.30.0-1.1
+    state: present
+    update_cache: yes
+  become: true
 
 - name: Install prerequisites
   ansible.builtin.apt:
