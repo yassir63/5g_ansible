@@ -10,12 +10,20 @@
   run_once: true
   delegate_to: localhost
 
-- name: Install Python kubernetes library on worker ran_node
+- name: Install Python kubernetes library and setuptools on worker ran_node
   ansible.builtin.pip:
-    name: kubernetes
-    executable: pip3
+    name:
+      - kubernetes>=24.2.0
+      - setuptools>=45.0.0
+    executable: >-
+      {{ ansible_python_interpreter | default('/opt/ansible-k8s-venv/bin/pip3') }}
     state: present
+    extra_args: >-
+      --no-cache-dir --force-reinstall
   become: yes
+  environment:
+    PIP_TRUSTED_HOST: pypi.org
+    PIP_INDEX_URL: https://pypi.org/simple
 
 - name: Label node {{ inventory_hostname }} as SR-IOV capable
   kubernetes.core.k8s:
