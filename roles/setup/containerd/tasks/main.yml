@@ -126,11 +126,24 @@
   become: true
   register: pause_fix
 
-# --- Restart only if config changed ---
-- name: Restart containerd if config changed
+- name: Fix containerd.service to use --config
+  ansible.builtin.replace:
+    path: /lib/systemd/system/containerd.service
+    regexp: '^ExecStart=/usr/bin/containerd$'
+    replace: 'ExecStart=/usr/bin/containerd --config /etc/containerd/config.toml'
+  become: true
+  register: unit_fixed
+
+- name: Reload systemd daemon if unit changed
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: true
+  when: unit_fixed.changed
+
+- name: Restart containerd if config or unit changed
   ansible.builtin.systemd:
     name: containerd
     state: restarted
     enabled: yes
   become: true
-  when: config_changed.changed
+  when: config_changed.changed or unit_fixed.changed
