@@ -1,6 +1,6 @@
 ---
 # --------------------------------------------------------------
-#  Containerd + CRI setup – works on Ubuntu 22.04 (jammy) & 25.10 (questing)
+#  Containerd + CRI setup – FIXED for network issues (jammy + questing)
 # --------------------------------------------------------------
 - name: "=== CONTAINERD SETUP (jammy + questing) ==="
   block:
@@ -37,7 +37,7 @@
       when: ansible_facts.os_family == 'Debian'
 
     # ------------------------------------------------------------------
-    # 3. Add Docker GPG key (keyring style – works on all modern Ubuntu)
+    # 3. Add Docker GPG key (FIXED: shell + curl – no requests lib issues)
     # ------------------------------------------------------------------
     - name: Ensure /etc/apt/keyrings exists
       ansible.builtin.file:
@@ -46,16 +46,19 @@
         mode: "0755"
       become: true
 
-    - name: Download & install Docker GPG key
-      ansible.builtin.get_url:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        dest: /etc/apt/keyrings/docker.gpg
-        mode: "0644"
+    - name: Download & install Docker GPG key (curl fallback)
+      ansible.builtin.shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+        chmod a+r /etc/apt/keyrings/docker.gpg
+      args:
+        creates: /etc/apt/keyrings/docker.gpg  # Idempotent: skips if exists
+        executable: /bin/bash
       become: true
-      register: docker_gpg
-      until: docker_gpg is succeeded
-      retries: 3
-      delay: 5
+      register: docker_gpg_download
+      until: docker_gpg_download is succeeded
+      retries: 5  # Bumped to 5 for flaky networks
+      delay: 10   # Wait 10s between retries
+      changed_when: docker_gpg_download.rc == 0 and not docker_gpg_download.skipped
 
     # ------------------------------------------------------------------
     # 4. Determine repo codename (jammy → jammy, questing → noble)
@@ -82,7 +85,7 @@
       when: ansible_facts.os_family == 'Debian'
 
     # ------------------------------------------------------------------
-    # 6. Install containerd.io (Docker’s package – works on both releases)
+    # 6. Install containerd.io (Docker's package – works on both releases)
     # ------------------------------------------------------------------
     - name: Install containerd.io
       ansible.builtin.apt:
@@ -121,7 +124,7 @@
     #    - Disable overlayfs index + enable async_remove
     #    - Works on realtime kernels and any kernel without user-xattr
     # ------------------------------------------------------------------
-    - name: Switch to native snapshotter + disable overlayfs index
+    - name: Switch to native snapshotter + disable overlayfs
       ansible.builtin.replace:
         path: /etc/containerd/config.toml
         regexp: '^\s*\[plugins\."io\.containerd\.snapshotter\.v1\.overlayfs"\]'
@@ -173,22 +176,3 @@
         enabled: yes
         daemon_reload: yes
       become: true
-
-    # ------------------------------------------------------------------
-    # 12. (Optional) Clean stuck kube-proxy pods on realtime kernels
-    # ------------------------------------------------------------------
-    - name: Delete stuck kube-proxy pods (realtime kernel only)
-      kubernetes.core.k8s:
-        state: absent
-        kind: Pod
-        namespace: kube-system
-        label_selectors:
-          - k8s-app=kube-proxy
-          - kubernetes.io/hostname={{ inventory_hostname }}
-      delegate_to: "{{ groups['control_plane'][0] }}"
-      when:
-        - "'realtime' in ansible_kernel | lower"
-        - groups['control_plane'] is defined
-      ignore_errors: yes   # first node may not have kubectl yet
-
-  when: ansible_facts.os_family == 'Debian'
