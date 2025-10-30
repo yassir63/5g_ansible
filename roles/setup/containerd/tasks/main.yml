@@ -96,18 +96,38 @@
     content: "{{ containerd_cfg.stdout }}"
   become: true
 
+- name: Generate default containerd config
+  command: containerd config default
+  register: containerd_cfg
+  changed_when: false
+  become: true
+
+- name: Write config.toml
+  copy:
+    dest: /etc/containerd/config.toml
+    content: "{{ containerd_cfg.stdout }}"
+  become: true
+
+- name: Configure containerd for real-time kernels (disable overlayfs index)
+  block:
+    - name: Add disable_index = true for overlayfs snapshotter
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: '\[plugins\."io\.containerd\.snapshotter\.v1\.overlayfs"\]'
+        after: '\[plugins\."io\.containerd\.snapshotter\.v1\.overlayfs"\]'
+        after_regex: true
+        replace: |
+          [plugins."io.containerd.snapshotter.v1.overlayfs"]
+            disable_index = true
+            async_remove = true
+      become: true
+  when: "'realtime' in ansible_kernel | lower"
+
 - name: Enable systemd-cgroup
   replace:
     path: /etc/containerd/config.toml
     regexp: 'SystemdCgroup = false'
     replace: 'SystemdCgroup = true'
-  become: true
-
-- name: Switch snapshotter to native
-  replace:
-    path: /etc/containerd/config.toml
-    regexp: 'snapshotter = "overlayfs"'
-    replace: 'snapshotter = "native"'
   become: true
 
 - name: Restart & enable containerd
@@ -116,3 +136,15 @@
     enabled: yes
     state: restarted
   become: true
+
+- name: Delete stuck kube-proxy pods after containerd fix
+  kubernetes.core.k8s:
+    state: absent
+    kind: Pod
+    namespace: kube-system
+    label_selectors:
+      - app=kube-proxy
+      - nodeName="{{ inventory_hostname }}"
+  delegate_to: "{{ groups['core_node'][0] }}"
+  when: "'realtime' in ansible_kernel | lower"
+  
