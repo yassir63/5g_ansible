@@ -1,5 +1,5 @@
 ---
-- name: "=== CONTAINERD SETUP (jammy + questing) – FINAL FIXED ==="
+- name: "CONTAINERD SETUP for jammy + questing"
   block:
 
     # --- 1. Clean old Docker repos ---
