@@ -77,14 +77,24 @@
   changed_when: false
   become: true
 
-- name: Write config.toml
+- name: Write config.toml with fixes applied
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
-    content: "{{ cfg.stdout }}"
+    content: |
+      {{ cfg.stdout | regex_replace(
+           '(.*)(\[plugins\."io\.containerd\.snapshotter\.v1\.overlayfs"\])',
+           '\1\2\n\1  disabled = true\n\n\1[plugins."io.containerd.snapshotter.v1.native"]\n\1  async_remove = true'
+         ) | regex_replace(
+           'SystemdCgroup = false', 'SystemdCgroup = true'
+         ) | regex_replace(
+           'sandbox_image = ".*"', 'sandbox_image = "registry.k8s.io/pause:3.10"'
+         ) }}
     mode: "0644"
     backup: yes
   become: true
   register: config_changed
+
+
 
 # --- SIMPLE CONFIG FIXES (idempotent replace) ---
 - name: Disable overlayfs + enable native
@@ -123,8 +133,4 @@
     state: restarted
     enabled: yes
   become: true
-  when: >
-    config_changed.changed or
-    snapshotter_fix.changed or
-    cgroup_fix.changed or
-    pause_fix.changed
+  when: config_changed.changed
