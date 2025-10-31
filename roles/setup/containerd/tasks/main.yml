@@ -1,5 +1,4 @@
 ---
-# roles/setup/containerd/tasks/main.yml
 - name: RESTART_CONTAINERD
   ansible.builtin.meta: noop
 
@@ -9,59 +8,16 @@
     state: absent
   loop:
     - /etc/apt/sources.list.d/docker.list
-    - /etc/apt/sources.list.d/docker.repo
     - /etc/apt/keyrings/docker.asc
-    - /etc/apt/trusted.gpg.d/docker.gpg
-  become: true
-  when: ansible_facts.os_family == 'Debian'
-
-- name: Install prerequisites
-  ansible.builtin.apt:
-    name:
-      - ca-certificates
-      - curl
-      - gnupg
-      - lsb-release
-    state: present
-  become: true
-  when: ansible_facts.os_family == 'Debian'
-
-- name: Add Docker GPG key
-  ansible.builtin.shell: |
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-      gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-  args:
-    creates: /etc/apt/keyrings/docker.gpg
-  become: true
-  when: ansible_facts.os_family == 'Debian'
-
-- name: Set Docker repo codename
-  ansible.builtin.set_fact:
-    docker_repo_codename: >-
-      {% if ansible_distribution_release == 'jammy' %}jammy{% else %}noble{% endif %}
-  when: ansible_facts.os_family == 'Debian'
-
-- name: Add Docker APT repository
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg]
-      https://download.docker.com/linux/ubuntu
-      {{ docker_repo_codename }} stable
-    state: present
-    filename: docker
-    update_cache: yes
   become: true
   when: ansible_facts.os_family == 'Debian'
 
 - name: Install containerd
   ansible.builtin.apt:
-    name: >-
-      {% if ansible_distribution_release == 'questing' %}containerd{% else %}containerd.io{% endif %}
+    name: containerd
     state: present
+    update_cache: yes
   become: true
-  when: ansible_facts.os_family == 'Debian'
 
 - name: Create /etc/containerd
   ansible.builtin.file:
@@ -69,39 +25,26 @@
     state: directory
   become: true
 
-- name: Generate default config
-  ansible.builtin.command: containerd config default
-  register: default_config
-  changed_when: false
-  become: true
-
-- name: Write fixed config.toml — USE OVERLAYFS, DISABLE NATIVE
+- name: Write native snapshotter config
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
     content: |
-      {{ default_config.stdout
-         | regex_replace('default_snapshotter = "native"', 'default_snapshotter = "overlayfs"')
-         | regex_replace('SystemdCgroup = false', 'SystemdCgroup = true')
-         | regex_replace('sandbox_image = ".*"', 'sandbox_image = "registry.k8s.io/pause:3.10"')
-      }}
-    mode: "0644"
-    backup: yes
+      version = 2
+      [plugins."io.containerd.grpc.v1.cri"]
+        sandbox_image = "registry.k8s.io/pause:3.10"
+        [plugins."io.containerd.grpc.v1.cri".containerd]
+          default_runtime_name = "runc"
+          snapshotter = "native"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+            runtime_type = "io.containerd.runc.v2"
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+              SystemdCgroup = true
+    mode: '0644'
   become: true
-  register: config_changed
+  notify: restart containerd
 
-- name: Fix containerd.service to use config
-  ansible.builtin.lineinfile:
-    path: /lib/systemd/system/containerd.service
-    regexp: '^ExecStart=.*'
-    line: 'ExecStart=/usr/bin/containerd --config /etc/containerd/config.toml'
-  become: true
-  register: unit_fixed
-
-- name: Reload systemd and restart containerd
+- name: restart containerd
   ansible.builtin.systemd:
-    daemon_reload: yes
     name: containerd
     state: restarted
-    enabled: yes
   become: true
-  when: config_changed.changed or unit_fixed.changed

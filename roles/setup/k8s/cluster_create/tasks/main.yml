@@ -23,41 +23,10 @@
     mode: '0710'
   become: true
 
-# --- FORCE overlayfs + CRI
-- name: Write containerd config (overlayfs + CRI)
-  ansible.builtin.copy:
-    dest: /etc/containerd/config.toml
-    content: |
-      version = 2
-      [plugins."io.containerd.grpc.v1.cri"]
-        sandbox_image = "registry.k8s.io/pause:3.10"
-        [plugins."io.containerd.grpc.v1.cri".containerd]
-          default_runtime_name = "runc"
-          snapshotter = "overlayfs"
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-            runtime_type = "io.containerd.runc.v2"
-            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-              SystemdCgroup = true
-    mode: '0644'
-  become: true
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Restart containerd
-  ansible.builtin.systemd:
-    name: containerd
-    state: restarted
-  become: true
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Wait for containerd
-  ansible.builtin.pause:
-    seconds: 15
-  when: inventory_hostname == groups['core_node'][0]
-
-# --- PULL IMAGES WITH ctr + overlayfs (NO --user, NO --unpack)
-- name: Pull K8s images using ctr + overlayfs
-  ansible.builtin.shell: |
-    ctr -n k8s.io images pull --snapshotter overlayfs {{ item }}
+# --- PULL IMAGES WITH native (APRES containerd)
+- name: Pull K8s images using ctr + native
+  ansible.builtin.shell: >
+    ctr -n k8s.io images pull --snapshotter native {{ item }}
   loop:
     - registry.k8s.io/kube-apiserver:v1.32.9
     - registry.k8s.io/kube-controller-manager:v1.32.9
@@ -155,16 +124,16 @@
         labels:
           pod-security.kubernetes.io/enforce: privileged
     state: present
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
+    environment:
+      KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
 - name: Add Flannel repo
   kubernetes.core.helm_repository:
     name: flannel
     repo_url: https://flannel-io.github.io/flannel/
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
+    environment:
+      KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
 - name: Install Flannel
@@ -174,8 +143,8 @@
     release_namespace: kube-flannel
     state: present
     wait: true
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
+    environment:
+      KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
 # --- INSTALL MULTUS
@@ -183,8 +152,8 @@
   kubernetes.core.k8s:
     state: present
     src: multus-daemonset.yml
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
+    environment:
+      KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
 - name: Wait for Multus
@@ -216,4 +185,5 @@
   ansible.builtin.copy:
     content: "{{ join_cmd.stdout }}"
     dest: /tmp/kubeadm_join_command.txt
+    mode: '0644'
   delegate_to: localhost
