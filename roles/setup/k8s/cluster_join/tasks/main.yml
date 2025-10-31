@@ -1,5 +1,5 @@
 ---
-# Cleanup if the node was already part of a cluster
+# CLEANUP IF NODE WAS ALREADY JOINED
 - name: Check if node is already part of a Kubernetes cluster
   stat:
     path: /etc/kubernetes/kubelet.conf
@@ -29,8 +29,36 @@
   when: kubelet_conf.stat.exists
   ignore_errors: true
 
+- name: Wait for containerd
+  pause:
+    seconds: 10
 
-# Base setup
+# PRE-PULL PAUSE IMAGE (NATIVE + --LOCAL) — BEFORE KUBELET
+- name: Pre-pull pause image with --local (fixes native unpack bug)
+  ansible.builtin.shell: >
+    ctr -n k8s.io images pull \
+      --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
+      --snapshotter native \
+      --local \
+      registry.k8s.io/pause:3.10
+  become: true
+  register: pause_pull
+  retries: 15
+  delay: 10
+  until: pause_pull.rc == 0
+  changed_when: false
+
+- name: Restart containerd after pause pull
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+  become: true
+
+- name: Wait for containerd
+  ansible.builtin.pause:
+    seconds: 15
+
+# BASE SETUP
 - name: Ensure .kube directory exists on worker node
   file:
     path: /root/.kube
@@ -52,8 +80,7 @@
     mode: '0644'
   become: true
 
-
-# Retrieve the join command
+# JOIN THE CLUSTER
 - name: Read kubeadm join command from file
   set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
@@ -64,4 +91,8 @@
 
 - name: Join the node to the cluster
   command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
-
+  become: true
+  register: join_result
+  retries: 3
+  delay: 10
+  until: join_result.rc == 0
