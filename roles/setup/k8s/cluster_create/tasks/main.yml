@@ -2,9 +2,7 @@
 - name: RESTART_K8S_CREATE
   ansible.builtin.meta: noop
 
-# =============================================================================
 # CLEANUP
-# =============================================================================
 - name: Reset Kubernetes
   ansible.builtin.command: kubeadm reset -f
   ignore_errors: true
@@ -21,9 +19,7 @@
     - /var/lib/containerd
   become: true
 
-# =============================================================================
 # CONFIGURE containerd FOR overlayfs + CRI
-# =============================================================================
 - name: Write containerd config with overlayfs + user mode
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
@@ -54,12 +50,12 @@
     seconds: 15
   when: inventory_hostname == groups['core_node'][0]
 
-# =============================================================================
-# PULL IMAGES USING crictl (RESPECTS CRI + overlayfs)
-# =============================================================================
-- name: Pull K8s images using crictl --user 0:0 (bypass whiteout bug)
+- name: Pull K8s images using ctr + overlayfs (NO --user)
   ansible.builtin.shell: |
-    crictl pull --creds="" --user 0:0 {{ item }}
+    ctr -n k8s.io images pull \
+      --snapshotter overlayfs \
+      --platform linux/amd64 \
+      {{ item }}
   loop:
     - registry.k8s.io/kube-apiserver:v1.32.9
     - registry.k8s.io/kube-controller-manager:v1.32.9
@@ -69,15 +65,11 @@
     - registry.k8s.io/coredns/coredns:v1.11.1
   become: true
   when: inventory_hostname == groups['core_node'][0]
-  register: crictl_pull
-  retries: 5
-  delay: 15
-  until: crictl_pull.rc == 0
-  ignore_errors: false
+  register: ctr_pull
+  retries: 3
+  delay: 10
+  until: ctr_pull.rc == 0
 
-# =============================================================================
-# UPLOAD & MIGRATE CONFIG
-# =============================================================================
 - name: Upload kubeadm config
   ansible.builtin.copy:
     src: kubeadm-config.yaml
@@ -92,9 +84,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# =============================================================================
 # INITIALIZE CLUSTER
-# =============================================================================
 - name: Initialize cluster
   ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml --skip-phases=preflight,addon/kube-proxy
   register: kubeadm_init
@@ -103,9 +93,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# =============================================================================
 # SETUP KUBECONFIG
-# =============================================================================
 - name: Create .kube
   ansible.builtin.file:
     path: "{{ ansible_env.HOME }}/.kube"
@@ -122,9 +110,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# =============================================================================
 # INSTALL HELM + CLIENT
-# =============================================================================
 - name: Install python3-venv, pip, curl
   ansible.builtin.apt:
     name: [python3-venv, python3-pip, curl]
@@ -155,9 +141,7 @@
     creates: /usr/local/bin/helm
   become: true
 
-# =============================================================================
 # INSTALL CNI: FLANNEL
-# =============================================================================
 - name: Create flannel namespace
   kubernetes.core.k8s:
     definition:
@@ -191,9 +175,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# =============================================================================
 # INSTALL MULTUS
-# =============================================================================
 - name: Apply Multus
   kubernetes.core.k8s:
     state: present
@@ -215,9 +197,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# =============================================================================
 # FINALIZE
-# =============================================================================
 - name: Remove taint
   ansible.builtin.command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
   environment:
