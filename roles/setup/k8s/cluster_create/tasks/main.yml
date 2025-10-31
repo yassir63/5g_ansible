@@ -34,7 +34,7 @@
     kubeadm config migrate --old-config /root/kubeadm-config.yaml --new-config /root/kubeadm-config-new.yaml
     mv /root/kubeadm-config-new.yaml /root/kubeadm-config.yaml
   become: true
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Fix containerd snapshotter (whiteout error)
 - name: Configure containerd to use overlayfs
@@ -48,20 +48,20 @@
         snapshotter = "overlayfs"
     mode: '0644'
   become: true
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 - name: Restart containerd
   ansible.builtin.systemd:
     name: containerd
     state: restarted
   become: true
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Pre-pull images
 - name: Pre-pull Kubernetes images
   ansible.builtin.shell: kubeadm config images pull --config /root/kubeadm-config.yaml
   become: true
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
   ignore_errors: yes
 
 # Initialize cluster
@@ -71,7 +71,7 @@
   failed_when: kubeadm_init.rc != 0
   changed_when: kubeadm_init.rc == 0
   become: true
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Setup kubeconfig
 - name: Create .kube directory in user's home
@@ -79,7 +79,7 @@
     path: "{{ ansible_env.HOME }}/.kube"
     state: directory
     mode: '0700'
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 - name: Copy admin.conf to kube config
   ansible.builtin.copy:
@@ -88,7 +88,7 @@
     remote_src: yes
     mode: '0600'
   become: true
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Install Helm + Kubernetes Python client (PEP-668 safe)
 - name: Install python3-venv and python3-pip
@@ -117,7 +117,7 @@
 - name: Set ansible_python_interpreter for k8s modules
   ansible.builtin.set_fact:
     ansible_python_interpreter: /opt/k8s-venv/bin/python
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Install Helm
 - name: Download Helm install script
@@ -146,7 +146,7 @@
     state: present
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 - name: Add Flannel Helm repo
   kubernetes.core.helm_repository:
@@ -154,7 +154,7 @@
     repo_url: https://flannel-io.github.io/flannel/
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 - name: Install Flannel via Helm
   kubernetes.core.helm:
@@ -166,7 +166,7 @@
     wait_timeout: 300s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Install Multus
 - name: Upload Multus DaemonSet manifest
@@ -175,7 +175,7 @@
     dest: /root/multus-daemonset.yml
     mode: '0644'
   become: true
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 - name: Apply Multus DaemonSet
   kubernetes.core.k8s:
@@ -183,7 +183,7 @@
     src: /root/multus-daemonset.yml
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 - name: Wait for Multus DaemonSet to be ready
   kubernetes.core.k8s_info:
@@ -199,7 +199,7 @@
   delay: 15
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Wait for CoreDNS
 - name: Wait for CoreDNS pods to be Ready
@@ -210,7 +210,7 @@
   until: coredns_wait.rc == 0
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Remove taint
 - name: Remove NoSchedule taint from control-plane node
@@ -218,14 +218,14 @@
   failed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['k8s_master'][0]
+  when: inventory_hostname == groups['core_node'][0]
 
 # Generate join command
 - name: Generate kubeadm join command
   ansible.builtin.shell: kubeadm token create --print-join-command
   register: join_command
   run_once: true
-  delegate_to: "{{ groups['k8s_master'][0] }}"
+  delegate_to: "{{ groups['core_node'][0] }}"
 
 - name: Save join command to file
   ansible.builtin.copy:
