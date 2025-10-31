@@ -41,10 +41,11 @@
               SystemdCgroup = true
     mode: '0644'
   become: true
-  notify: restart containerd
+  register: config_changed
 
-- name: restart containerd
+- name: Restart containerd if config changed
   ansible.builtin.systemd:
     name: containerd
     state: restarted
   become: true
+  when: config_changed.changed
