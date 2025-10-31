@@ -3,14 +3,14 @@
   ansible.builtin.meta: noop
 
 # =============================================================================
-# SAFETY CLEANUP
+# CLEANUP
 # =============================================================================
-- name: Reset Kubernetes if previously initialized
+- name: Reset Kubernetes
   ansible.builtin.command: kubeadm reset -f
   ignore_errors: true
   become: true
 
-- name: Remove old Kubernetes data
+- name: Remove old data
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
@@ -18,29 +18,13 @@
     - /etc/kubernetes
     - /var/lib/kubelet
     - /var/lib/etcd
+    - /var/lib/containerd
   become: true
 
 # =============================================================================
-# UPLOAD & MIGRATE CONFIG
+# CONFIGURE containerd FOR overlayfs + CRI
 # =============================================================================
-- name: Upload kubeadm config
-  ansible.builtin.copy:
-    src: kubeadm-config.yaml
-    dest: /root/kubeadm-config.yaml
-    mode: '0644'
-  become: true
-
-- name: Migrate kubeadm config to v1beta4
-  ansible.builtin.shell: |
-    kubeadm config migrate --old-config /root/kubeadm-config.yaml --new-config /root/kubeadm-config-new.yaml
-    mv /root/kubeadm-config-new.yaml /root/kubeadm-config.yaml
-  become: true
-  when: inventory_hostname == groups['core_node'][0]
-
-# =============================================================================
-# FORCE OVERLAYFS + PULL IMAGES WITH CTR
-# =============================================================================
-- name: Configure containerd for overlayfs + CRI
+- name: Write containerd config with overlayfs + user mode
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
     content: |
@@ -67,12 +51,15 @@
 
 - name: Wait for containerd
   ansible.builtin.pause:
-    seconds: 10
+    seconds: 15
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Pull K8s images using ctr + overlayfs (bypass kubeadm bug)
+# =============================================================================
+# PULL IMAGES USING crictl (RESPECTS CRI + overlayfs)
+# =============================================================================
+- name: Pull K8s images using crictl --user 0:0 (bypass whiteout bug)
   ansible.builtin.shell: |
-    ctr -n k8s.io images pull --snapshotter overlayfs {{ item }}
+    crictl pull --creds="" --user 0:0 {{ item }}
   loop:
     - registry.k8s.io/kube-apiserver:v1.32.9
     - registry.k8s.io/kube-controller-manager:v1.32.9
@@ -82,17 +69,34 @@
     - registry.k8s.io/coredns/coredns:v1.11.1
   become: true
   when: inventory_hostname == groups['core_node'][0]
-  register: ctr_pull
-  retries: 3
-  delay: 10
-  until: ctr_pull.rc == 0
+  register: crictl_pull
+  retries: 5
+  delay: 15
+  until: crictl_pull.rc == 0
   ignore_errors: false
+
+# =============================================================================
+# UPLOAD & MIGRATE CONFIG
+# =============================================================================
+- name: Upload kubeadm config
+  ansible.builtin.copy:
+    src: kubeadm-config.yaml
+    dest: /root/kubeadm-config.yaml
+    mode: '0644'
+  become: true
+
+- name: Migrate kubeadm config to v1beta4
+  ansible.builtin.shell: |
+    kubeadm config migrate --old-config /root/kubeadm-config.yaml --new-config /root/kubeadm-config-new.yaml
+    mv /root/kubeadm-config-new.yaml /root/kubeadm-config.yaml
+  become: true
+  when: inventory_hostname == groups['core_node'][0]
 
 # =============================================================================
 # INITIALIZE CLUSTER
 # =============================================================================
-- name: Initialize Kubernetes cluster
-  ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml
+- name: Initialize cluster
+  ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml --skip-phases=preflight,addon/kube-proxy
   register: kubeadm_init
   failed_when: kubeadm_init.rc != 0
   changed_when: kubeadm_init.rc == 0
@@ -102,14 +106,14 @@
 # =============================================================================
 # SETUP KUBECONFIG
 # =============================================================================
-- name: Create .kube directory
+- name: Create .kube
   ansible.builtin.file:
     path: "{{ ansible_env.HOME }}/.kube"
     state: directory
     mode: '0700'
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Copy admin.conf to user
+- name: Copy admin.conf
   ansible.builtin.copy:
     src: /etc/kubernetes/admin.conf
     dest: "{{ ansible_env.HOME }}/.kube/config"
@@ -119,56 +123,42 @@
   when: inventory_hostname == groups['core_node'][0]
 
 # =============================================================================
-# INSTALL HELM + KUBERNETES CLIENT (PEP-668 safe)
+# INSTALL HELM + CLIENT
 # =============================================================================
-- name: Install python3-venv, python3-pip, curl
+- name: Install python3-venv, pip, curl
   ansible.builtin.apt:
-    name:
-      - python3-venv
-      - python3-pip
-      - curl
+    name: [python3-venv, python3-pip, curl]
     state: present
-    update_cache: yes
   become: true
 
-- name: Create k8s venv
-  ansible.builtin.command:
-    cmd: python3 -m venv /opt/k8s-venv
+- name: Create venv
+  ansible.builtin.command: python3 -m venv /opt/k8s-venv
+  args:
     creates: /opt/k8s-venv/bin/activate
   become: true
 
-- name: Install kubernetes Python client
+- name: Install kubernetes client
   ansible.builtin.pip:
     name: kubernetes
-    state: present
     executable: /opt/k8s-venv/bin/pip
   become: true
 
-- name: Set ansible_python_interpreter
+- name: Set interpreter
   ansible.builtin.set_fact:
     ansible_python_interpreter: /opt/k8s-venv/bin/python
   when: inventory_hostname == groups['core_node'][0]
 
-# =============================================================================
-# INSTALL HELM
-# =============================================================================
-- name: Download Helm script
-  ansible.builtin.get_url:
-    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-    dest: /tmp/get-helm-3
-    mode: '0755'
-  become: true
-
 - name: Install Helm
-  ansible.builtin.command: /tmp/get-helm-3
+  ansible.builtin.shell: |
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
   args:
     creates: /usr/local/bin/helm
   become: true
 
 # =============================================================================
-# INSTALL FLANNEL
+# INSTALL CNI: FLANNEL
 # =============================================================================
-- name: Create kube-flannel namespace
+- name: Create flannel namespace
   kubernetes.core.k8s:
     definition:
       apiVersion: v1
@@ -182,7 +172,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Add Flannel Helm repo
+- name: Add Flannel repo
   kubernetes.core.helm_repository:
     name: flannel
     repo_url: https://flannel-io.github.io/flannel/
@@ -197,7 +187,6 @@
     release_namespace: kube-flannel
     state: present
     wait: true
-    wait_timeout: 300s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
@@ -205,75 +194,44 @@
 # =============================================================================
 # INSTALL MULTUS
 # =============================================================================
-- name: Upload Multus manifest
-  ansible.builtin.copy:
-    src: multus-daemonset.yml
-    dest: /root/multus-daemonset.yml
-    mode: '0644'
-  become: true
-  when: inventory_hostname == groups['core_node'][0]
-
 - name: Apply Multus
   kubernetes.core.k8s:
     state: present
-    src: /root/multus-daemonset.yml
+    src: multus-daemonset.yml
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Wait for Multus ready
+- name: Wait for Multus
   kubernetes.core.k8s_info:
-    api_version: apps/v1
     kind: DaemonSet
     namespace: kube-system
     name: kube-multus-ds
-  register: multus_ds
-  until: >
-    multus_ds.resources | length > 0 and
-    multus_ds.resources[0].status.desiredNumberScheduled ==
-    multus_ds.resources[0].status.numberReady
-  retries: 40
-  delay: 15
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['core_node'][0]
-
-# =============================================================================
-# WAIT FOR COREDNS
-# =============================================================================
-- name: Wait for CoreDNS
-  ansible.builtin.shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
-  register: coredns_wait
-  retries: 5
+  register: multus
+  until: multus.resources[0].status.numberReady == multus.resources[0].status.desiredNumberScheduled
+  retries: 30
   delay: 10
-  until: coredns_wait.rc == 0
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
 # =============================================================================
-# REMOVE TAINT
+# FINALIZE
 # =============================================================================
-- name: Remove control-plane taint
+- name: Remove taint
   ansible.builtin.command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
-  failed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# =============================================================================
-# GENERATE JOIN COMMAND
-# =============================================================================
 - name: Generate join command
   ansible.builtin.shell: kubeadm token create --print-join-command
-  register: join_command
-  run_once: true
+  register: join_cmd
   delegate_to: "{{ groups['core_node'][0] }}"
 
-- name: Save join command locally
+- name: Save join command
   ansible.builtin.copy:
-    content: "{{ join_command.stdout }}"
+    content: "{{ join_cmd.stdout }}"
     dest: /tmp/kubeadm_join_command.txt
-    mode: '0644'
-  run_once: true
   delegate_to: localhost
+  
