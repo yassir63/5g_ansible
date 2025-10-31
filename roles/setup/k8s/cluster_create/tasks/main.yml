@@ -72,7 +72,7 @@
         {{ item }}
   loop:
     - registry.k8s.io/kube-proxy:v1.32.9
-    - quay.io/coreos/flannel:v0.25.4
+    #- quay.io/flannel/flannel:v0.25.4
     - docker.io/multus/multus-cni:latest
     - docker.io/openvswitch/ovs-cni:latest
   become: true
