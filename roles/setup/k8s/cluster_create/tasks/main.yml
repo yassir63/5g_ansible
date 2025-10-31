@@ -1,9 +1,5 @@
 ---
-# =============================================================================
-# Kubernetes Cluster Initialization (Jammy + Questing, Master = Any)
-# =============================================================================
-
-# --- Safety cleanup
+# Safety cleanup
 - name: Reset Kubernetes if a previous init was attempted
   ansible.builtin.command: kubeadm reset -f
   ignore_errors: yes
@@ -20,7 +16,7 @@
     - /var/lib/kubelet
   become: true
 
-# --- Upload config
+# Upload config
 - name: Upload kubeadm config to master node
   ansible.builtin.copy:
     src: kubeadm-config.yaml
@@ -28,7 +24,7 @@
     mode: '0644'
   become: true
 
-# --- Fix kubeadm config (v1beta3 → v1beta4)
+# Fix kubeadm config (v1beta3 → v1beta4)
 - name: Migrate kubeadm config to v1beta4
   ansible.builtin.shell: |
     kubeadm config migrate --old-config /root/kubeadm-config.yaml --new-config /root/kubeadm-config-new.yaml
@@ -36,7 +32,7 @@
   become: true
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Fix containerd snapshotter (whiteout error)
+# Fix containerd snapshotter (whiteout error)
 - name: Configure containerd to use overlayfs
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
@@ -57,14 +53,14 @@
   become: true
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Pre-pull images
+# Pre-pull images
 - name: Pre-pull Kubernetes images
   ansible.builtin.shell: kubeadm config images pull --config /root/kubeadm-config.yaml
   become: true
   when: inventory_hostname == groups['k8s_master'][0]
   ignore_errors: yes
 
-# --- Initialize cluster
+# Initialize cluster
 - name: Initialize Kubernetes cluster with kubeadm config
   ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
@@ -73,7 +69,7 @@
   become: true
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Setup kubeconfig
+# Setup kubeconfig
 - name: Create .kube directory in user's home
   ansible.builtin.file:
     path: "{{ ansible_env.HOME }}/.kube"
@@ -90,7 +86,7 @@
   become: true
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Install Helm + Kubernetes Python client (PEP-668 safe)
+# Install Helm + Kubernetes Python client (PEP-668 safe)
 - name: Install python3-venv and python3-pip
   ansible.builtin.apt:
     name:
@@ -119,7 +115,7 @@
     ansible_python_interpreter: /opt/k8s-venv/bin/python
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Install Helm
+# Install Helm
 - name: Download Helm install script
   ansible.builtin.get_url:
     url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
@@ -133,7 +129,7 @@
     creates: /usr/local/bin/helm
   become: true
 
-# --- Install Flannel
+# Install Flannel
 - name: Create kube-flannel namespace with pod-security label
   kubernetes.core.k8s:
     definition:
@@ -168,7 +164,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Install Multus
+# Install Multus
 - name: Upload Multus DaemonSet manifest
   ansible.builtin.copy:
     src: multus-daemonset.yml
@@ -201,7 +197,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Wait for CoreDNS
+# Wait for CoreDNS
 - name: Wait for CoreDNS pods to be Ready
   ansible.builtin.shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
   register: coredns_wait
@@ -212,7 +208,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Remove taint
+# Remove taint
 - name: Remove NoSchedule taint from control-plane node
   ansible.builtin.command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
   failed_when: false
@@ -220,7 +216,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['k8s_master'][0]
 
-# --- Generate join command
+# Generate join command
 - name: Generate kubeadm join command
   ansible.builtin.shell: kubeadm token create --print-join-command
   register: join_command
