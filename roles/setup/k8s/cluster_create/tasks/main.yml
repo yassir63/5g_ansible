@@ -1,34 +1,35 @@
 ---
-
 - name: RESTART_K8S_CREATE
   ansible.builtin.meta: noop
 
-# Safety cleanup
-- name: Reset Kubernetes if a previous init was attempted
+# =============================================================================
+# SAFETY CLEANUP
+# =============================================================================
+- name: Reset Kubernetes if previously initialized
   ansible.builtin.command: kubeadm reset -f
-  ignore_errors: yes
+  ignore_errors: true
   become: true
 
-- name: Remove old Kubernetes data directories
+- name: Remove old Kubernetes data
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
-    - /etc/kubernetes/pki
-    - /etc/kubernetes/manifests
-    - /var/lib/etcd
+    - /etc/kubernetes
     - /var/lib/kubelet
+    - /var/lib/etcd
   become: true
 
-# Upload config
-- name: Upload kubeadm config to master node
+# =============================================================================
+# UPLOAD & MIGRATE CONFIG
+# =============================================================================
+- name: Upload kubeadm config
   ansible.builtin.copy:
     src: kubeadm-config.yaml
     dest: /root/kubeadm-config.yaml
     mode: '0644'
   become: true
 
-# Fix kubeadm config (v1beta3 → v1beta4)
 - name: Migrate kubeadm config to v1beta4
   ansible.builtin.shell: |
     kubeadm config migrate --old-config /root/kubeadm-config.yaml --new-config /root/kubeadm-config-new.yaml
@@ -36,35 +37,61 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Configure containerd to use overlayfs
+# =============================================================================
+# FORCE OVERLAYFS + PULL IMAGES WITH CTR
+# =============================================================================
+- name: Configure containerd for overlayfs + CRI
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
     content: |
       version = 2
-      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-        SystemdCgroup = true
-      [plugins."io.containerd.snapshotter.v1.overlayfs"]
-        snapshotter = "overlayfs"
+      [plugins."io.containerd.grpc.v1.cri"]
+        sandbox_image = "registry.k8s.io/pause:3.10"
+        [plugins."io.containerd.grpc.v1.cri".containerd]
+          default_runtime_name = "runc"
+          snapshotter = "overlayfs"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+            runtime_type = "io.containerd.runc.v2"
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+              SystemdCgroup = true
     mode: '0644'
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Restart containerd BEFORE image pull
+- name: Restart containerd
   ansible.builtin.systemd:
     name: containerd
     state: restarted
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# Pre-pull images
-- name: Pre-pull Kubernetes images
-  ansible.builtin.shell: kubeadm config images pull --config /root/kubeadm-config.yaml
+- name: Wait for containerd
+  ansible.builtin.pause:
+    seconds: 10
+  when: inventory_hostname == groups['core_node'][0]
+
+- name: Pull K8s images using ctr + overlayfs (bypass kubeadm bug)
+  ansible.builtin.shell: |
+    ctr -n k8s.io images pull --snapshotter overlayfs {{ item }}
+  loop:
+    - registry.k8s.io/kube-apiserver:v1.32.9
+    - registry.k8s.io/kube-controller-manager:v1.32.9
+    - registry.k8s.io/kube-scheduler:v1.32.9
+    - registry.k8s.io/kube-proxy:v1.32.9
+    - registry.k8s.io/etcd:3.5.15-0
+    - registry.k8s.io/coredns/coredns:v1.11.1
   become: true
   when: inventory_hostname == groups['core_node'][0]
-  ignore_errors: yes
+  register: ctr_pull
+  retries: 3
+  delay: 10
+  until: ctr_pull.rc == 0
+  ignore_errors: false
 
-# Initialize cluster
-- name: Initialize Kubernetes cluster with kubeadm config
+# =============================================================================
+# INITIALIZE CLUSTER
+# =============================================================================
+- name: Initialize Kubernetes cluster
   ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
   failed_when: kubeadm_init.rc != 0
@@ -72,15 +99,17 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# Setup kubeconfig
-- name: Create .kube directory in user's home
+# =============================================================================
+# SETUP KUBECONFIG
+# =============================================================================
+- name: Create .kube directory
   ansible.builtin.file:
     path: "{{ ansible_env.HOME }}/.kube"
     state: directory
     mode: '0700'
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Copy admin.conf to kube config
+- name: Copy admin.conf to user
   ansible.builtin.copy:
     src: /etc/kubernetes/admin.conf
     dest: "{{ ansible_env.HOME }}/.kube/config"
@@ -89,8 +118,10 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# Install Helm + Kubernetes Python client (PEP-668 safe)
-- name: Install python3-venv and python3-pip
+# =============================================================================
+# INSTALL HELM + KUBERNETES CLIENT (PEP-668 safe)
+# =============================================================================
+- name: Install python3-venv, python3-pip, curl
   ansible.builtin.apt:
     name:
       - python3-venv
@@ -100,26 +131,28 @@
     update_cache: yes
   become: true
 
-- name: Create Helm/K8s venv
+- name: Create k8s venv
   ansible.builtin.command:
     cmd: python3 -m venv /opt/k8s-venv
     creates: /opt/k8s-venv/bin/activate
   become: true
 
-- name: Install kubernetes Python client in venv
+- name: Install kubernetes Python client
   ansible.builtin.pip:
     name: kubernetes
     state: present
     executable: /opt/k8s-venv/bin/pip
   become: true
 
-- name: Set ansible_python_interpreter for k8s modules
+- name: Set ansible_python_interpreter
   ansible.builtin.set_fact:
     ansible_python_interpreter: /opt/k8s-venv/bin/python
   when: inventory_hostname == groups['core_node'][0]
 
-# Install Helm
-- name: Download Helm install script
+# =============================================================================
+# INSTALL HELM
+# =============================================================================
+- name: Download Helm script
   ansible.builtin.get_url:
     url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
     dest: /tmp/get-helm-3
@@ -132,8 +165,10 @@
     creates: /usr/local/bin/helm
   become: true
 
-# Install Flannel
-- name: Create kube-flannel namespace with pod-security label
+# =============================================================================
+# INSTALL FLANNEL
+# =============================================================================
+- name: Create kube-flannel namespace
   kubernetes.core.k8s:
     definition:
       apiVersion: v1
@@ -155,7 +190,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Install Flannel via Helm
+- name: Install Flannel
   kubernetes.core.helm:
     name: flannel
     chart_ref: flannel/flannel
@@ -167,8 +202,10 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# Install Multus
-- name: Upload Multus DaemonSet manifest
+# =============================================================================
+# INSTALL MULTUS
+# =============================================================================
+- name: Upload Multus manifest
   ansible.builtin.copy:
     src: multus-daemonset.yml
     dest: /root/multus-daemonset.yml
@@ -176,7 +213,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Apply Multus DaemonSet
+- name: Apply Multus
   kubernetes.core.k8s:
     state: present
     src: /root/multus-daemonset.yml
@@ -184,24 +221,27 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Wait for Multus DaemonSet to be ready
+- name: Wait for Multus ready
   kubernetes.core.k8s_info:
     api_version: apps/v1
     kind: DaemonSet
     namespace: kube-system
     name: kube-multus-ds
-  register: multus_ds_info
-  until:
-    - multus_ds_info.resources | length > 0
-    - multus_ds_info.resources[0].status.desiredNumberScheduled == multus_ds_info.resources[0].status.numberReady
+  register: multus_ds
+  until: >
+    multus_ds.resources | length > 0 and
+    multus_ds.resources[0].status.desiredNumberScheduled ==
+    multus_ds.resources[0].status.numberReady
   retries: 40
   delay: 15
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# Wait for CoreDNS
-- name: Wait for CoreDNS pods to be Ready
+# =============================================================================
+# WAIT FOR COREDNS
+# =============================================================================
+- name: Wait for CoreDNS
   ansible.builtin.shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
   register: coredns_wait
   retries: 5
@@ -211,26 +251,29 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# Remove taint
-- name: Remove NoSchedule taint from control-plane node
+# =============================================================================
+# REMOVE TAINT
+# =============================================================================
+- name: Remove control-plane taint
   ansible.builtin.command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
   failed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# Generate join command
-- name: Generate kubeadm join command
+# =============================================================================
+# GENERATE JOIN COMMAND
+# =============================================================================
+- name: Generate join command
   ansible.builtin.shell: kubeadm token create --print-join-command
   register: join_command
   run_once: true
   delegate_to: "{{ groups['core_node'][0] }}"
 
-- name: Save join command to file
+- name: Save join command locally
   ansible.builtin.copy:
     content: "{{ join_command.stdout }}"
     dest: /tmp/kubeadm_join_command.txt
     mode: '0644'
   run_once: true
   delegate_to: localhost
-  
