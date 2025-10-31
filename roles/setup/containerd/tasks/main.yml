@@ -1,4 +1,8 @@
 ---
+# roles/setup/containerd/tasks/main.yml
+- name: RESTART_CONTAINERD
+  ansible.builtin.meta: noop
+
 - name: Remove old Docker repo junk
   ansible.builtin.file:
     path: "{{ item }}"
@@ -67,17 +71,16 @@
 
 - name: Generate default config
   ansible.builtin.command: containerd config default
-  register: cfg
+  register: default_config
   changed_when: false
   become: true
 
-- name: Write fixed config.toml
+- name: Write fixed config.toml — USE OVERLAYFS, DISABLE NATIVE
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
     content: |
-      {{ cfg.stdout
-         | regex_replace('default_snapshotter = "overlayfs"', 'default_snapshotter = "native"')
-         | regex_replace('disabled_snapshotter = ""', 'disabled_snapshotter = "overlayfs"')
+      {{ default_config.stdout
+         | regex_replace('default_snapshotter = "native"', 'default_snapshotter = "overlayfs"')
          | regex_replace('SystemdCgroup = false', 'SystemdCgroup = true')
          | regex_replace('sandbox_image = ".*"', 'sandbox_image = "registry.k8s.io/pause:3.10"')
       }}
@@ -86,7 +89,7 @@
   become: true
   register: config_changed
 
-- name: Fix containerd.service
+- name: Fix containerd.service to use config
   ansible.builtin.lineinfile:
     path: /lib/systemd/system/containerd.service
     regexp: '^ExecStart=.*'
@@ -94,7 +97,7 @@
   become: true
   register: unit_fixed
 
-- name: Reload and restart containerd
+- name: Reload systemd and restart containerd
   ansible.builtin.systemd:
     daemon_reload: yes
     name: containerd
