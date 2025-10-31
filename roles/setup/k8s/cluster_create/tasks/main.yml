@@ -171,10 +171,18 @@
   when: inventory_hostname == groups['core_node'][0]
 
 # INSTALL MULTUS
+- name: Upload Multus manifest
+  ansible.builtin.copy:
+    src: multus-daemonset.yml
+    dest: /root/multus-daemonset.yml
+    mode: '0644'
+  become: true
+  when: inventory_hostname == groups['core_node'][0]
+
 - name: Apply Multus
   kubernetes.core.k8s:
     state: present
-    src: multus-daemonset.yml
+    src: /root/multus-daemonset.yml
     kubeconfig: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
