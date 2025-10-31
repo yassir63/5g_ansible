@@ -31,7 +31,7 @@
           register: tuned_status
           changed_when: false
 
-        - name: Set tuned profile to performance
+        - name: Set tuned profile to throughput-performance
           ansible.builtin.command: tuned-adm profile throughput-performance
           when: "'Current active profile: performance' not in tuned_status.stdout"
       become: true
