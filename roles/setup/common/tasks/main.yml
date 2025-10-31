@@ -1,4 +1,7 @@
 ---
+- name: RESTART_AFTER_REBOOT
+  ansible.builtin.meta: noop
+
 - name: Ensure required apt packages are installed
   apt:
     name:
