@@ -1,4 +1,7 @@
 ---
+- name: RESTART_K8S_CREATE
+  ansible.builtin.meta: noop
+
 # --- FULL CLEANUP (every run)
 - name: Reset Kubernetes
   ansible.builtin.command: kubeadm reset -f
