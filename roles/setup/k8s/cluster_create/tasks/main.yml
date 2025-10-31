@@ -36,7 +36,6 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# Fix containerd snapshotter (whiteout error)
 - name: Configure containerd to use overlayfs
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
@@ -50,7 +49,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Restart containerd
+- name: Restart containerd BEFORE image pull
   ansible.builtin.systemd:
     name: containerd
     state: restarted
