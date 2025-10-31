@@ -49,19 +49,42 @@
   ansible.builtin.pause:
     seconds: 10
 
-# Pre-pull pause image with --local to bypass transfer service bug
-- name: Pre-pull pause image (native + local unpack)
+# PXE-SAFE: PRE-PULL PAUSE ONLY (NATIVE + --LOCAL)
+- name: Pre-pull pause image with --local (fixes native unpack bug)
   ansible.builtin.shell: >
     ctr -n k8s.io images pull \
-        --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
-        --snapshotter native \
-        --local \
-        registry.k8s.io/pause:3.10
+      --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
+      --snapshotter native \
+      --local \
+      registry.k8s.io/pause:3.10
   become: true
   register: pause_pull
-  retries: 5
+  retries: 15
   delay: 10
   until: pause_pull.rc == 0
+  changed_when: false
+  ignore_errors: false
+
+# RESTART SERVICES TO CLEAR ANY STUCK STATE
+- name: Restart containerd after pause pull
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+  become: true
+
+- name: Wait for containerd
+  ansible.builtin.pause:
+    seconds: 15
+
+- name: Restart kubelet
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+  become: true
+
+- name: Wait for kubelet
+  ansible.builtin.pause:
+    seconds: 20
 
 # UPLOAD & MIGRATE CONFIG
 - name: Upload kubeadm config
