@@ -13,17 +13,28 @@
           - cpufrequtils
         state: present
 
-    - name: Install tuned if needed
-      apt:
-        name:
-          - tuned
-        state: present
-        update_cache: yes
-      when: inventory_hostname != "sopnode-f3"
+    - block:
+        - name: Install tuned if needed
+          ansible.builtin.apt:
+            name: tuned
+            state: present
+            update_cache: yes
 
-    - name: Set CPU governor to performance on every core
-      shell: bash -c 'for ((i=0;i<$(nproc);i++)); do cpufreq-set -c $i -r -g performance; done'
-      ignore_errors: true
+        - name: Ensure tuned service is running and enabled
+          ansible.builtin.service:
+            name: tuned
+            state: started
+            enabled: true
+
+        - name: Get current tuned profile
+          ansible.builtin.command: tuned-adm active
+          register: tuned_status
+          changed_when: false
+
+        - name: Set tuned profile to performance
+          ansible.builtin.command: tuned-adm profile performance
+          when: "'Current active profile: performance' not in tuned_status.stdout"
+      become: true
       when: inventory_hostname != "sopnode-f3"
 
     - name: Apply sysctl tuning parameters
