@@ -48,6 +48,21 @@
   until: pause_pull.rc == 0
   changed_when: false
 
+# PRE-PULL KUBE-PROXY (AVOIDS ErrImagePull)
+- name: Pre-pull kube-proxy image with --local
+  ansible.builtin.shell: >
+    ctr -n k8s.io images pull \
+      --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
+      --snapshotter native \
+      --local \
+      registry.k8s.io/kube-proxy:v1.32.9
+  become: true
+  register: proxy_pull
+  retries: 15
+  delay: 10
+  until: proxy_pull.rc == 0
+  changed_when: false
+
 - name: Restart containerd after pause pull
   ansible.builtin.systemd:
     name: containerd
