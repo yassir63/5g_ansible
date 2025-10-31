@@ -54,29 +54,14 @@
             owner: root
             group: root
             mode: '0644'
-          when: inventory_hostname == "sopnode-f3"
 
         - name: Apply sysctl settings from /etc/sysctl.d/rt.conf
           ansible.builtin.command: sysctl -p /etc/sysctl.d/rt.conf
           register: sysctl_apply
           changed_when: "'apply' in sysctl_apply.stdout or 'set' in sysctl_apply.stdout"
-          when: inventory_hostname == "sopnode-f3"
+      when: inventory_hostname == "sopnode-f3"
 
     - block:
-#        - name: Set tuned profile to realtime
-#          command: tuned-adm profile realtime
-#          register: tuned_profile
-#          changed_when: "'Current active profile: realtime' not in tuned_profile.stdout"
-#
-#        - name: Get current tuned profile
-#          command: tuned-adm active
-#          register: tuned_profile
-#          changed_when: false
-#
-#        - name: Show current tuned profile
-#          debug:
-#            msg: "{{ tuned_profile.stdout }}"
-
         - name: Check if hyperthreading is disabled (reliable method)
           shell: |
             threads_per_core=$(lscpu | awk '/^Thread\(s\) per core:/ {print $4}')
