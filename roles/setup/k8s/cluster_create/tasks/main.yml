@@ -1,26 +1,27 @@
 ---
-- name: RESTART_K8S_CREATE
-  ansible.builtin.meta: noop
-
-# CLEANUP
+# --- FULL CLEANUP (every run)
 - name: Reset Kubernetes
   ansible.builtin.command: kubeadm reset -f
   ignore_errors: true
   become: true
 
-- name: Remove old data
+- name: Remove containerd state
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: /var/lib/containerd
     state: absent
-  loop:
-    - /etc/kubernetes
-    - /var/lib/kubelet
-    - /var/lib/etcd
-    - /var/lib/containerd
   become: true
 
-# CONFIGURE containerd FOR overlayfs + CRI
-- name: Write containerd config with overlayfs + user mode
+- name: Recreate containerd state dir
+  ansible.builtin.file:
+    path: /var/lib/containerd
+    state: directory
+    owner: root
+    group: root
+    mode: '0710'
+  become: true
+
+# --- FORCE overlayfs + CRI
+- name: Write containerd config (overlayfs + CRI)
   ansible.builtin.copy:
     dest: /etc/containerd/config.toml
     content: |
@@ -50,13 +51,10 @@
     seconds: 15
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Pull K8s images using ctr + overlayfs (NO --user)
+# --- PULL IMAGES WITH ctr + overlayfs (NO --user, NO --unpack)
+- name: Pull K8s images using ctr + overlayfs
   ansible.builtin.shell: |
-    ctr -n k8s.io images pull \
-      --snapshotter overlayfs \
-      --platform linux/amd64 \
-      --unpack \
-      {{ item }}
+    ctr -n k8s.io images pull --snapshotter overlayfs {{ item }}
   loop:
     - registry.k8s.io/kube-apiserver:v1.32.9
     - registry.k8s.io/kube-controller-manager:v1.32.9
@@ -71,6 +69,7 @@
   delay: 10
   until: ctr_pull.rc == 0
 
+# --- UPLOAD & MIGRATE CONFIG
 - name: Upload kubeadm config
   ansible.builtin.copy:
     src: kubeadm-config.yaml
@@ -85,7 +84,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# INITIALIZE CLUSTER
+# --- INITIALIZE CLUSTER
 - name: Initialize cluster
   ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml --skip-phases=preflight
   register: kubeadm_init
@@ -94,7 +93,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# SETUP KUBECONFIG
+# --- SETUP KUBECONFIG
 - name: Create .kube
   ansible.builtin.file:
     path: "{{ ansible_env.HOME }}/.kube"
@@ -111,7 +110,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# INSTALL HELM + CLIENT
+# --- INSTALL HELM + CLIENT
 - name: Install python3-venv, pip, curl
   ansible.builtin.apt:
     name: [python3-venv, python3-pip, curl]
@@ -142,7 +141,7 @@
     creates: /usr/local/bin/helm
   become: true
 
-# INSTALL CNI: FLANNEL
+# --- INSTALL FLANNEL
 - name: Create flannel namespace
   kubernetes.core.k8s:
     definition:
@@ -176,7 +175,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# INSTALL MULTUS
+# --- INSTALL MULTUS
 - name: Apply Multus
   kubernetes.core.k8s:
     state: present
@@ -198,7 +197,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# FINALIZE
+# --- FINALIZE
 - name: Remove taint
   ansible.builtin.command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
   environment:
@@ -215,4 +214,3 @@
     content: "{{ join_cmd.stdout }}"
     dest: /tmp/kubeadm_join_command.txt
   delegate_to: localhost
-  
