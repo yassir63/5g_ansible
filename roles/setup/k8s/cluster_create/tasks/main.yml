@@ -63,46 +63,6 @@
   delay: 10
   until: pause_pull.rc == 0
 
-#  PRE-PULL ALL DAEMONSET IMAGES ON EVERY NODE (native, no --local)
-- name: Pre-pull DaemonSet images on all nodes
-  ansible.builtin.shell: >
-    ctr -n k8s.io images pull \
-        --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
-        --snapshotter native \
-        {{ item }}
-  loop:
-    - registry.k8s.io/kube-proxy:v1.32.9
-    #- quay.io/flannel/flannel:v0.25.4
-    - docker.io/multus/multus-cni:latest
-    - docker.io/openvswitch/ovs-cni:latest
-  become: true
-  register: ds_pull
-  retries: 5
-  delay: 10
-  until: ds_pull.rc == 0
-  changed_when: false
-
-# PRE-PULL CONTROL-PLANE IMAGES – only on the master node
-- name: Pull control-plane images on master only
-  ansible.builtin.shell: >
-    ctr -n k8s.io images pull \
-      --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
-      --snapshotter native \
-      {{ item }}
-  loop:
-    - registry.k8s.io/kube-apiserver:v1.32.9
-    - registry.k8s.io/kube-controller-manager:v1.32.9
-    - registry.k8s.io/kube-scheduler:v1.32.9
-    - registry.k8s.io/etcd:3.5.15-0
-    - registry.k8s.io/coredns/coredns:v1.11.1
-  become: true
-  when: inventory_hostname == groups['core_node'][0]
-  register: cp_pull
-  retries: 3
-  delay: 10
-  until: cp_pull.rc == 0
-  changed_when: false
-
 # UPLOAD & MIGRATE CONFIG
 - name: Upload kubeadm config
   ansible.builtin.copy:
