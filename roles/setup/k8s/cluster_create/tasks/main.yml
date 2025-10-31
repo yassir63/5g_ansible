@@ -49,7 +49,20 @@
   ansible.builtin.pause:
     seconds: 10
 
-# PULL APRÈS RESTART
+# Pre-pull pause image with --local to bypass transfer service bug
+- name: Pre-pull pause image (native + local unpack)
+  ansible.builtin.shell: >
+    ctr -n k8s.io images pull
+        --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}
+        --snapshotter native
+        --local
+        registry.k8s.io/pause:3.10
+  become: true
+  register: pause_pull
+  retries: 5
+  delay: 10
+  until: pause_pull.rc == 0
+
 - name: Pull K8s images using ctr + native
   ansible.builtin.shell: >
     ctr -n k8s.io images pull --snapshotter native {{ item }}

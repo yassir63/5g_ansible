@@ -52,6 +52,7 @@
         CPUManagerPolicyOptions: true
       resolvConf: /run/systemd/resolve/resolv.conf
       rotateCertificates: true
+      podSandboxImage: "registry.k8s.io/pause:3.10"
     mode: '0644'
   become: true
 
@@ -65,3 +66,4 @@
   systemd:
     name: kubelet
     state: restarted
+  become: true
