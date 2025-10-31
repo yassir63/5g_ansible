@@ -33,7 +33,7 @@
 
         - name: Set tuned profile to throughput-performance
           ansible.builtin.command: tuned-adm profile throughput-performance
-          when: "'Current active profile: performance' not in tuned_status.stdout"
+          when: "'Current active profile: throughput-performance' not in tuned_status.stdout"
       become: true
       when: inventory_hostname != "sopnode-f3"
 
