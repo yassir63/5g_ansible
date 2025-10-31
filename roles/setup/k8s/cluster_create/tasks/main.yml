@@ -55,6 +55,7 @@
     ctr -n k8s.io images pull \
       --snapshotter overlayfs \
       --platform linux/amd64 \
+      --unpack \
       {{ item }}
   loop:
     - registry.k8s.io/kube-apiserver:v1.32.9
@@ -86,7 +87,7 @@
 
 # INITIALIZE CLUSTER
 - name: Initialize cluster
-  ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml --skip-phases=preflight,addon/kube-proxy
+  ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml --skip-phases=preflight
   register: kubeadm_init
   failed_when: kubeadm_init.rc != 0
   changed_when: kubeadm_init.rc == 0
