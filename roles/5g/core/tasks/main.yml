@@ -22,27 +22,23 @@
 
 - name: Backup and remove existing Kyverno CRDs if present
   block:
-
     - name: Find existing Kyverno CRDs
       kubernetes.core.k8s_info:
         api_version: apiextensions.k8s.io/v1
         kind: CustomResourceDefinition
       register: kyverno_crds
-
     - name: Backup CRDs
       copy:
         content: "{{ item | to_nice_yaml }}"
         dest: "~/kyverno-crd-backup-{{ item.metadata.name }}.yaml"
       loop: "{{ kyverno_crds.resources }}"
       when: "'kyverno.io' in item.metadata.name"
-
     - name: Delete CRDs
       kubernetes.core.k8s:
         state: absent
         definition: "{{ item }}"
       loop: "{{ kyverno_crds.resources }}"
       when: "'kyverno.io' in item.metadata.name"
-
   ignore_errors: yes
 
 - name: Download Kyverno chart locally
@@ -77,7 +73,7 @@
   set_fact:
     coredns_ip: "{{ coredns.resources[0].spec.clusterIP }}"
 
-- name: Install Kyverno 
+- name: Install Kyverno
   ansible.builtin.shell: |
     helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
       -n kyverno --create-namespace --wait=false \
@@ -105,17 +101,14 @@
   block:
     - debug:
         var: kyverno_status.resources[0].status
-
     - name: List Kyverno pods
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
         namespace: kyverno
       register: kyverno_pods
-
     - debug:
         var: kyverno_pods.resources
-
     - name: Fetch init container logs for Kyverno pods
       ansible.builtin.shell: |
         kubectl logs -n kyverno {{ item.0.metadata.name }} -c {{ item.1.name }} --tail=50
@@ -124,7 +117,6 @@
         label: "{{ item.0.metadata.name }} / {{ item.1.name }}"
       register: init_logs
       ignore_errors: yes
-
     - name: Display init container logs
       debug:
         var: init_logs.results
@@ -191,6 +183,22 @@
   retries: 40
   delay: 5
 
+# 1. Apply NADs (creates the objects)
+- name: Apply NADs with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
+
+# 2. **WAIT FOR MULTUS CRD** (this is the missing step)
+- name: Wait for Multus CRD to be available
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: networkattachmentdefinitions.k8s.cni.cncf.io
+  register: multus_crd
+  until: multus_crd.resources | length > 0
+  retries: 30
+  delay: 10
+
+# 3. Install jq (needed for patching)
 - name: Install jq (required for NAD patching)
   ansible.builtin.apt:
     name: jq
@@ -198,6 +206,7 @@
     update_cache: yes
   become: yes
 
+# 4. Patch NADs to avoid interface name conflict
 - name: Patch NADs to use unique interface names (net1/net2/net3)
   ansible.builtin.shell: >-
     set -euo pipefail;
@@ -208,9 +217,9 @@
         n4network) ifname=net3 ;;
         *) continue ;;
       esac
-      config=$(kubectl get NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
+      config=$(kubectl get networkattachmentdefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
       newconfig=$(echo "$config" | jq --arg n "$ifname" '.ifname = $n')
-      kubectl patch NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} \
+      kubectl patch networkattachmentdefinition "$nad" -n {{ open5gs_ns }} \
         --type=merge -p "{\"spec\":{\"config\":$newconfig}}"
     done
   args:
@@ -320,3 +329,4 @@
 - name: Show Added subscribers
   debug:
     var: check_out.stdout
+    
