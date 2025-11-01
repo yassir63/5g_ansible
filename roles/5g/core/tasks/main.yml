@@ -78,7 +78,9 @@
     helm upgrade --install kyverno kyverno/kyverno \
       --namespace kyverno --create-namespace --version 2.5.3 --wait \
       --set admissionController.podSpec.hostNetwork=true \
-      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet
+      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet \
+      --set image.tag=v2.5.3 \
+      --set kyvernoPre.image.tag=v2.5.3
   args:
     executable: /bin/bash
     
