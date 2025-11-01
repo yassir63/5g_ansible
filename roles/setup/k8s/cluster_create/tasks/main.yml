@@ -141,11 +141,12 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Apply Multus
-  kubernetes.core.k8s:
-    state: present
-    src: /root/multus-daemonset.yml
-    kubeconfig: /etc/kubernetes/admin.conf
+- name: Apply Multus with kubectl (multi-doc safe)
+  ansible.builtin.shell: |
+    kubectl apply -f /root/multus-daemonset.yml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  become: true
   when: inventory_hostname == groups['core_node'][0]
 
 - name: Wait for Multus
@@ -169,6 +170,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
+  when: inventory_hostname == groups['core_node'][0]
 
 # FINALIZE
 - name: Remove taint
