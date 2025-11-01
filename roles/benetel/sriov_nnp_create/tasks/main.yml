@@ -10,6 +10,16 @@
   run_once: true
   delegate_to: localhost
 
+- name: Ensure pip, setuptools, wheel in venv
+  ansible.builtin.pip:
+    name:
+      - pip
+      - setuptools
+      - wheel
+    state: present
+    executable: /opt/ansible-k8s-venv/bin/pip
+  become: true
+
 - name: Create venv on worker
   ansible.builtin.command: python3 -m venv /opt/ansible-k8s-venv
   args:
