@@ -77,10 +77,9 @@
   ansible.builtin.shell: |
     helm upgrade --install kyverno kyverno/kyverno \
       --namespace kyverno --create-namespace --version 2.5.3 --wait \
+      --set kyvernoPre.enabled=false \
       --set admissionController.podSpec.hostNetwork=true \
-      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet \
-      --set image.tag=v2.5.3 \
-      --set kyvernoPre.image.tag=v2.5.3
+      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet
   args:
     executable: /bin/bash
     
