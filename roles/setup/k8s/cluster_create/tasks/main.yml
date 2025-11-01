@@ -101,6 +101,27 @@
     creates: /usr/local/bin/helm
   become: true
 
+# --- CLEANUP OLD CNI STATE (important before reinstalling Flannel)
+- name: Clean previous CNI network state
+  ansible.builtin.shell: |
+    rm -rf /var/lib/cni/*
+    rm -f /run/flannel/subnet.env
+    rm -f /etc/cni/net.d/10-flannel.conflist || true
+  args:
+    warn: false
+  become: true
+
+- name: Ensure CNI directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/cni/net.d
+    - /opt/cni/bin
+    - /var/lib/cni
+  become: true
+  
 # --- INSTALL FLANNEL
 - name: Create flannel namespace
   kubernetes.core.k8s:
