@@ -14,22 +14,17 @@
     - n4br
   become: true
 
-- name: Apply Cluster-Network-Addons Operator & OVS-CNI + Multus
-  ansible.builtin.shell: |
-    kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml
-    kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml
-    kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml
-    kubectl apply -f - <<EOF
-    apiVersion: networkaddonsoperator.network.kubevirt.io/v1
-    kind: NetworkAddonsConfig
-    metadata:
-      name: cluster
-    spec:
-      multus: {}
-      ovs: {}
-    EOF
-  args:
-    executable: /bin/bash
+- name: Apply Cluster-Network-Addons Operator & OVS-CNI
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item }}"
+    kubeconfig: "{{ kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+  loop:
+    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml"
+    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml"
+    - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
+    - "{{ role_path }}/templates/network-addons-config.yaml.j2"
+  become: false
 
 - name: Wait 10 seconds for cluster-network-addons Ready
   pause:

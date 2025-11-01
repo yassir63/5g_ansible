@@ -132,35 +132,6 @@
     kubeconfig: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-# INSTALL MULTUS
-- name: Upload Multus manifest
-  ansible.builtin.copy:
-    src: multus-daemonset.yml
-    dest: /root/multus-daemonset.yml
-    mode: '0644'
-  become: true
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Apply Multus with kubectl (multi-doc safe)
-  ansible.builtin.shell: |
-    kubectl apply -f /root/multus-daemonset.yml
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  become: true
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Wait for Multus
-  kubernetes.core.k8s_info:
-    kind: DaemonSet
-    namespace: kube-system
-    name: kube-multus-ds
-    kubeconfig: /etc/kubernetes/admin.conf
-  register: multus
-  until: multus.resources[0].status.numberReady == multus.resources[0].status.desiredNumberScheduled
-  retries: 30
-  delay: 10
-  when: inventory_hostname == groups['core_node'][0]
-
 - name: Wait for CoreDNS pods to be Ready
   shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
   register: coredns_wait
