@@ -209,29 +209,39 @@
         *) continue ;;
       esac
 
-      # Get current config and modify ifname
+      # Get current config
       config_json=$(kubectl get NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
+
+      # Modify ifname
       new_config=$(echo "$config_json" | jq --arg name "$ifname" '.ifname = $name')
 
-      # Write patch file with literal JSON (escape $ in heredoc)
-      cat > /tmp/nad-patch.json <<'EOF'
+      # Write full JSON patch to file (no heredoc, no YAML risk)
+      printf '%s\n' "$new_config" > /tmp/new_config.json
+
+      # Create patch JSON
+      cat > /tmp/nad-patch.json <<EOF
 [
-  { "op": "replace", "path": "/spec/config", "value": PATCH_VALUE }
+  {
+    "op": "replace",
+    "path": "/spec/config",
+    "value": $(cat /tmp/new_config.json)
+  }
 ]
 EOF
-      sed -i "s|PATCH_VALUE|$new_config|g" /tmp/nad-patch.json
 
       # Apply patch
       kubectl patch NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} \
         --type=json \
         --patch-file=/tmp/nad-patch.json
 
-      rm -f /tmp/nad-patch.json
+      # Cleanup
+      rm -f /tmp/new_config.json /tmp/nad-patch.json
     done
   args:
     executable: /bin/bash
+    chdir: /tmp
   register: nad_patch
-  changed_when: nad_patch.rc == 0
+  changed_when: false
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
