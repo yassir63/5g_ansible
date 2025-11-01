@@ -14,6 +14,12 @@
     - n4br
   become: true
 
+- name: Render NetworkAddonsConfig manifest locally
+  ansible.builtin.template:
+    src: network-addons-config.yaml.j2
+    dest: /tmp/network-addons-config.yaml
+  become: false
+
 - name: Apply Cluster-Network-Addons Operator & OVS-CNI
   kubernetes.core.k8s:
     state: present
@@ -23,7 +29,7 @@
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml"
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml"
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
-    - "{{ role_path }}/templates/network-addons-config.yaml.j2"
+    - "/tmp/network-addons-config.yaml"
   become: false
 
 - name: Wait 10 seconds for cluster-network-addons Ready
