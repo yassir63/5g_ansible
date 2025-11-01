@@ -25,25 +25,35 @@
     state: directory
   become: true
 
-- name: Write containerd config with overlayfs (required for whiteouts)
-  ansible.builtin.copy:
-    dest: /etc/containerd/config.toml
-    content: |
-      version = 2
-      [plugins."io.containerd.grpc.v1.cri".containerd]
-        default_runtime_name = "runc"
-        snapshotter = "overlayfs"   # ← REQUIRED: native breaks whiteouts
-        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-          runtime_type = "io.containerd.runc.v2"
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-            SystemdCgroup = true
-    mode: '0644'
+- name: Generate default containerd config
+  command: containerd config default
+  register: containerd_cfg
+  changed_when: false
   become: true
-  register: config_changed
 
-- name: Restart containerd if config changed
-  ansible.builtin.systemd:
+- name: Write config.toml
+  copy:
+    dest: /etc/containerd/config.toml
+    content: "{{ containerd_cfg.stdout }}"
+  become: true
+
+- name: Enable systemd-cgroup
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup = false'
+    replace: 'SystemdCgroup = true'
+  become: true
+
+- name: Switch snapshotter to native
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: 'snapshotter = "overlayfs"'
+    replace: 'snapshotter = "native"'
+  become: true
+
+- name: Restart & enable containerd
+  systemd:
     name: containerd
+    enabled: yes
     state: restarted
   become: true
-  when: config_changed.changed
