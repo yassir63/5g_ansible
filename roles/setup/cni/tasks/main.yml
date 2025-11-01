@@ -34,3 +34,33 @@
 - name: Wait 10 seconds for cluster-network-addons Ready
   pause:
     seconds: 10
+
+- name: Ensure Multus has cluster-wide RBAC permissions
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: multus-clusterrole
+      rules:
+        - apiGroups: [""]
+          resources: ["pods"]
+          verbs: ["get", "list", "watch"]
+
+- name: Ensure Multus ClusterRoleBinding exists
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: multus-clusterrolebinding
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: multus-clusterrole
+      subjects:
+        - kind: ServiceAccount
+          name: multus
+          namespace: kube-system
