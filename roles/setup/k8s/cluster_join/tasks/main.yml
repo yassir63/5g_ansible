@@ -33,46 +33,6 @@
   pause:
     seconds: 10
 
-# PRE-PULL PAUSE IMAGE (NATIVE + --LOCAL) — BEFORE KUBELET
-- name: Pre-pull pause image with --local (fixes native unpack bug)
-  ansible.builtin.shell: >
-    ctr -n k8s.io images pull \
-      --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
-      --snapshotter native \
-      --local \
-      registry.k8s.io/pause:3.10
-  become: true
-  register: pause_pull
-  retries: 15
-  delay: 10
-  until: pause_pull.rc == 0
-  changed_when: false
-
-# PRE-PULL KUBE-PROXY (AVOIDS ErrImagePull)
-- name: Pre-pull kube-proxy image with --local
-  ansible.builtin.shell: >
-    ctr -n k8s.io images pull \
-      --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
-      --snapshotter native \
-      --local \
-      registry.k8s.io/kube-proxy:v1.32.9
-  become: true
-  register: proxy_pull
-  retries: 15
-  delay: 10
-  until: proxy_pull.rc == 0
-  changed_when: false
-
-- name: Restart containerd after pause pull
-  ansible.builtin.systemd:
-    name: containerd
-    state: restarted
-  become: true
-
-- name: Wait for containerd
-  ansible.builtin.pause:
-    seconds: 15
-
 # BASE SETUP
 - name: Ensure .kube directory exists on worker node
   file:
@@ -105,13 +65,4 @@
     var: kubeadm_join_command
 
 - name: Join the node to the cluster
-  ansible.builtin.shell: >
-    {{ kubeadm_join_command }} \
-      --cri-socket unix:///run/containerd/containerd.sock \
-      --ignore-preflight-errors=SystemVerification \
-      --v=5
-  become: true
-  register: join_result
-  retries: 3
-  delay: 10
-  until: join_result.rc == 0
+  command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"

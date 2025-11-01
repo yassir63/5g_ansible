@@ -8,73 +8,16 @@
   ignore_errors: true
   become: true
 
-- name: Remove containerd state
-  ansible.builtin.file:
-    path: /var/lib/containerd
+- name: Remove old Kubernetes data directories
+  file:
+    path: "{{ item }}"
     state: absent
+  loop:
+    - /etc/kubernetes/pki
+    - /etc/kubernetes/manifests
+    - /var/lib/etcd
+    - /var/lib/kubelet
   become: true
-
-- name: Recreate containerd state dir
-  ansible.builtin.file:
-    path: /var/lib/containerd
-    state: directory
-    mode: '0710'
-  become: true
-
-# CONFIG + RESTART AVANT PULL
-- name: Write native snapshotter config
-  ansible.builtin.copy:
-    dest: /etc/containerd/config.toml
-    content: |
-      version = 2
-      [plugins."io.containerd.grpc.v1.cri"]
-        sandbox_image = "registry.k8s.io/pause:3.10"
-        [plugins."io.containerd.grpc.v1.cri".containerd]
-          default_runtime_name = "runc"
-          snapshotter = "native"
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-            runtime_type = "io.containerd.runc.v2"
-            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-              SystemdCgroup = true
-    mode: '0644'
-  become: true
-
-- name: Restart containerd after config
-  ansible.builtin.systemd:
-    name: containerd
-    state: restarted
-  become: true
-
-- name: Wait for containerd to be ready
-  ansible.builtin.pause:
-    seconds: 10
-
-# PXE-SAFE: PRE-PULL PAUSE ONLY (NATIVE + --LOCAL)
-- name: Pre-pull pause image with --local (fixes native unpack bug)
-  ansible.builtin.shell: >
-    ctr -n k8s.io images pull \
-      --platform linux/{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} \
-      --snapshotter native \
-      --local \
-      registry.k8s.io/pause:3.10
-  become: true
-  register: pause_pull
-  retries: 15
-  delay: 10
-  until: pause_pull.rc == 0
-  changed_when: false
-  ignore_errors: false
-
-# RESTART SERVICES TO CLEAR ANY STUCK STATE
-- name: Restart containerd after pause pull
-  ansible.builtin.systemd:
-    name: containerd
-    state: restarted
-  become: true
-
-- name: Wait for containerd
-  ansible.builtin.pause:
-    seconds: 15
 
 - name: Restart kubelet
   ansible.builtin.systemd:
