@@ -63,10 +63,25 @@
     msg: "No Kyverno chart folder found in /tmp/kyverno. Helm pull may have failed."
   when: kyverno_chart_folder.matched == 0
 
-- name: Install Kyverno Helm chart (Helm manages CRDs)
+- name: Get CoreDNS service IP
+  kubernetes.core.k8s_info:
+    kind: Service
+    name: kube-dns
+    namespace: kube-system
+  register: coredns
+  retries: 5
+  delay: 5
+  until: coredns.resources | length > 0
+
+- name: Set CoreDNS IP fact
+  set_fact:
+    coredns_ip: "{{ coredns.resources[0].spec.clusterIP }}"
+
+- name: Install Kyverno Helm chart with forced DNS
   ansible.builtin.shell: |
     helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
-      -n kyverno --create-namespace --wait=false
+      -n kyverno --create-namespace --wait=false \
+      --set admissionController.podSpec.dnsConfig.nameservers[0]={{ coredns_ip }}
   args:
     executable: /bin/bash
 
