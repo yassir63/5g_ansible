@@ -190,8 +190,25 @@
   retries: 40
   delay: 5
 
-- name: Apply NADs with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
+- name: Install jq (required for NAD patching)
+  ansible.builtin.apt:
+    name: jq
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Apply NADs with unique interface names (net1, net2, net3)
+  ansible.builtin.shell: |
+    for nad in n2network n3network n4network; do
+      ifname="net1"
+      [ "$nad" = "n3network" ] && ifname="net2"
+      [ "$nad" = "n4network" ] && ifname="net3"
+      kubectl patch networkattachmentdefinition $nad -n {{ open5gs_ns }} \
+        --type='merge' \
+        -p "{\"spec\":{\"config\":$(kubectl get networkattachmentdefinition $nad -n {{ open5gs_ns }} -o jsonpath='{.spec.config}' | jq '.ifname=\"'$ifname'\"') | jq -c)}}"
+    done
+  args:
+    executable: /bin/bash
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
