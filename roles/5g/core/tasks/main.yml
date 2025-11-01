@@ -209,15 +209,20 @@
         *) continue ;;
       esac
 
-      # Build patch as JSON file (avoids shell quoting nightmare)
-      cat > /tmp/nad-patch.json <<EOF
-      [
-        { "op": "add", "path": "/spec/config", "value": $(kubectl get networkattachmentdefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}' | jq --arg name "$ifname" '.ifname = $name') }
-      ]
-      EOF
+      # Get current config and modify ifname
+      config_json=$(kubectl get NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
+      new_config=$(echo "$config_json" | jq --arg name "$ifname" '.ifname = $name')
 
-      # Apply JSON patch
-      kubectl patch networkattachmentdefinition "$nad" -n {{ open5gs_ns }} \
+      # Write patch file with literal JSON (escape $ in heredoc)
+      cat > /tmp/nad-patch.json <<'EOF'
+[
+  { "op": "replace", "path": "/spec/config", "value": PATCH_VALUE }
+]
+EOF
+      sed -i "s|PATCH_VALUE|$new_config|g" /tmp/nad-patch.json
+
+      # Apply patch
+      kubectl patch NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} \
         --type=json \
         --patch-file=/tmp/nad-patch.json
 
