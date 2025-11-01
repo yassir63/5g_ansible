@@ -105,7 +105,11 @@
     var: kubeadm_join_command
 
 - name: Join the node to the cluster
-  command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
+  ansible.builtin.shell: >
+    {{ kubeadm_join_command }} \
+      --cri-socket unix:///run/containerd/containerd.sock \
+      --ignore-preflight-errors=SystemVerification \
+      --v=5
   become: true
   register: join_result
   retries: 3

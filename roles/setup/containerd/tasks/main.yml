@@ -30,15 +30,13 @@
     dest: /etc/containerd/config.toml
     content: |
       version = 2
-      [plugins."io.containerd.grpc.v1.cri"]
-        sandbox_image = "registry.k8s.io/pause:3.10"
-        [plugins."io.containerd.grpc.v1.cri".containerd]
-          default_runtime_name = "runc"
-          snapshotter = "overlayfs"   # ← REQUIRED: native breaks whiteouts
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-            runtime_type = "io.containerd.runc.v2"
-            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-              SystemdCgroup = true
+      [plugins."io.containerd.grpc.v1.cri".containerd]
+        default_runtime_name = "runc"
+        snapshotter = "overlayfs"   # ← REQUIRED: native breaks whiteouts
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+          runtime_type = "io.containerd.runc.v2"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+            SystemdCgroup = true
     mode: '0644'
   become: true
   register: config_changed
@@ -46,13 +44,6 @@
 - name: Restart containerd if config changed
   ansible.builtin.systemd:
     name: containerd
-    state: restarted
-  become: true
-  when: config_changed.changed
-
-- name: Restart kubelet after containerd (inline, no handler)
-  ansible.builtin.systemd:
-    name: kubelet
     state: restarted
   become: true
   when: config_changed.changed
