@@ -77,17 +77,12 @@
   set_fact:
     coredns_ip: "{{ coredns.resources[0].spec.clusterIP }}"
 
-- name: Install Kyverno Helm chart with forced DNS
+- name: Install Kyverno 
   ansible.builtin.shell: |
     helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
       -n kyverno --create-namespace --wait=false \
-      --set admissionController.podSpec.dnsPolicy=ClusterFirst \
-      --set admissionController.podSpec.dnsConfig.nameservers[0]={{ coredns_ip }} \
-      --set admissionController.podSpec.dnsConfig.searches[0]=kyverno.svc.cluster.local \
-      --set admissionController.podSpec.dnsConfig.searches[1]=svc.cluster.local \
-      --set admissionController.podSpec.dnsConfig.searches[2]=cluster.local \
-      --set admissionController.podSpec.hostNetwork=false \
-      --set admissionController.podSpec.automountServiceAccountToken=true
+      --set admissionController.podSpec.hostNetwork=true \
+      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet
   args:
     executable: /bin/bash
 
