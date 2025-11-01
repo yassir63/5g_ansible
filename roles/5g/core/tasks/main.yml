@@ -199,16 +199,31 @@
 
 - name: Apply NADs with unique interface names (net1, net2, net3)
   ansible.builtin.shell: |
+    set -euo pipefail
+
     for nad in n2network n3network n4network; do
-      ifname="net1"
-      [ "$nad" = "n3network" ] && ifname="net2"
-      [ "$nad" = "n4network" ] && ifname="net3"
-      kubectl patch networkattachmentdefinition $nad -n {{ open5gs_ns }} \
-        --type='merge' \
-        -p "{\"spec\":{\"config\":$(kubectl get networkattachmentdefinition $nad -n {{ open5gs_ns }} -o jsonpath='{.spec.config}' | jq '.ifname=\"'$ifname'\"') | jq -c)}}"
+      case "$nad" in
+        n2network) ifname="net1" ;;
+        n3network) ifname="net2" ;;
+        n4network) ifname="net3" ;;
+        *) continue ;;
+      esac
+
+      # Get current config JSON
+      config_json=$(kubectl get networkattachmentdefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
+
+      # Modify ifname using jq
+      new_config=$(echo "$config_json" | jq --arg name "$ifname" '.ifname = $name')
+
+      # Patch the NAD
+      kubectl patch networkattachmentdefinition "$nad" -n {{ open5gs_ns }} \
+        --type merge \
+        -p "{\"spec\":{\"config\":$new_config}}"
     done
   args:
     executable: /bin/bash
+  register: nad_patch
+  changed_when: nad_patch.rc == 0
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
