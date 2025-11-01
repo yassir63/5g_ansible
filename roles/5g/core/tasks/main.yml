@@ -73,17 +73,12 @@
   set_fact:
     coredns_ip: "{{ coredns.resources[0].spec.clusterIP }}"
 
-- name: Install Kyverno (fixed version) – hostNetwork for pod **and** init containers
+- name: Install Kyverno (clean reinstall)
   ansible.builtin.shell: |
     helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
       -n kyverno --create-namespace --wait \
-      --set image.tag=v2.5.3 \
-      --set initContainer.image.tag=v2.5.3 \
       --set admissionController.podSpec.hostNetwork=true \
-      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet \
-      --set admissionController.initContainerSecurityContext.runAsUser=0 \
-      --set admissionController.initContainerSecurityContext.runAsGroup=0 \
-      --set admissionController.initContainerSecurityContext.capabilities.drop[0]=ALL
+      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet
   args:
     executable: /bin/bash
 
