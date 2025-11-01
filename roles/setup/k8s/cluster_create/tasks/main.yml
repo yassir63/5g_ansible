@@ -132,6 +132,27 @@
     kubeconfig: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
+- name: Install CoreDNS
+  kubernetes.core.helm:
+    name: coredns
+    chart_ref: coredns/coredns
+    release_namespace: kube-system
+    state: present
+    wait: true
+    kubeconfig: /etc/kubernetes/admin.conf
+    values:
+      service:
+        clusterIP: 10.96.0.10
+      replicaCount: 2
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 50m
+          memory: 64Mi
+  when: inventory_hostname == groups['core_node'][0]
+
 # INSTALL MULTUS
 - name: Upload Multus manifest
   ansible.builtin.copy:
