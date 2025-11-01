@@ -197,49 +197,23 @@
     update_cache: yes
   become: yes
 
-- name: Apply NADs with unique interface names (net1, net2, net3)
-  ansible.builtin.shell: |
-    set -euo pipefail
-
+- name: Patch NADs to use unique interface names (net1/net2/net3)
+  ansible.builtin.shell: >-
+    set -euo pipefail;
     for nad in n2network n3network n4network; do
       case "$nad" in
-        n2network) ifname="net1" ;;
-        n3network) ifname="net2" ;;
-        n4network) ifname="net3" ;;
+        n2network) ifname=net1 ;;
+        n3network) ifname=net2 ;;
+        n4network) ifname=net3 ;;
         *) continue ;;
       esac
-
-      # Get current config
-      config_json=$(kubectl get NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
-
-      # Modify ifname
-      new_config=$(echo "$config_json" | jq --arg name "$ifname" '.ifname = $name')
-
-      # Write full JSON patch to file (no heredoc, no YAML risk)
-      printf '%s\n' "$new_config" > /tmp/new_config.json
-
-      # Create patch JSON
-      cat > /tmp/nad-patch.json <<EOF
-[
-  {
-    "op": "replace",
-    "path": "/spec/config",
-    "value": $(cat /tmp/new_config.json)
-  }
-]
-EOF
-
-      # Apply patch
+      config=$(kubectl get NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
+      newconfig=$(echo "$config" | jq --arg n "$ifname" '.ifname = $n')
       kubectl patch NetworkAttachmentDefinition "$nad" -n {{ open5gs_ns }} \
-        --type=json \
-        --patch-file=/tmp/nad-patch.json
-
-      # Cleanup
-      rm -f /tmp/new_config.json /tmp/nad-patch.json
+        --type=merge -p "{\"spec\":{\"config\":$newconfig}}"
     done
   args:
     executable: /bin/bash
-    chdir: /tmp
   register: nad_patch
   changed_when: false
 
