@@ -43,7 +43,7 @@
       containerRuntimeEndpoint: unix:///run/containerd/containerd.sock
       cpuManagerPolicy: static
       cpuManagerPolicyOptions:
-        full-pcpus-only: true
+        full-pcpus-only: "true"
       reservedSystemCPUs: 0-5
       topologyManagerPolicy: best-effort
       failSwapOn: false
