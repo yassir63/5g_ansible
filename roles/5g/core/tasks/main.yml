@@ -75,13 +75,13 @@
 
 - name: Install Kyverno (clean reinstall)
   ansible.builtin.shell: |
-    helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
-      -n kyverno --create-namespace --wait \
+    helm upgrade --install kyverno kyverno/kyverno \
+      --namespace kyverno --create-namespace --version 2.5.3 --wait \
       --set admissionController.podSpec.hostNetwork=true \
       --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet
   args:
     executable: /bin/bash
-
+    
 - name: Wait for Kyverno deployment to be ready
   kubernetes.core.k8s_info:
     api_version: apps/v1
