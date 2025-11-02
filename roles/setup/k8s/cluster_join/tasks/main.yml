@@ -62,7 +62,7 @@
 - name: Ensure control-plane hostname is resolvable
   lineinfile:
     path: /etc/hosts
-    line: "{{ hostvars[groups['core_node'][0]].ansible_host }} {{ hostvars[groups['core_node'][0]] }}"
+    line: "{{ hostvars[groups['core_node'][0]].ip }} {{ groups['core_node'][0] }}"
   become: true
 
 - name: Read kubeadm join command from file
