@@ -14,12 +14,16 @@
     - n4br
   become: true
 
+# --- Rendre le NetworkAddonsConfig localement ---
 - name: Render NetworkAddonsConfig manifest locally
   ansible.builtin.template:
-    src: network-addons-config.yaml.j2
-    dest: /tmp/network-addons-config.yaml
-  become: false
+    src: "roles/setup/cni/templates/network-addons-config.yaml.j2"
+    dest: "/tmp/network-addons-config.yaml"
+    mode: '0644'
+  delegate_to: localhost
+  run_once: true
 
+# --- Déployer le Cluster Network Addons Operator ---
 - name: Apply Cluster-Network-Addons Operator & OVS-CNI (namespace, crd, operator)
   kubernetes.core.k8s:
     state: present
@@ -31,24 +35,28 @@
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
   become: false
 
-- name: Wait 10 seconds for cluster-network-addons Ready
+# --- Attendre un court instant pour la création des CRDs ---
+- name: Wait 10 seconds for cluster-network-addons operator to initialize
   pause:
     seconds: 10
 
+# --- Vérifier la présence du fichier /tmp/network-addons-config.yaml ---
 - name: Check if /tmp/network-addons-config.yaml exists
   ansible.builtin.stat:
-    path: /tmp/network-addons-config.yaml
+    path: "/tmp/network-addons-config.yaml"
   register: nad_tmp_stat
 
+# --- Appliquer la configuration NetworkAddonsConfig locale ---
 - name: Apply NetworkAddonsConfig from /tmp if present
   kubernetes.core.k8s:
     state: present
-    src: /tmp/network-addons-config.yaml
+    src: "/tmp/network-addons-config.yaml"
     kubeconfig: "{{ kubeconfig | default('/etc/kubernetes/admin.conf') }}"
   when: nad_tmp_stat.stat.exists
   become: false
 
-- name: Ensure Multus has cluster-wide RBAC permissions (only create RBAC; will have no effect if Multus not installed)
+# --- RBAC minimal pour Multus (sécurisé, idempotent) ---
+- name: Ensure Multus has cluster-wide RBAC permissions
   kubernetes.core.k8s:
     state: present
     definition:
@@ -77,3 +85,4 @@
         - kind: ServiceAccount
           name: multus
           namespace: kube-system
+
