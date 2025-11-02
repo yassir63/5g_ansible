@@ -1,17 +1,4 @@
 ---
-# Ensure Multus CRD is available before proceeding
-- name: Wait for Cluster Network Addons Operator to deploy Multus CRD
-  ansible.builtin.shell: |
-    set -e
-    kubectl wait deployment -n cluster-network-addons cluster-network-addons-operator --for=condition=Available --timeout=300s || true
-    until kubectl get crd network-attachment-definitions.k8s.cni.cncf.io >/dev/null 2>&1; do
-      echo "⏳ Waiting for Multus CRD..."
-      sleep 5
-    done
-  register: wait_multus_crd
-  changed_when: false
-  failed_when: false
-  
 - name: Label {{ groups['core_node'][0] }} for Open5GS Core scheduling
   command: kubectl label node {{ groups['core_node'][0] }} open5gs-core-node=true --overwrite
   changed_when: false
@@ -243,14 +230,19 @@
   changed_when: false
   failed_when: false
 
-- name: Wait for NetworkAttachmentDefinition resource to be usable
-  shell: kubectl api-resources | grep -q networkattachmentdefinition
-  register: nad_api
-  retries: 20
-  delay: 5
-  until: nad_api.rc == 0
+# Ensure Multus CRD is available before proceeding
+- name: Wait for Cluster Network Addons Operator to deploy Multus CRD
+  ansible.builtin.shell: |
+    set -e
+    kubectl wait deployment -n cluster-network-addons cluster-network-addons-operator --for=condition=Available --timeout=300s || true
+    until kubectl get crd network-attachment-definitions.k8s.cni.cncf.io >/dev/null 2>&1; do
+      echo "⏳ Waiting for Multus CRD..."
+      sleep 5
+    done
+  register: wait_multus_crd
   changed_when: false
-
+  failed_when: false
+  
 - name: Patch NADs to use unique interface names (net1/net2/net3)
   shell: |
     set -euo pipefail
