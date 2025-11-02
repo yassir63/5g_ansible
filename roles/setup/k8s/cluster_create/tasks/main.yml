@@ -4,7 +4,7 @@
 
 - name: Copy NetworkAddonsConfig locally
   ansible.builtin.template:
-    src: roles/setup/cni/templates/network-addons-config.yaml.j2
+    src: "../../cni/templates/network-addons-config.yaml.j2"
     dest: /tmp/network-addons-config.yaml
     mode: '0644'
   become: true
