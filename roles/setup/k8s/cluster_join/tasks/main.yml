@@ -2,46 +2,45 @@
 - name: RESTART_K8S_JOIN
   ansible.builtin.meta: noop
 
-# === CLEANUP (si le node était déjà joint) ===================================
+# === CLEANUP (si le node avait déjà rejoint un cluster) ======================
 - name: Check if node is already part of a Kubernetes cluster
-  stat:
+  ansible.builtin.stat:
     path: /etc/kubernetes/kubelet.conf
   register: kubelet_conf
 
 - name: Reset node if already part of a cluster
-  command: kubeadm reset -f
+  ansible.builtin.command: kubeadm reset -f
   when: kubelet_conf.stat.exists
   ignore_errors: true
   become: true
 
-- name: Remove old Kubernetes and CNI data
-  file:
+- name: Remove Kubernetes data and CNI directories
+  ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
     - /etc/cni/net.d
     - /var/lib/kubelet
     - /var/lib/cni
-    - /opt/cni/bin
+    - /run/flannel
   when: kubelet_conf.stat.exists
   become: true
   ignore_errors: true
 
-- name: Restart container runtime (containerd)
-  service:
+- name: Restart container runtime
+  ansible.builtin.systemd:
     name: containerd
     state: restarted
-  when: kubelet_conf.stat.exists
-  ignore_errors: true
   become: true
+  ignore_errors: true
 
-- name: Wait for containerd
-  pause:
-    seconds: 10
+- name: Wait for containerd to settle
+  ansible.builtin.pause:
+    seconds: 5
 
 # === INSTALLATION DES PLUGINS CNI DE BASE ====================================
-- name: Ensure CNI base directories exist
-  file:
+- name: Ensure CNI directories exist
+  ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     mode: '0755'
@@ -51,15 +50,22 @@
     - /var/lib/cni
   become: true
 
-- name: Download and extract official CNI plugins
+- name: Download CNI plugins archive
+  ansible.builtin.get_url:
+    url: "https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
+    dest: /tmp/cni-plugins.tgz
+    mode: '0644'
+  become: true
+
+- name: Extract CNI plugins
   ansible.builtin.unarchive:
-    src: "https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
+    src: /tmp/cni-plugins.tgz
     dest: /opt/cni/bin
     remote_src: true
   become: true
 
 - name: Fix CNI binary permissions
-  file:
+  ansible.builtin.file:
     path: /opt/cni/bin
     owner: root
     group: root
@@ -67,44 +73,60 @@
     recurse: true
   become: true
 
-# === BASE SETUP ==============================================================
-- name: Ensure .kube directory exists on worker node
-  file:
+- name: Verify essential CNI binaries exist
+  ansible.builtin.stat:
+    path: "/opt/cni/bin/{{ item }}"
+  with_items:
+    - loopback
+    - bridge
+    - portmap
+  register: cni_check
+  become: true
+
+- name: Fail if essential CNI plugins are missing
+  ansible.builtin.fail:
+    msg: "❌ CNI plugin {{ item.item }} missing on node {{ inventory_hostname }}"
+  when: not item.stat.exists
+  loop: "{{ cni_check.results }}"
+
+# === PREPARE JOIN ============================================================
+- name: Ensure /root/.kube exists
+  ansible.builtin.file:
     path: /root/.kube
     state: directory
     mode: '0755'
   become: true
 
 - name: Fetch admin.conf from master to control machine
-  fetch:
+  ansible.builtin.fetch:
     src: /etc/kubernetes/admin.conf
     dest: ./admin.conf
     flat: yes
   delegate_to: "{{ groups['core_node'][0] }}"
   when: inventory_hostname == groups['k8s_workers'][0]
 
-- name: Copy admin.conf from control machine to worker node
-  copy:
+- name: Copy admin.conf to worker node
+  ansible.builtin.copy:
     src: ./admin.conf
     dest: /root/.kube/config
     mode: '0644'
   become: true
 
-# === JOIN CLUSTER ============================================================
-- name: Ensure control-plane hostname is resolvable
-  lineinfile:
+- name: Ensure master node is resolvable
+  ansible.builtin.lineinfile:
     path: /etc/hosts
     line: "{{ hostvars[groups['core_node'][0]].ip }} {{ groups['core_node'][0] }}"
   become: true
 
-- name: Read kubeadm join command from file
-  set_fact:
+- name: Read join command
+  ansible.builtin.set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
 
 - name: Debug join command
-  debug:
+  ansible.builtin.debug:
     var: kubeadm_join_command
 
-- name: Join the node to the cluster
-  command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
+# === JOIN THE CLUSTER ========================================================
+- name: Join node to the cluster
+  ansible.builtin.command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
   become: true
