@@ -20,16 +20,16 @@
     dest: /tmp/network-addons-config.yaml
   become: false
 
-- name: Apply Cluster-Network-Addons Operator (namespace, crd, operator) using upstream manifests
-  kubernetes.core.k8s:
-    state: present
-    src: "{{ item }}"
-    kubeconfig: "{{ kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+- name: Apply Cluster-Network-Addons Operator manifests from URLs
+  ansible.builtin.shell: |
+    kubectl apply -f {{ item }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   loop:
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml"
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml"
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
-  become: false
+  become: true
 
 - name: Wait for cluster-network-addons-operator namespace to exist
   kubernetes.core.k8s_info:
