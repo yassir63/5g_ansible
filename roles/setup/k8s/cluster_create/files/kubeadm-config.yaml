@@ -1,8 +1,17 @@
+# Kubelet configuration
+apiVersion: kubelet.config.k8s.io/v1
 kind: KubeletConfiguration
-apiVersion: kubelet.config.k8s.io/v1beta1
 cgroupDriver: systemd
+
 ---
-apiVersion: kubeadm.k8s.io/v1beta3
+# Cluster configuration
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
+kubernetesVersion: "v1.30.0"
+controlPlaneEndpoint: "sopnode-w3:6443"
 networking:
-  podSubnet: "10.244.0.0/16" # --pod-network-cidr
+  podSubnet: "10.244.0.0/16"     # Flannel-compatible
+  serviceSubnet: "10.96.0.0/12"  # Default service CIDR
+  dnsDomain: "cluster.local"
+controllerManager: {}
+scheduler: {}

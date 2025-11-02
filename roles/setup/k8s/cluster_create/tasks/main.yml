@@ -2,14 +2,23 @@
 - name: RESTART_K8S_CREATE
   ansible.builtin.meta: noop
 
-# FULL CLEANUP
-- name: Reset Kubernetes
+- name: Copy NetworkAddonsConfig locally
+  ansible.builtin.template:
+    src: roles/setup/cni/templates/network-addons-config.yaml.j2
+    dest: /tmp/network-addons-config.yaml
+    mode: '0644'
+  become: true
+  when: inventory_hostname == groups['core_node'][0]
+
+
+# === [PHASE 0: CLEANUP] =====================================
+- name: Reset Kubernetes (safe cleanup)
   ansible.builtin.command: kubeadm reset -f
   ignore_errors: true
   become: true
 
 - name: Remove old Kubernetes data directories
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
@@ -25,11 +34,12 @@
     state: restarted
   become: true
 
-- name: Wait for kubelet
-  ansible.builtin.pause:
-    seconds: 20
+- name: Wait for kubelet to stabilize
+  ansible.builtin.wait_for:
+    path: /run/systemd/system
+    timeout: 20
 
-# UPLOAD & MIGRATE CONFIG
+# === [PHASE 1: INIT CLUSTER] ================================
 - name: Upload kubeadm config
   ansible.builtin.copy:
     src: kubeadm-config.yaml
@@ -37,15 +47,14 @@
     mode: '0644'
   become: true
 
-- name: Migrate kubeadm config to v1beta4
+- name: Migrate kubeadm config (v1beta4)
   ansible.builtin.shell: |
     kubeadm config migrate --old-config /root/kubeadm-config.yaml --new-config /root/kubeadm-config-new.yaml
     mv /root/kubeadm-config-new.yaml /root/kubeadm-config.yaml
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# INITIALIZE CLUSTER
-- name: Initialize cluster
+- name: Initialize cluster (control-plane)
   ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml --skip-phases=preflight
   register: kubeadm_init
   failed_when: kubeadm_init.rc != 0
@@ -53,15 +62,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# SETUP KUBECONFIG
-- name: Create .kube
-  ansible.builtin.file:
-    path: "{{ ansible_env.HOME }}/.kube"
-    state: directory
-    mode: '0700'
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Copy admin.conf
+- name: Configure kubeconfig for admin
   ansible.builtin.copy:
     src: /etc/kubernetes/admin.conf
     dest: "{{ ansible_env.HOME }}/.kube/config"
@@ -70,29 +71,29 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# INSTALL HELM + CLIENT
-- name: Install python3-venv, pip, curl
+# === [PHASE 2: DEPENDENCIES & TOOLS] ========================
+- name: Ensure base packages
   ansible.builtin.apt:
     name: [python3-venv, python3-pip, curl]
     state: present
+    update_cache: true
   become: true
 
-- name: Create venv
-  ansible.builtin.command: python3 -m venv /opt/k8s-venv
-  args:
-    creates: /opt/k8s-venv/bin/activate
-  become: true
-
-- name: Install kubernetes client
-  ansible.builtin.pip:
-    name: kubernetes
-    executable: /opt/k8s-venv/bin/pip
-  become: true
-
-- name: Set interpreter
-  ansible.builtin.set_fact:
-    ansible_python_interpreter: /opt/k8s-venv/bin/python
-  when: inventory_hostname == groups['core_node'][0]
+- name: Create Python venv and install Kubernetes client
+  block:
+    - name: Create venv
+      ansible.builtin.command: python3 -m venv /opt/k8s-venv
+      args:
+        creates: /opt/k8s-venv/bin/activate
+      become: true
+    - name: Install kubernetes module
+      ansible.builtin.pip:
+        name: kubernetes
+        executable: /opt/k8s-venv/bin/pip
+      become: true
+    - name: Set interpreter
+      ansible.builtin.set_fact:
+        ansible_python_interpreter: /opt/k8s-venv/bin/python
 
 - name: Install Helm
   ansible.builtin.shell: |
@@ -101,29 +102,18 @@
     creates: /usr/local/bin/helm
   become: true
 
-# --- CLEANUP OLD CNI STATE (important before reinstalling Flannel)
-- name: Clean previous CNI network state (safe)
-  block:
-    - name: Remove CNI directories cache (safe)
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /var/lib/cni
-        - /run/flannel/subnet.env
-      become: true
-      ignore_errors: true
+# === [PHASE 3: NETWORKING / CNI (FLANNEL)] ==================
+- name: Clean old CNI state
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/cni
+    - /run/flannel/subnet.env
+  become: true
+  ignore_errors: true
 
-    - name: Ensure /etc/cni/net.d exists and keep existing conflists (do NOT delete flannel conflist blindly)
-      ansible.builtin.file:
-        path: /etc/cni/net.d
-        state: directory
-        mode: '0755'
-      become: true
-
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Ensure CNI directories exist
+- name: Ensure required CNI directories exist
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -133,76 +123,41 @@
     - /opt/cni/bin
     - /var/lib/cni
   become: true
-  
-# --- INSTALL FLANNEL
-- name: Create flannel namespace
-  kubernetes.core.k8s:
-    definition:
-      apiVersion: v1
-      kind: Namespace
-      metadata:
-        name: kube-flannel
-        labels:
-          pod-security.kubernetes.io/enforce: privileged
-    state: present
-    kubeconfig: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['core_node'][0]
 
-- name: Add Flannel repo
-  kubernetes.core.helm_repository:
-    name: flannel
-    repo_url: https://flannel-io.github.io/flannel/
-    kubeconfig: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Install Flannel
+- name: Install Flannel via Helm
   kubernetes.core.helm:
     name: flannel
     chart_ref: flannel/flannel
     release_namespace: kube-flannel
+    create_namespace: true
     state: present
     wait: true
     kubeconfig: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Wait for flannel daemonset pods to be Ready
-  shell: >
+- name: Wait for Flannel DaemonSet to be ready
+  shell: |
     kubectl -n kube-flannel wait --for=condition=Ready pod -l app=flannel --timeout=300s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: wait_flannel
-  failed_when: wait_flannel.rc != 0
-  when: inventory_hostname == groups['core_node'][0]
   become: true
-
-- name: Ensure flannel wrote /run/flannel/subnet.env and /etc/cni/net.d/10-flannel.conflist exists
-  block:
-    - name: Wait for /run/flannel/subnet.env
-      ansible.builtin.wait_for:
-        path: /run/flannel/subnet.env
-        timeout: 60
-
-    - name: Wait for /etc/cni/net.d/10-flannel.conflist (CNI conf)
-      ansible.builtin.wait_for:
-        path: /etc/cni/net.d/10-flannel.conflist
-        timeout: 60
   when: inventory_hostname == groups['core_node'][0]
-  become: true
 
-
+# === [PHASE 4: DNS & CORE SERVICES] =========================
 - name: Wait for CoreDNS pods to be Ready
-  shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
+  shell: |
+    kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: coredns_wait
   retries: 5
   delay: 10
   until: coredns_wait.rc == 0
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# FINALIZE
-- name: Remove taint
+# === [PHASE 5: FINALIZE CONTROL PLANE] ======================
+- name: Remove control-plane taint (to allow scheduling)
   ansible.builtin.command: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
@@ -219,3 +174,59 @@
     dest: /tmp/kubeadm_join_command.txt
     mode: '0644'
   delegate_to: localhost
+
+# === [PHASE 6: NETWORK ADDONS (CNAO / MULTUS / OVS)] ========
+- name: Apply Cluster Network Addons Operator (CNAO)
+  block:
+    - name: Apply CNAO namespace
+      kubernetes.core.k8s:
+        src: "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml"
+        state: present
+        kubeconfig: /etc/kubernetes/admin.conf
+
+    - name: Apply CNAO CRD
+      kubernetes.core.k8s:
+        src: "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml"
+        state: present
+        kubeconfig: /etc/kubernetes/admin.conf
+
+    - name: Apply CNAO operator
+      kubernetes.core.k8s:
+        src: "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
+        state: present
+        kubeconfig: /etc/kubernetes/admin.conf
+
+    - name: Wait for CNAO operator to be available
+      shell: |
+        kubectl -n cluster-network-addons-operator wait deployment/cluster-network-addons-operator --for=condition=Available --timeout=180s
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: wait_cnao
+      failed_when: wait_cnao.rc != 0
+      changed_when: false
+  when: inventory_hostname == groups['core_node'][0]
+
+- name: Apply local NetworkAddonsConfig (Multus, OVS, LinuxBridge)
+  kubernetes.core.k8s:
+    state: present
+    src: /tmp/network-addons-config.yaml
+    kubeconfig: /etc/kubernetes/admin.conf
+  when: inventory_hostname == groups['core_node'][0]
+
+- name: Wait for NetworkAddonsConfig to become available
+  shell: |
+    kubectl wait networkaddonsconfig cluster --for condition=Available --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: inventory_hostname == groups['core_node'][0]
+
+# === [PHASE 7: VERIFY NETWORK] ==============================
+- name: Verify DNS resolution from test pod
+  shell: |
+    kubectl -n kube-system run -it --rm dns-test --image=busybox --restart=Never --command -- nslookup kubernetes.default.svc.cluster.local
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: dns_test
+  failed_when: "'timed out' in dns_test.stdout or 'no servers could be reached' in dns_test.stdout"
+  changed_when: false
+  when: inventory_hostname == groups['core_node'][0]
