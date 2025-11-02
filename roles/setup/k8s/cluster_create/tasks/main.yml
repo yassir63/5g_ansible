@@ -102,13 +102,26 @@
   become: true
 
 # --- CLEANUP OLD CNI STATE (important before reinstalling Flannel)
-- name: Clean previous CNI network state
-  ansible.builtin.shell: |
-    rm -rf /var/lib/cni/*
-    rm -f /run/flannel/subnet.env
-    rm -f /etc/cni/net.d/10-flannel.conflist || true
-  become: true
-  ignore_errors: true
+- name: Clean previous CNI network state (safe)
+  block:
+    - name: Remove CNI directories cache (safe)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/cni
+        - /run/flannel/subnet.env
+      become: true
+      ignore_errors: true
+
+    - name: Ensure /etc/cni/net.d exists and keep existing conflists (do NOT delete flannel conflist blindly)
+      ansible.builtin.file:
+        path: /etc/cni/net.d
+        state: directory
+        mode: '0755'
+      become: true
+
+  when: inventory_hostname == groups['core_node'][0]
 
 - name: Ensure CNI directories exist
   ansible.builtin.file:
@@ -151,6 +164,31 @@
     wait: true
     kubeconfig: /etc/kubernetes/admin.conf
   when: inventory_hostname == groups['core_node'][0]
+
+- name: Wait for flannel daemonset pods to be Ready
+  shell: >
+    kubectl -n kube-flannel wait --for=condition=Ready pod -l app=flannel --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: wait_flannel
+  failed_when: wait_flannel.rc != 0
+  when: inventory_hostname == groups['core_node'][0]
+  become: true
+
+- name: Ensure flannel wrote /run/flannel/subnet.env and /etc/cni/net.d/10-flannel.conflist exists
+  block:
+    - name: Wait for /run/flannel/subnet.env
+      ansible.builtin.wait_for:
+        path: /run/flannel/subnet.env
+        timeout: 60
+
+    - name: Wait for /etc/cni/net.d/10-flannel.conflist (CNI conf)
+      ansible.builtin.wait_for:
+        path: /etc/cni/net.d/10-flannel.conflist
+        timeout: 60
+  when: inventory_hostname == groups['core_node'][0]
+  become: true
+
 
 - name: Wait for CoreDNS pods to be Ready
   shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
