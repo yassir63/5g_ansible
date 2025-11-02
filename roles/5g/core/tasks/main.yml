@@ -221,9 +221,25 @@
   become: yes
 
 # 4. Patch NADs to avoid interface name conflict
+- name: Wait for Multus CRD to be available
+  shell: kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
+  register: multus_crd
+  retries: 40
+  delay: 5
+  until: multus_crd.rc == 0
+  changed_when: false
+
+- name: Wait for NetworkAttachmentDefinition resource to be usable
+  shell: kubectl api-resources | grep -q networkattachmentdefinition
+  register: nad_api
+  retries: 20
+  delay: 5
+  until: nad_api.rc == 0
+  changed_when: false
+
 - name: Patch NADs to use unique interface names (net1/net2/net3)
-  ansible.builtin.shell: >-
-    set -euo pipefail;
+  shell: |
+    set -euo pipefail
     for nad in n2network n3network n4network; do
       case "$nad" in
         n2network) ifname=net1 ;;
@@ -231,15 +247,17 @@
         n4network) ifname=net3 ;;
         *) continue ;;
       esac
-      config=$(kubectl get networkattachmentdefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
+      if ! kubectl get networkattachmentdefinition "$nad" -n open5gs &>/dev/null; then
+        echo "Skipping $nad (not yet created)"
+        continue
+      fi
+      config=$(kubectl get networkattachmentdefinition "$nad" -n open5gs -o jsonpath='{.spec.config}')
       newconfig=$(echo "$config" | jq --arg n "$ifname" '.ifname = $n')
-      kubectl patch networkattachmentdefinition "$nad" -n {{ open5gs_ns }} \
-        --type=merge -p "{\"spec\":{\"config\":$newconfig}}"
+      kubectl patch networkattachmentdefinition "$nad" -n open5gs --type=merge -p "{\"spec\":{\"config\":$newconfig}}"
     done
-  args:
-    executable: /bin/bash
-  register: nad_patch
-  changed_when: false
+  register: patch_nad
+  failed_when: false
+  changed_when: "'Skipping' not in patch_nad.stdout"
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
