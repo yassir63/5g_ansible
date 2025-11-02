@@ -171,12 +171,12 @@
   when: inventory_hostname == groups['core_node'][0]
 
 # FINALIZE
-- name: Remove control-plane taint (so pods can schedule)
-  ansible.builtin.shell: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
+- name: Remove control-plane taint
+  shell: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['core_node'][0]
   become: true
+  when: inventory_hostname == groups['core_node'][0]
   
 - name: Generate join command
   ansible.builtin.shell: kubeadm token create --print-join-command

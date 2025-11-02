@@ -1,4 +1,7 @@
 ---
+- name: RESTART_K8S_JOIN
+  ansible.builtin.meta: noop
+
 # CLEANUP IF NODE WAS ALREADY JOINED
 - name: Check if node is already part of a Kubernetes cluster
   stat:

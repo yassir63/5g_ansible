@@ -44,7 +44,7 @@
 
 - name: Wait for cluster-network-addons deployment to be ready
   shell: >
-    kubectl -n cluster-network-addons rollout status deploy -l name=cluster-network-addons-operator --timeout=180s
+    kubectl -n cluster-network-addons rollout status deploy -l name=cluster-network-addons --timeout=180s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: cnano_rollout
