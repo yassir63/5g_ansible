@@ -241,6 +241,18 @@
       loop: "{{ fl_subnet.results }}"
   run_once: true
 
+- name: Wait until Flannel CNI config is present on control plane
+  ansible.builtin.wait_for:
+    path: /etc/cni/net.d/10-flannel.conflist
+    state: present
+    timeout: 60
+
+- name: Restart kubelet to reload Flannel CNI
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    enabled: true
+
 # === COREDNS & FINALIZATION ===================================================
 - name: Wait for CoreDNS pods to be Ready (master)
   shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
