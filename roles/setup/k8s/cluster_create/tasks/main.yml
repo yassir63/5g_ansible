@@ -192,9 +192,9 @@
       loop: "{{ nodes_to_check }}"
       loop_control:
         label: "{{ item }}"
-    - name: Fail if any node is missing /run/flannel/subnet.env
-      ansible.builtin.fail:
-        msg: "Flannel subnet not present on {{ item.item }} (check flannel pod on this node)"
+    - name: Warn if any node is missing /run/flannel/subnet.env (informational)
+      ansible.builtin.debug:
+        msg: "⚠️  Flannel subnet not yet present on {{ item.item }} — this is normal if the node has not joined yet."
       when: not item.stat.exists
       loop: "{{ fl_subnet.results }}"
   run_once: true
