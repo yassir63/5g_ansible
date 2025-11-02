@@ -30,46 +30,20 @@
   ansible.builtin.pause:
     seconds: 10
 
-# CHOOSE kubeadm config file on controller (prefer RT if present)
-- name: Check for kubeadm-config-rt.yaml on controller
-  delegate_to: localhost
-  ansible.builtin.stat:
-    path: "{{ playbook_dir | dirname }}/roles/setup/k8s/cluster_create/files/kubeadm-config-rt.yaml"
-  register: kubeadm_rt_stat
-  run_once: true
-
-- name: Upload selected kubeadm config to target
-  ansible.builtin.copy:
-    src: "{{ item.src }}"
+- name: Upload kubeadm config to master node
+  copy:
+    src: "{{ 'kubeadm-config.yaml' }}"
     dest: /root/kubeadm-config.yaml
     mode: '0644'
-  delegate_to: localhost
   become: true
-  loop:
-    - "{{ {'src': ( (kubeadm_rt_stat.stat.exists | default(false)) | ternary('roles/setup/k8s/cluster_create/files/kubeadm-config-rt.yaml','roles/setup/k8s/cluster_create/files/kubeadm-config.yaml') ) } }}"
-  loop_control:
-    label: "{{ item.src }}"
-  run_once: true
 
-# INITIALIZE CLUSTER
-- name: Initialize cluster (kubeadm init)
-  ansible.builtin.command: >
-    kubeadm init --config /root/kubeadm-config.yaml
+- name: Initialize Kubernetes cluster with kubeadm config
+  command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
   failed_when: kubeadm_init.rc != 0
   changed_when: kubeadm_init.rc == 0
   become: true
-  when: inventory_hostname == groups['core_node'][0]
 
-- name: Save kubeadm init stdout for debugging
-  ansible.builtin.copy:
-    content: "{{ kubeadm_init.stdout | default('') }}{{ '\\n' }}{{ kubeadm_init.stderr | default('') }}"
-    dest: /tmp/kubeadm-init.log
-    mode: '0644'
-  when: kubeadm_init is defined and inventory_hostname == groups['core_node'][0]
-  become: true
-
-# SETUP KUBECONFIG
 - name: Create .kube on master
   ansible.builtin.file:
     path: "{{ ansible_env.HOME }}/.kube"
@@ -86,7 +60,6 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# INSTALL HELM + CLIENT (unchanged, idempotent)
 - name: Install python3-venv, pip, curl
   ansible.builtin.apt:
     name: [python3-venv, python3-pip, curl]
@@ -119,7 +92,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# --- FLANNEL / CNI INSTALL (ensure minimal required ordering)
+# --- Install Flannel (CNI) before CoreDNS
 - name: Ensure CNI directories exist (all nodes)
   ansible.builtin.file:
     path: "{{ item }}"
