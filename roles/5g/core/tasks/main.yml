@@ -221,13 +221,14 @@
   become: yes
 
 # 4. Patch NADs to avoid interface name conflict
-- name: Wait for Multus CRD to be available
-  shell: kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
-  register: multus_crd
-  retries: 40
+- name: Wait for Multus CRD to be registered in API server
+  ansible.builtin.shell: kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
+  register: multus_crd_check
+  retries: 60
   delay: 5
-  until: multus_crd.rc == 0
+  until: multus_crd_check.rc == 0
   changed_when: false
+  failed_when: false
 
 - name: Wait for NetworkAttachmentDefinition resource to be usable
   shell: kubectl api-resources | grep -q networkattachmentdefinition
