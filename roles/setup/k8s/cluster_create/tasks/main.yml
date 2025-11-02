@@ -107,9 +107,8 @@
     rm -rf /var/lib/cni/*
     rm -f /run/flannel/subnet.env
     rm -f /etc/cni/net.d/10-flannel.conflist || true
-  args:
-    warn: false
   become: true
+  ignore_errors: true
 
 - name: Ensure CNI directories exist
   ansible.builtin.file:
