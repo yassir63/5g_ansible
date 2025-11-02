@@ -2,37 +2,48 @@
 - name: RESTART_K8S_CREATE
   ansible.builtin.meta: noop
 
-# FULL CLEANUP (idempotent / safe)
+# === CLEANUP PHASE ============================================================
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
   ignore_errors: true
   become: true
 
-- name: Remove old Kubernetes data directories (safe)
+- name: Remove old Kubernetes and CNI directories (safe)
   file:
     path: "{{ item }}"
     state: absent
   loop:
+    - /etc/kubernetes
     - /etc/kubernetes/pki
     - /etc/kubernetes/manifests
     - /var/lib/etcd
     - /var/lib/kubelet
+    - /etc/cni/net.d
+    - /opt/cni/bin
+    - /var/lib/cni
+    - /run/flannel
+    - /run/multus
   become: true
   ignore_errors: true
 
-- name: Restart kubelet
+- name: Restart container runtime and kubelet
   ansible.builtin.systemd:
-    name: kubelet
+    name: "{{ item }}"
     state: restarted
+  loop:
+    - containerd
+    - kubelet
   become: true
+  ignore_errors: true
 
 - name: Wait for kubelet to settle
   ansible.builtin.pause:
     seconds: 10
 
+# === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
   copy:
-    src: "{{ 'kubeadm-config.yaml' }}"
+    src: kubeadm-config.yaml
     dest: /root/kubeadm-config.yaml
     mode: '0644'
   become: true
@@ -60,6 +71,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
+# === PYTHON / HELM TOOLING ====================================================
 - name: Install python3-venv, pip, curl
   ansible.builtin.apt:
     name: [python3-venv, python3-pip, curl]
@@ -92,7 +104,7 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# --- Install Flannel (CNI) before CoreDNS
+# === INSTALL FLANNEL (CNI) ====================================================
 - name: Ensure CNI directories exist (all nodes)
   ansible.builtin.file:
     path: "{{ item }}"
@@ -102,6 +114,20 @@
     - /etc/cni/net.d
     - /opt/cni/bin
     - /var/lib/cni
+  become: true
+
+- name: Ensure old multus / other CNI confs are removed before installing Flannel
+  file:
+    path: /etc/cni/net.d
+    state: absent
+  become: true
+  ignore_errors: true
+
+- name: Recreate empty /etc/cni/net.d after cleanup
+  file:
+    path: /etc/cni/net.d
+    state: directory
+    mode: '0755'
   become: true
 
 - name: Create flannel namespace (master)
@@ -138,31 +164,42 @@
         iface: "{{ hostvars[groups['core_node'][0]].nic_interface }}"
   when: inventory_hostname == groups['core_node'][0]
 
-- name: Wait for flannel daemonset pods to be Ready (master)
-  shell: >
-    kubectl -n kube-flannel wait --for=condition=Ready pod -l app=flannel --timeout=300s
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: wait_flannel
-  failed_when: wait_flannel.rc != 0
+- name: Wait for flannel DaemonSet to be ready (master)
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: DaemonSet
+    name: kube-flannel-ds
+    namespace: kube-flannel
+    kubeconfig: /etc/kubernetes/admin.conf
+  register: flannel_ds
+  retries: 30
+  delay: 10
+  until:
+    - flannel_ds.resources | length > 0
+    - flannel_ds.resources[0].status.numberReady == flannel_ds.resources[0].status.desiredNumberScheduled
   when: inventory_hostname == groups['core_node'][0]
-  become: true
 
-- name: Ensure flannel wrote /run/flannel/subnet.env and flannel conflist (master)
+- name: Verify /run/flannel/subnet.env exists on all nodes
+  vars:
+    nodes_to_check: "{{ groups['core_node'] + (groups['ran_node'] | default([])) }}"
   block:
-    - name: Wait for /run/flannel/subnet.env on master
-      ansible.builtin.wait_for:
+    - name: Check /run/flannel/subnet.env on node
+      ansible.builtin.stat:
         path: /run/flannel/subnet.env
-        timeout: 60
+      delegate_to: "{{ item }}"
+      register: fl_subnet
+      become: true
+      loop: "{{ nodes_to_check }}"
+      loop_control:
+        label: "{{ item }}"
+    - name: Fail if any node is missing /run/flannel/subnet.env
+      ansible.builtin.fail:
+        msg: "Flannel subnet not present on {{ item.item }} (check flannel pod on this node)"
+      when: not item.stat.exists
+      loop: "{{ fl_subnet.results }}"
+  run_once: true
 
-    - name: Wait for /etc/cni/net.d/10-flannel.conflist on master
-      ansible.builtin.wait_for:
-        path: /etc/cni/net.d/10-flannel.conflist
-        timeout: 60
-  when: inventory_hostname == groups['core_node'][0]
-  become: true
-
-# Wait for CoreDNS to be Ready (master)
+# === COREDNS & FINALIZATION ===================================================
 - name: Wait for CoreDNS pods to be Ready (master)
   shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
   register: coredns_wait
@@ -174,14 +211,14 @@
   become: true
   when: inventory_hostname == groups['core_node'][0]
 
-# FINALIZE
 - name: Remove control-plane taint
   shell: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
   when: inventory_hostname == groups['core_node'][0]
-  
+
+# === JOIN COMMAND =============================================================
 - name: Generate join command
   ansible.builtin.shell: kubeadm token create --print-join-command
   register: join_cmd
