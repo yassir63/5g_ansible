@@ -195,16 +195,22 @@
 - name: Apply NADs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
 
-# 2. **WAIT FOR MULTUS CRD** (this is the missing step)
-- name: Wait for Multus CRD to be available
-  kubernetes.core.k8s_info:
-    api_version: apiextensions.k8s.io/v1
-    kind: CustomResourceDefinition
-    name: networkattachmentdefinitions.k8s.cni.cncf.io
-  register: multus_crd
-  until: multus_crd.resources | length > 0
+# 2. WAIT FOR MULTUS CRD
+- name: Wait for kube-apiserver to be responsive
+  shell: kubectl get --raw='/healthz'
+  register: api_health
   retries: 30
-  delay: 10
+  delay: 5
+  until: api_health.rc == 0
+  changed_when: false
+
+- name: Wait for CRDs registration to be ready
+  shell: kubectl get crds
+  register: crd_list
+  retries: 20
+  delay: 5
+  until: "'network-attachment-definitions.k8s.cni.cncf.io' in crd_list.stdout"
+  changed_when: false
 
 # 3. Install jq (needed for patching)
 - name: Install jq (required for NAD patching)
