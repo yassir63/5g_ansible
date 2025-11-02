@@ -31,20 +31,20 @@
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
   become: true
 
-- name: Wait for cluster-network-addons-operator namespace to exist
+- name: Wait for cluster-network-addons namespace to exist
   kubernetes.core.k8s_info:
     api_version: v1
     kind: Namespace
-    name: cluster-network-addons-operator
+    name: cluster-network-addons
     kubeconfig: /etc/kubernetes/admin.conf
   register: cnano_ns
   retries: 10
   delay: 5
   until: cnano_ns.resources | length > 0
 
-- name: Wait for cluster-network-addons-operator deployment to be ready
+- name: Wait for cluster-network-addons deployment to be ready
   shell: >
-    kubectl -n cluster-network-addons-operator rollout status deploy -l name=cluster-network-addons-operator --timeout=180s
+    kubectl -n cluster-network-addons rollout status deploy -l name=cluster-network-addons-operator --timeout=180s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: cnano_rollout
