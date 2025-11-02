@@ -148,6 +148,30 @@
   when: inventory_hostname in groups['core_node'] or
         inventory_hostname in (groups['ran_node'] | default([]))
 
+- name: Ensure base CNI plugins (bridge, loopback, portmap) are present
+  ansible.builtin.apt:
+    name:
+      - containernetworking-plugins
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Verify essential CNI binaries exist
+  ansible.builtin.stat:
+    path: "/opt/cni/bin/{{ item }}"
+  with_items:
+    - bridge
+    - loopback
+    - portmap
+  register: cni_binaries
+  become: true
+
+- name: Debug missing CNI binaries
+  ansible.builtin.debug:
+    msg: "⚠️ Missing {{ item.item }} in /opt/cni/bin"
+  when: not item.stat.exists
+  loop: "{{ cni_binaries.results }}"
+
 - name: Create flannel namespace (master)
   kubernetes.core.k8s:
     definition:
