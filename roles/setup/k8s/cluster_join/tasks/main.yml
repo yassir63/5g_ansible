@@ -50,11 +50,12 @@
     - /var/lib/cni
   become: true
 
-- name: Download CNI plugins archive
-  ansible.builtin.get_url:
-    url: "https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
-    dest: /tmp/cni-plugins.tgz
-    mode: '0644'
+- name: Download CNI plugins (via curl, plus fiable)
+  ansible.builtin.shell: |
+    curl -fsSL -o /tmp/cni-plugins.tgz \
+      https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz
+  args:
+    creates: /tmp/cni-plugins.tgz
   become: true
 
 - name: Extract CNI plugins
@@ -64,7 +65,7 @@
     remote_src: true
   become: true
 
-- name: Fix CNI binary permissions
+- name: Fix permissions
   ansible.builtin.file:
     path: /opt/cni/bin
     owner: root
