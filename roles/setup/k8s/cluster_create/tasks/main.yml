@@ -85,6 +85,18 @@
     remote_src: true
   become: true
 
+- name: Ensure kube-flannel namespace exists
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: kube-flannel
+        labels:
+          pod-security.kubernetes.io/enforce: privileged
+    state: present
+    kubeconfig: /etc/kubernetes/admin.conf
+
 - name: Add Flannel Helm repo
   kubernetes.core.helm_repository:
     name: flannel
