@@ -9,103 +9,65 @@
   become: true
 
 - name: Remove old Kubernetes and CNI directories (safe)
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
     - /etc/kubernetes
-    - /etc/kubernetes/pki
-    - /etc/kubernetes/manifests
     - /var/lib/etcd
     - /var/lib/kubelet
-    - /etc/cni/net.d
-    - /opt/cni/bin
+    - /etc/cni
+    - /opt/cni
     - /var/lib/cni
     - /run/flannel
-    - /run/multus
   become: true
   ignore_errors: true
-
-- name: Restart container runtime and kubelet
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: restarted
-  loop:
-    - containerd
-    - kubelet
-  become: true
-  ignore_errors: true
-
-- name: Wait for kubelet to settle
-  ansible.builtin.pause:
-    seconds: 10
 
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
-  copy:
+  ansible.builtin.copy:
     src: kubeadm-config.yaml
     dest: /root/kubeadm-config.yaml
     mode: '0644'
   become: true
 
-- name: Initialize Kubernetes cluster with kubeadm config
-  command: kubeadm init --config /root/kubeadm-config.yaml
+- name: Initialize Kubernetes cluster
+  ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
-  failed_when: kubeadm_init.rc != 0
-  changed_when: kubeadm_init.rc == 0
   become: true
 
-- name: Create .kube on master
-  ansible.builtin.file:
-    path: "{{ ansible_env.HOME }}/.kube"
-    state: directory
-    mode: '0700'
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Copy admin.conf locally
+- name: Configure kubectl for root
   ansible.builtin.copy:
     src: /etc/kubernetes/admin.conf
-    dest: "{{ ansible_env.HOME }}/.kube/config"
-    remote_src: yes
+    dest: /root/.kube/config
+    remote_src: true
     mode: '0600'
   become: true
-  when: inventory_hostname == groups['core_node'][0]
 
-# === PYTHON / HELM TOOLING ====================================================
-- name: Install python3-venv, pip, curl
+# === TOOLING ==================================================================
+- name: Ensure Helm and Python tooling are available
   ansible.builtin.apt:
-    name: [python3-venv, python3-pip, curl]
+    name:
+      - python3-pip
+      - curl
     state: present
     update_cache: yes
   become: true
 
-- name: Create venv
-  ansible.builtin.command: python3 -m venv /opt/k8s-venv
-  args:
-    creates: /opt/k8s-venv/bin/activate
-  become: true
-
-- name: Install kubernetes client
+- name: Install kubernetes Python module
   ansible.builtin.pip:
     name: kubernetes
-    executable: /opt/k8s-venv/bin/pip
   become: true
 
-- name: Set interpreter for subsequent tasks on control machine
-  ansible.builtin.set_fact:
-    ansible_python_interpreter: /opt/k8s-venv/bin/python
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Install Helm (if not present)
+- name: Install Helm if missing
   ansible.builtin.shell: |
     curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
   args:
     creates: /usr/local/bin/helm
   become: true
-  when: inventory_hostname == groups['core_node'][0]
 
-# === INSTALL FLANNEL (CNI) ====================================================
-- name: Ensure CNI directories exist (all nodes)
+# === FLANNEL (CNI) ============================================================
+- name: Ensure CNI directories exist
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -116,83 +78,20 @@
     - /var/lib/cni
   become: true
 
-- name: Ensure old multus / other CNI confs are removed before installing Flannel
-  file:
-    path: /etc/cni/net.d
-    state: absent
-  become: true
-  ignore_errors: true
-
-- name: Install CNI plugins (if missing)
-  block:
-    - name: Download CNI plugins archive
-      ansible.builtin.get_url:
-        url: "https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
-        dest: /tmp/cni-plugins.tgz
-        mode: '0644'
-      become: true
-
-    - name: Extract CNI plugins
-      ansible.builtin.unarchive:
-        src: /tmp/cni-plugins.tgz
-        dest: /opt/cni/bin
-        remote_src: true
-      become: true
-
-    - name: Ensure permissions on CNI binaries
-      ansible.builtin.file:
-        path: /opt/cni/bin
-        mode: '0755'
-        recurse: true
-      become: true
-  when: inventory_hostname in groups['core_node'] or
-        inventory_hostname in (groups['ran_node'] | default([]))
-
-- name: Ensure base CNI plugins (bridge, loopback, portmap) are present
-  ansible.builtin.apt:
-    name:
-      - containernetworking-plugins
-    state: present
-    update_cache: yes
+- name: Download and install CNI plugins
+  ansible.builtin.unarchive:
+    src: "https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
+    dest: /opt/cni/bin
+    remote_src: true
   become: true
 
-- name: Verify essential CNI binaries exist
-  ansible.builtin.stat:
-    path: "/opt/cni/bin/{{ item }}"
-  with_items:
-    - bridge
-    - loopback
-    - portmap
-  register: cni_binaries
-  become: true
-
-- name: Debug missing CNI binaries
-  ansible.builtin.debug:
-    msg: "⚠️ Missing {{ item.item }} in /opt/cni/bin"
-  when: not item.stat.exists
-  loop: "{{ cni_binaries.results }}"
-
-- name: Create flannel namespace (master)
-  kubernetes.core.k8s:
-    definition:
-      apiVersion: v1
-      kind: Namespace
-      metadata:
-        name: kube-flannel
-        labels:
-          pod-security.kubernetes.io/enforce: privileged
-    state: present
-    kubeconfig: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Add Flannel Helm repo (master)
+- name: Add Flannel Helm repo
   kubernetes.core.helm_repository:
     name: flannel
     repo_url: https://flannel-io.github.io/flannel/
     kubeconfig: /etc/kubernetes/admin.conf
-  when: inventory_hostname == groups['core_node'][0]
 
-- name: Install Flannel via Helm with custom interface (master)
+- name: Install Flannel via Helm
   kubernetes.core.helm:
     name: flannel
     chart_ref: flannel/flannel
@@ -203,74 +102,43 @@
     values:
       podCidr: "10.244.0.0/16"
       flannel:
-        iface: "{{ hostvars[groups['core_node'][0]].nic_interface }}"
-  when: inventory_hostname == groups['core_node'][0]
+        iface: "{{ hostvars[inventory_hostname].nic_interface | default('eth0') }}"
 
-- name: Wait for flannel DaemonSet to be ready (master)
-  kubernetes.core.k8s_info:
-    api_version: apps/v1
-    kind: DaemonSet
-    name: kube-flannel-ds
-    namespace: kube-flannel
-    kubeconfig: /etc/kubernetes/admin.conf
-  register: flannel_ds
-  retries: 30
-  delay: 10
-  until:
-    - flannel_ds.resources | length > 0
-    - flannel_ds.resources[0].status.numberReady == flannel_ds.resources[0].status.desiredNumberScheduled
-  when: inventory_hostname == groups['core_node'][0]
-
-- name: Verify /run/flannel/subnet.env exists on all nodes
-  vars:
-    nodes_to_check: "{{ groups['core_node'] + (groups['ran_node'] | default([])) }}"
-  block:
-    - name: Check /run/flannel/subnet.env on node
-      ansible.builtin.stat:
-        path: /run/flannel/subnet.env
-      delegate_to: "{{ item }}"
-      register: fl_subnet
-      become: true
-      loop: "{{ nodes_to_check }}"
-      loop_control:
-        label: "{{ item }}"
-    - name: Warn if any node is missing /run/flannel/subnet.env (informational)
-      ansible.builtin.debug:
-        msg: "⚠️  Flannel subnet not yet present on {{ item.item }} — this is normal if the node has not joined yet."
-      when: not item.stat.exists
-      loop: "{{ fl_subnet.results }}"
-  run_once: true
-
-- name: Wait until Flannel CNI config is present on control plane
-  ansible.builtin.wait_for:
-    path: /etc/cni/net.d/10-flannel.conflist
-    state: present
-    timeout: 60
-
-- name: Restart kubelet to reload Flannel CNI
+# === FIX CNI INITIALIZATION ===================================================
+- name: Restart containerd and kubelet to reload CNI
   ansible.builtin.systemd:
-    name: kubelet
+    name: "{{ item }}"
     state: restarted
-    enabled: true
+  loop:
+    - containerd
+    - kubelet
+  become: true
+
+- name: Wait until node is Ready
+  ansible.builtin.shell: |
+    kubectl wait node $(hostname) --for=condition=Ready --timeout=180s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: wait_ready
+  retries: 3
+  delay: 10
+  until: wait_ready.rc == 0
+  become: true
 
 # === COREDNS & FINALIZATION ===================================================
-- name: Wait for CoreDNS pods to be Ready (master)
-  shell: kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
-  register: coredns_wait
-  retries: 6
-  delay: 10
-  until: coredns_wait.rc == 0
+- name: Wait for CoreDNS pods to be Ready
+  ansible.builtin.shell: |
+    kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=300s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
-  when: inventory_hostname == groups['core_node'][0]
 
 - name: Remove control-plane taint
-  shell: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
+  ansible.builtin.shell: |
+    kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
-  when: inventory_hostname == groups['core_node'][0]
 
 # === JOIN COMMAND =============================================================
 - name: Generate join command
@@ -279,9 +147,9 @@
   delegate_to: "{{ groups['core_node'][0] }}"
   run_once: true
 
-- name: Save join command to control machine
+- name: Save join command locally
   ansible.builtin.copy:
-    content: "{{ join_cmd.stdout | default('') }}"
+    content: "{{ join_cmd.stdout }}"
     dest: /tmp/kubeadm_join_command.txt
     mode: '0644'
   delegate_to: localhost
