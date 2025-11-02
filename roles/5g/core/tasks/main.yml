@@ -73,22 +73,33 @@
   set_fact:
     coredns_ip: "{{ coredns.resources[0].spec.clusterIP }}"
 
-- name: Install Kyverno (clean reinstall, tolerant)
-  ansible.builtin.shell: |
-    set -euo pipefail
-    echo "[INFO] Installing Kyverno Helm chart (tolerant mode)..."
-    helm upgrade --install kyverno kyverno/kyverno \
-      --namespace kyverno --create-namespace --version 2.5.3 \
-      --timeout 15m0s --atomic=false \
-      --set kyvernoPre.enabled=false \
-      --set admissionController.podSpec.hostNetwork=true \
-      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet || true
-    echo "[WARN] Helm install may have partially succeeded, will verify pods manually."
-  args:
-    executable: /bin/bash
-  register: kyverno_install
-  changed_when: true
-  failed_when: false
+- name: Install Kyverno (clean reinstall) - tolerant
+  block:
+    - name: Add/Update kyverno repo
+      ansible.builtin.shell: |
+        helm repo add kyverno https://kyverno.github.io/kyverno/ || true
+        helm repo update
+      args:
+        executable: /bin/bash
+
+    - name: Install/upgrade kyverno with timeout and retries
+      ansible.builtin.shell: |
+        set -euo pipefail
+        attempt=0
+        until [ $attempt -ge 4 ]
+        do
+          helm upgrade --install kyverno kyverno/kyverno \
+            --namespace kyverno --create-namespace --version 2.5.3 --wait --timeout 10m \
+            --set kyvernoPre.enabled=false \
+            --set admissionController.podSpec.hostNetwork=true \
+            --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet && break
+          attempt=$((attempt+1))
+          echo "helm install kyverno failed, retry #${attempt}..."
+          sleep 10
+        done
+      args:
+        executable: /bin/bash
+  become: false
     
 - name: Wait for Kyverno deployment to be ready
   kubernetes.core.k8s_info:

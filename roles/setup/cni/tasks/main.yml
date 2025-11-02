@@ -20,7 +20,7 @@
     dest: /tmp/network-addons-config.yaml
   become: false
 
-- name: Apply Cluster-Network-Addons Operator & OVS-CNI
+- name: Apply Cluster-Network-Addons Operator & OVS-CNI (namespace, crd, operator)
   kubernetes.core.k8s:
     state: present
     src: "{{ item }}"
@@ -29,14 +29,26 @@
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/namespace.yaml"
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/network-addons-config.crd.yaml"
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
-    - "/tmp/network-addons-config.yaml"
   become: false
 
 - name: Wait 10 seconds for cluster-network-addons Ready
   pause:
     seconds: 10
 
-- name: Ensure Multus has cluster-wide RBAC permissions
+- name: Check if /tmp/network-addons-config.yaml exists
+  ansible.builtin.stat:
+    path: /tmp/network-addons-config.yaml
+  register: nad_tmp_stat
+
+- name: Apply NetworkAddonsConfig from /tmp if present
+  kubernetes.core.k8s:
+    state: present
+    src: /tmp/network-addons-config.yaml
+    kubeconfig: "{{ kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+  when: nad_tmp_stat.stat.exists
+  become: false
+
+- name: Ensure Multus has cluster-wide RBAC permissions (only create RBAC; will have no effect if Multus not installed)
   kubernetes.core.k8s:
     state: present
     definition:
