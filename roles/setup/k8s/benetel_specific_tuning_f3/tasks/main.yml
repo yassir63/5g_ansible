@@ -102,10 +102,3 @@
     state: restarted
     daemon_reload: yes
 
-- name: Wait until node reports Ready
-  become: true
-  shell: kubectl wait node $(hostname) --for=condition=Ready --timeout=60s
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  ignore_errors: true
-
