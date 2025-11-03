@@ -132,34 +132,36 @@
   ansible.builtin.command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
   become: true
 
-# === WAIT FOR CLUSTER DNS (CoreDNS) TO BE READY ==============================
-- name: Wait until CoreDNS pods are Ready
-  become: true
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  ansible.builtin.shell: |
-    kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
-  register: coredns_wait
-  retries: 5
-  delay: 10
-  until: coredns_wait.rc == 0
-  changed_when: false
-
-# === WAIT UNTIL THE JOINED NODE IS READY =====================================
+# === VERIFY COREDNS READINESS (run on control-plane only) =====================
 - name: Wait until CoreDNS pods are Ready
   become: true
   delegate_to: "{{ groups['core_node'][0] }}"
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   ansible.builtin.shell: |
+    set -e
+    echo "Checking CoreDNS pods readiness on control-plane node..."
     kubectl wait -n kube-system \
       --for=condition=Ready pod -l k8s-app=kube-dns \
       --timeout=300s
   register: coredns_wait
   retries: 5
-  delay: 10
+  delay: 15
   until: coredns_wait.rc == 0
   changed_when: false
+
+- name: Debug CoreDNS status if not ready
+  when: coredns_wait.rc != 0
+  become: true
+  delegate_to: "{{ groups['core_node'][0] }}"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  ansible.builtin.shell: |
+    echo "CoreDNS pods not ready yet — showing status:"
+    kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide
+    echo
+    echo "--- Describe output ---"
+    kubectl describe pods -n kube-system -l k8s-app=kube-dns | tail -n 50
 
 # === TEST COREDNS RESOLUTION FROM BOTH NODES ================================
 - name: Test CoreDNS resolution from core and ran nodes
@@ -182,5 +184,4 @@
     kubectl delete pod dns-test-{{ groups['core_node'][0] }} --ignore-not-found
     kubectl delete pod dns-test-{{ groups['ran_node'][0] }} --ignore-not-found
   changed_when: false
-
 
