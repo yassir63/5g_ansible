@@ -84,13 +84,13 @@
     echo "❌ cni0 not found on {{ item }}" >&2
     exit 1
   delegate_to: "{{ item }}"
-  loop: "{{ groups['all'] }}"
+  loop: "{{ groups['core_node'] + groups['ran_node'] }}"
   retries: 3
   delay: 5
   register: wait_cni
   changed_when: false
 
-#check network connectivity before, else Kyverno install may fail
+# Check network connectivity before, else Kyverno install may fail
 - name: Wait for network connectivity from RAN node to API server
   become: true
   environment:
