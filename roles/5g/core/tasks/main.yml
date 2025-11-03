@@ -35,10 +35,14 @@
   ignore_errors: true
 
 # --- Install CRDs first (fixes the init crash) ---
-- name: Download Kyverno chart and apply CRDs manually
+- name: Install or upgrade Kyverno directly (auto-install CRDs)
   ansible.builtin.shell: |
-    helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp
-    kubectl apply -f /tmp/kyverno/crds
+    helm upgrade --install kyverno kyverno/kyverno \
+      --namespace kyverno \
+      --create-namespace \
+      --version 2.5.3 \
+      --set installCRDs=true \
+      --wait --timeout 10m
   args:
     executable: /bin/bash
   environment:
