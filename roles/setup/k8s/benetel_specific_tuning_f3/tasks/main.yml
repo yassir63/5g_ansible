@@ -141,7 +141,7 @@
   delay: 3
   until: kubelet_active.stdout.strip() == "active"
 
-- name: Optional: wait for node to report Ready (only if kubectl is available)
+- name: Wait for node to report Ready 
   become: true
   vars:
     kubeconfig: /etc/kubernetes/admin.conf
