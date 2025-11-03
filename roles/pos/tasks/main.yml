@@ -10,7 +10,7 @@
     pos_image_cmd: >-
       {% if node == groups['ran_node'][0]
          and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
-      pos nodes image --staging {{ node }} {{ pos_rt_image }}
+      pos node image {{ node }} boot-local
       {% else %}
       pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
@@ -21,6 +21,7 @@
 - name: (POS) Set boot parameters on node {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
   ansible.builtin.shell: >-
     {% if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
+    # useless, when boot-local, grub parameters used are default grub params on the server
     pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
     {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
     pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
