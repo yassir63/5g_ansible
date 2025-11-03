@@ -1,7 +1,53 @@
 ---
 - name: RESTART_5G_CORE
   ansible.builtin.meta: noop
-  
+
+# DNS SANITY CHECK BEFORE K8S COMPONENT INSTALLATION
+- name: Launch temporary pod to verify cluster DNS
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: dns-check
+        namespace: kube-system
+      spec:
+        containers:
+        - name: dns-test
+          image: busybox
+          command: ["sh", "-c", "sleep 3600"]
+        restartPolicy: Never
+
+- name: Wait for dns-check pod to be Running
+  kubernetes.core.k8s_info:
+    namespace: kube-system
+    kind: Pod
+    name: dns-check
+  register: dns_check_status
+  until:
+    - dns_check_status.resources | length > 0
+    - dns_check_status.resources[0].status.phase == "Running"
+  retries: 20
+  delay: 5
+
+- name: Test DNS resolution inside the cluster
+  ansible.builtin.command: kubectl exec -n kube-system dns-check -- nslookup kubernetes.default.svc.cluster.local
+  register: dns_test
+  failed_when: "'connection timed out' in dns_test.stderr or dns_test.rc != 0"
+
+- name: Cleanup dns-check pod
+  kubernetes.core.k8s:
+    state: absent
+    namespace: kube-system
+    kind: Pod
+    name: dns-check
+
+- name: Stop play if DNS is not functional
+  ansible.builtin.fail:
+    msg: "❌ DNS du cluster HS — CoreDNS ne fonctionne pas, impossible de continuer."
+  when: "'timed out' in dns_test.stderr or dns_test.rc != 0"
+
 - name: Label {{ groups['core_node'][0] }} for Open5GS Core scheduling
   command: kubectl label node {{ groups['core_node'][0] }} open5gs-core-node=true --overwrite
   changed_when: false
