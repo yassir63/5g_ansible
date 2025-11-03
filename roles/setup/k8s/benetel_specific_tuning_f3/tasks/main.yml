@@ -40,8 +40,13 @@
     state: present
     update_cache: yes
 
+- name: Check if kubelet config exists
+  ansible.builtin.stat:
+    path: /var/lib/kubelet/config.yaml
+  register: kubelet_cfg
+
 - name: Backup existing kubelet config (if exists)
-  command: cp /var/lib/kubelet/config.yaml /var/lib/kubelet/config.yaml.bak
+  ansible.builtin.command: cp /var/lib/kubelet/config.yaml /var/lib/kubelet/config.yaml.bak
   when: kubelet_cfg.stat.exists
 
 - name: Merge only CPU-related kubelet settings into /var/lib/kubelet/config.yaml (idempotent, non-destructive)
