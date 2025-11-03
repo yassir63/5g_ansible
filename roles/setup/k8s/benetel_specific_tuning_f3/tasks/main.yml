@@ -1,16 +1,20 @@
 ---
 - name: Ensure CPUAffinity is set in system.conf
-  lineinfile:
+  become: true
+  ansible.builtin.lineinfile:
     path: /etc/systemd/system.conf
     regexp: '^CPUAffinity='
     line: 'CPUAffinity=0-3'
     state: present
 
 - name: Reload systemd config
-  command: systemctl daemon-reexec
+  become: true
+  ansible.builtin.command:
+    cmd: systemctl daemon-reexec
 
 - name: Add Kubernetes and RT settings to sysctl.conf
-  blockinfile:
+  become: true
+  ansible.builtin.blockinfile:
     path: /etc/sysctl.conf
     insertafter: EOF
     block: |
@@ -21,22 +25,37 @@
       kernel.timer_migration=0
     marker: "# {mark} RAN tuning"
 
+- name: Apply sysctl changes (reload)
+  become: true
+  ansible.builtin.command:
+    cmd: sysctl -p
+  changed_when: false
+
 - name: Ensure python3 and PyYAML are installed (required for YAML merge)
-  apt:
+  become: true
+  ansible.builtin.apt:
     name:
       - python3
       - python3-yaml
     state: present
     update_cache: yes
-  become: true
 
-- name: Safely merge CPU-related kubelet settings (non-destructive)
+- name: Backup existing kubelet config (if exists)
   become: true
-  shell: |
-    python3 - <<'EOF'
+  ansible.builtin.command:
+    cmd: "test -f /var/lib/kubelet/config.yaml && cp -a /var/lib/kubelet/config.yaml /var/lib/kubelet/config.yaml.bak.$(date +%s) || true"
+  args:
+    warn: false
+  changed_when: false
+
+- name: Merge only CPU-related kubelet settings into /var/lib/kubelet/config.yaml (idempotent, non-destructive)
+  become: true
+  ansible.builtin.shell: |
+    python3 - <<'PY'
     import yaml, os, sys
 
     cfg = "/var/lib/kubelet/config.yaml"
+    # Only these keys will be added/ensured/overwritten. We DO NOT touch resolvConf or networking fields.
     patch = {
       "cgroupDriver": "systemd",
       "cpuManagerPolicy": "static",
@@ -50,48 +69,93 @@
       }
     }
 
+    # Load existing config
     if os.path.exists(cfg):
-      with open(cfg) as f:
-        data = yaml.safe_load(f) or {}
+        with open(cfg, "r") as f:
+            try:
+                data = yaml.safe_load(f) or {}
+            except Exception as e:
+                print("ERROR: failed to parse existing kubelet config:", e, file=sys.stderr)
+                sys.exit(2)
     else:
-      data = {}
+        data = {}
 
-    # featureGates merge
+    if not isinstance(data, dict):
+        data = {}
+
+    # Merge featureGates carefully (preserve other gates)
     fg = data.get("featureGates", {}) or {}
-    for k,v in patch["featureGates"].items():
-      fg[k] = v
+    for k,v in patch.get("featureGates", {}).items():
+        fg[k] = v
     data["featureGates"] = fg
 
-    for key, val in patch.items():
-      if key != "featureGates":
-        data[key] = val
+    # Merge remaining simple keys (overwrite/ensure)
+    for k, v in patch.items():
+        if k == "featureGates":
+            continue
+        data[k] = v
 
-    tmp = cfg + ".tmp"
+    # Write back atomically only if different
+    import tempfile, json
+    tmp = cfg + ".ansible.tmp"
     with open(tmp, "w") as f:
-      yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+    # compare and replace
+    if os.path.exists(cfg):
+        with open(cfg, "r") as f_old, open(tmp, "r") as f_new:
+            old = f_old.read()
+            new = f_new.read()
+            if old == new:
+                os.remove(tmp)
+                print("UNCHANGED")
+                sys.exit(0)
     os.replace(tmp, cfg)
     print("APPLIED")
-    EOF
-  register: merge_output
-  changed_when: "'APPLIED' in merge_output.stdout"
+    PY
+  register: kubelet_merge
+  failed_when: kubelet_merge.rc not in [0]
+  changed_when: "'APPLIED' in kubelet_merge.stdout"
 
-- name: Remove kubelet CPU manager checkpoint (force apply new CPU config)
+- name: Show merge result for debugging
+  ansible.builtin.debug:
+    var: kubelet_merge.stdout_lines
+
+- name: Remove kubelet CPU manager checkpoint file (so kubelet applies new config)
   become: true
-  file:
+  ansible.builtin.file:
     path: /var/lib/kubelet/cpu_manager_state
     state: absent
 
-- name: Restart kubelet
+- name: Restart kubelet to apply kubelet config changes
   become: true
-  systemd:
+  ansible.builtin.systemd:
     name: kubelet
     state: restarted
     daemon_reload: yes
 
-- name: Wait for kubelet to be active
+- name: Wait for kubelet to become active
   become: true
-  shell: systemctl is-active kubelet
-  register: result
-  until: result.stdout.strip() == "active"
+  ansible.builtin.shell: systemctl is-active kubelet
+  register: kubelet_active
   retries: 10
   delay: 3
+  until: kubelet_active.stdout.strip() == "active"
+
+- name: Optional: wait for node to report Ready (only if kubectl is available)
+  become: true
+  vars:
+    kubeconfig: /etc/kubernetes/admin.conf
+  block:
+    - name: Wait for this node to be Ready (kubernetes check)
+      ansible.builtin.shell: |
+        kubectl wait node $(hostname) --for=condition=Ready --timeout=120s
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: wait_ready
+      retries: 6
+      delay: 10
+      until: wait_ready.rc == 0
+  when: "'/etc/kubernetes/admin.conf' in lookup('fileglob','/etc/kubernetes/admin.conf', errors='ignore')"
+  become: true
+  ignore_errors: true
+  
