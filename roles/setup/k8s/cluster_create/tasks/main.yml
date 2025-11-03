@@ -31,6 +31,11 @@
     mode: '0644'
   become: true
 
+- name: Initialize Kubernetes cluster
+  ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml
+  register: kubeadm_init
+  become: true
+
 - name: Enable cluster CIDR allocation in kube-controller-manager
   ansible.builtin.lineinfile:
     path: /etc/kubernetes/manifests/kube-controller-manager.yaml
@@ -39,11 +44,6 @@
   loop:
     - { regexp: '^\s*- --allocate-node-cidrs=', line: '    - --allocate-node-cidrs=true' }
     - { regexp: '^\s*- --cluster-cidr=', line: '    - --cluster-cidr=10.244.0.0/16' }
-  become: true
-
-- name: Initialize Kubernetes cluster
-  ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml
-  register: kubeadm_init
   become: true
 
 - name: Create .kube directory in user's home
