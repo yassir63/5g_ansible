@@ -1,11 +1,11 @@
 ---
-repo_url: "https://github.com/Ziyad-Mabrouk/srsran-k8s.git"
+repo_url: "https://github.com/Ziyad-Mabrouk/srsran-helm.git"
 version: main
 
 ran_ns: open5gs
 open5gs_ns: "open5gs"
 
-repo_dest: "~/srsran-k8s"
+repo_dest: "~/srsran-helm"
 
 srs_gnb_label_selectors:
   - "app=srsran"

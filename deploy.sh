@@ -130,14 +130,16 @@ if [[ "$platform" == "r2lab" ]]; then
   echo "1) qhat01"
   echo "2) qhat02"
   echo "3) qhat03"
-  echo "4) qhat11"
+  echo "4) qhat10"
+  echo "5) qhat11"
   read -rp "Enter choices: " ue_choices
   for choice in $ue_choices; do
     case "$choice" in
       1) R2LAB_UES+=("qhat01") ;;
       2) R2LAB_UES+=("qhat02") ;;
       3) R2LAB_UES+=("qhat03") ;;
-      4) R2LAB_UES+=("qhat11") ;;
+      4) R2LAB_UES+=("qhat10") ;;
+      5) R2LAB_UES+=("qhat11") ;;
       *) echo "Invalid UE choice: $choice"; exit 1 ;;
     esac
   done
@@ -165,6 +167,69 @@ echo "Platform:    $platform"
 echo "============================="
 echo
 
+# Function to determine storage based on node
+get_storage() {
+  case "$1" in
+    sopnode-f1 | sopnode-f2) echo "sda1" ;;
+    sopnode-f3) echo "sdb2" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
+get_ue_vars() {
+  # usage: get_ue_vars <qhat>
+  # relies on global $core and $ran already set
+  : "${core:?core must be set}"; : "${ran:?ran must be set}"
+
+  local qhat="${1,,}"
+  local core_l="${core,,}"
+  local ran_l="${ran,,}"
+
+  local dnn upf_ip nssai
+
+  # qhat → dnn
+  case "$qhat" in
+    qhat01|qhat03|qhat11) dnn="streaming" ;;
+    qhat02|qhat10)        dnn="internet"  ;;
+    *) echo "echo '❌ Unknown qhat: $qhat' >&2; return 1"; return 0 ;;
+  esac
+
+  # rules by core/ran
+  if [[ "$core_l" == "oai" && "$ran_l" == "oai" ]]; then
+    upf_ip="10.0.0.1"
+    if [[ "$dnn" == "internet" ]]; then
+      nssai="01.0xFFFFFF"
+    else
+      nssai="01.000001"
+    fi
+
+  elif [[ "$core_l" == "open5gs" && "$ran_l" == "oai" ]]; then
+    if [[ "$dnn" == "internet" ]]; then
+      upf_ip="10.41.0.1"; nssai="01.0xFFFFFF"
+    else
+      upf_ip="10.42.0.1"; nssai="01.000001"
+    fi
+
+  elif [[ "$core_l" == "open5gs" && "$ran_l" != "oai" ]]; then
+    if [[ "$dnn" == "internet" ]]; then
+      upf_ip="10.41.0.1"; nssai="01.000001"
+    else
+      upf_ip="10.42.0.1"; nssai="01.000002"
+    fi
+
+  else
+    echo "echo '❌ Unsupported core/ran combo: core=$core ran=$ran' >&2; return 1"
+    return 0
+  fi
+
+  # emit KEY=VALUE so caller can eval
+  cat <<EOF
+dnn=$dnn
+upf_ip=$upf_ip
+nssai=$nssai
+EOF
+}
+
 # ========== Generate hosts.ini ==========
 echo "Generating hosts.ini..."
 
@@ -173,17 +238,17 @@ cat > ./inventory/hosts.ini <<EOF
 localhost ansible_connection=local
 
 [core_node]
-$core_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$core_node") storage=sda1
+$core_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$core_node") storage=$(get_storage "$core_node")
 
 [ran_node]
-$ran_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$ran_node") storage=sda1
+$ran_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$ran_node") storage=$(get_storage "$ran_node")
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
 cat >> ./inventory/hosts.ini <<EOF
 
 [monitor_node]
-$monitor_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=sda1
+$monitor_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=$(get_storage "$monitor_node")
 EOF
 fi
 
@@ -196,11 +261,21 @@ faraday.inria.fr ansible_user=$R2LAB_USERNAME rru=$R2LAB_RU conf=gnb.sa.band78.1
 [qhats]
 EOF
 
+# for ue in "${R2LAB_UES[@]}"; do
+#   echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1 nssai=01.000001" >> ./inventory/hosts.ini
+# done
+# cat >> ./inventory/hosts.ini <<EOF
+
+
 for ue in "${R2LAB_UES[@]}"; do
-  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr'" >> ./inventory/hosts.ini
+  # derive dnn/upf_ip/nssai from global core/ran + this UE
+  eval "$(get_ue_vars "$ue")" || { echo "Failed to compute vars for $ue"; exit 1; }
+
+  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim dnn=$dnn upf_ip=$upf_ip nssai=$nssai" \
+    >> ./inventory/hosts.ini
 done
 
-cat >> ./inventory/hosts.ini <<EOF
+
 
 [fit_nodes]
 fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
@@ -230,6 +305,8 @@ fi
 
 export RRU="$R2LAB_RU"
 export monitoring_enabled="$monitoring_enabled"
+export CORE="$core"
+export RAN="$ran"
 
 # Call appropriate deployment script
 key="${core}-${ran}-${platform}"
