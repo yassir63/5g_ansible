@@ -35,62 +35,75 @@
   ignore_errors: true
 
 # --- Install CRDs first (fixes the init crash) ---
-- name: Install or upgrade Kyverno directly (auto-install CRDs)
+- name: Download Kyverno chart locally
   ansible.builtin.shell: |
-    helm upgrade --install kyverno kyverno/kyverno \
-      --namespace kyverno \
-      --create-namespace \
-      --version 2.5.3 \
-      --set installCRDs=true \
-      --wait --timeout 10m
+    helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp/kyverno
   args:
     executable: /bin/bash
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
 
-- name: Wait for Kyverno CRDs to be registered
-  ansible.builtin.shell: |
-    kubectl get crd | grep kyverno || exit 1
-  register: kyverno_crd_check
-  retries: 10
-  delay: 10
-  until: kyverno_crd_check.rc == 0
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
+- name: Find actual untarred Kyverno folder
+  ansible.builtin.find:
+    paths: /tmp/kyverno
+    file_type: directory
+    patterns: "kyverno*"
+  register: kyverno_chart_folder
 
-# --- Install Kyverno once CRDs exist ---
-- name: Install or upgrade Kyverno (with hostNetwork fix)
+- name: Fail if no Kyverno chart folder found
+  ansible.builtin.fail:
+    msg: "No Kyverno chart folder found in /tmp/kyverno. Helm pull may have failed."
+  when: kyverno_chart_folder.matched == 0
+
+- name: Install Kyverno Helm chart (Helm manages CRDs)
   ansible.builtin.shell: |
-    helm upgrade --install kyverno kyverno/kyverno \
-      --namespace kyverno \
-      --create-namespace \
-      --version 2.5.3 \
-      --set installCRDs=true \
-      --set kyvernoPre.enabled=false \
-      --set admissionController.podSpec.hostNetwork=true \
-      --set admissionController.podSpec.dnsPolicy=ClusterFirstWithHostNet \
-      --wait --timeout 10m
+    helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
+      -n kyverno --create-namespace --wait=false
   args:
     executable: /bin/bash
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
 
-# --- Wait for Kyverno to stabilize ---
-- name: Wait for Kyverno deployments to be ready
+- name: Wait for Kyverno deployment to be ready
   kubernetes.core.k8s_info:
     api_version: apps/v1
     kind: Deployment
     namespace: kyverno
-  register: kyverno_deploys
-  retries: 30
-  delay: 10
-  until: >
-    kyverno_deploys.resources | selectattr('status.readyReplicas', 'defined')
-    | selectattr('status.readyReplicas', '>=', 1)
-    | list | length >= 1
-  ignore_errors: no
+    name: kyverno
+  register: kyverno_status
+  until:
+    - kyverno_status.resources | length > 0
+    - kyverno_status.resources[0].status.readyReplicas is defined
+    - kyverno_status.resources[0].status.readyReplicas >= 1
+  retries: 40
+  delay: 15
+  ignore_errors: yes
 
-# === KYVERNO POLICY (Open5GS placement) =======================================
+- name: Debug Kyverno deployment and pods if not ready
+  block:
+    - debug:
+        var: kyverno_status.resources[0].status
+
+    - name: List Kyverno pods
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: kyverno
+      register: kyverno_pods
+
+    - debug:
+        var: kyverno_pods.resources
+
+    - name: Fetch init container logs for Kyverno pods
+      ansible.builtin.shell: |
+        kubectl logs -n kyverno {{ item.0.metadata.name }} -c {{ item.1.name }} --tail=50
+      loop: "{{ (kyverno_pods.resources | d([])) | subelements('spec.initContainers', skip_missing=True) }}"
+      loop_control:
+        label: "{{ item.0.metadata.name }} / {{ item.1.name }}"
+      register: init_logs
+      ignore_errors: yes
+
+    - name: Display init container logs
+      debug:
+        var: init_logs.results
+  when: kyverno_status is failed
+
 - name: Copy Kyverno policy to force Open5GS pods to {{ groups['core_node'][0] }}
   copy:
     dest: /tmp/force-open5gs-node.yaml
