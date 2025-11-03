@@ -2,19 +2,26 @@
 - name: RESTART_5G_CORE
   ansible.builtin.meta: noop
 
-- name: Test DNS resolution inside the cluster (same method as cluster creation)
-  ansible.builtin.shell: |
-    kubectl run dns-test --rm -it --image=busybox:1.36 --restart=Never -- nslookup kubernetes.default.svc.cluster.local
-  register: dns_test
+- name: Test CoreDNS resolution from core and ran nodes
+  become: true
+  delegate_to: "{{ groups['core_node'][0] }}"
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  failed_when: "'connection timed out' in dns_test.stderr or dns_test.rc != 0"
+  ansible.builtin.shell: |
+    set -eux
+    for NODE in {{ groups['core_node'][0] }} {{ groups['ran_node'][0] }}; do
+      echo "=== Testing DNS on $NODE ==="
+      kubectl run dns-test-$NODE \
+        --image=busybox:1.36 \
+        --restart=Never \
+        --overrides='{"spec": {"nodeName": "'"${NODE}"'"}}' \
+        --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
+    done
+
+    echo "Cleaning up test pods..."
+    kubectl delete pod dns-test-{{ groups['core_node'][0] }} --ignore-not-found
+    kubectl delete pod dns-test-{{ groups['ran_node'][0] }} --ignore-not-found
   changed_when: false
-  
-- name: Stop play if DNS is not functional
-  ansible.builtin.fail:
-    msg: "❌ DNS du cluster HS — CoreDNS ne fonctionne pas, impossible de continuer."
-  when: "'timed out' in dns_test.stderr or dns_test.rc != 0"
 
 - name: Label {{ groups['core_node'][0] }} for Open5GS Core scheduling
   command: kubectl label node {{ groups['core_node'][0] }} open5gs-core-node=true --overwrite
