@@ -10,27 +10,19 @@
   run_once: true
   delegate_to: localhost
 
-- name: Ensure pip, setuptools, wheel in venv
-  ansible.builtin.pip:
-    name:
-      - pip
-      - setuptools
-      - wheel
-    state: present
-    executable: /opt/ansible-k8s-venv/bin/pip
-  become: true
-
 - name: Create venv on worker
-  ansible.builtin.command: python3 -m venv /opt/ansible-k8s-venv
-  args:
-    creates: /opt/ansible-k8s-venv/bin/pip
+  ansible.builtin.command:
+    cmd: python3 -m venv /opt/ansible-k8s-venv
+    creates: /opt/ansible-k8s-venv/bin/activate
   become: true
   when: inventory_hostname in groups['ran_node']
 
-- name: Install setuptools in venv
-  ansible.builtin.pip:
-    name: setuptools
-    executable: /opt/ansible-k8s-venv/bin/pip
+- name: Ensure pip, setuptools, wheel are installed in venv
+  ansible.builtin.shell: |
+    set -eux
+    /opt/ansible-k8s-venv/bin/pip install --upgrade pip setuptools wheel
+  args:
+    executable: /bin/bash
   become: true
   when: inventory_hostname in groups['ran_node']
 
