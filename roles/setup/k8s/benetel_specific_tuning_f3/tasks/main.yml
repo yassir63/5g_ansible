@@ -41,12 +41,8 @@
     update_cache: yes
 
 - name: Backup existing kubelet config (if exists)
-  become: true
-  ansible.builtin.command:
-    cmd: "test -f /var/lib/kubelet/config.yaml && cp -a /var/lib/kubelet/config.yaml /var/lib/kubelet/config.yaml.bak.$(date +%s) || true"
-  args:
-    warn: false
-  changed_when: false
+  command: cp /var/lib/kubelet/config.yaml /var/lib/kubelet/config.yaml.bak
+  when: kubelet_cfg.stat.exists
 
 - name: Merge only CPU-related kubelet settings into /var/lib/kubelet/config.yaml (idempotent, non-destructive)
   become: true
