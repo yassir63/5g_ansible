@@ -69,6 +69,31 @@
   until: wait_flannel.rc == 0
   changed_when: false
 
+# --- Ensure CNI bridge (Flannel) interface is up ---
+- name: Wait for Flannel CNI interface (cni0) to be UP on each node
+  become: true
+  delegate_to: "{{ item }}"
+  shell: |
+    set -e
+    echo "Checking CNI interface on {{ item }}..."
+    for i in {1..30}; do
+      if ip link show cni0 2>/dev/null | grep -q "state UP"; then
+        echo "✅ cni0 is UP on {{ item }}"
+        exit 0
+      fi
+      echo "⏳ Waiting for cni0 to be UP on {{ item }}..."
+      sleep 5
+    done
+    echo "❌ cni0 did not become UP on {{ item }}" >&2
+    ip link show cni0 || true
+    exit 1
+  loop: "{{ groups['all'] }}"
+  register: cni_ready
+  retries: 3
+  delay: 10
+  until: cni_ready is succeeded
+  changed_when: false
+
 #check network connectivity before, else Kyverno install may fail
 - name: Wait for network connectivity from RAN node to API server
   become: true
