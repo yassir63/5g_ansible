@@ -1,7 +1,7 @@
 # --- Kubelet Configuration ---
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
-resolvConf: "/etc/resolv.conf"
+resolvConf: "/run/systemd/resolve/resolv.conf"
 cgroupDriver: systemd
 failSwapOn: false
 featureGates:

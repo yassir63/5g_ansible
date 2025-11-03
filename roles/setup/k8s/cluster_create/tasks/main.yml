@@ -151,6 +151,14 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
 
+- name: Test CoreDNS resolution using a one-shot pod
+  become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  ansible.builtin.shell: |
+    kubectl run dns-test --rm -it --image=busybox:1.36 --restart=Never -- nslookup kubernetes.default.svc.cluster.local
+  changed_when: false
+  
 - name: Remove control-plane taint
   ansible.builtin.shell: |
     kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
