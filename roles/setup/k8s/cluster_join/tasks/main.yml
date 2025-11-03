@@ -131,3 +131,21 @@
 - name: Join node to the cluster
   ansible.builtin.command: "{{ kubeadm_join_command }} --ignore-preflight-errors=SystemVerification --v=5"
   become: true
+
+- name: Test CoreDNS resolution using a non-interactive busybox pod on a ran node
+  become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  ansible.builtin.shell: |
+    NODE="{{ groups['ran_node'][0] }}"  
+    kubectl run dns-test --image=busybox:1.36 \
+      --restart=Never \
+      --overrides='
+      {
+        "spec": {
+          "nodeName": "'"${NODE}"'"
+        }
+      }' \
+      --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local || true'
+  changed_when: false
+
