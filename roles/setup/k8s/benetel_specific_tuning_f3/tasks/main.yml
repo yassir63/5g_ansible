@@ -31,7 +31,6 @@
     cmd: sysctl -p
   changed_when: false
 
----
 # Ensure python & PyYAML for safe merge
 - name: Ensure python3 and PyYAML are installed
   apt:
