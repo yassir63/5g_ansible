@@ -55,6 +55,20 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   ignore_errors: true
 
+# check flannel ready before
+- name: Wait for Flannel pods to be Ready on all nodes
+  ansible.builtin.shell: |
+    kubectl wait -n kube-flannel --for=condition=Ready pod -l app=flannel --timeout=120s
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: wait_flannel
+  retries: 5
+  delay: 10
+  until: wait_flannel.rc == 0
+  changed_when: false
+
 # --- Install CRDs first (fixes the init crash) ---
 - name: Download Kyverno chart locally
   ansible.builtin.shell: |
