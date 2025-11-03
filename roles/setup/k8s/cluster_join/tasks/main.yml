@@ -146,27 +146,27 @@
   changed_when: false
 
 # === WAIT UNTIL THE JOINED NODE IS READY =====================================
-- name: Wait for joined node to become Ready
+- name: Wait until CoreDNS pods are Ready
   become: true
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   ansible.builtin.shell: |
-    NODE="{{ inventory_hostname }}"
-    kubectl wait node "${NODE}" --for=condition=Ready --timeout=180s
-  register: node_ready
-  retries: 5
-  delay: 10
-  until: node_ready.rc == 0
+    kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
+  delegate_to: "{{ groups['core_node'][0] }}"
   changed_when: false
+  retries: 5
+  delay: 30
 
 # === TEST DNS RESOLUTION =====================================================
-- name: Test CoreDNS resolution using a non-interactive busybox pod on a RAN node
+- name: Test CoreDNS resolution using a non-interactive busybox pod on the RAN node
   become: true
+  delegate_to: "{{ groups['core_node'][0] }}"
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   ansible.builtin.shell: |
     NODE="{{ groups['ran_node'][0] }}"
-    kubectl delete pod dns-test --ignore-not-found=true
+    echo "Testing CoreDNS from node: ${NODE}"
+    kubectl delete pod dns-test --ignore-not-found
     kubectl run dns-test --image=busybox:1.36 \
       --restart=Never \
       --overrides='
@@ -175,10 +175,10 @@
           "nodeName": "'"${NODE}"'"
         }
       }' \
-      --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local && echo OK || echo FAIL'
-  register: dns_test
+      --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local || true'
+    # Clean up the test pod
+    kubectl delete pod dns-test --ignore-not-found
   changed_when: false
-  ignore_errors: true
 
 - name: Show DNS test result
   debug:
