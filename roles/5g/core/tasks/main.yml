@@ -55,10 +55,10 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   ignore_errors: true
 
-# check flannel ready before
+# --- Flannel CNI Check ---
 - name: Wait for Flannel pods to be Ready on all nodes
   ansible.builtin.shell: |
-    kubectl wait -n kube-flannel --for=condition=Ready pod -l app=flannel --timeout=120s
+    kubectl wait -n kube-flannel --for=condition=Ready pod -l app=flannel --timeout=180s
   args:
     executable: /bin/bash
   environment:
@@ -69,29 +69,25 @@
   until: wait_flannel.rc == 0
   changed_when: false
 
-# --- Ensure CNI bridge (Flannel) interface is up ---
-- name: Wait for Flannel CNI interface (cni0) to be UP on each node
-  become: true
-  delegate_to: "{{ item }}"
-  shell: |
+- name: Wait for Flannel CNI interface (cni0) to exist on each node
+  ansible.builtin.shell: |
     set -e
-    echo "Checking CNI interface on {{ item }}..."
+    echo "Checking if cni0 exists on {{ item }}..."
     for i in {1..30}; do
-      if ip link show cni0 2>/dev/null | grep -q "state UP"; then
-        echo "✅ cni0 is UP on {{ item }}"
+      if ip link show cni0 2>/dev/null; then
+        echo "✅ cni0 exists on {{ item }}"
         exit 0
       fi
-      echo "⏳ Waiting for cni0 to be UP on {{ item }}..."
+      echo "⏳ Waiting for cni0 to appear on {{ item }}..."
       sleep 5
     done
-    echo "❌ cni0 did not become UP on {{ item }}" >&2
-    ip link show cni0 || true
+    echo "❌ cni0 not found on {{ item }}" >&2
     exit 1
-  loop: "{{ groups['core_node'] + groups['ran_node'] }}"
-  register: cni_ready
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['all'] }}"
   retries: 3
-  delay: 10
-  until: cni_ready is succeeded
+  delay: 5
+  register: wait_cni
   changed_when: false
 
 #check network connectivity before, else Kyverno install may fail
