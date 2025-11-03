@@ -1,5 +1,5 @@
 ---
-- name: Clone repo srsRAN-K8S
+- name: Clone repo srsRAN
   ansible.builtin.git:
     repo: "{{ repo_url }}"
     dest: "{{ repo_dest }}"
@@ -17,19 +17,40 @@
     name: "{{ open5gs_ns }}"
     state: present
 
-# ------------------------------
-# gNB deployment
-# ------------------------------
-- name: Apply srsRAN gNB manifests (kubectl -k)
-  ansible.builtin.command: >
-    {{ kubectl_bin }} apply -k "{{ repo_dest }}/srsran-gnb" -n {{ open5gs_ns }}
-  register: srs_gnb_apply
-  changed_when: >
-    ('configured' in (srs_gnb_apply.stdout | default(''))) or
-    ('created' in (srs_gnb_apply.stdout | default('')))
-  failed_when: srs_gnb_apply.rc != 0
 
-# (Optional) show what we're matching right now
+# ------------------------------
+# Determine values file based on rru variable
+# ------------------------------
+- name: Set values file based on rru variable
+  ansible.builtin.set_fact:
+    values_file: >
+      {% if rru == 'benetel' %}
+        "{{ repo_dest }}/charts/srsran-gnb/values-benetel.yaml"
+      {% elif rru == 'liteon' %}
+        "{{ repo_dest }}/charts/srsran-gnb/values-liteon.yaml"
+      {% elif rru == 'n300' %}
+        "{{ repo_dest }}/charts/srsran-gnb/values-n300.yaml"
+      {% elif rru == 'n320' %}
+        "{{ repo_dest }}/charts/srsran-gnb/values-n320.yaml"
+      {% elif rru == 'rfsim' %}
+        "{{ repo_dest }}/charts/srsran-gnb/values.yaml"
+      {% endif %}
+
+# ------------------------------
+# Helm-based gNB deployment
+# ------------------------------
+- name: Deploy srsRAN gNB using Helm
+  community.kubernetes.helm:
+    name: srsran-gnb
+    chart: "{{ repo_dest }}/charts/srsran-gnb"
+    version: "{{ version | default('main') }}"
+    namespace: "{{ open5gs_ns }}"
+    values: "{{ values_file }}"
+  register: srs_gnb_apply
+  changed_when: "'deployed' in srs_gnb_apply.stdout or 'updated' in srs_gnb_apply.stdout"
+  failed_when: "'error' in srs_gnb_apply.stdout"
+
+# --- gNB pod discovery & wait ---
 - name: Snapshot gNB pods by selectors
   kubernetes.core.k8s_info:
     kind: Pod
@@ -69,40 +90,45 @@
 # gNB starts automatically via its entrypoint
 
 # ------------------------------
-# Deploy telegraf for gNB monitoring
+# Helm-based Telegraf deployment
 # ------------------------------
-
-- name: Apply telegraf manifests (kubectl -k)
-  ansible.builtin.command: >
-    {{ kubectl_bin }} apply -k "{{ repo_dest }}/telegraf" -n {{ open5gs_ns }}
+- name: Deploy Telegraf using Helm
+  community.kubernetes.helm:
+    name: telegraf
+    chart: "{{ repo_dest }}/charts/telegraf"
+    version: "{{ version | default('main') }}"
+    namespace: "{{ open5gs_ns }}"
+    values: "{{ repo_dest }}/charts/telegraf/values.yaml"
   register: telegraf_apply
-  changed_when: >
-    ('configured' in (telegraf_apply.stdout | default(''))) or
-    ('created' in (telegraf_apply.stdout | default('')))
-  failed_when: telegraf_apply.rc != 0
+  changed_when: "'deployed' in telegraf_apply.stdout or 'updated' in telegraf_apply.stdout"
+  failed_when: "'error' in telegraf_apply.stdout"
 
 # ------------------------------
 # Deploy srsRAN UEs (tmux-managed in a single pod)
 # ------------------------------
 
-# Apply UE manifests (kustomize)
-- name: Apply srsRAN UE manifests (kubectl -k .)
-  ansible.builtin.command: >
-    {{ kubectl_bin }} apply -k . -n {{ open5gs_ns }}
-  args:
-    chdir: "{{ repo_dest }}/srsue"
+# ------------------------------
+# Helm-based UE deployment
+# ------------------------------
+- name: Deploy srsRAN UE using Helm
+  community.kubernetes.helm:
+    name: srsran-ue
+    chart: "{{ repo_dest }}/charts/srsue"
+    version: "{{ version | default('main') }}"
+    namespace: "{{ open5gs_ns }}"
+    values: "{{ repo_dest }}/charts/srsue/values.yaml"
   register: srs_ue_apply
-  changed_when: >
-    ('configured' in (srs_ue_apply.stdout | default(''))) or
-    ('created' in (srs_ue_apply.stdout | default('')))
-  failed_when: srs_ue_apply.rc != 0
+  changed_when: "'deployed' in srs_ue_apply.stdout or 'updated' in srs_ue_apply.stdout"
+  failed_when: "'error' in srs_ue_apply.stdout"
+  when: rru == 'rfsim'
 
-# --- Robust UE pod discovery & wait ---
+# --- UE pod discovery & wait ---
 - name: List all pods in {{ open5gs_ns }}
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ open5gs_ns }}"
   register: all_pods
+  when: rru == 'rfsim'
 
 - name: Filter UE pods by provided selectors (if any)
   when: srs_ue_label_selectors is defined and (srs_ue_label_selectors | length) > 0
@@ -111,6 +137,7 @@
     namespace: "{{ open5gs_ns }}"
     label_selectors: "{{ srs_ue_label_selectors }}"
   register: ue_by_labels
+  when: rru == 'rfsim'
 
 - name: Build UE pod candidates
   ansible.builtin.set_fact:
@@ -122,20 +149,22 @@
            | selectattr('metadata.name','search','^(srsran-ue|srsue|ue)[0-9-]'))
          ) | list
       }}
+  when: rru == 'rfsim'
 
 - name: Debug available pod names (when no UE candidates)
   ansible.builtin.debug:
     msg: "{{ all_pods.resources | map(attribute='metadata.name') | list }}"
-  when: ue_candidates | length == 0
+  when: ue_candidates | length == 0 and rru == 'rfsim'
 
 - name: Fail if no UE pods were found
   ansible.builtin.fail:
     msg: "No UE pods found via selectors {{ srs_ue_label_selectors | default([]) }} or name patterns ^(srsran-ue|srsue|ue)"
-  when: ue_candidates | length == 0
+  when: ue_candidates | length == 0 and rru == 'rfsim'
 
 - name: Choose the first UE pod
   ansible.builtin.set_fact:
     ue_pod_name: "{{ (ue_candidates | first).metadata.name }}"
+  when: rru == 'rfsim'
 
 - name: Wait for chosen UE pod to be Ready
   ansible.builtin.command: >
@@ -144,6 +173,7 @@
   register: ue_wait
   changed_when: false
   failed_when: ue_wait.rc != 0
+  when: rru == 'rfsim'
 
 # -----------------------------------------
 # UE in one pod + tmux-managed processes
@@ -159,6 +189,8 @@
 - name: Build ue indices
   ansible.builtin.set_fact:
     ue_indices: "{{ range(1, ue_count + 1) | list }}"
+  when: rru == 'rfsim'
+  
 
 # (optional) sanity: tmux present in the pod
 - name: Check tmux exists in UE pod
@@ -168,6 +200,7 @@
   register: tmux_ver
   changed_when: false
   failed_when: false
+  when: rru == 'rfsim'
 
 # Ensure tmux session 'ran' exists
 - name: Create tmux session 'ran' if missing
@@ -176,6 +209,7 @@
     /bin/sh -lc "tmux has-session -t ran || tmux new-session -d -s ran"
   changed_when: true
   failed_when: false
+  when: rru == 'rfsim'
 
 # Start/refresh UE windows and run start_ue.sh in each
 - name: Start each UE in its own tmux window
@@ -191,6 +225,7 @@
   register: tmux_ue_windows
   changed_when: true
   failed_when: false
+  when: rru == 'rfsim'
 
 # Wait for each UE to be up (either PID file or srsue process per config)
 - name: Wait until each UE is up (pid OR srsue process)
@@ -207,11 +242,13 @@
   retries: 60
   delay: 2
   until: ue_up_check.rc == 0
+  when: rru == 'rfsim'
 
 # Small stagger before GNU
 - name: Pause briefly before starting GNU Radio
   ansible.builtin.pause:
     seconds: 2
+  when: rru == 'rfsim'
 
 # Start/refresh GNU window and run start_gnu.sh once
 - name: Start GNU in tmux window 'gnu'
@@ -224,6 +261,7 @@
   register: tmux_gnu_win
   changed_when: true
   failed_when: false
+  when: rru == 'rfsim'
 
 # Wait until GNU prints its interactive prompt
 - name: Wait for GNU to print its prompt
@@ -236,6 +274,7 @@
   retries: 30
   delay: 2
   until: gnu_log_wait.rc == 0
+  when: rru == 'rfsim'
 
 # Show GNU status (ps + log tail)
 - name: Show GNU status (process + log tail)
@@ -246,15 +285,18 @@
   register: gnu_status
   changed_when: false
   failed_when: false
+  when: rru == 'rfsim'
 
 - name: GNU status
   ansible.builtin.debug:
     msg: "{{ gnu_status.stdout }}"
+  when: rru == 'rfsim'
 
 # Small pause, then routing (script may warn for absent namespaces; don't fail)
 - name: Pause briefly before adding default route
   ansible.builtin.pause:
     seconds: 2
+  when: rru == 'rfsim'
 
 - name: Add default route once (inside the UE pod)
   ansible.builtin.command: >
@@ -263,6 +305,7 @@
   register: route_once
   changed_when: false
   failed_when: false
+  when: rru == 'rfsim'
 
 # Extract UE IP addresses from logs
 - name: Extract UE IP addresses from logs
@@ -277,6 +320,7 @@
   register: ue_ips
   changed_when: false
   failed_when: false
+  when: rru == 'rfsim'
 
 - name: Show UE IP addresses
   ansible.builtin.debug:
@@ -285,6 +329,7 @@
   loop_control:
     loop_var: idx
     extended: true
+  when: rru == 'rfsim'
 
 # Summary
 - name: Summary
@@ -294,3 +339,12 @@
       - "GNU multi-UE started in tmux window 'gnu': log /var/log/gnu_multi_ue.log"
       - "Routes attempted via add_route.sh (non-fatal if some UEs absent)"
       - "Inspect tmux: kubectl -n {{ open5gs_ns }} exec -it {{ ue_pod_name }} -- tmux attach -t ran"
+  when: rru == 'rfsim'
+
+- name: Summary
+ansible.builtin.debug:
+  msg:
+    - "gNB deployed via Helm chart 'srsran-gnb' in namespace {{ open5gs_ns }}"
+    - "Telegraf deployed via Helm chart 'telegraf' in namespace {{ open5gs_ns }}"
+    - "UE deployment skipped (rru={{ rru }})"
+when: rru != 'rfsim'
