@@ -69,6 +69,23 @@
   until: wait_flannel.rc == 0
   changed_when: false
 
+#check network connectivity before, else Kyverno install may fail
+- name: Wait for network connectivity from RAN node to API server
+  become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  ansible.builtin.shell: |
+    echo "Testing API server reachability from {{ groups['ran_node'][0] }}"
+    kubectl run net-test --image=busybox:1.36 --restart=Never \
+      --overrides='{"spec": {"nodeName": "{{ groups['ran_node'][0] }}"}}' \
+      --command -- sh -c 'wget -qO- --timeout=5 https://10.96.0.1:443 || true'
+    kubectl delete pod net-test --ignore-not-found
+  register: api_reach_test
+  retries: 10
+  delay: 10
+  until: "'unable to resolve' not in api_reach_test.stdout and api_reach_test.rc == 0"
+  changed_when: false
+
 # --- Install CRDs first (fixes the init crash) ---
 - name: Download Kyverno chart locally
   ansible.builtin.shell: |
