@@ -36,11 +36,17 @@
   register: kubeadm_init
   become: true
 
-- name: Configure kubectl for root
-  ansible.builtin.copy:
+- name: Create .kube directory in user's home
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: '0700'
+
+- name: Copy admin.conf to kube config
+  copy:
     src: /etc/kubernetes/admin.conf
-    dest: /root/.kube/config
-    remote_src: true
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    remote_src: yes
     mode: '0600'
   become: true
 
