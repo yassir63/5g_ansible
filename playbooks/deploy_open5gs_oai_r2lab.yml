@@ -4,7 +4,7 @@
   tasks:
     - name: Run pos reset in parallel for each sopnode
       ansible.builtin.command: >
-        ansible-playbook -i inventory/hosts.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+        ansible-playbook -i inventory/hosts.ini playbooks/run_pos.yml --extra-vars "node={{ item }} rru={{ rru }}" -c local
       args: 
         chdir: "{{ playbook_dir | dirname }}"
       async: 1800
@@ -86,11 +86,11 @@
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
-  when: monitoring_enabled
   roles:
     - role: monarch/deploy
       vars:
         branch: with_data_persistance_for_sopnodes
+      when: monitoring_enabled
 
 - name: Cleanup R2Lab
   hosts: faraday
@@ -128,9 +128,9 @@
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
-  when: monitoring_enabled
   roles:
     - role: monarch/monitoring
+      when: monitoring_enabled
 
 #- hosts: faraday
 #  tasks:
