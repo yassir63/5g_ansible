@@ -148,39 +148,39 @@
 # === WAIT UNTIL THE JOINED NODE IS READY =====================================
 - name: Wait until CoreDNS pods are Ready
   become: true
+  delegate_to: "{{ groups['core_node'][0] }}"
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   ansible.builtin.shell: |
-    kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
-  delegate_to: "{{ groups['core_node'][0] }}"
-  changed_when: false
+    kubectl wait -n kube-system \
+      --for=condition=Ready pod -l k8s-app=kube-dns \
+      --timeout=300s
+  register: coredns_wait
   retries: 5
-  delay: 30
+  delay: 10
+  until: coredns_wait.rc == 0
+  changed_when: false
 
-# === TEST DNS RESOLUTION =====================================================
-- name: Test CoreDNS resolution using a non-interactive busybox pod on the RAN node
+# === TEST COREDNS RESOLUTION FROM BOTH NODES ================================
+- name: Test CoreDNS resolution from core and ran nodes
   become: true
   delegate_to: "{{ groups['core_node'][0] }}"
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   ansible.builtin.shell: |
-    NODE="{{ groups['ran_node'][0] }}"
-    echo "Testing CoreDNS from node: ${NODE}"
-    kubectl delete pod dns-test --ignore-not-found
-    kubectl run dns-test --image=busybox:1.36 \
-      --restart=Never \
-      --overrides='
-      {
-        "spec": {
-          "nodeName": "'"${NODE}"'"
-        }
-      }' \
-      --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local || true'
-    # Clean up the test pod
-    kubectl delete pod dns-test --ignore-not-found
+    set -eux
+    for NODE in {{ groups['core_node'][0] }} {{ groups['ran_node'][0] }}; do
+      echo "=== Testing DNS on $NODE ==="
+      kubectl run dns-test-$NODE \
+        --image=busybox:1.36 \
+        --restart=Never \
+        --overrides='{"spec": {"nodeName": "'"${NODE}"'"}}' \
+        --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
+    done
+
+    echo "Cleaning up test pods..."
+    kubectl delete pod dns-test-{{ groups['core_node'][0] }} --ignore-not-found
+    kubectl delete pod dns-test-{{ groups['ran_node'][0] }} --ignore-not-found
   changed_when: false
 
-- name: Show DNS test result
-  debug:
-    msg: "{{ dns_test.stdout_lines | default([]) }}"
 
