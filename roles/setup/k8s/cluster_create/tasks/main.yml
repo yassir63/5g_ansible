@@ -183,6 +183,8 @@
   ansible.builtin.shell: |
     kubectl run dns-test --image=busybox:1.36 --restart=Never --command -- \
       sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
+        echo "Cleaning up test pods..."
+    kubectl delete pod dns-test --ignore-not-found
   changed_when: false
   
 - name: Remove control-plane taint
