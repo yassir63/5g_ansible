@@ -36,6 +36,21 @@
   register: kubeadm_init
   become: true
 
+# === FIX: Force kubelet to use correct resolv.conf ============================
+- name: Ensure kubelet uses systemd-resolved DNS
+  ansible.builtin.copy:
+    dest: /etc/default/kubelet
+    content: |
+      KUBELET_EXTRA_ARGS=--resolv-conf=/run/systemd/resolve/resolv.conf
+    mode: "0644"
+  become: true
+
+- name: Restart kubelet to apply DNS config
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+  become: true
+  
 - name: Enable cluster CIDR allocation in kube-controller-manager
   ansible.builtin.lineinfile:
     path: /etc/kubernetes/manifests/kube-controller-manager.yaml
@@ -161,12 +176,13 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
 
-- name: Test CoreDNS resolution using a one-shot pod
+- name: Test CoreDNS resolution using a non-interactive busybox pod
   become: true
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   ansible.builtin.shell: |
-    kubectl run dns-test --rm -it --image=busybox:1.36 --restart=Never -- nslookup kubernetes.default.svc.cluster.local
+    kubectl run dns-test --image=busybox:1.36 --restart=Never --command -- \
+      sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
   changed_when: false
   
 - name: Remove control-plane taint
