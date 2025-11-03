@@ -87,7 +87,7 @@
     echo "❌ cni0 did not become UP on {{ item }}" >&2
     ip link show cni0 || true
     exit 1
-  loop: "{{ groups['all'] }}"
+  loop: "{{ groups['core_node'] + groups['ran_node'] }}"
   register: cni_ready
   retries: 3
   delay: 10
