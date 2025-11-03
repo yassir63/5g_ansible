@@ -6,9 +6,6 @@
     line: 'CPUAffinity=0-3'
     state: present
 
-- name: Reload sysctl
-  command: sysctl -p
-
 - name: Reload systemd config
   command: systemctl daemon-reexec
 
@@ -24,72 +21,77 @@
       kernel.timer_migration=0
     marker: "# {mark} RAN tuning"
 
-- name: Ensure /var/lib/kubelet directory exists
-  ansible.builtin.file:
-    path: /var/lib/kubelet
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
-  become: yes
-
-- name: Write kubelet config with native snapshotter
-  ansible.builtin.copy:
-    dest: /var/lib/kubelet/config.yaml
-    content: |
-      apiVersion: kubelet.config.k8s.io/v1beta1
-      authentication:
-        anonymous:
-          enabled: false
-        webhook:
-          cacheTTL: 0s
-          enabled: true
-        x509:
-          clientCAFile: /etc/kubernetes/pki/ca.crt
-      authorization:
-        mode: Webhook
-        webhook:
-          cacheAuthorizedTTL: 0s
-          cacheUnauthorizedTTL: 0s
-      clusterDNS:
-      - 10.96.0.10
-      clusterDomain: cluster.local
-      containerLogMaxSize: 50Mi
-      containerRuntimeEndpoint: ""
-      crashLoopBackOff: {}
-      evictionPressureTransitionPeriod: 0s
-      fileCheckFrequency: 0s
-      healthzBindAddress: 127.0.0.1
-      healthzPort: 10248
-      httpCheckFrequency: 0s
-      imageMaximumGCAge: 0s
-      imageMinimumGCAge: 0s
-      kind: KubeletConfiguration
-      cgroupDriver: systemd
-      containerRuntimeEndpoint: unix:///run/containerd/containerd.sock
-      cpuManagerPolicy: static
-      cpuManagerPolicyOptions:
-        full-pcpus-only: "true"
-      reservedSystemCPUs: 0-5
-      topologyManagerPolicy: best-effort
-      failSwapOn: false
-      featureGates:
-        CPUManager: true
-        CPUManagerPolicyOptions: true
-      resolvConf: /etc/resolv.conf
-      rotateCertificates: true
-      podSandboxImage: "registry.k8s.io/pause:3.10"
-    mode: '0644'
+- name: Ensure python3 and PyYAML are installed (required for YAML merge)
+  apt:
+    name:
+      - python3
+      - python3-yaml
+    state: present
+    update_cache: yes
   become: true
 
-- name: Remove kubelet CPU manager checkpoint file
-  ansible.builtin.file:
+- name: Safely merge CPU-related kubelet settings (non-destructive)
+  become: true
+  shell: |
+    python3 - <<'EOF'
+    import yaml, os, sys
+
+    cfg = "/var/lib/kubelet/config.yaml"
+    patch = {
+      "cgroupDriver": "systemd",
+      "cpuManagerPolicy": "static",
+      "cpuManagerPolicyOptions": {"full-pcpus-only": "true"},
+      "reservedSystemCPUs": "0-5",
+      "topologyManagerPolicy": "best-effort",
+      "failSwapOn": False,
+      "featureGates": {
+        "CPUManager": True,
+        "CPUManagerPolicyOptions": True,
+      }
+    }
+
+    if os.path.exists(cfg):
+      with open(cfg) as f:
+        data = yaml.safe_load(f) or {}
+    else:
+      data = {}
+
+    # featureGates merge
+    fg = data.get("featureGates", {}) or {}
+    for k,v in patch["featureGates"].items():
+      fg[k] = v
+    data["featureGates"] = fg
+
+    for key, val in patch.items():
+      if key != "featureGates":
+        data[key] = val
+
+    tmp = cfg + ".tmp"
+    with open(tmp, "w") as f:
+      yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+    os.replace(tmp, cfg)
+    print("APPLIED")
+    EOF
+  register: merge_output
+  changed_when: "'APPLIED' in merge_output.stdout"
+
+- name: Remove kubelet CPU manager checkpoint (force apply new CPU config)
+  become: true
+  file:
     path: /var/lib/kubelet/cpu_manager_state
     state: absent
-  become: true
 
 - name: Restart kubelet
+  become: true
   systemd:
     name: kubelet
     state: restarted
+    daemon_reload: yes
+
+- name: Wait for kubelet to be active
   become: true
+  shell: systemctl is-active kubelet
+  register: result
+  until: result.stdout.strip() == "active"
+  retries: 10
+  delay: 3
