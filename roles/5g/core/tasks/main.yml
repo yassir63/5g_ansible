@@ -112,7 +112,7 @@
   ansible.builtin.shell: |
     rm -rf /tmp/kyverno
     mkdir -p /tmp/kyverno
-    helm pull kyverno/kyverno --version 2.5.3 --untar --untardir /tmp/kyverno
+    helm pull kyverno/kyverno --version 3.5.2 --untar --untardir /tmp/kyverno
   args:
     executable: /bin/bash
 
@@ -128,12 +128,28 @@
     msg: "No Kyverno chart folder found in /tmp/kyverno. Helm pull may have failed."
   when: kyverno_chart_folder.matched == 0
 
+- name: Install Kyverno CRDs (if present) before helm install
+  ansible.builtin.shell: |
+    set -e
+    chart_dir="{{ kyverno_chart_folder.files[0].path }}"
+    if [ -d "$chart_dir/crds" ]; then
+      kubectl apply -f "$chart_dir/crds"
+    else
+      echo "No crds directory in $chart_dir, skipping CRD apply"
+    fi
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
 - name: Install Kyverno Helm chart (Helm manages CRDs)
   ansible.builtin.shell: |
     helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
       -n kyverno --create-namespace --wait=false
   args:
     executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Wait for Kyverno deployment to be ready
   kubernetes.core.k8s_info:
