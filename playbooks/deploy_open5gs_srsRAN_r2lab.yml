@@ -143,15 +143,15 @@
       when: monitoring_enabled
 
 - hosts: faraday
- tasks:
-   - name: Connect UEs on R2Lab to 5g network
-     include_role:
-       name: r2lab/ue/connect
-     vars:
-       ue: "{{ item }}"
-     loop: "{{ groups['qhats'] }}"
-     loop_control:
-       label: "{{ item }}"
-     ignore_errors: true
-    when: rru != 'rfsim'
+  tasks:
+    - name: Connect UEs on R2Lab to 5G network
+      include_role:
+        name: r2lab/ue/connect
+      vars:
+        ue: "{{ item }}"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        label: "{{ item }}"
+      ignore_errors: true
+      when: rru != 'rfsim'
 
