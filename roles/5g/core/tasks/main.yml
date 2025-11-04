@@ -11,10 +11,12 @@
     create: yes
     mode: '0644'
 
-- name: Reload and restart kubelet after updating DNS config
-  block:
-    - command: systemctl daemon-reload
-    - command: systemctl restart kubelet
+- name: Reload systemd after kubelet config update
+  command: systemctl daemon-reload
+  changed_when: false
+
+- name: Restart kubelet after config update
+  command: systemctl restart kubelet
   changed_when: false
 
 # --- Wait until CoreDNS pods are ready before testing resolution ---
