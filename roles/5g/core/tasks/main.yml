@@ -2,6 +2,35 @@
 - name: RESTART_5G_CORE
   ansible.builtin.meta: noop
 
+# --- Ensure kubelet uses proper DNS + CNI config before anything else ---
+- name: Ensure kubelet uses correct CNI and DNS config
+  lineinfile:
+    path: /etc/default/kubelet
+    regexp: '^KUBELET_EXTRA_ARGS='
+    line: 'KUBELET_EXTRA_ARGS="--network-plugin=cni --cni-bin-dir=/opt/cni/bin --cni-conf-dir=/etc/cni/net.d --resolv-conf=/run/systemd/resolve/resolv.conf"'
+    create: yes
+    mode: '0644'
+
+- name: Reload and restart kubelet after updating DNS config
+  block:
+    - command: systemctl daemon-reload
+    - command: systemctl restart kubelet
+  changed_when: false
+
+# --- Wait until CoreDNS pods are ready before testing resolution ---
+- name: Wait for CoreDNS to be Ready
+  ansible.builtin.shell: |
+    kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: wait_coredns
+  retries: 3
+  delay: 10
+  until: wait_coredns.rc == 0
+  changed_when: false
+
 - name: Test CoreDNS resolution from core and ran nodes
   become: true
   delegate_to: "{{ groups['core_node'][0] }}"
@@ -25,22 +54,6 @@
 
 - name: Label {{ groups['core_node'][0] }} for Open5GS Core scheduling
   command: kubectl label node {{ groups['core_node'][0] }} open5gs-core-node=true --overwrite
-  changed_when: false
-
-# --- Ensure kubelet uses CNI networking before Kyverno installation ---
-- name: Ensure kubelet uses CNI networking
-  lineinfile:
-    path: /etc/default/kubelet
-    regexp: '^KUBELET_EXTRA_ARGS='
-    line: 'KUBELET_EXTRA_ARGS="--network-plugin=cni --cni-bin-dir=/opt/cni/bin --cni-conf-dir=/etc/cni/net.d --resolv-conf=/run/systemd/resolve/resolv.conf"'
-    create: yes
-    mode: '0644'
-
-- name: Reload systemd units for kubelet
-  command: systemctl daemon-reload
-
-- name: Restart kubelet service
-  command: systemctl restart kubelet
   changed_when: false
 
 # === KYVERNO INSTALLATION =====================================================
