@@ -45,7 +45,7 @@
     chart: "{{ repo_dest }}/charts/srsran-gnb"
     version: "{{ version | default('main') }}"
     namespace: "{{ open5gs_ns }}"
-    values: "{{ values_file }}"
+    values: "{{ hostvars[groups['ran_node'][0]].values_file }}"
   register: srs_gnb_apply
   changed_when: "'deployed' in srs_gnb_apply.stdout or 'updated' in srs_gnb_apply.stdout"
   failed_when: "'error' in srs_gnb_apply.stdout"
