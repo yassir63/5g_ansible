@@ -24,6 +24,7 @@
   ignore_errors: true
 
 # Expand /var/lib/containerd to tmpfs (only if not already done) ===
+# === OPTIONAL: Expand /var/lib/containerd to tmpfs (only if not already done) ===
 - name: Ensure /var/lib/containerd is mounted on tmpfs (>=50G)
   ansible.builtin.shell: |
     current_mount=$(mountpoint -q /var/lib/containerd && df -h --output=fstype,size /var/lib/containerd | tail -n1 || echo "none 0G")
@@ -40,9 +41,15 @@
   ignore_errors: true
   register: containerd_mount
 
-- name: Debug containerd tmpfs mount status
-  ansible.builtin.debug:
-    var: containerd_mount.stdout
+- name: Restart containerd after remount
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+  become: true
+
+- name: Wait 5 seconds for containerd to settle
+  ansible.builtin.pause:
+    seconds: 5
 
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
