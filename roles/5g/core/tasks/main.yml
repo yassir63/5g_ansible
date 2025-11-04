@@ -3,21 +3,26 @@
   ansible.builtin.meta: noop
 
 # --- Ensure kubelet uses proper DNS + CNI config before anything else ---
-- name: Ensure kubelet uses correct CNI and DNS config
-  lineinfile:
-    path: /etc/default/kubelet
-    regexp: '^KUBELET_EXTRA_ARGS='
-    line: 'KUBELET_EXTRA_ARGS="--network-plugin=cni --cni-bin-dir=/opt/cni/bin --cni-conf-dir=/etc/cni/net.d --resolv-conf=/run/systemd/resolve/resolv.conf"'
-    create: yes
-    mode: '0644'
+# Le flag --network-plugin est supprimé depuis K8s >=1.29
+# On définit plutôt les chemins CNI dans le fichier config.yaml du kubelet.
+- name: Ensure kubelet CNI and DNS paths are set correctly
+  block:
+    - name: Ensure kubelet config includes correct CNI paths
+      blockinfile:
+        path: /var/lib/kubelet/config.yaml
+        marker: "# {mark} MANAGED BY ANSIBLE (CNI CONFIG)"
+        block: |
+          cniConfDir: /etc/cni/net.d
+          cniBinDir: /opt/cni/bin
+          resolvConf: /run/systemd/resolve/resolv.conf
+      become: true
 
-- name: Reload systemd after kubelet config update
-  command: systemctl daemon-reload
-  changed_when: false
-
-- name: Restart kubelet after config update
-  command: systemctl restart kubelet
-  changed_when: false
+    - name: Reload and restart kubelet
+      ansible.builtin.shell: |
+        systemctl daemon-reload
+        systemctl restart kubelet
+      become: true
+      changed_when: false
 
 # --- Wait until CoreDNS pods are ready before testing resolution ---
 - name: Wait for CoreDNS to be Ready
@@ -48,8 +53,6 @@
         --overrides='{"spec": {"nodeName": "'"${NODE}"'"}}' \
         --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
     done
-
-    echo "Cleaning up test pods..."
     kubectl delete pod dns-test-{{ groups['core_node'][0] }} --ignore-not-found
     kubectl delete pod dns-test-{{ groups['ran_node'][0] }} --ignore-not-found
   changed_when: false
@@ -75,7 +78,6 @@
       metadata:
         name: kyverno
 
-# --- Optional cleanup if Kyverno partially installed ---
 - name: Uninstall previous Kyverno (safe cleanup)
   ansible.builtin.shell: |
     helm uninstall kyverno -n kyverno || true
