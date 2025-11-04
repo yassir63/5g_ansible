@@ -50,7 +50,7 @@
     name: kubelet
     state: restarted
   become: true
-  
+
 - name: Enable cluster CIDR allocation in kube-controller-manager
   ansible.builtin.lineinfile:
     path: /etc/kubernetes/manifests/kube-controller-manager.yaml
@@ -107,6 +107,45 @@
     - /etc/cni/net.d
     - /opt/cni/bin
     - /var/lib/cni
+  become: true
+
+# --- CLEAN old/conflicting CNI config files (Multus/old Flannel) -------------
+- name: Clean old or conflicting CNI configs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/cni/net.d/00-multus.conf
+    - /etc/cni/net.d/00-multus.conf.bak
+    - /etc/cni/net.d/10-flannel.conf
+    - /etc/cni/net.d/10-flannel.conf~
+  ignore_errors: yes
+  become: true
+
+- name: Deploy Flannel CNI conflist
+  ansible.builtin.copy:
+    dest: /etc/cni/net.d/10-flannel.conflist
+    mode: '0644'
+    content: |
+      {
+        "name": "cbr0",
+        "cniVersion": "0.3.1",
+        "plugins": [
+          {
+            "type": "flannel",
+            "delegate": {
+              "hairpinMode": true,
+              "isDefaultGateway": true
+            }
+          },
+          {
+            "type": "portmap",
+            "capabilities": {
+              "portMappings": true
+            }
+          }
+        ]
+      }
   become: true
 
 - name: Download and install CNI plugins
@@ -186,7 +225,7 @@
         echo "Cleaning up test pods..."
     kubectl delete pod dns-test --ignore-not-found
   changed_when: false
-  
+
 - name: Remove control-plane taint
   ansible.builtin.shell: |
     kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
