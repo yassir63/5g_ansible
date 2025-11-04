@@ -123,6 +123,76 @@
   until: "'unable to resolve' not in api_reach_test.stdout and api_reach_test.rc == 0"
   changed_when: false
 
+# --- Ensure cluster networking and api endpoints are ready before Kyverno install ---
+- name: Wait for kube-proxy DaemonSet to be available
+  ansible.builtin.shell: |
+    kubectl -n kube-system wait --for=condition=Available daemonset/kube-proxy --timeout=180s || true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  args:
+    executable: /bin/bash
+  changed_when: false
+  register: wait_kubeproxy
+
+- name: Wait for kube-proxy pods to be Ready on all nodes
+  ansible.builtin.shell: |
+    set -e
+    for POD in $(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o jsonpath='{range .items[*]}{.metadata.name} {"\n"}{end}'); do
+      kubectl -n kube-system wait --for=condition=Ready pod/"$POD" --timeout=120s || true
+    done
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  args:
+    executable: /bin/bash
+  changed_when: false
+  register: wait_kubeproxy_pods
+
+- name: Wait for kubernetes service endpoint to exist (10.96.0.1)
+  ansible.builtin.shell: |
+    set -eu
+    tries=0
+    until kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets}' | grep -q '.'; do
+      tries=$((tries+1))
+      if [ $tries -gt 30 ]; then
+        echo "no endpoints for kubernetes service after timeout" >&2
+        exit 1
+      fi
+      sleep 2
+    done
+    kubectl -n default get endpoints kubernetes -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  args:
+    executable: /bin/bash
+  changed_when: false
+  register: kubernetes_endpoints
+
+- name: Verify nodes have a route to service IP 10.96.0.1 (check on each node)
+  ansible.builtin.shell: |
+    if ip route get 10.96.0.1 >/dev/null 2>&1; then
+      ip route get 10.96.0.1
+      exit 0
+    else
+      echo "no route to 10.96.0.1 on $(hostname)" >&2
+      exit 2
+    fi
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['core_node'] + groups['ran_node'] }}"
+  register: route_check
+  failed_when: false
+  changed_when: false
+
+- name: Debug route check failures if any node lacks route to 10.96.0.1
+  ansible.builtin.debug:
+    msg: "Node {{ item.item }}: rc={{ item.rc }} stdout='{{ item.stdout }}' stderr='{{ item.stderr }}'"
+  loop: "{{ route_check.results }}"
+  when: item.rc != 0
+
+- name: Fail early if no route to 10.96.0.1 on any node (network must be fixed first)
+  ansible.builtin.fail:
+    msg: "One or more nodes do not have a route to 10.96.0.1; Kyverno install deferred."
+  when: route_check.results | selectattr('rc','ne',0) | list | length > 0
+
 # --- Install CRDs first (fixes the init crash) ---
 - name: Download Kyverno chart locally
   ansible.builtin.shell: |
