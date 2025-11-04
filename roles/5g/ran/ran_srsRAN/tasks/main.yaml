@@ -332,7 +332,7 @@
   when: rru == 'rfsim'
 
 # Summary
-- name: Summary
+- name: Summary (RFSIM)
   ansible.builtin.debug:
     msg:
       - "UEs started in tmux session 'ran': windows ue1..ue{{ ue_count }}, logs /var/log/ueN.log"
@@ -341,10 +341,10 @@
       - "Inspect tmux: kubectl -n {{ open5gs_ns }} exec -it {{ ue_pod_name }} -- tmux attach -t ran"
   when: rru == 'rfsim'
 
-- name: Summary
-ansible.builtin.debug:
-  msg:
-    - "gNB deployed via Helm chart 'srsran-gnb' in namespace {{ open5gs_ns }}"
-    - "Telegraf deployed via Helm chart 'telegraf' in namespace {{ open5gs_ns }}"
-    - "UE deployment skipped (rru={{ rru }})"
-when: rru != 'rfsim'
+- name: Summary (Non-RFSIM)
+  ansible.builtin.debug:
+    msg:
+      - "gNB deployed via Helm chart 'srsran-gnb' in namespace {{ open5gs_ns }}"
+      - "Telegraf deployed via Helm chart 'telegraf' in namespace {{ open5gs_ns }}"
+      - "UE deployment skipped (rru={{ rru }})"
+  when: rru != 'rfsim'

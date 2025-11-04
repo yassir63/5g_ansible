@@ -277,10 +277,11 @@ done
 
 
 
+cat >> ./inventory/hosts.ini <<EOF
+
 [fit_nodes]
 fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
 EOF
-fi
 
 cat >> ./inventory/hosts.ini <<EOF
 
