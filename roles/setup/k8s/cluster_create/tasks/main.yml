@@ -36,8 +36,6 @@
     else
       echo "tmpfs already mounted on /var/lib/containerd with ${size}G"
     fi
-  args:
-    warn: false
   become: true
   ignore_errors: true
   register: containerd_mount
