@@ -69,7 +69,7 @@
   ansible.builtin.lineinfile:
     path: /etc/default/kubelet
     regexp: '^KUBELET_EXTRA_ARGS='
-    line: 'KUBELET_EXTRA_ARGS="--resolv-conf=/run/systemd/resolve/resolv.conf --network-plugin=cni --cni-bin-dir=/opt/cni/bin --cni-conf-dir=/etc/cni/net.d"'
+    line: 'KUBELET_EXTRA_ARGS="--resolv-conf=/run/systemd/resolve/resolv.conf"'
     create: yes
     mode: '0644'
 
