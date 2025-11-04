@@ -23,6 +23,29 @@
   become: true
   ignore_errors: true
 
+# Expand /var/lib/containerd to tmpfs (only if not already done) ===
+- name: Ensure /var/lib/containerd is mounted on tmpfs (>=50G)
+  ansible.builtin.shell: |
+    current_mount=$(mountpoint -q /var/lib/containerd && df -h --output=fstype,size /var/lib/containerd | tail -n1 || echo "none 0G")
+    fstype=$(echo "$current_mount" | awk '{print $1}')
+    size=$(echo "$current_mount" | awk '{print $2}' | sed 's/G//')
+    if [ "$fstype" != "tmpfs" ] || [ "${size:-0}" -lt 50 ]; then
+      echo "Mounting tmpfs on /var/lib/containerd (50G)"
+      umount -f /var/lib/containerd 2>/dev/null || true
+      mount -t tmpfs -o size=50G tmpfs /var/lib/containerd
+    else
+      echo "tmpfs already mounted on /var/lib/containerd with ${size}G"
+    fi
+  args:
+    warn: false
+  become: true
+  ignore_errors: true
+  register: containerd_mount
+
+- name: Debug containerd tmpfs mount status
+  ansible.builtin.debug:
+    var: containerd_mount.stdout
+
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
   ansible.builtin.copy:
