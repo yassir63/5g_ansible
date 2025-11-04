@@ -2,29 +2,29 @@
 - name: RESTART_5G_CORE
   ansible.builtin.meta: noop
 
-# --- Ensure kubelet uses proper DNS + CNI config before anything else ---
-# Le flag --network-plugin est supprimé depuis K8s >=1.29
-# On définit plutôt les chemins CNI dans le fichier config.yaml du kubelet.
-- name: Ensure kubelet CNI and DNS paths are set correctly
-  block:
-    - name: Ensure kubelet config includes correct CNI paths
-      blockinfile:
-        path: /var/lib/kubelet/config.yaml
-        marker: "# {mark} MANAGED BY ANSIBLE (CNI CONFIG)"
-        block: |
-          cniConfDir: /etc/cni/net.d
-          cniBinDir: /opt/cni/bin
-          resolvConf: /run/systemd/resolve/resolv.conf
-      become: true
+# --- Correction kubelet + CoreDNS sans flag obsolète ---
+- name: Ensure kubelet uses correct CNI and DNS config
+  lineinfile:
+    path: /etc/default/kubelet
+    regexp: '^KUBELET_EXTRA_ARGS='
+    line: 'KUBELET_EXTRA_ARGS="--cni-bin-dir=/opt/cni/bin --cni-conf-dir=/etc/cni/net.d --resolv-conf=/run/systemd/resolve/resolv.conf"'
+    create: yes
+    mode: '0644'
 
-    - name: Reload and restart kubelet
-      ansible.builtin.shell: |
-        systemctl daemon-reload
-        systemctl restart kubelet
-      become: true
-      changed_when: false
+- name: Reload and restart kubelet
+  ansible.builtin.shell: |
+    systemctl daemon-reload
+    systemctl restart kubelet
+  become: true
+  changed_when: false
 
-# --- Wait until CoreDNS pods are ready before testing resolution ---
+- name: Restart CoreDNS pods after kubelet restart
+  ansible.builtin.shell: |
+    kubectl -n kube-system delete pod -l k8s-app=kube-dns --ignore-not-found
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false
+
 - name: Wait for CoreDNS to be Ready
   ansible.builtin.shell: |
     kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
@@ -38,6 +38,7 @@
   until: wait_coredns.rc == 0
   changed_when: false
 
+# --- Test DNS ---
 - name: Test CoreDNS resolution from core and ran nodes
   become: true
   delegate_to: "{{ groups['core_node'][0] }}"
@@ -53,6 +54,8 @@
         --overrides='{"spec": {"nodeName": "'"${NODE}"'"}}' \
         --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
     done
+
+    echo "Cleaning up test pods..."
     kubectl delete pod dns-test-{{ groups['core_node'][0] }} --ignore-not-found
     kubectl delete pod dns-test-{{ groups['ran_node'][0] }} --ignore-not-found
   changed_when: false
@@ -78,6 +81,7 @@
       metadata:
         name: kyverno
 
+# --- Optional cleanup if Kyverno partially installed ---
 - name: Uninstall previous Kyverno (safe cleanup)
   ansible.builtin.shell: |
     helm uninstall kyverno -n kyverno || true
@@ -123,7 +127,7 @@
   register: wait_cni
   changed_when: false
 
-# Check network connectivity before, else Kyverno install may fail
+# --- Check connectivity before Kyverno install ---
 - name: Wait for network connectivity from RAN node to API server
   become: true
   environment:
@@ -218,6 +222,8 @@
     helm pull kyverno/kyverno --version 3.5.2 --untar --untardir /tmp/kyverno
   args:
     executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Find actual untarred Kyverno folder
   ansible.builtin.find:
@@ -359,11 +365,10 @@
   retries: 40
   delay: 5
 
-# 1. Apply NADs (creates the objects)
+# === NETWORK ATTACHMENT DEFINITIONS (NADs) ===
 - name: Apply NADs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
 
-# 2. WAIT FOR MULTUS CRD
 - name: Wait for kube-apiserver to be responsive
   shell: kubectl get --raw='/healthz'
   register: api_health
@@ -380,7 +385,6 @@
   until: "'network-attachment-definitions.k8s.cni.cncf.io' in crd_list.stdout"
   changed_when: false
 
-# 3. Install jq (needed for patching)
 - name: Install jq (required for NAD patching)
   ansible.builtin.apt:
     name: jq
@@ -388,8 +392,7 @@
     update_cache: yes
   become: yes
 
-# 4. Patch NADs to avoid interface name conflict
-- name: Wait for Multus CRD to be registered in API server
+- name: Wait for Multus CRD to be registered
   ansible.builtin.shell: kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
   register: multus_crd_check
   retries: 60
@@ -398,19 +401,6 @@
   changed_when: false
   failed_when: false
 
-# Ensure Multus CRD is available before proceeding
-- name: Wait for Cluster Network Addons Operator to deploy Multus CRD
-  ansible.builtin.shell: |
-    set -e
-    kubectl wait deployment -n cluster-network-addons cluster-network-addons-operator --for=condition=Available --timeout=300s || true
-    until kubectl get crd network-attachment-definitions.k8s.cni.cncf.io >/dev/null 2>&1; do
-      echo "⏳ Waiting for Multus CRD..."
-      sleep 5
-    done
-  register: wait_multus_crd
-  changed_when: false
-  failed_when: false
-  
 - name: Patch NADs to use unique interface names (net1/net2/net3)
   shell: |
     set -euo pipefail
@@ -465,7 +455,6 @@
   loop: "{{ nfs }}"
   loop_control:
     label: "{{ item }}"
-
 - name: Install python3-venv (required for venv)
   ansible.builtin.apt:
     name: python3-venv
@@ -492,7 +481,7 @@
   become: yes
 
 - name: Deploy Open5GS Web UI with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}//open5gs-webui" -n {{ open5gs_ns }}
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/open5gs-webui" -n {{ open5gs_ns }}
 
 - name: Wait for WebUI pod Ready
   kubernetes.core.k8s_info:
@@ -535,4 +524,3 @@
 - name: Show Added subscribers
   debug:
     var: check_out.stdout
-    
