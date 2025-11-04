@@ -64,21 +64,21 @@
   register: kubeadm_init
   become: true
 
-# Force kubelet to use correct resolv.conf and CNI networking
-- name: Ensure kubelet uses CNI networking
-  ansible.builtin.lineinfile:
-    path: /etc/default/kubelet
-    regexp: '^KUBELET_EXTRA_ARGS='
-    line: 'KUBELET_EXTRA_ARGS="--resolv-conf=/run/systemd/resolve/resolv.conf"'
-    create: yes
-    mode: '0644'
+# === FIX: Force kubelet to use correct resolv.conf ============================
+- name: Ensure kubelet uses systemd-resolved DNS
+  ansible.builtin.copy:
+    dest: /etc/default/kubelet
+    content: |
+      KUBELET_EXTRA_ARGS=--resolv-conf=/run/systemd/resolve/resolv.conf
+    mode: "0644"
+  become: true
 
-- name: Reload systemd units for kubelet
-  ansible.builtin.command: systemctl daemon-reload
 
-- name: Restart kubelet service
-  ansible.builtin.command: systemctl restart kubelet
-  changed_when: false
+- name: Restart kubelet to apply DNS config
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+  become: true
 
 - name: Enable cluster CIDR allocation in kube-controller-manager
   ansible.builtin.lineinfile:
