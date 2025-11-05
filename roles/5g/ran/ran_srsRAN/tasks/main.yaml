@@ -45,7 +45,7 @@
       liteon:  values-liteon.yaml
       n300:    values-n300.yaml
       n320:    values-n320.yaml
-      rfsim:   values.yaml
+      rfsim:   values-rfsim.yaml
 
 # Build full path with path_join (prevents spaces/slash issues)
 - name: Build absolute values_file path
