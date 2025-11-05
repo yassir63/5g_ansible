@@ -5,6 +5,72 @@
     cache_valid_time: 3600
   become: true
   run_once: true
+
+- name: Install Open vSwitch
+  ansible.builtin.apt:
+    name: openvswitch-switch
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create OVS bridges
+  ansible.builtin.shell: |
+    ovs-vsctl --may-exist add-br n2br
+    ovs-vsctl --may-exist add-br n3br
+    ovs-vsctl --may-exist add-br n4br
+  become: true
+
+# Apply CPU pinning for RAN node (avoid isolated cores)
+- name: Restrict OVS daemons to housekeeping CPUs
+  ansible.builtin.blockinfile:
+    path: /etc/systemd/system/ovs-vswitchd.service.d/cpu-affinity.conf
+    create: yes
+    block: |
+      [Service]
+      # Limit ovs-vswitchd to housekeeping CPUs (e.g. 0-5)
+      CPUAffinity=0-5
+  become: true
+  when: inventory_hostname in groups['ran_node']
+
+- name: Ensure directory for override exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/ovs-vswitchd.service.d
+    state: directory
+    mode: '0755'
+  become: true
+  when: inventory_hostname in groups['ran_node']
+
+# Reload systemd + Restart OVS to apply CPUAffinity
+- name: Reload systemd and restart OVS services cleanly
+  ansible.builtin.shell: |
+    systemctl daemon-reexec
+    systemctl daemon-reload
+    systemctl restart ovsdb-server
+    systemctl restart ovs-vswitchd
+  become: true
+  when: inventory_hostname in groups['ran_node']
+
+# Verify CPUAffinity actually applied
+- name: Verify that ovs-vswitchd CPUAffinity is active
+  ansible.builtin.shell: |
+    systemctl show -p CPUAffinity ovs-vswitchd | grep -q 'CPUAffinity=0-5'
+  register: ovs_affinity_check
+  failed_when: ovs_affinity_check.rc != 0
+  become: true
+  when: inventory_hostname in groups['ran_node']
+  changed_when: false
+
+
+
+
+
+---
+- name: Update APT cache once
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+  run_once: true
   
 - name: Install Open vSwitch
   apt:
