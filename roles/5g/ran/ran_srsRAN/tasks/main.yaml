@@ -21,20 +21,17 @@
 # ------------------------------
 # Determine values file based on rru variable
 # ------------------------------
+# Pick the right values file from rru (default to values.yaml)
 - name: Set values file based on rru variable
   ansible.builtin.set_fact:
-    values_file: >
-      {% if rru == 'benetel' %}
-        "{{ repo_dest }}/charts/srsran-gnb/values-benetel.yaml"
-      {% elif rru == 'liteon' %}
-        "{{ repo_dest }}/charts/srsran-gnb/values-liteon.yaml"
-      {% elif rru == 'n300' %}
-        "{{ repo_dest }}/charts/srsran-gnb/values-n300.yaml"
-      {% elif rru == 'n320' %}
-        "{{ repo_dest }}/charts/srsran-gnb/values-n320.yaml"
-      {% elif rru == 'rfsim' %}
-        "{{ repo_dest }}/charts/srsran-gnb/values.yaml"
-      {% endif %}
+    values_file: "{{ repo_dest }}/charts/srsran-gnb/{{ rru_file_map[rru | lower] | default('values.yaml') }}"
+  vars:
+    rru_file_map:
+      benetel: values-benetel.yaml
+      liteon:  values-liteon.yaml
+      n300:    values-n300.yaml
+      n320:    values-n320.yaml
+      rfsim:   values.yaml
 
 # ------------------------------
 # Helm-based gNB deployment
@@ -43,12 +40,10 @@
   community.kubernetes.helm:
     name: srsran-gnb
     chart: "{{ repo_dest }}/charts/srsran-gnb"
-    version: "{{ version | default('main') }}"
     namespace: "{{ open5gs_ns }}"
-    values: "{{ hostvars[groups['ran_node'][0]].values_file }}"
+    values_files:
+      - "{{ values_file }}"
   register: srs_gnb_apply
-  changed_when: "'deployed' in srs_gnb_apply.stdout or 'updated' in srs_gnb_apply.stdout"
-  failed_when: "'error' in srs_gnb_apply.stdout"
 
 # --- gNB pod discovery & wait ---
 - name: Snapshot gNB pods by selectors
