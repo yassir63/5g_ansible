@@ -133,7 +133,7 @@
     state: present
     wait: true
     atomic: true
-    timeout: 600
+    timeout: 600s
   register: telegraf_apply
 
 # ------------------------------
@@ -157,7 +157,7 @@
     state: present
     wait: true
     atomic: true
-    timeout: 600
+    timeout: 600s
   register: srs_ue_apply
   when: (rru | lower) == 'rfsim'
 
