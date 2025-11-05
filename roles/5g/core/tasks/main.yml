@@ -2,15 +2,6 @@
 - name: RESTART_5G_CORE
   ansible.builtin.meta: noop
 
-# --- Correction kubelet + CoreDNS sans flag obsolète ---
-#- name: Ensure kubelet uses correct CNI and DNS config
-#  lineinfile:
-#    path: /etc/default/kubelet
-#    regexp: '^KUBELET_EXTRA_ARGS='
-#    line: 'KUBELET_EXTRA_ARGS="--cni-bin-dir=/opt/cni/bin --cni-conf-dir=/etc/c#ni/net.d --resolv-conf=/run/systemd/resolve/resolv.conf"'
-#    create: yes
-#    mode: '0644'
-
 - name: Reload and restart kubelet
   ansible.builtin.shell: |
     systemctl daemon-reload
@@ -284,7 +275,6 @@
       metadata:
         name: force-open5gs-to-core-node
       spec:
-        mutateExistingOnPolicyUpdate: true
         rules:
           - name: add-open5gs-node-selector
             match:
