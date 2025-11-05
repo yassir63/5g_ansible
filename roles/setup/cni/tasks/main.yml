@@ -1,4 +1,7 @@
 ---
+- name: RESTART_K8S_ADDS_ON
+  ansible.builtin.meta: noop
+
 - name: Ensure Open vSwitch is installed
   apt:
     name: openvswitch-switch
@@ -31,6 +34,7 @@
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
   become: true
 
+# Wait for cluster-network-addons namespace to exist
 - name: Wait for cluster-network-addons namespace to exist
   kubernetes.core.k8s_info:
     api_version: v1
@@ -38,52 +42,74 @@
     name: cluster-network-addons
     kubeconfig: /etc/kubernetes/admin.conf
   register: cnano_ns
-  retries: 10
+  retries: 15
   delay: 5
   until: cnano_ns.resources | length > 0
+  changed_when: false
 
-- name: Wait for cluster-network-addons deployment to be ready
-  shell: >
-    kubectl -n cluster-network-addons rollout status deploy -l name=cluster-network-addons --timeout=180s
+# Wait for cluster-network-addons-operator deployment to be ready
+- name: Wait for Cluster Network Addons Operator rollout to finish
+  ansible.builtin.shell: |
+    kubectl -n cluster-network-addons rollout status deployment/cluster-network-addons-operator --timeout=300s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: cnano_rollout
-  failed_when: cnano_rollout.rc != 0
-  become: true
+  retries: 5
+  delay: 10
+  register: cnao_operator_wait
+  until: cnao_operator_wait.rc == 0
+  changed_when: false
 
-- name: Apply NetworkAddonsConfig from /tmp (only after operator is ready)
+# Apply NetworkAddonsConfig only after the operator is ready
+- name: Apply NetworkAddonsConfig from /tmp
   kubernetes.core.k8s:
     state: present
     src: /tmp/network-addons-config.yaml
-    kubeconfig: "{{ kubeconfig | default('/etc/kubernetes/admin.conf') }}"
-  become: false
+    kubeconfig: /etc/kubernetes/admin.conf
+  changed_when: false
 
-- name: Ensure Multus has cluster-wide RBAC permissions (safe, creates role only)
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: ClusterRole
-      metadata:
-        name: multus-clusterrole
-      rules:
-        - apiGroups: [""]
-          resources: ["pods"]
-          verbs: ["get", "list", "watch"]
+# Wait for NetworkAddonsConfig CR status to show Ready
+- name: Wait for NetworkAddonsConfig to reach Ready condition
+  ansible.builtin.shell: |
+    set -e
+    for i in {1..60}; do
+      phase=$(kubectl -n cluster-network-addons get networkaddonsconfig cluster -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+      if [ "$phase" = "True" ]; then
+        echo "✅ NetworkAddonsConfig is Ready"
+        exit 0
+      fi
+      echo "⏳ Waiting for NetworkAddonsConfig to be Ready (attempt $i)..."
+      sleep 10
+    done
+    echo "❌ NetworkAddonsConfig did not become Ready in time"
+    exit 1
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cnao_ready
+  retries: 3
+  delay: 5
+  until: cnao_ready.rc == 0
+  changed_when: false
 
-- name: Ensure Multus ClusterRoleBinding exists
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: ClusterRoleBinding
-      metadata:
-        name: multus-clusterrolebinding
-      roleRef:
-        apiGroup: rbac.authorization.k8s.io
-        kind: ClusterRole
-        name: multus-clusterrole
-      subjects:
-        - kind: ServiceAccount
-          name: multus
-          namespace: kube-system
+# Wait for all pods in cluster-network-addons namespace to be Ready
+- name: Wait for all cluster-network-addons pods to be Ready
+  ansible.builtin.shell: |
+    set -e
+    for i in {1..60}; do
+      not_ready=$(kubectl -n cluster-network-addons get pods --no-headers 2>/dev/null | awk '$2!=$3 {print $1}')
+      if [ -z "$not_ready" ]; then
+        echo "✅ All CNAO pods Ready"
+        exit 0
+      fi
+      echo "⏳ Waiting for CNAO pods to be Ready (attempt $i)..."
+      sleep 10
+    done
+    echo "❌ Some CNAO pods did not become Ready"
+    kubectl -n cluster-network-addons get pods -o wide
+    exit 1
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cnao_pods_ready
+  retries: 2
+  delay: 5
+  until: cnao_pods_ready.rc == 0
+  changed_when: false
