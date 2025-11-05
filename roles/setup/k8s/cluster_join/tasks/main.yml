@@ -2,32 +2,33 @@
 - name: RESTART_K8S_JOIN
   ansible.builtin.meta: noop
 
-# === CLEANUP (si le node avait déjà rejoint un cluster) ======================
-- name: Check if node is already part of a Kubernetes cluster
+# Cleanup if node already joined a k8s cluster
+- name: Check if node has leftover Kubernetes data
   ansible.builtin.stat:
-    path: /etc/kubernetes/kubelet.conf
-  register: kubelet_conf
+    path: /etc/kubernetes
+  register: kube_dir
 
-- name: Reset node if already part of a cluster
+- name: Reset node if Kubernetes data exists
   ansible.builtin.command: kubeadm reset -f
-  when: kubelet_conf.stat.exists
+  when: kube_dir.stat.exists
   ignore_errors: true
   become: true
 
-- name: Remove Kubernetes data and CNI directories
+- name: Remove all Kubernetes and CNI state
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
-    - /etc/cni/net.d
+    - /etc/kubernetes
+    - /etc/cni
     - /var/lib/kubelet
     - /var/lib/cni
     - /run/flannel
-  when: kubelet_conf.stat.exists
+  when: kube_dir.stat.exists
   become: true
   ignore_errors: true
 
-- name: Restart container runtime
+- name: Restart containerd
   ansible.builtin.systemd:
     name: containerd
     state: restarted
