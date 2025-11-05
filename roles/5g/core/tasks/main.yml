@@ -242,20 +242,23 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
-- name: Wait for Kyverno deployment to be ready
-  kubernetes.core.k8s_info:
-    api_version: apps/v1
-    kind: Deployment
-    namespace: kyverno
-    name: kyverno
-  register: kyverno_status
-  until:
-    - kyverno_status.resources | length > 0
-    - kyverno_status.resources[0].status.readyReplicas is defined
-    - kyverno_status.resources[0].status.readyReplicas >= 1
-  retries: 40
-  delay: 15
-  ignore_errors: yes
+- name: Wait for all Kyverno deployments to be ready
+  ansible.builtin.shell: |
+    set -e
+    for d in $(kubectl -n kyverno get deploy -o name); do
+      echo "⏳ Waiting for $d..."
+      kubectl -n kyverno rollout status "$d" --timeout=300s
+    done
+    echo "✅ All Kyverno deployments are ready."
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: kyverno_rollout
+  retries: 3
+  delay: 10
+  until: kyverno_rollout.rc == 0
+  changed_when: false
 
 - name: Debug Kyverno deployment and pods if not ready
   block:
