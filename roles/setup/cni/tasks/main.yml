@@ -17,13 +17,12 @@
     - n4br
   become: true
 
-- name: Render NetworkAddonsConfig manifest locally (role template -> /tmp)
+- name: Render NetworkAddonsConfig manifest locally
   ansible.builtin.template:
     src: network-addons-config.yaml.j2
     dest: /tmp/network-addons-config.yaml
-  become: false
 
-- name: Apply Cluster-Network-Addons Operator manifests from URLs
+- name: Apply Cluster-Network-Addons Operator manifests
   ansible.builtin.shell: |
     kubectl apply -f {{ item }}
   environment:
@@ -34,7 +33,6 @@
     - "https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.89.1/operator.yaml"
   become: true
 
-# Wait for cluster-network-addons namespace to exist
 - name: Wait for cluster-network-addons namespace to exist
   kubernetes.core.k8s_info:
     api_version: v1
@@ -47,19 +45,17 @@
   until: cnano_ns.resources | length > 0
   changed_when: false
 
-# Wait for cluster-network-addons-operator deployment to be ready
-- name: Wait for Cluster Network Addons Operator rollout to finish
+- name: Wait for cluster-network-addons-operator to be ready
   ansible.builtin.shell: |
     kubectl -n cluster-network-addons rollout status deployment/cluster-network-addons-operator --timeout=300s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cnao_operator_wait
   retries: 5
   delay: 10
-  register: cnao_operator_wait
   until: cnao_operator_wait.rc == 0
   changed_when: false
 
-# Apply NetworkAddonsConfig only after the operator is ready
 - name: Apply NetworkAddonsConfig from /tmp
   kubernetes.core.k8s:
     state: present
@@ -67,49 +63,29 @@
     kubeconfig: /etc/kubernetes/admin.conf
   changed_when: false
 
-# Wait for NetworkAddonsConfig CR status to show Ready
-- name: Wait for NetworkAddonsConfig to reach Ready condition
+# === Reliable unified wait (CR + pods) ===
+- name: Wait until NetworkAddonsConfig and all CNAO pods are Ready
   ansible.builtin.shell: |
     set -e
-    for i in {1..60}; do
+    echo "🔎 Waiting for CNAO readiness..."
+    for i in $(seq 1 90); do
       phase=$(kubectl -n cluster-network-addons get networkaddonsconfig cluster -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
-      if [ "$phase" = "True" ]; then
-        echo "✅ NetworkAddonsConfig is Ready"
-        exit 0
-      fi
-      echo "⏳ Waiting for NetworkAddonsConfig to be Ready (attempt $i)..."
-      sleep 10
-    done
-    echo "❌ NetworkAddonsConfig did not become Ready in time"
-    exit 1
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: cnao_ready
-  retries: 3
-  delay: 5
-  until: cnao_ready.rc == 0
-  changed_when: false
-
-# Wait for all pods in cluster-network-addons namespace to be Ready
-- name: Wait for all cluster-network-addons pods to be Ready
-  ansible.builtin.shell: |
-    set -e
-    for i in {1..60}; do
       not_ready=$(kubectl -n cluster-network-addons get pods --no-headers 2>/dev/null | awk '$2!=$3 {print $1}')
-      if [ -z "$not_ready" ]; then
-        echo "✅ All CNAO pods Ready"
+      if [ "$phase" = "True" ] && [ -z "$not_ready" ]; then
+        echo "✅ CNAO Ready (attempt $i)"
         exit 0
       fi
-      echo "⏳ Waiting for CNAO pods to be Ready (attempt $i)..."
+      echo "⏳ CNAO not Ready yet (attempt $i): CR=$phase, pending pods=[$not_ready]"
       sleep 10
     done
-    echo "❌ Some CNAO pods did not become Ready"
-    kubectl -n cluster-network-addons get pods -o wide
+    echo "❌ CNAO did not become Ready in time"
+    kubectl -n cluster-network-addons get pods -o wide || true
+    kubectl -n cluster-network-addons get networkaddonsconfig cluster -o yaml || true
     exit 1
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: cnao_pods_ready
-  retries: 2
-  delay: 5
-  until: cnao_pods_ready.rc == 0
+  register: cnao_wait
+  retries: 3
+  delay: 10
+  until: cnao_wait.rc == 0
   changed_when: false
