@@ -260,7 +260,7 @@ faraday.inria.fr ansible_user=$R2LAB_USERNAME rru=$R2LAB_RU conf=gnb.sa.band78.1
 
 [qhats]
 EOF
-
+fi
 # for ue in "${R2LAB_UES[@]}"; do
 #   echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1 nssai=01.000001" >> ./inventory/hosts.ini
 # done
