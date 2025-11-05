@@ -63,34 +63,25 @@
     kubeconfig: /etc/kubernetes/admin.conf
   changed_when: false
 
-- name: Wait until NetworkAddonsConfig and all CNAO pods are Ready (robust)
+- name: Wait for NetworkAddonsConfig to reach Ready condition
   ansible.builtin.shell: |
     set -e
-    echo "🔎 Waiting up to 10 minutes for CNAO to be Ready..."
     for i in $(seq 1 60); do
-      # Read CR status (may not exist early)
-      phase=$(kubectl -n cluster-network-addons get networkaddonsconfig cluster \
-        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
-      # Count pods not yet Ready
-      not_ready=$(kubectl -n cluster-network-addons get pods --no-headers 2>/dev/null | awk '$2!=$3 {print $1}')
-      # Evaluate
-      if [ -z "$not_ready" ] && { [ "$phase" = "True" ] || [ "$phase" = "Unknown" ]; }; then
-        echo "✅ CNAO appears Ready (pods OK, CR=$phase) on attempt $i"
+      phase=$(kubectl -n cluster-network-addons get networkaddonsconfig cluster -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+      if [ "$phase" = "True" ]; then
+        echo "✅ NetworkAddonsConfig is Ready"
         exit 0
       fi
-      echo "⏳ CNAO not Ready yet (attempt $i): CR=$phase, pending pods=[$not_ready]"
+      echo "⏳ Waiting for NetworkAddonsConfig to be Ready (attempt $i)..."
       sleep 10
     done
-    echo "❌ CNAO did not become Ready within 10 minutes"
-    echo "--- POD STATUS ---"
-    kubectl -n cluster-network-addons get pods -o wide || true
-    echo "--- CR STATUS ---"
-    kubectl -n cluster-network-addons get networkaddonsconfig cluster -o yaml || true
+    echo "❌ NetworkAddonsConfig did not become Ready in time"
     exit 1
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: cnao_wait
-  retries: 1
-  delay: 0
+  register: cnao_ready
+  retries: 3
+  delay: 5
+  until: cnao_ready.rc == 0
   changed_when: false
-  
+
