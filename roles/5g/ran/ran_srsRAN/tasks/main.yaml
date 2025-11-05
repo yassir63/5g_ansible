@@ -135,6 +135,7 @@
     atomic: true
     timeout: 600s
   register: telegraf_apply
+  when: monitoring_enabled
 
 # ------------------------------
 # Deploy srsRAN UEs (tmux-managed in a single pod)
