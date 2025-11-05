@@ -92,7 +92,7 @@
   ignore_errors: true
 
 # --- Flannel CNI Check ---
-- name: Wait for Flannel pods to be Ready on all nodes
+- name: Wait for Flannel pods to be Ready
   ansible.builtin.shell: |
     kubectl wait -n kube-flannel --for=condition=Ready pod -l app=flannel --timeout=180s
   args:
