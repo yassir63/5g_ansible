@@ -124,15 +124,17 @@
 # Helm-based Telegraf deployment
 # ------------------------------
 - name: Deploy Telegraf using Helm
-  community.kubernetes.helm:
+  kubernetes.core.helm:
     name: telegraf
-    chart: "{{ repo_dest }}/charts/telegraf"
-    version: "{{ version | default('main') }}"
-    namespace: "{{ open5gs_ns }}"
-    values: "{{ repo_dest }}/charts/telegraf/values.yaml"
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'telegraf'] | path_join }}"
+    release_namespace: "{{ open5gs_ns }}"
+    values_files:
+      - "{{ [repo_dest_abs, 'charts', 'telegraf', 'values.yaml'] | path_join }}"
+    state: present
+    wait: true
+    atomic: true
+    timeout: 600
   register: telegraf_apply
-  changed_when: "'deployed' in telegraf_apply.stdout or 'updated' in telegraf_apply.stdout"
-  failed_when: "'error' in telegraf_apply.stdout"
 
 # ------------------------------
 # Deploy srsRAN UEs (tmux-managed in a single pod)
@@ -141,17 +143,23 @@
 # ------------------------------
 # Helm-based UE deployment
 # ------------------------------
-- name: Deploy srsRAN UE using Helm
-  community.kubernetes.helm:
+# UE chart deploy (only for rfsim)
+- name: Deploy srsRAN UE using Helm (rfsim only)
+  kubernetes.core.helm:
     name: srsran-ue
-    chart: "{{ repo_dest }}/charts/srsue"
-    version: "{{ version | default('main') }}"
-    namespace: "{{ open5gs_ns }}"
-    values: "{{ repo_dest }}/charts/srsue/values.yaml"
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsue'] | path_join }}"
+    release_namespace: "{{ open5gs_ns }}"
+    values_files:
+      - "{{ [repo_dest_abs, 'charts', 'srsue', 'values.yaml'] | path_join }}"
+    # You can also pass inline overrides as a dict if needed:
+    # values:
+    #   ueCount: {{ ue_count | default(3) }}
+    state: present
+    wait: true
+    atomic: true
+    timeout: 600
   register: srs_ue_apply
-  changed_when: "'deployed' in srs_ue_apply.stdout or 'updated' in srs_ue_apply.stdout"
-  failed_when: "'error' in srs_ue_apply.stdout"
-  when: rru == 'rfsim'
+  when: (rru | lower) == 'rfsim'
 
 # --- UE pod discovery & wait ---
 - name: List all pods in {{ open5gs_ns }}
