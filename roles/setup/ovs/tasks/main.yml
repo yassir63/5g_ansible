@@ -19,3 +19,24 @@
     ovs-vsctl --may-exist add-br n3br
     ovs-vsctl --may-exist add-br n4br
   become: true
+
+
+# CPU restriction for ran-node only to avoid isolated cores usage
+- name: Restrict Open vSwitch to non-isolated CPUs
+  ansible.builtin.blockinfile:
+    path: /etc/systemd/system/openvswitch-switch.service.d/cpu-affinity.conf
+    create: yes
+    block: |
+      [Service]
+      # Limit Open vSwitch to system cores (i.e. 0-5)
+      CPUAffinity=0-5
+  become: true
+  when: inventory_hostname in groups['ran_node']
+
+- name: Reload systemd and restart OVS to apply CPUAffinity
+  ansible.builtin.shell: |
+    systemctl daemon-reexec
+    systemctl daemon-reload
+    systemctl restart openvswitch-switch
+  become: true
+  when: inventory_hostname in groups['ran_node']
