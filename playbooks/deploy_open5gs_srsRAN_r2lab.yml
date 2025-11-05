@@ -90,6 +90,12 @@
     - role: setup/netplan
       when: rru != 'rfsim'
 
+- name: Power ON RRU on R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab/rru
+      when: rru != 'rfsim'
+
 - name: Deploy srsRAN RAN
   hosts: ran_node
   gather_facts: false
@@ -130,12 +136,6 @@
       ignore_errors: true
       when: rru != 'rfsim'
       
-- name: Power ON RRU on R2Lab
-  hosts: faraday
-  roles:
-    - role: r2lab/rru
-      when: rru != 'rfsim'
-
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
   roles:
