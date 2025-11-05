@@ -63,25 +63,25 @@
     kubeconfig: /etc/kubernetes/admin.conf
   changed_when: false
 
-- name: Wait for NetworkAddonsConfig to reach Ready condition
+# Wait for NetworkAddonsConfig CR status to show Available=True
+- name: Wait for NetworkAddonsConfig to reach Available condition
   ansible.builtin.shell: |
     set -e
     for i in $(seq 1 60); do
-      phase=$(kubectl -n cluster-network-addons get networkaddonsconfig cluster -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+      phase=$(kubectl -n cluster-network-addons get networkaddonsconfig cluster -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "Unknown")
+      echo "⏳ Waiting for NetworkAddonsConfig to be Available (attempt $i): $phase"
       if [ "$phase" = "True" ]; then
-        echo "✅ NetworkAddonsConfig is Ready"
+        echo "✅ NetworkAddonsConfig is Available"
         exit 0
       fi
-      echo "⏳ Waiting for NetworkAddonsConfig to be Ready (attempt $i)..."
       sleep 10
     done
-    echo "❌ NetworkAddonsConfig did not become Ready in time"
+    echo "❌ NetworkAddonsConfig did not become Available in time"
     exit 1
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: cnao_ready
+  register: cnao_available
   retries: 3
   delay: 5
-  until: cnao_ready.rc == 0
+  until: cnao_available.rc == 0
   changed_when: false
-

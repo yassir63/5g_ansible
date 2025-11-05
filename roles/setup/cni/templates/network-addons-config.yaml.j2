@@ -3,8 +3,7 @@ kind: NetworkAddonsConfig
 metadata:
   name: cluster
 spec:
-  multus:
-    config: ""  # Empty = Multus secondary, delegates to primary CNI (Flannel)
+  multus: {}  # simplified field (no more .config)
   linuxBridge: {}
   ovs: {}
   kubeMacPool:
