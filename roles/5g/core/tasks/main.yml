@@ -244,54 +244,36 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
-- name: Wait for all Kyverno deployments to be ready
+# --- Wait for Kyverno controllers to be ready ---
+- name: Wait for Kyverno controller pods to be Ready
   ansible.builtin.shell: |
     set -e
-    for d in $(kubectl -n kyverno get deploy -o name); do
-      echo "⏳ Waiting for $d..."
-      kubectl -n kyverno rollout status "$d" --timeout=300s
-    done
-    echo "✅ All Kyverno deployments are ready."
+    kubectl -n kyverno wait --for=condition=Available deployment/kyverno-admission-controller --timeout=180s
+    kubectl -n kyverno wait --for=condition=Available deployment/kyverno-background-controller --timeout=180s
+    kubectl -n kyverno wait --for=condition=Available deployment/kyverno-cleanup-controller --timeout=180s
+    kubectl -n kyverno wait --for=condition=Available deployment/kyverno-reports-controller --timeout=180s
   args:
     executable: /bin/bash
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: kyverno_rollout
-  retries: 3
-  delay: 10
-  until: kyverno_rollout.rc == 0
+  register: wait_kyverno
+  retries: 5
+  delay: 15
+  until: wait_kyverno.rc == 0
   changed_when: false
 
-- name: Debug Kyverno deployment and pods if not ready
-  block:
-    - debug:
-        var: kyverno_status.resources[0].status
-
-    - name: List Kyverno pods
-      kubernetes.core.k8s_info:
-        api_version: v1
-        kind: Pod
-        namespace: kyverno
-      register: kyverno_pods
-
-    - debug:
-        var: kyverno_pods.resources
-
-    - name: Fetch init container logs for Kyverno pods
-      ansible.builtin.shell: |
-        kubectl logs -n kyverno {{ item.0.metadata.name }} -c {{ item.1.name }} --tail=50
-      loop: "{{ (kyverno_pods.resources | d([])) | subelements('spec.initContainers', skip_missing=True) }}"
-      loop_control:
-        label: "{{ item.0.metadata.name }} / {{ item.1.name }}"
-      register: init_logs
-      ignore_errors: yes
-
-    - name: Display init container logs
-      debug:
-        var: init_logs.results
-  when:
-    - kyverno_status.resources | length == 0
-      or (kyverno_status.resources[0].status.readyReplicas | default(0)) < 1
+# --- Status summary (replacement for debug block) ---
+- name: Show Kyverno status summary
+  ansible.builtin.shell: |
+    echo "🔹 Kyverno Deployments:"
+    kubectl -n kyverno get deploy -o wide
+    echo -e "\n🔹 Kyverno Pods:"
+    kubectl -n kyverno get pods -o wide
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false
 
 - name: Copy Kyverno policy to force Open5GS pods to {{ groups['core_node'][0] }}
   copy:
