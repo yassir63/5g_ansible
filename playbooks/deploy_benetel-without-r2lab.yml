@@ -106,13 +106,6 @@
   hosts: ran_node
   become: true
   gather_facts: true
-  tasks:
-    - name: Debug dpdk_interface
-      ansible.builtin.debug:
-        msg: "dpdk_interface is {{ dpdk_interface | default('undefined') }}"
-    - name: Debug inventory variables
-      ansible.builtin.debug:
-        msg: "nic_interface is {{ nic_interface | default('undefined') }}"
   roles:
     - role: setup/sriov_operator
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']

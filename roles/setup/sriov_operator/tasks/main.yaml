@@ -7,9 +7,6 @@
     update_cache: yes
   become: true
 
-# =============================================================================
-# Install Go 1.24.6 (simple, safe, /usr/local/bin/go)
-# =============================================================================
 - name: Install Go 1.24.6 (simple, safe, working)
   become: yes
   block:
@@ -27,9 +24,6 @@
         state: link
         force: yes
 
-# =============================================================================
-# Deploy SR-IOV Network Operator
-# =============================================================================
 - name: Deploy SR-IOV Network Operator
   block:
     - name: Install git
@@ -52,9 +46,7 @@
         version: master
       become: yes
 
-    # ----------------------------------------------------------------------
     # Fix: kubernetes Python lib + venv + correct pip path
-    # ----------------------------------------------------------------------
     - name: Install python3-venv and python3-pip
       ansible.builtin.apt:
         name:
@@ -80,9 +72,7 @@
       ansible.builtin.set_fact:
         ansible_python_interpreter: /opt/ansible-k8s-venv/bin/python
 
-    # ----------------------------------------------------------------------
     # Deploy
-    # ----------------------------------------------------------------------
     - name: Create namespace sriov-network-operator
       kubernetes.core.k8s:
         api_version: v1
@@ -101,9 +91,7 @@
         chdir: /root/sriov-network-operator
       become: yes
 
-# =============================================================================
 # Verify
-# =============================================================================
 - name: Verify SR-IOV Network Operator deployment
   kubernetes.core.k8s_info:
     kind: Pod
