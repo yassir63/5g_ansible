@@ -289,7 +289,9 @@
     - name: Display init container logs
       debug:
         var: init_logs.results
-  when: kyverno_status is failed
+  when:
+    - kyverno_status.resources | length == 0
+      or (kyverno_status.resources[0].status.readyReplicas | default(0)) < 1
 
 - name: Copy Kyverno policy to force Open5GS pods to {{ groups['core_node'][0] }}
   copy:
