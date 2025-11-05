@@ -64,6 +64,50 @@
   register: kubeadm_init
   become: true
 
+# ---- Sanitize kubelet extra args: remove deprecated CNI flags if present ----
+- name: Check for deprecated kubelet flags in /etc/default/kubelet
+  ansible.builtin.shell: |
+    if [ -f /etc/default/kubelet ]; then
+      if grep -Eq -- '--network-plugin|--cni-bin-dir|--cni-conf-dir' /etc/default/kubelet; then
+        echo "DEPRECATED_FOUND"
+      else
+        echo "CLEAN"
+      fi
+    else
+      echo "MISSING"
+    fi
+  register: kubelet_extra_check
+  changed_when: false
+  become: true
+
+- name: Backup existing /etc/default/kubelet if deprecated flags found
+  ansible.builtin.copy:
+    src: /etc/default/kubelet
+    dest: /etc/default/kubelet.bak_{{ ansible_date_time.epoch }}
+    remote_src: yes
+  when: kubelet_extra_check.stdout == "DEPRECATED_FOUND"
+  become: true
+
+- name: Sanitize /etc/default/kubelet (write only the resolvConf) if deprecated flags found or file missing
+  ansible.builtin.copy:
+    dest: /etc/default/kubelet
+    content: 'KUBELET_EXTRA_ARGS="--resolv-conf=/run/systemd/resolve/resolv.conf"'
+    mode: '0644'
+  when: kubelet_extra_check.stdout != "CLEAN"
+  become: true
+
+- name: Ensure kubelet systemd sees the change (daemon-reload)
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: true
+
+- name: Restart kubelet if we changed the file
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+  when: kubelet_extra_check.stdout != "CLEAN"
+  become: true
+
 # === FIX: Force kubelet to use correct resolv.conf ============================
 - name: Ensure kubelet uses systemd-resolved DNS
   ansible.builtin.copy:
