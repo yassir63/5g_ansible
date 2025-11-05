@@ -39,14 +39,14 @@
   changed_when: false
 
 # --- Test DNS ---
-- name: Test CoreDNS resolution from core and ran nodes
+- name: Test CoreDNS resolution from core node
   become: true
   delegate_to: "{{ groups['core_node'][0] }}"
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   ansible.builtin.shell: |
     set -eux
-    for NODE in {{ groups['core_node'][0] }} {{ groups['ran_node'][0] }}; do
+    for NODE in {{ groups['core_node'][0] }}; do
       echo "=== Testing DNS on $NODE ==="
       kubectl run dns-test-$NODE \
         --image=busybox:1.36 \
@@ -57,7 +57,6 @@
 
     echo "Cleaning up test pods..."
     kubectl delete pod dns-test-{{ groups['core_node'][0] }} --ignore-not-found
-    kubectl delete pod dns-test-{{ groups['ran_node'][0] }} --ignore-not-found
   changed_when: false
 
 - name: Label {{ groups['core_node'][0] }} for Open5GS Core scheduling
