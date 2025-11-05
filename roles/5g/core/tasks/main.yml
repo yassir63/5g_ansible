@@ -126,29 +126,31 @@
   register: wait_cni
   changed_when: false
 
-# --- Ensure cluster networking and api endpoints are ready before Kyverno install ---
-- name: Wait for kube-proxy DaemonSet to be available
-  ansible.builtin.shell: |
-    kubectl -n kube-system wait --for=condition=Available daemonset/kube-proxy --timeout=180s || true
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  args:
-    executable: /bin/bash
-  changed_when: false
-  register: wait_kubeproxy
-
-- name: Wait for kube-proxy pods to be Ready on core node
+# Ensure cluster networking and api endpoints are ready before Kyverno install
+- name: Wait for kube-proxy pods to be Running and Ready
   ansible.builtin.shell: |
     set -e
-    for POD in $(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o jsonpath='{range .items[*]}{.metadata.name} {"\n"}{end}'); do
-      kubectl -n kube-system wait --for=condition=Ready pod/"$POD" --timeout=120s || true
+    echo "⏳ Checking kube-proxy pod readiness..."
+    for i in {1..30}; do
+      ready=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o jsonpath='{.items[*].status.containerStatuses[*].ready}' | grep -c true || true)
+      total=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy --no-headers | wc -l)
+      if [ "$ready" -eq "$total" ] && [ "$total" -gt 0 ]; then
+        echo "✅ kube-proxy pods Ready ($ready/$total)"
+        exit 0
+      fi
+      echo "⏳ Waiting ($i/30)... ($ready/$total ready)"
+      sleep 5
     done
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
+    echo "❌ kube-proxy not ready after timeout" >&2
+    kubectl -n kube-system get pods -l k8s-app=kube-proxy -o wide
+    exit 1
   args:
     executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  retries: 2
+  delay: 5
   changed_when: false
-  register: wait_kubeproxy_pods
 
 - name: Wait for kubernetes service endpoint to exist (10.96.0.1)
   ansible.builtin.shell: |
