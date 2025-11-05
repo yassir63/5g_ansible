@@ -83,6 +83,13 @@
       vars:
         branch: srsRAN_metrics
 
+- name: Additional Optimizations & Setup on RAN Node for R2lab
+  hosts: ran_node
+  roles:
+    - role: setup/optimization/nic
+    - role: setup/netplan
+      when: rru != 'rfsim'
+
 - name: Deploy srsRAN RAN
   hosts: ran_node
   gather_facts: false
@@ -127,13 +134,6 @@
   hosts: faraday
   roles:
     - role: r2lab/rru
-      when: rru != 'rfsim'
-
-- name: Additional Optimizations & Setup on RAN Node for R2lab
-  hosts: ran_node
-  roles:
-    - role: setup/optimization/nic
-    - role: setup/netplan
       when: rru != 'rfsim'
 
 - name: Launch 5G-Monarch monitoring

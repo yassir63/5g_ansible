@@ -17,14 +17,28 @@
     name: "{{ open5gs_ns }}"
     state: present
 
+# (If your play doesn't already gather facts)
+- name: Gather env facts (remote)
+  ansible.builtin.setup:
+    filter: ansible_env
+  when: ansible_env is not defined
 
-# ------------------------------
-# Determine values file based on rru variable
-# ------------------------------
-# Pick the right values file from rru (default to values.yaml)
-- name: Set values file based on rru variable
+# Ensure we have remote env facts
+- name: Gather env facts (remote)
+  ansible.builtin.setup:
+    filter: ansible_env
+  when: ansible_env is not defined
+
+# Normalize repo_dest to an absolute remote path (expand ~, trim)
+- name: Normalize repo_dest to remote HOME
   ansible.builtin.set_fact:
-    values_file: "{{ repo_dest }}/charts/srsran-gnb/{{ rru_file_map[rru | lower] | default('values.yaml') }}"
+    repo_dest_abs: "{{ (repo_dest | default('~/srsran-helm') | trim)
+                       | regex_replace('^~/?', ansible_env.HOME ~ '/') }}"
+
+# Choose filename from rru (lower/trim), fall back to values.yaml
+- name: Select values filename from rru
+  ansible.builtin.set_fact:
+    values_filename: "{{ rru_file_map[(rru | default('rfsim') | string | trim | lower)] | default('values.yaml') }}"
   vars:
     rru_file_map:
       benetel: values-benetel.yaml
@@ -33,18 +47,40 @@
       n320:    values-n320.yaml
       rfsim:   values.yaml
 
-# ------------------------------
-# Helm-based gNB deployment
-# ------------------------------
+# Build full path with path_join (prevents spaces/slash issues)
+- name: Build absolute values_file path
+  ansible.builtin.set_fact:
+    values_file: "{{ [repo_dest_abs, 'charts', 'srsran-gnb', values_filename] | path_join }}"
+
+# Sanity check
+- name: debug
+  ansible.builtin.debug:
+    msg:
+      - "repo_dest_abs='{{ repo_dest_abs }}'"
+      - "values_file='{{ values_file }}'"
+
+# Ensure file exists
+- name: Ensure values file exists (remote)
+  ansible.builtin.stat:
+    path: "{{ values_file }}"
+  register: values_stat
+
+- name: Fail if values file missing
+  ansible.builtin.fail:
+    msg: "Values file not found: {{ values_file }}"
+  when: not values_stat.stat.exists
+
+# Deploy with kubernetes.core.helm (use chart_ref + values_files)
 - name: Deploy srsRAN gNB using Helm
-  community.kubernetes.helm:
+  kubernetes.core.helm:
     name: srsran-gnb
-    chart: "{{ repo_dest }}/charts/srsran-gnb"
-    namespace: "{{ open5gs_ns }}"
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
+    release_namespace: "{{ open5gs_ns }}"
     values_files:
       - "{{ values_file }}"
-  register: srs_gnb_apply
-
+    state: present
+    wait: true
+    atomic: true
 # --- gNB pod discovery & wait ---
 - name: Snapshot gNB pods by selectors
   kubernetes.core.k8s_info:
