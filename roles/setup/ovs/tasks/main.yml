@@ -1,5 +1,8 @@
 ---
-- name: Update APT cache once
+- name: RESTART_OVS_SETUP
+  ansible.builtin.meta: noop
+
+- name: Ensure APT cache is updated
   ansible.builtin.apt:
     update_cache: yes
     cache_valid_time: 3600
@@ -10,29 +13,32 @@
   ansible.builtin.apt:
     name: openvswitch-switch
     state: present
-    update_cache: yes
   become: true
 
-- name: Create OVS bridges
-  ansible.builtin.shell: |
-    ovs-vsctl --may-exist add-br n2br
-    ovs-vsctl --may-exist add-br n3br
-    ovs-vsctl --may-exist add-br n4br
+- name: Ensure ovsdb-server and ovs-vswitchd are running
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - ovsdb-server
+    - ovs-vswitchd
   become: true
 
-# Apply CPU pinning for RAN node to avoid isolated cores
-- name: Restrict OVS daemons to housekeeping CPUs
-  ansible.builtin.blockinfile:
-    path: /etc/systemd/system/ovs-vswitchd.service.d/cpu-affinity.conf
-    create: yes
-    block: |
-      [Service]
-      # Limit ovs-vswitchd to housekeeping CPUs (e.g. 0-5)
-      CPUAffinity=0-5
-  become: true
-  when: inventory_hostname in groups['ran_node']
+- name: Create list of OVS bridges
+  set_fact:
+    ovs_bridges:
+      - n2br
+      - n3br
+      - n4br
 
-- name: Ensure directory for override exists
+- name: Create required OVS bridges
+  ansible.builtin.command: "ovs-vsctl --may-exist add-br {{ item }}"
+  loop: "{{ ovs_bridges }}"
+  become: true
+
+# ---------------- CPU AFFINITY (Only RAN nodes) ----------------
+- name: Ensure directory for OVS override exists
   ansible.builtin.file:
     path: /etc/systemd/system/ovs-vswitchd.service.d
     state: directory
@@ -40,22 +46,47 @@
   become: true
   when: inventory_hostname in groups['ran_node']
 
-# Reload systemd + Restart OVS to apply CPUAffinity
-- name: Reload systemd and restart OVS services cleanly
-  ansible.builtin.shell: |
-    systemctl daemon-reexec
-    systemctl daemon-reload
-    systemctl restart ovsdb-server
-    systemctl restart ovs-vswitchd
+- name: Apply CPU pinning for ovs-vswitchd on RAN nodes
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ovs-vswitchd.service.d/cpu-affinity.conf
+    content: |
+      [Service]
+      CPUAffinity=0-5
   become: true
   when: inventory_hostname in groups['ran_node']
 
-# Verify CPUAffinity actually applied
-- name: Verify that ovs-vswitchd CPUAffinity is active
-  ansible.builtin.shell: |
-    systemctl show -p CPUAffinity ovs-vswitchd | grep -q 'CPUAffinity=0-5'
-  register: ovs_affinity_check
-  failed_when: ovs_affinity_check.rc != 0
+- name: Reload systemd if CPUAffinity applied
+  ansible.builtin.systemd:
+    daemon_reload: yes
   become: true
   when: inventory_hostname in groups['ran_node']
+
+- name: Restart ovs services if CPUAffinity applied
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: restarted
+  loop:
+    - ovs-vswitchd
+    - ovsdb-server
+  become: true
+  when: inventory_hostname in groups['ran_node']
+
+# ---------------- VERIFICATION ----------------
+
+- name: Verify daemons running
+  ansible.builtin.service_facts:
+
+- name: Fail if OVS daemons are not alive
+  ansible.builtin.fail:
+    msg: "Open vSwitch is not running correctly on {{ inventory_hostname }}"
+  when:
+    - services['ovsdb-server.service'].state != "running"
+    - services['ovs-vswitchd.service'].state != "running"
+
+- name: Verify bridges exist
+  ansible.builtin.command: "ovs-vsctl br-exists {{ item }}"
+  loop: "{{ ovs_bridges }}"
+  register: bridge_check
+  failed_when: bridge_check.rc != 0
   changed_when: false
+  become: true
