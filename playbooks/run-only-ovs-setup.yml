@@ -1,0 +1,5 @@
+---
+- name: Setup OVS for ran only
+  hosts: ran_node
+  roles:
+    - role: setup/ovs
