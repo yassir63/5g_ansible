@@ -31,15 +31,19 @@
   loop: "{{ ovs_bridges }}"
   become: true
 
-#  CPU PINNING: OVS on RAN node = cores 0-5
-- name: Enable CPUAffinity override dir
+
+# =====================================================================
+#   CPU PINNING FOR OVS (RAN nodes only)
+# =====================================================================
+
+- name: Enable CPUAffinity override dir for ovs-vswitchd
   ansible.builtin.file:
     path: /etc/systemd/system/ovs-vswitchd.service.d
     state: directory
   become: true
   when: inventory_hostname in groups['ran_node']
 
-- name: Apply CPUAffinity for ovs-vswitchd
+- name: Apply CPUAffinity override for ovs-vswitchd
   ansible.builtin.copy:
     dest: /etc/systemd/system/ovs-vswitchd.service.d/cpu-affinity.conf
     content: |
@@ -48,7 +52,7 @@
   become: true
   when: inventory_hostname in groups['ran_node']
 
-- name: Reload and restart ovs-vswitchd
+- name: Reload systemd & restart ovs-vswitchd
   ansible.builtin.systemd:
     daemon_reload: yes
     name: ovs-vswitchd
@@ -56,51 +60,59 @@
   become: true
   when: inventory_hostname in groups['ran_node']
 
-#  IRQ PINNING: ens15f0np0 → cores 0-5 + 32-63 (RAN ONLY)
+
+# =====================================================================
+#   IRQ PINNING FOR NIC ens15f0np0 → CPUs: 0-5,32-63
+# =====================================================================
+
 - name: Apply NIC IRQ pinning only on RAN nodes
   when: inventory_hostname in groups['ran_node']
   block:
 
-    - name: Find IRQs for ens15f0np0
+    - name: Get IRQ list for ens15f0np0
       ansible.builtin.shell: "grep -i 'ens15f0np0' /proc/interrupts | awk '{print $1}' | tr -d ':'"
       register: ovs_irq_list
       changed_when: false
       become: true
 
-    - name: Define correct IRQ CPU mask (NUMA0 + NUMA1)
+    - name: Define final IRQ CPU list format
       set_fact:
-        irq_mask: "0000003F,FFFFFFFF"
+        irq_cpu_list: "0-5,32-63"
 
-    - name: Apply IRQ affinity live
+    - name: Apply IRQ affinity live (correct register)
       ansible.builtin.shell: |
-        echo {{ irq_mask }} | tee /proc/irq/{{ item }}/smp_affinity > /dev/null
+        echo {{ irq_cpu_list }} > /proc/irq/{{ item }}/smp_affinity_list
       loop: "{{ ovs_irq_list.stdout_lines }}"
       become: true
 
-    - name: Persist IRQ affinity across reboot
+    - name: Persist IRQ affinity across reboot (systemd service)
       ansible.builtin.copy:
         dest: /etc/systemd/system/irq-affinity-ens15f0np0.service
         content: |
           [Unit]
-          Description=Pin IRQs for ens15f0np0
-          After=multi-user.target
+          Description=Set IRQ CPU affinity for ens15f0np0
+          After=network.target
 
           [Service]
           Type=oneshot
-          ExecStart=/bin/bash -c 'for i in {{ ovs_irq_list.stdout_lines | join(" ") }}; do echo {{ irq_mask }} > /proc/irq/$i/smp_affinity; done'
+          ExecStart=/bin/sh -c 'for i in {{ ovs_irq_list.stdout_lines | join(" ") }}; do echo {{ irq_cpu_list }} > /proc/irq/$i/smp_affinity_list; done'
 
           [Install]
           WantedBy=multi-user.target
       become: true
 
-    - name: Enable IRQ affinity persistence service
+    - name: Enable IRQ affinity persistence
       ansible.builtin.systemd:
         daemon_reload: yes
         name: irq-affinity-ens15f0np0.service
         enabled: yes
       become: true
 
-#  VERIFICATION
+
+# =====================================================================
+#   VERIFICATION
+# =====================================================================
+
 - name: Verify OVS daemons
   ansible.builtin.service_facts:
 
@@ -119,4 +131,3 @@
   loop: "{{ ovs_bridges }}"
   become: true
   changed_when: false
-
