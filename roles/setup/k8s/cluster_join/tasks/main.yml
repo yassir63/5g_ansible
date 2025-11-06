@@ -114,17 +114,17 @@
     mode: '0644'
   become: true
 
-- name: Ensure master node is resolvable
+- name: Ensure master CORE node is resolvable
   ansible.builtin.lineinfile:
     path: /etc/hosts
     line: "{{ hostvars[groups['core_node'][0]].ip }} {{ groups['core_node'][0] }}"
   become: true
 
-- name: Set kubelet node IP explicitly
+- name: Set kubelet RAN node IP explicitly
   copy:
     dest: /etc/default/kubelet
     content: |
-      KUBELET_EXTRA_ARGS=--node-ip={{ hostvars[groups['core_node'][0]].ip }}
+      KUBELET_EXTRA_ARGS=--node-ip={{ hostvars[groups['core_ran'][0]].ip }}
   become: true
 
 - name: Restart kubelet
