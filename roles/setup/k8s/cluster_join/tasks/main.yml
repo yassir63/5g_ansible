@@ -133,6 +133,14 @@
     state: restarted
   become: true
 
+- name: Remove stale node entry from cluster
+  delegate_to: "{{ groups['core_node'][0] }}"
+  become: true
+  ansible.builtin.shell: |
+    kubectl delete node {{ inventory_hostname }} --ignore-not-found
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
 - name: Read join command
   ansible.builtin.set_fact:
     kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
