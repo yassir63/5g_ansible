@@ -31,19 +31,17 @@
   loop: "{{ ovs_bridges }}"
   become: true
 
-
-# =====================================================================
-#   CPU PINNING FOR OVS (RAN nodes only)
-# =====================================================================
-
-- name: Enable CPUAffinity override dir for ovs-vswitchd
+# ============================================================
+#  PINNING OVS-VSWITCHD → cores 0-5
+# ============================================================
+- name: Enable CPUAffinity override dir
   ansible.builtin.file:
     path: /etc/systemd/system/ovs-vswitchd.service.d
     state: directory
   become: true
   when: inventory_hostname in groups['ran_node']
 
-- name: Apply CPUAffinity override for ovs-vswitchd
+- name: Apply CPUAffinity for ovs-vswitchd
   ansible.builtin.copy:
     dest: /etc/systemd/system/ovs-vswitchd.service.d/cpu-affinity.conf
     content: |
@@ -52,7 +50,7 @@
   become: true
   when: inventory_hostname in groups['ran_node']
 
-- name: Reload systemd & restart ovs-vswitchd
+- name: Restart ovs-vswitchd with new affinity
   ansible.builtin.systemd:
     daemon_reload: yes
     name: ovs-vswitchd
@@ -60,59 +58,56 @@
   become: true
   when: inventory_hostname in groups['ran_node']
 
-
-# =====================================================================
-#   IRQ PINNING FOR NIC ens15f0np0 → CPUs: 0-5,32-63
-# =====================================================================
-
-- name: Apply NIC IRQ pinning only on RAN nodes
+# ============================================================
+#  IRQ PINNING ENS15F0NP0 → cores 14-31 ONLY (RAN SAFE)
+# ============================================================
+- name: IRQ pinning block (only on RAN nodes)
   when: inventory_hostname in groups['ran_node']
   block:
 
-    - name: Get IRQ list for ens15f0np0
+    - name: Find IRQs for ens15f0np0
       ansible.builtin.shell: "grep -i 'ens15f0np0' /proc/interrupts | awk '{print $1}' | tr -d ':'"
       register: ovs_irq_list
       changed_when: false
       become: true
 
-    - name: Define final IRQ CPU list format
+    # 14-31 = binary mask → high word = FFFFC000, low word = 00000000
+    - name: Set IRQ mask for cores 14-31 only
       set_fact:
-        irq_cpu_list: "0-5,32-63"
+        irq_mask: "FFFFC000,00000000"
 
-    - name: Apply IRQ affinity live (correct register)
+    - name: Apply IRQ affinity live
       ansible.builtin.shell: |
-        echo {{ irq_cpu_list }} > /proc/irq/{{ item }}/smp_affinity_list
+        echo {{ irq_mask }} > /proc/irq/{{ item }}/smp_affinity
       loop: "{{ ovs_irq_list.stdout_lines }}"
       become: true
 
-    - name: Persist IRQ affinity across reboot (systemd service)
+    - name: Persist IRQ affinity on reboot
       ansible.builtin.copy:
         dest: /etc/systemd/system/irq-affinity-ens15f0np0.service
         content: |
           [Unit]
-          Description=Set IRQ CPU affinity for ens15f0np0
-          After=network.target
+          Description=Pin IRQs for ens15f0np0
+          After=multi-user.target
 
           [Service]
           Type=oneshot
-          ExecStart=/bin/sh -c 'for i in {{ ovs_irq_list.stdout_lines | join(" ") }}; do echo {{ irq_cpu_list }} > /proc/irq/$i/smp_affinity_list; done'
+          ExecStart=/bin/sh -c 'for i in {{ ovs_irq_list.stdout_lines | join(" ") }}; do echo {{ irq_mask }} > /proc/irq/$i/smp_affinity; done'
 
           [Install]
           WantedBy=multi-user.target
       become: true
 
-    - name: Enable IRQ affinity persistence
+    - name: Enable IRQ affinity persistence service
       ansible.builtin.systemd:
         daemon_reload: yes
         name: irq-affinity-ens15f0np0.service
         enabled: yes
       become: true
 
-
-# =====================================================================
-#   VERIFICATION
-# =====================================================================
-
+# ============================================================
+#  VERIFICATION
+# ============================================================
 - name: Verify OVS daemons
   ansible.builtin.service_facts:
 
@@ -131,3 +126,4 @@
   loop: "{{ ovs_bridges }}"
   become: true
   changed_when: false
+  
