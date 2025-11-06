@@ -31,9 +31,7 @@
   loop: "{{ ovs_bridges }}"
   become: true
 
-# ============================================================
 #  PINNING OVS-VSWITCHD → cores 0-5
-# ============================================================
 - name: Enable CPUAffinity override dir
   ansible.builtin.file:
     path: /etc/systemd/system/ovs-vswitchd.service.d
@@ -58,10 +56,8 @@
   become: true
   when: inventory_hostname in groups['ran_node']
 
-# ============================================================
-#  IRQ PINNING ENS15F0NP0 → cores 14-31 ONLY (RAN SAFE)
-# ============================================================
-- name: IRQ pinning block (only on RAN nodes)
+# IRQ PINNING: ens15f0np0 → cores 14-31 (RAN ONLY)
+- name: Apply NIC IRQ pinning only on RAN nodes
   when: inventory_hostname in groups['ran_node']
   block:
 
@@ -71,18 +67,13 @@
       changed_when: false
       become: true
 
-    # 14-31 = binary mask → high word = FFFFC000, low word = 00000000
-    - name: Set IRQ mask for cores 14-31 only
-      set_fact:
-        irq_mask: "FFFFC000,00000000"
-
-    - name: Apply IRQ affinity live
+    - name: Apply IRQ affinity live (use CPU list instead of masks)
       ansible.builtin.shell: |
-        echo {{ irq_mask }} > /proc/irq/{{ item }}/smp_affinity
+        echo 14-31 > /proc/irq/{{ item }}/smp_affinity_list
       loop: "{{ ovs_irq_list.stdout_lines }}"
       become: true
 
-    - name: Persist IRQ affinity on reboot
+    - name: Make IRQ pinning persistent on reboot
       ansible.builtin.copy:
         dest: /etc/systemd/system/irq-affinity-ens15f0np0.service
         content: |
@@ -92,22 +83,20 @@
 
           [Service]
           Type=oneshot
-          ExecStart=/bin/sh -c 'for i in {{ ovs_irq_list.stdout_lines | join(" ") }}; do echo {{ irq_mask }} > /proc/irq/$i/smp_affinity; done'
+          ExecStart=/bin/sh -c 'for i in {{ ovs_irq_list.stdout_lines | join(" ") }}; do echo 14-31 > /proc/irq/$i/smp_affinity_list; done'
 
           [Install]
           WantedBy=multi-user.target
       become: true
 
-    - name: Enable IRQ affinity persistence service
+    - name: Enable IRQ affinity service
       ansible.builtin.systemd:
         daemon_reload: yes
         name: irq-affinity-ens15f0np0.service
         enabled: yes
       become: true
 
-# ============================================================
 #  VERIFICATION
-# ============================================================
 - name: Verify OVS daemons
   ansible.builtin.service_facts:
 
