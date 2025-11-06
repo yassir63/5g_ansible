@@ -124,7 +124,7 @@
   copy:
     dest: /etc/default/kubelet
     content: |
-      KUBELET_EXTRA_ARGS=--node-ip={{ hostvars[groups['core_ran'][0]].ip }}
+      KUBELET_EXTRA_ARGS=--node-ip={{ hostvars[inventory_hostname].ip }}
   become: true
 
 - name: Restart kubelet
