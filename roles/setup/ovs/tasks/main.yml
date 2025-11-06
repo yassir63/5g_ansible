@@ -2,20 +2,14 @@
 - name: RESTART_OVS_SETUP
   ansible.builtin.meta: noop
 
-- name: Ensure APT cache is updated
-  ansible.builtin.apt:
-    update_cache: yes
-    cache_valid_time: 3600
-  become: true
-  run_once: true
-
-- name: Install Open vSwitch
+- name: Ensure OVS is installed
   ansible.builtin.apt:
     name: openvswitch-switch
     state: present
+    update_cache: yes
   become: true
 
-- name: Ensure ovsdb-server and ovs-vswitchd are running
+- name: Ensure OVS services are running
   ansible.builtin.service:
     name: "{{ item }}"
     state: started
@@ -25,28 +19,29 @@
     - ovs-vswitchd
   become: true
 
-- name: Create list of OVS bridges
+- name: Define OVS bridges
   set_fact:
     ovs_bridges:
       - n2br
       - n3br
       - n4br
 
-- name: Create required OVS bridges
+- name: Create OVS bridges
   ansible.builtin.command: "ovs-vsctl --may-exist add-br {{ item }}"
   loop: "{{ ovs_bridges }}"
   become: true
 
-# ---------------- CPU AFFINITY (Only RAN nodes) ----------------
-- name: Ensure directory for OVS override exists
+# ============================================================
+#  CPU PINNING: OVS on RAN node = cores 0-5
+# ============================================================
+- name: Enable CPUAffinity override dir
   ansible.builtin.file:
     path: /etc/systemd/system/ovs-vswitchd.service.d
     state: directory
-    mode: '0755'
   become: true
   when: inventory_hostname in groups['ran_node']
 
-- name: Apply CPU pinning for ovs-vswitchd on RAN nodes
+- name: Apply CPUAffinity for ovs-vswitchd
   ansible.builtin.copy:
     dest: /etc/systemd/system/ovs-vswitchd.service.d/cpu-affinity.conf
     content: |
@@ -55,38 +50,76 @@
   become: true
   when: inventory_hostname in groups['ran_node']
 
-- name: Reload systemd if CPUAffinity applied
+- name: Reload and restart ovs-vswitchd
   ansible.builtin.systemd:
     daemon_reload: yes
-  become: true
-  when: inventory_hostname in groups['ran_node']
-
-- name: Restart ovs services if CPUAffinity applied
-  ansible.builtin.service:
-    name: "{{ item }}"
+    name: ovs-vswitchd
     state: restarted
-  loop:
-    - ovs-vswitchd
-    - ovsdb-server
   become: true
   when: inventory_hostname in groups['ran_node']
 
-# ---------------- VERIFICATION ----------------
+# ============================================================
+#  IRQ PINNING: NIC ens15f0np0 → cores 0-5 + 32-63
+# ============================================================
 
-- name: Verify daemons running
+- name: Find IRQs for ens15f0np0
+  ansible.builtin.shell: "grep -i 'ens15f0np0' /proc/interrupts | awk '{print $1}' | tr -d ':'"
+  register: ovs_irq_list
+  become: true
+  changed_when: false
+  when: inventory_hostname in groups['ran_node']
+
+# On génère dynamiquement le mask → valable machines 64c / 96c / 128c
+- name: Generate CPU mask (0-5 + 32-63)
+  ansible.builtin.shell: |
+    mask=$(printf "%064d" | tr 0 1) # autoriser 64 cœurs
+    # disable cores 6-31
+    for i in $(seq 6 31); do mask=$(echo "$mask" | sed "s/^\(.\{$((63-i))\}\)1/\10/"); done
+    echo "obase=16; ibase=2; $mask" | bc
+  register: cpu_mask
+  when: inventory_hostname in groups['ran_node']
+  changed_when: false
+
+- name: Apply IRQ affinity live
+  ansible.builtin.shell: "echo {{ cpu_mask.stdout }} > /proc/irq/{{ item }}/smp_affinity"
+  loop: "{{ ovs_irq_list.stdout_lines }}"
+  become: true
+  when: inventory_hostname in groups['ran_node']
+
+# Rend persistent via udev rule
+- name: Persist IRQ affinity rule
+  ansible.builtin.copy:
+    dest: /etc/udev/rules.d/90-ovs-nic-irq.rules
+    content: |
+      ACTION=="add", SUBSYSTEM=="irq", ATTR{chip_name}=="IR-PCI-MSIX-0000:3a:00.0", ATTR{smp_affinity}="{{ cpu_mask.stdout }}"
+  become: true
+  when: inventory_hostname in groups['ran_node']
+
+- name: Reload udev
+  ansible.builtin.shell: "udevadm control --reload && udevadm trigger"
+  become: true
+  when: inventory_hostname in groups['ran_node']
+
+# ============================================================
+#  VERIFICATION
+# ============================================================
+
+- name: Verify OVS daemons
   ansible.builtin.service_facts:
 
-- name: Fail if OVS daemons are not alive
+- name: Fail if ovsdb-server is not running
   ansible.builtin.fail:
-    msg: "Open vSwitch is not running correctly on {{ inventory_hostname }}"
-  when:
-    - services['ovsdb-server.service'].state != "running"
-    - services['ovs-vswitchd.service'].state != "running"
+    msg: "❌ ovsdb-server is not running on {{ inventory_hostname }}"
+  when: services['ovsdb-server.service'].state != "running"
 
-- name: Verify bridges exist
+- name: Fail if ovs-vswitchd is not running
+  ansible.builtin.fail:
+    msg: "❌ ovs-vswitchd is not running on {{ inventory_hostname }}"
+  when: services['ovs-vswitchd.service'].state != "running"
+
+- name: Verify OVS bridges
   ansible.builtin.command: "ovs-vsctl br-exists {{ item }}"
   loop: "{{ ovs_bridges }}"
-  register: bridge_check
-  failed_when: bridge_check.rc != 0
-  changed_when: false
   become: true
+  changed_when: false
+
