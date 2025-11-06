@@ -20,7 +20,7 @@
     ovs-vsctl --may-exist add-br n4br
   become: true
 
-# Apply CPU pinning for RAN node (avoid isolated cores)
+# Apply CPU pinning for RAN node to avoid isolated cores
 - name: Restrict OVS daemons to housekeeping CPUs
   ansible.builtin.blockinfile:
     path: /etc/systemd/system/ovs-vswitchd.service.d/cpu-affinity.conf
@@ -59,57 +59,3 @@
   become: true
   when: inventory_hostname in groups['ran_node']
   changed_when: false
-
-
-
-
-
----
-- name: Update APT cache once
-  ansible.builtin.apt:
-    update_cache: yes
-    cache_valid_time: 3600
-  become: true
-  run_once: true
-  
-- name: Install Open vSwitch
-  apt:
-    name: openvswitch-switch
-    state: present
-    update_cache: yes
-  become: true
-
-- name: Create OVS bridges
-  shell: |
-    ovs-vsctl --may-exist add-br n2br
-    ovs-vsctl --may-exist add-br n3br
-    ovs-vsctl --may-exist add-br n4br
-  become: true
-
-# CPU restriction for ran-node only to avoid isolated cores usage
-- name: Restrict OVS daemons to non-isolated CPUs
-  when: inventory_hostname in groups['ran_node']
-  block:
-    - name: Ensure override directory for ovs-vswitchd
-      ansible.builtin.file:
-        path: /etc/systemd/system/ovs-vswitchd.service.d
-        state: directory
-        mode: '0755'
-      become: true
-
-    - name: Set CPU affinity for ovs-vswitchd
-      ansible.builtin.blockinfile:
-        path: /etc/systemd/system/ovs-vswitchd.service.d/cpu-affinity.conf
-        create: yes
-        block: |
-          [Service]
-          # Limit ovs-vswitchd to housekeeping CPUs (e.g. 0-5)
-          CPUAffinity=0-5
-      become: true
-
-    - name: Reload systemd and restart ovs-vswitchd
-      ansible.builtin.shell: |
-        systemctl daemon-reexec
-        systemctl daemon-reload
-        systemctl restart ovs-vswitchd
-      become: true
