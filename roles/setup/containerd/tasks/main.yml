@@ -2,6 +2,36 @@
 - name: RESTART_CONTAINERD
   ansible.builtin.meta: noop
 
+# --- Handle live Ubuntu RAN images before containerd install ---
+- name: Detect if running from a live Ubuntu image
+  ansible.builtin.shell: |
+    grep -q "boot=live" /proc/cmdline && echo "live" || echo "persistent"
+  register: live_image_check
+  changed_when: false
+  become: true
+
+- name: Ensure /var/lib/containerd is writable on live RAN systems
+  ansible.builtin.block:
+    - name: Create /var/lib/containerd directory
+      ansible.builtin.file:
+        path: /var/lib/containerd
+        state: directory
+        mode: '0755'
+
+    - name: Mount tmpfs on /var/lib/containerd (live system ephemeral fix)
+      ansible.builtin.mount:
+        path: /var/lib/containerd
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=2G
+        state: mounted
+  when:
+    - inventory_hostname in groups['ran_node']
+    - live_image_check.stdout == "live"
+  become: true
+  tags: ['live-fix']
+
+# containerd installation
 - name: Remove old Docker repo junk
   ansible.builtin.file:
     path: "{{ item }}"
