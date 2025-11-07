@@ -2,14 +2,16 @@
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
 
-- name: (POS) Allocate {{ node }} 
+- name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
 - name: Set POS image command for RAN {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
       {% set rru = hostvars[groups['faraday'][0]].rru %}
-      {% set ran_boot_mode = hostvars[inventory_hostname].ran_boot_mode %}
+      {% set ran_boot_mode = (hostvars[node].ran_boot_mode
+                              if (node in hostvars and 'ran_boot_mode' in hostvars[node])
+                              else 'disk') %}
       {% if rru in ['benetel1', 'benetel2'] %}
         {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
@@ -54,7 +56,9 @@
 - name: Bootstrap {{ node }} if RAN node for Benetel
   ansible.builtin.shell: >-
     {% set rru = hostvars[groups['faraday'][0]].rru %}
-    {% set ran_boot_mode = hostvars[inventory_hostname].ran_boot_mode %}
+    {% set ran_boot_mode = (hostvars[node].ran_boot_mode
+                            if (node in hostvars and 'ran_boot_mode' in hostvars[node])
+                            else 'disk') %}
     {% if rru in ['benetel1', 'benetel2'] and ran_boot_mode == 'disk' %}
       pos node bootstrap {{ node }}
     {% endif %}
