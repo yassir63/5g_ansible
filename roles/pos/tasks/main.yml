@@ -1,8 +1,10 @@
 ---
-- name: Define rru variable globally for this role
+- name: Define some variables globally for this node
   ansible.builtin.set_fact:
     rru: "{{ hostvars[groups['faraday'][0]].rru }}"
-
+    ran_boot_mode: "{{ hostvars[node].ran_boot_mode }}"
+  when: node in groups['ran_node']
+  
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
 
