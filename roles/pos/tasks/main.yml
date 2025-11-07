@@ -9,9 +9,7 @@
   ansible.builtin.set_fact:
     pos_image_cmd: >-
       {% set rru = hostvars[groups['faraday'][0]].rru %}
-      {% set ran_boot_mode = (hostvars[node].ran_boot_mode
-                              if (node in hostvars and 'ran_boot_mode' in hostvars[node])
-                              else 'disk') %}
+      {% set ran_boot_mode = hostvars[node].get('ran_boot_mode', 'disk') %}
       {% if rru in ['benetel1', 'benetel2'] %}
         {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
