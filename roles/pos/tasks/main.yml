@@ -5,15 +5,25 @@
 - name: (POS) Allocate {{ node }} 
   shell: pos allocations allocate "{{ node }}"
 
+- name: Set POS image command for RAN {{ node }}
+  ansible.builtin.set_fact:
+    pos_image_cmd: >-
+      {% if rru in ['benetel1', 'benetel2'] %}
+        {% if ran_boot_mode == 'disk' %}
+          pos node image {{ node }} boot-local
+        {% else %}
+          pos nodes image --staging {{ node }} {{ pos_rt_image }}
+        {% endif %}
+      {% else %}
+        pos node image --staging {{ node }} {{ pos_image }}
+      {% endif %}
+  when: node in groups['ran_node']
+
 - name: Set POS image command for {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
-      {% if node == groups['ran_node'][0]
-         and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
-      pos node image {{ node }} boot-local
-      {% else %}
       pos nodes image --staging {{ node }} {{ pos_image }}
-      {% endif %}
+  when: node not in groups['ran_node']
 
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   ansible.builtin.shell: "{{ pos_image_cmd }}"
@@ -21,14 +31,15 @@
 - name: (POS) Set boot parameters on node {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
   ansible.builtin.shell: >-
     {% if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
-    # useless, when boot-local, grub parameters used are default grub params on the server
+    # only useful for live image
+    # when boot-local, grub parameters are the ones in the default ilo6 grub
     pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
     {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
     pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
     {% else %}
     pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
     {% endif %}
-  when: node == groups['ran_node'][0]
+  when: node in groups['ran_node']
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
@@ -41,9 +52,9 @@
 
 - name: Bootstrap {{ node }} if RAN node for Benetel
   ansible.builtin.shell: >-
-    {% if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
+    {% if rru in ['benetel1', 'benetel2'] and 'disk' in ran_boot_mode %}
     pos node bootstrap {{ node }}
     {% endif %}
-  when: node == groups['ran_node'][0]
+  when: node in groups['ran_node']
 
 
