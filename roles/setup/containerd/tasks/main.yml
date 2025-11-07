@@ -11,7 +11,7 @@
   become: true
 
 - name: Ensure /var/lib/containerd is writable on live RAN systems
-  ansible.builtin.block:
+  block:
     - name: Create /var/lib/containerd directory
       ansible.builtin.file:
         path: /var/lib/containerd
