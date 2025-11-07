@@ -1,10 +1,4 @@
 ---
-- name: Define some variables globally for this node
-  ansible.builtin.set_fact:
-    rru: "{{ hostvars[groups['faraday'][0]].rru }}"
-    ran_boot_mode: "{{ hostvars[node].ran_boot_mode }}"
-  when: node in groups['ran_node']
-  
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
 
@@ -14,6 +8,8 @@
 - name: Set POS image command for RAN {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
+      {% set rru = hostvars[groups['faraday'][0]].rru %}
+      {% set ran_boot_mode = hostvars[node].ran_boot_mode %}
       {% if rru in ['benetel1', 'benetel2'] %}
         {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
@@ -34,16 +30,15 @@
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   ansible.builtin.shell: "{{ pos_image_cmd }}"
 
-- name: (POS) Set boot parameters on node {{ node }} for RRU {{ rru }}
+- name: (POS) Set boot parameters on node {{ node }}
   ansible.builtin.shell: >-
+    {% set rru = hostvars[groups['faraday'][0]].rru %}
     {% if rru in ['benetel1', 'benetel2'] %}
-    # only useful for live image
-    # when boot-local, grub parameters are the ones in the default ilo6 grub
-    pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
     {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
-    pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
     {% else %}
-    pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
     {% endif %}
   when: node in groups['ran_node']
 
@@ -58,9 +53,9 @@
 
 - name: Bootstrap {{ node }} if RAN node for Benetel
   ansible.builtin.shell: >-
+    {% set rru = hostvars[groups['faraday'][0]].rru %}
+    {% set ran_boot_mode = hostvars[node].ran_boot_mode %}
     {% if rru in ['benetel1', 'benetel2'] and ran_boot_mode == 'disk' %}
-    pos node bootstrap {{ node }}
+      pos node bootstrap {{ node }}
     {% endif %}
   when: node in groups['ran_node']
-
-
