@@ -32,8 +32,8 @@
     label: "{{ item }}"
   register: power_ue_jobs
 
-- name: Set MBIM/QMI mode on UEs
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'set-{{ hostvars[item].mode }}'
+- name: Init UEs via jump host
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ ue }} 'qhat-init --mode={{ hostvars[item].mode }} --dnn="{{ hostvars[ue].dnn }}" --nssai="{{ hostvars[ue].nssai }}"'
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0
