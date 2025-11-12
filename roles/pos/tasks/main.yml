@@ -88,21 +88,15 @@
           not applicable
         {% endif %}
 
-- name: Save POS image summary for {{ node }}
-  ansible.builtin.blockinfile:
-    path: /tmp/pos_summary.log
-    create: yes
-    marker: ""
-    block: |
-      ────────────────────────────────────────────────
-      [{{ ansible_date_time.iso8601 | regex_replace('T.*', '') }} {{ ansible_date_time.time }}] {{ node }}
-        Image Command : {{ pos_image_cmd }}
-        Image Type    : {{ 'live' if node in groups['ran_node'] and (hostvars[groups['faraday'][0]].rru in ['benetel1','benetel2']) else 'standard' }}
-        Bootstrap     : {% if node in groups['ran_node'] and (hostvars[groups['faraday'][0]].rru in ['benetel1','benetel2']) %}
-{{ 'disk' if hostvars[node].get('ran_boot_mode', 'live') == 'disk' else 'live' }}
-                       {% else %}not applicable{% endif %}
-      ────────────────────────────────────────────────
-  delegate_to: localhost
-  run_once: false
+    - name: Add summary entry for node
+      lineinfile:
+        path: /tmp/pos_summary.log
+        line: |
+          {{ "%s - %s :" | format(ansible_date_time.iso8601, node) }}
+            Image Command : {{ hostvars[node].get('pos_image_command', 'unknown') }}
+            Image Type    : {{ hostvars[node].get('pos_image_type', 'unknown') }}
+            Bootstrap     : {% if 'ran' in node %}{{ 'disk' if hostvars[node].get('ran_boot_mode', 'live') == 'disk' else 'live' }}{% else %}not applicable{% endif %}
+      delegate_to: localhost
+
 
 
