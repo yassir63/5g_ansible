@@ -5,11 +5,13 @@
 - name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
-- name: Set POS image command for RAN {{ node }}
+# === Déterminer la commande POS et le type d’image ===
+
+- name: Set POS image command and type for RAN {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
       {% set rru = hostvars[groups['faraday'][0]].rru %}
-      {% set ran_boot_mode = hostvars[node].get('ran_boot_mode', 'disk') %}
+      {% set ran_boot_mode = hostvars[node].get('ran_boot_mode') %}
       {% if rru in ['benetel1', 'benetel2'] %}
         {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
@@ -19,16 +21,27 @@
       {% else %}
         pos node image --staging {{ node }} {{ pos_image }}
       {% endif %}
+    image_type: >-
+      {% if hostvars[node].get('ran_boot_mode') == 'disk' %}
+        disk
+      {% else %}
+        live
+      {% endif %}
   when: node in groups['ran_node']
 
-- name: Set POS image command for {{ node }}
+- name: Set POS image command for non-RAN {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
       pos nodes image --staging {{ node }} {{ pos_image }}
+    image_type: "n/a"
   when: node not in groups['ran_node']
+
+# === Flash de l’image ===
 
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   ansible.builtin.shell: "{{ pos_image_cmd }}"
+
+# === Paramètres de boot ===
 
 - name: (POS) Set boot parameters on node {{ node }}
   ansible.builtin.shell: >-
@@ -42,6 +55,8 @@
     {% endif %}
   when: node in groups['ran_node']
 
+# === Redémarrage et attente ===
+
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
 
@@ -51,13 +66,22 @@
     port: 22
     timeout: 300
 
+# === Bootstrap spécifique Benetel ===
+
 - name: Bootstrap {{ node }} if RAN node for Benetel
   ansible.builtin.shell: >-
     {% set rru = hostvars[groups['faraday'][0]].rru %}
-    {% set ran_boot_mode = (hostvars[node].ran_boot_mode
-                            if (node in hostvars and 'ran_boot_mode' in hostvars[node])
-                            else 'disk') %}
+    {% set ran_boot_mode = hostvars[node].ran_boot_mode %}
     {% if rru in ['benetel1', 'benetel2'] and ran_boot_mode == 'disk' %}
       pos node bootstrap {{ node }}
     {% endif %}
   when: node in groups['ran_node']
+
+# === Récapitulatif individuel ===
+
+- name: Show POS image summary for {{ node }}
+  ansible.builtin.debug:
+    msg: |
+      ===== POS IMAGE SUMMARY for {{ node }} =====
+      Type : {{ image_type }}
+      CMD  : {{ pos_image_cmd }}
