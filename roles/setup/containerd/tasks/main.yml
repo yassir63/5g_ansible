@@ -23,7 +23,7 @@
         path: /var/lib/containerd
         src: tmpfs
         fstype: tmpfs
-        opts: size=2G
+        opts: size=10G
         state: mounted
   when:
     - inventory_hostname in groups['ran_node']
