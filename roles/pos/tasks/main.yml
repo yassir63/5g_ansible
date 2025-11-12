@@ -88,22 +88,21 @@
           not applicable
         {% endif %}
 
-- name: Save POS image summary for {{ node }} to log file
-  ansible.builtin.lineinfile:
+- name: Save POS image summary for {{ node }}
+  ansible.builtin.blockinfile:
     path: /tmp/pos_summary.log
     create: yes
-    line: |
-      {{ '%Y-%m-%d %H:%M:%S' | strftime }} - {{ node }} :
+    marker: ""
+    block: |
+      ────────────────────────────────────────────────
+      [{{ ansible_date_time.iso8601 | regex_replace('T.*', '') }} {{ ansible_date_time.time }}] {{ node }}
         Image Command : {{ pos_image_cmd }}
-        Image Type    : {{ ran_image_type }}
-        Bootstrap     : {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
-                          {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
-                            executed
-                          {% else %}
-                            skipped
-                          {% endif %}
-                        {% else %}
-                          not applicable
-                        {% endif %}
-    insertafter: EOF
+        Image Type    : {{ 'live' if node in groups['ran_node'] and (hostvars[groups['faraday'][0]].rru in ['benetel1','benetel2']) else 'standard' }}
+        Bootstrap     : {% if node in groups['ran_node'] and (hostvars[groups['faraday'][0]].rru in ['benetel1','benetel2']) %}
+{{ 'disk' if hostvars[node].get('ran_boot_mode', 'live') == 'disk' else 'live' }}
+                       {% else %}not applicable{% endif %}
+      ────────────────────────────────────────────────
   delegate_to: localhost
+  run_once: false
+
+
