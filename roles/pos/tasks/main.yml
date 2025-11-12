@@ -92,11 +92,9 @@
   lineinfile:
     path: /tmp/pos_summary.log
     line: |
-      {{ ansible_date_time.iso8601 }} - {{ node }} :
+      {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} :
         Image Command : {{ pos_image_cmd }}
         Image Type    : {% if node in groups['ran_node'] %}{{ 'disk' if hostvars[node].get('ran_boot_mode', 'live') == 'disk' else 'live' }}{% else %}standard{% endif %}
         Bootstrap     : {% if node in groups['ran_node'] %}{{ 'applied' if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and hostvars[node].get('ran_boot_mode') == 'disk' else 'skipped' }}{% else %}not applicable{% endif %}
   delegate_to: localhost
-
-
 
