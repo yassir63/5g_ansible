@@ -1,4 +1,9 @@
 ---
+- name: Determine if this node is a RAN node
+  ansible.builtin.set_fact:
+    is_ran_node: "{{ node in groups['ran_node'] }}"
+  # pas run_once: true — on veut l'évaluer pour la cible actuelle
+
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
 
@@ -26,13 +31,13 @@
       {% else %}
         standard
       {% endif %}
-  when: is_ran_node | bool
+  when: is_ran_node
 
 - name: Set POS image command for non-RAN {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: "pos nodes image --staging {{ node }} {{ pos_image }}"
     ran_image_type: "standard"
-  when: not is_ran_node | bool
+  when: not is_ran_node
 
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   ansible.builtin.shell: "{{ pos_image_cmd }}"
@@ -46,36 +51,42 @@
     {% else %}
       pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
     {% endif %}
-  when: is_ran_node | bool
+  when: is_ran_node
 
-#- name: (POS) Reset {{ node }}
-#  shell: pos nodes reset "{{ node }}"
+- name: (POS) Reset {{ node }}
+  shell: pos nodes reset "{{ node }}"
 
-#- name: (POS) Wait for SSH to be available on {{ node }}
-#  wait_for:
-#    host: "{{ node }}"
-#    port: 22
-#    timeout: 300
+- name: (POS) Wait for SSH to be available on {{ node }}
+  wait_for:
+    host: "{{ node }}"
+    port: 22
+    timeout: 300
 
-#- name: Bootstrap {{ node }} if RAN node for Benetel
-#  ansible.builtin.shell: >-
-#    {% if rru in ['benetel1', 'benetel2'] and hostvars[node].get('ran_boot_mode', 'live') == 'disk' %}
-#      pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
-#    {% else %}
-#      echo "BOOTSTRAP_SKIPPED"
-#    {% endif %}
-#  register: bootstrap_result
-#  when: is_ran_node | bool
+- name: Bootstrap {{ node }} if RAN node for Benetel
+  ansible.builtin.shell: >-
+    {% if rru in ['benetel1', 'benetel2'] and hostvars[node].get('ran_boot_mode', 'live') == 'disk' %}
+      pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
+    {% else %}
+      echo "BOOTSTRAP_SKIPPED"
+    {% endif %}
+  register: bootstrap_result
+  when: is_ran_node
+
+- name: Get current BIOS kernel parameters (if accessible)
+  ansible.builtin.shell: cat /proc/cmdline || echo "unavailable"
+  register: bios_cmdline
+  ignore_errors: true
 
 - name: Show POS image summary for {{ node }}
   ansible.builtin.debug:
     msg: |
-      ✅ POS IMAGE SUMMARY for {{ node }}
+      POS IMAGE SUMMARY for {{ node }}
       -------------------------------------
       Image Command : {{ pos_image_cmd }}
       Image Type    : {{ ran_image_type }}
       RRU Type      : {{ rru | default('unknown') }}
       Boot Mode     : {{ hostvars[node].get('ran_boot_mode', 'unknown') }}
+      BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
       Bootstrap     : >-
         {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
           {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
@@ -96,6 +107,7 @@
         Image Type    : {{ ran_image_type }}
         RRU Type      : {{ rru | default('unknown') }}
         Boot Mode     : {{ hostvars[node].get('ran_boot_mode', 'unknown') }}
+        BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
         Bootstrap     : >-
           {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
             {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
