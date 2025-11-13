@@ -1,139 +1,68 @@
 ---
-# ================================
-# POS role main.yml — FINAL FIX
-# ================================
-
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
 
 - name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
-# ===================================================
-# DETERMINE PARAMETERS
-# ===================================================
-
-- name: Gather parameters safely (RRU from Faraday)
-  set_fact:
-    rru: >-
-      {{ (groups['faraday'] is defined and hostvars[groups['faraday'][0]].rru is defined)
-          | ternary(hostvars[groups['faraday'][0]].rru, 'unknown') }}
-    ran_boot_mode: "{{ (hostvars.get(node, {}).get('ran_boot_mode') | default(ran_boot_mode, true)) | default('live', true) }}"
-    ran_image_type: "{{ (hostvars.get(node, {}).get('ran_image_type') | default(ran_image_type, true)) | default('standard', true) }}"
-    is_ran_node: "{{ (rru in ['benetel1', 'benetel2']) }}"
-  changed_when: false
-
-# ===================================================
-# BUILD IMAGE COMMAND
-# ===================================================
-
-- name: Set POS image command for node {{ node }}
-  set_fact:
+# === Compute POS image command (corrected logic) ===
+- name: Set POS image command for {{ node }}
+  ansible.builtin.set_fact:
     pos_image_cmd: >-
-      {% if is_ran_node %}
-        {% if ran_boot_mode == 'disk' %}
-          pos node image {{ node }} boot-local
-        {% else %}
-          pos nodes image --staging {{ node }} {{ pos_rt_image }}
-        {% endif %}
+      {% set rru = hostvars[groups['faraday'][0]].rru | default('unknown') %}
+      {% if node in groups['ran_node']
+            and rru in ['benetel1', 'benetel2']
+            and (hostvars[node].get('ran_boot_mode', 'live') != 'live') %}
+        pos node image {{ node }} boot-local
+      {% elif node in groups['ran_node']
+            and rru in ['benetel1', 'benetel2'] %}
+        pos nodes image --staging {{ node }} {{ pos_rt_image }}
       {% else %}
         pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
-    ran_image_type: >-
-      {% if is_ran_node %}
-        {{ ran_boot_mode }}
-      {% else %}
-        standard
-      {% endif %}
-  changed_when: false
 
-# ===================================================
-# PRE-RESET DEBUG + LOG
-# ===================================================
-
-- name: Get current BIOS kernel parameters
-  shell: ssh -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' 2>/dev/null || echo "unavailable"
-  register: bios_cmdline
-  changed_when: false
-  failed_when: false
-
-- name: Write pre-reset info to /tmp/pos_debug.log
+# === Log pre-reset parameters (before flashing) ===
+- name: Log current POS parameters before reset
   ansible.builtin.blockinfile:
     path: /tmp/pos_debug.log
     create: yes
-    marker: ""
+    marker: "#### POS DEBUG ####"
     block: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (pre-reset):
-        Image Command : {{ pos_image_cmd }}
-        Image Type    : {{ ran_image_type | default('standard') }}
-        RRU Type      : {{ rru }}
-        Boot Mode     : {{ ran_boot_mode | default('live') }}
-        BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
+        RRU Type      : {{ hostvars[groups['faraday'][0]].rru | default('unknown') }}
+        Boot Mode     : {{ hostvars[node].get('ran_boot_mode', 'live') }}
+        POS Image Cmd : {{ pos_image_cmd }}
       ------------------------------------------------------------------------
   delegate_to: localhost
 
-# ===================================================
-# FLASH + RESET + BOOTSTRAP
-# ===================================================
-
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
-  shell: "{{ pos_image_cmd }}"
+  ansible.builtin.shell: "{{ pos_image_cmd }}"
 
-- name: (POS) Set boot parameters
-  shell: >-
-    {% if is_ran_node %}
+- name: (POS) Set boot parameters on node {{ node }} for RRU {{ hostvars[groups['faraday'][0]].rru }}
+  ansible.builtin.shell: >-
+    {% set rru = hostvars[groups['faraday'][0]].rru | default('unknown') %}
+    {% if node in groups['ran_node'] and rru in ['benetel1', 'benetel2'] %}
       pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
     {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
       pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
     {% else %}
       pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
     {% endif %}
+  when: node in groups['ran_node']
 
-- name: (POS) Reset node
+- name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
-  register: pos_reset_result
-  failed_when: false
 
-- name: (POS) Wait for SSH
+- name: (POS) Wait for SSH to be available on {{ node }}
   wait_for:
     host: "{{ node }}"
     port: 22
     timeout: 300
-  register: wait_ssh
-  failed_when: false
 
-- name: Bootstrap if needed
-  shell: >-
-    {% if is_ran_node and ran_boot_mode == 'disk' %}
-      pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
-    {% else %}
-      echo "BOOTSTRAP_SKIPPED"
+- name: Bootstrap {{ node }} if RAN node for Benetel
+  ansible.builtin.shell: >-
+    {% if node in groups['ran_node']
+          and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
+      pos node bootstrap {{ node }}
     {% endif %}
-  register: bootstrap_result
-  failed_when: false
-
-# ===================================================
-# POST-RESET LOG
-# ===================================================
-
-- name: Append post-reset info to /tmp/pos_debug.log
-  ansible.builtin.blockinfile:
-    path: /tmp/pos_debug.log
-    create: yes
-    marker: ""
-    block: |
-      {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (post-reset):
-        Reset RC     : {{ pos_reset_result.rc | default('N/A') }}
-        SSH Wait     : {{ wait_ssh.elapsed | default('N/A') }}
-        Bootstrap    : >-
-          {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
-            {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
-              executed
-            {% else %}
-              skipped
-            {% endif %}
-          {% else %}
-            not applicable
-          {% endif %}
-      ------------------------------------------------------------------------
-  delegate_to: localhost
+  when: node in groups['ran_node']
