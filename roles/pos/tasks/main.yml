@@ -46,8 +46,6 @@
     echo "" >> /tmp/pos_pre_reset_{{ node }}.log
     echo "  RRU Type      : {{ rru_type }}" >> /tmp/pos_pre_reset_{{ node }}.log
     echo "  Boot Params   : {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
-    echo "  BIOS Cmdline  :" >> /tmp/pos_pre_reset_{{ node }}.log
-    pos nodes info {{ node }} | grep "cmdline" >> /tmp/pos_pre_reset_{{ node }}.log 2>&1
     echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
 
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
