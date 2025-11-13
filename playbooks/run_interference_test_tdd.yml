@@ -19,7 +19,7 @@
 - name: Run noise generator from fit node for 100 seconds
   hosts: faraday
   vars:
-    node: "{{ groups['fit_nodes'][1] }}"
+    node: "{{ groups['fit_nodes'][0] }}"
     freq: "{{ hostvars[groups['faraday'][0]].freq }}"
     time: 100
   roles:
