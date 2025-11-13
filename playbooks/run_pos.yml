@@ -5,11 +5,8 @@
     - name: Run POS role on {{ node }}
       include_role:
         name: pos
-      vars: >
-        {{
-          hostvars[node]
-          | combine({
-              'node': node,
-              'rru': hostvars[groups['faraday'][0]].rru
-            })
-        }}
+      vars:
+        # inject useful nodes'avriables from hostvars[node]
+        node: "{{ node }}"
+        rru: "{{ hostvars[groups['faraday'][0]].rru }}"
+        ran_boot_mode: "{{ hostvars[node].ran_boot_mode | default(omit) }}"
