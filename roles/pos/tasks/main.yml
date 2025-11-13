@@ -1,6 +1,6 @@
 ---
 # ================================
-# POS role main.yml — version isolée par node
+# POS role main.yml — full stable version
 # ================================
 
 - name: (POS) Free any existing allocation for {{ node }}
@@ -44,7 +44,7 @@
   when: not (vars["is_ran_node_{{ node }}"] | bool)
 
 # ================================
-# DEBUG BEFORE RESET
+# DEBUG + LOG BEFORE RESET
 # ================================
 
 - name: Get current BIOS kernel parameters (if accessible)
@@ -78,8 +78,22 @@
   delegate_to: localhost
 
 # ================================
-# RESET + BOOTSTRAP
+# FLASH + RESET + BOOTSTRAP
 # ================================
+
+- name: (POS) Flash image {{ vars["pos_image_cmd_{{ node }}"] }} to {{ node }}
+  shell: "{{ vars['pos_image_cmd_' ~ node] }}"
+
+- name: (POS) Set boot parameters on node {{ node }}
+  shell: >-
+    {% if rru in ['benetel1', 'benetel2'] %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
+    {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
+    {% else %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
+    {% endif %}
+  when: vars["is_ran_node_{{ node }}"] | bool
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
@@ -101,7 +115,7 @@
   when: vars["is_ran_node_{{ node }}"] | bool
 
 # ================================
-# POST RESET SUMMARY
+# POST-RESET LOG ENTRY
 # ================================
 
 - name: Append post-reset info to /tmp/pos_debug.log
@@ -122,4 +136,3 @@
           {% endif %}
       ------------------------------------------------------------------------
   delegate_to: localhost
-
