@@ -2,11 +2,16 @@
 - hosts: webshell
   gather_facts: false
   tasks:
-    - name: Merge node variables for POS role
+    - name: Merge node-specific variables for POS
       set_fact:
-        pos_vars: "{{ hostvars[node] | combine({'node': node, 'rru': (hostvars[groups['faraday'][0]].rru | default('unknown'))}) }}"
+        pos_vars: >-
+          {{
+            hostvars[node]
+            | combine({'node': node})
+            | combine({'rru': (hostvars[groups['faraday'][0]].rru | default('unknown'))})
+          }}
 
     - name: Run POS role on {{ node }}
       include_role:
         name: pos
-      vars: "{{ pos_vars }}"
+      vars: "{{ pos_vars | from_yaml }}"
