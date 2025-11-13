@@ -20,7 +20,7 @@
   hosts: faraday
   vars:
     node: "{{ groups['fit_nodes'][0] }}"
-    freq: "{{ hostvars[groups['faraday'][0]].dl_freq }}"
+    freq: "{{ hostvars[groups['faraday'][0]].freq_dl }}"
     time: 100
   roles:
     - role: scenarios/interference/run
@@ -30,7 +30,7 @@
   hosts: faraday
   vars:
     node: "{{ hostvars[groups['faraday'][0]].interference_usrp }}"
-    freq: "{{ hostvars[groups['faraday'][0]].dl_freq }}"
+    freq: "{{ hostvars[groups['faraday'][0]].freq_dl }}"
     time: 100
   roles:
     - role: scenarios/interference/run
@@ -69,7 +69,7 @@
   hosts: faraday
   vars:
     node: "{{ groups['fit_nodes'][0] }}"
-    freq: "{{ hostvars[groups['faraday'][0]].ul_freq }}"
+    freq: "{{ hostvars[groups['faraday'][0]].freq_ul }}"
     time: 100
   roles:
     - role: scenarios/interference/run
