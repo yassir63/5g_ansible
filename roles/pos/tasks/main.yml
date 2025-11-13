@@ -1,6 +1,6 @@
 ---
 # ================================
-# POS role main.yml (stable + pre-reset summary)
+# POS role main.yml — simplified & robust
 # ================================
 
 - name: (POS) Free any existing allocation for {{ node }}
@@ -9,17 +9,18 @@
 - name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
-# Determine if this node is a RAN node
-- name: Determine if this node is a RAN node
+# Always define these safely
+- name: Ensure default variables exist
   set_fact:
-    is_ran_node: "{{ (rru is defined and rru in ['benetel1', 'benetel2']) or (ran_boot_mode is defined) }}"
+    is_ran_node: "{{ (rru | default('')) in ['benetel1', 'benetel2'] }}"
     ran_boot_mode: "{{ ran_boot_mode | default('live') }}"
     ran_image_type: "{{ ran_image_type | default('standard') }}"
 
-- name: Set POS image command and type for RAN {{ node }}
-  ansible.builtin.set_fact:
+# Define POS image command
+- name: Set POS image command
+  set_fact:
     pos_image_cmd: >-
-      {% if rru in ['benetel1', 'benetel2'] %}
+      {% if is_ran_node %}
         {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
         {% else %}
@@ -29,79 +30,77 @@
         pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
     ran_image_type: >-
-      {% if rru in ['benetel1', 'benetel2'] %}
+      {% if is_ran_node %}
         {{ ran_boot_mode }}
       {% else %}
         standard
       {% endif %}
-  when: is_ran_node | bool
 
-- name: Set POS image command for non-RAN {{ node }}
-  ansible.builtin.set_fact:
-    pos_image_cmd: "pos nodes image --staging {{ node }} {{ pos_image }}"
-    ran_image_type: "standard"
-  when: not is_ran_node | bool
-
-# BIOS parameters before reset
-- name: Get current BIOS kernel parameters (if accessible)
-  shell: ssh -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' || echo "unavailable"
+# Get BIOS cmdline if accessible
+- name: Try to read BIOS cmdline (may fail if node offline)
+  shell: ssh -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' 2>/dev/null || echo "unavailable"
   register: bios_cmdline
   changed_when: false
 
-# Summary before reset (fast check)
-- name: Show POS image summary (pre-reset) for {{ node }}
-  ansible.builtin.debug:
+# ================================
+# Display pre-reset summary
+# ================================
+- name: Show POS image summary (pre-reset)
+  debug:
     msg: |
       🧩 POS IMAGE SUMMARY (pre-reset) for {{ node }}
       -------------------------------------
       Image Command : {{ pos_image_cmd }}
-      Image Type    : {{ ran_image_type | default('unknown') }}
+      Image Type    : {{ ran_image_type }}
       RRU Type      : {{ rru | default('unknown') }}
-      Boot Mode     : {{ ran_boot_mode | default('unknown') }}
+      Boot Mode     : {{ ran_boot_mode }}
       BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
 
-- name: Add pre-reset summary entry
+- name: Write summary to /tmp/pos_summary.log
   lineinfile:
     path: /tmp/pos_summary.log
     line: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (pre-reset):
         Image Command : {{ pos_image_cmd }}
-        Image Type    : {{ ran_image_type | default('unknown') }}
+        Image Type    : {{ ran_image_type }}
         RRU Type      : {{ rru | default('unknown') }}
-        Boot Mode     : {{ ran_boot_mode | default('unknown') }}
+        Boot Mode     : {{ ran_boot_mode }}
         BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
   delegate_to: localhost
 
-# =======================
-# Safe reset
-# =======================
-- name: (POS) Reset {{ node }} safely
-  block:
-    - name: Perform reset
-      shell: pos nodes reset "{{ node }}"
-  rescue:
-    - name: Log reset failure
-      lineinfile:
-        path: /tmp/pos_summary.log
-        line: |
-          {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} :
-            ⚠️ Reset failed - NodeDidNotBoot or SSH timeout detected.
-      delegate_to: localhost
+# ================================
+# Apply image and reboot
+# ================================
+- name: Flash POS image
+  shell: "{{ pos_image_cmd }}"
 
-    - name: Show warning in console
-      debug:
-        msg: "⚠️ Reset failed for {{ node }} — NodeDidNotBoot or SSH timeout. Continuing anyway."
+- name: Apply boot parameters
+  shell: >-
+    {% if is_ran_node %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
+    {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
+    {% else %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
+    {% endif %}
 
-# Wait and Bootstrap (unchanged)
-- name: (POS) Wait for SSH to be available on {{ node }}
+- name: Reset node
+  shell: pos nodes reset "{{ node }}"
+  register: reset_result
+  ignore_errors: true
+
+# Wait for SSH to return (optional)
+- name: Wait for SSH to be available
   wait_for:
     host: "{{ node }}"
     port: 22
     timeout: 300
+  ignore_errors: true
 
-- name: Bootstrap {{ node }} if RAN node for Benetel
-  ansible.builtin.shell: >-
-    {% if rru in ['benetel1', 'benetel2'] and ran_boot_mode == 'disk' %}
+# Bootstrap (unchanged)
+- name: Bootstrap if RAN Benetel
+  shell: >-
+    {% if is_ran_node and ran_boot_mode == 'disk' %}
       pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
     {% else %}
       echo "BOOTSTRAP_SKIPPED"
