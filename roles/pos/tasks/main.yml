@@ -16,26 +16,30 @@
   set_fact:
     is_ran_node: "{{ node in (groups['ran_node'] | default([])) }}"
 
-- name: Compute POS image command
+- name: Compute POS image command and boot params
   ansible.builtin.set_fact:
     pos_image_cmd: >-
       {% if node in groups['ran_node']
          and node == 'sopnode-f3'
-         and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
-         and hostvars[node].get('ran_boot_mode', '') == 'disk' %}
-      pos node image {{ node }} boot-local
+         and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
+        {% if hostvars[node].get('ran_boot_mode', '') == 'disk' %}
+          pos node image {{ node }} boot-local
+        {% else %}
+          pos nodes image --staging {{ node }} {{ pos_rt_image }}
+        {% endif %}
       {% else %}
-      pos nodes image --staging {{ node }} {{ pos_image }}
+        pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
+
     boot_params: >-
       {% if node in groups['ran_node']
          and node == 'sopnode-f3'
          and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
-      {{ boot_parameters_rt_f3 }}
+        {{ boot_parameters_rt_f3 }}
       {% elif node in groups['ran_node'] and node == 'sopnode-f3' %}
-      {{ boot_parameters_f3 }}
+        {{ boot_parameters_f3 }}
       {% else %}
-      {{ boot_parameters_f1f2 }}
+        {{ boot_parameters_f1f2 }}
       {% endif %}
 
 - name: Log POS configuration pre-reset
