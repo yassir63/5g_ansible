@@ -1,4 +1,3 @@
----
 - hosts: webshell
   gather_facts: false
   tasks:
@@ -6,7 +5,7 @@
       include_role:
         name: pos
       vars:
-        # inject useful nodes'avriables from hostvars[node]
         node: "{{ node }}"
-        rru: "{{ hostvars[groups['faraday'][0]].rru }}"
-        ran_boot_mode: "{{ hostvars[node].ran_boot_mode | default(omit) }}"
+        rru: "{{ (hostvars[groups['faraday'][0]].rru if (groups['faraday'] is defined and groups['faraday'] | length > 0) else 'N/A') }}"
+        # injecte toutes les variables spécifiques du node
+        <<: "{{ hostvars[node] }}"
