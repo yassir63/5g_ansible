@@ -64,16 +64,17 @@
   register: bootstrap_result
   when: node in groups['ran_node']
 
-# ...
+# --- POS summary section ---
+
 - name: Show POS image summary for {{ node }}
   ansible.builtin.debug:
     msg: |
       ✅ POS IMAGE SUMMARY for {{ node }}
       -------------------------------------
       Image Command : {{ pos_image_cmd }}
-      Image Type    : {{ ran_image_type }}
-      RRU Type      : {{ rru | default('N/A') }}
-      Boot Mode     : {{ ran_boot_mode | default('N/A') }}
+      Image Type    : {{ ran_image_type | default('standard') }}
+      RRU Type      : {{ (hostvars[groups['faraday'][0]].rru | default('N/A')) if (groups['faraday'] is defined and groups['faraday'] | length > 0) else 'N/A' }}
+      Boot Mode     : {{ hostvars[node].get('ran_boot_mode', 'N/A') }}
       Bootstrap     : >-
         {% if bootstrap_result is defined and
               bootstrap_result.stdout is defined and
@@ -93,9 +94,9 @@
     line: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} :
         Image Command : {{ pos_image_cmd }}
-        Image Type    : {{ ran_image_type }}
-        RRU Type      : {{ rru | default('N/A') }}
-        Boot Mode     : {{ ran_boot_mode | default('N/A') }}
+        Image Type    : {{ ran_image_type | default('standard') }}
+        RRU Type      : {{ (hostvars[groups['faraday'][0]].rru | default('N/A')) if (groups['faraday'] is defined and groups['faraday'] | length > 0) else 'N/A' }}
+        Boot Mode     : {{ hostvars[node].get('ran_boot_mode', 'N/A') }}
         Bootstrap     : {% if bootstrap_result is defined and bootstrap_result.stdout is defined and 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}executed{% elif bootstrap_result is defined and bootstrap_result.stdout is defined %}skipped{% else %}not applicable{% endif %}
   delegate_to: localhost
   when: pos_image_cmd is defined
