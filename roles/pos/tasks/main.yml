@@ -64,6 +64,7 @@
   register: bootstrap_result
   when: node in groups['ran_node']
 
+# ...
 - name: Show POS image summary for {{ node }}
   ansible.builtin.debug:
     msg: |
@@ -71,29 +72,30 @@
       -------------------------------------
       Image Command : {{ pos_image_cmd }}
       Image Type    : {{ ran_image_type }}
-      RRU Type      : {{ rru }}
-      Boot Mode     : {{ ran_boot_mode | default('live') }}
+      RRU Type      : {{ rru | default('N/A') }}
+      Boot Mode     : {{ ran_boot_mode | default('N/A') }}
       Bootstrap     : >-
-        {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
-          {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
-            executed
-          {% else %}
-            skipped
-          {% endif %}
+        {% if bootstrap_result is defined and
+              bootstrap_result.stdout is defined and
+              'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
+          executed
+        {% elif bootstrap_result is defined and
+                bootstrap_result.stdout is defined %}
+          skipped
         {% else %}
           not applicable
         {% endif %}
 
 - name: Add summary entry for node
-  ansible.builtin.lineinfile:
+  lineinfile:
     path: /tmp/pos_summary.log
-    create: true
+    create: yes
     line: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} :
         Image Command : {{ pos_image_cmd }}
         Image Type    : {{ ran_image_type }}
-        RRU Type      : {{ rru }}
-        Boot Mode     : {{ ran_boot_mode | default('live') }}
-        Bootstrap     : {% if bootstrap_result is defined and 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}executed{% else %}skipped{% endif %}
+        RRU Type      : {{ rru | default('N/A') }}
+        Boot Mode     : {{ ran_boot_mode | default('N/A') }}
+        Bootstrap     : {% if bootstrap_result is defined and bootstrap_result.stdout is defined and 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}executed{% elif bootstrap_result is defined and bootstrap_result.stdout is defined %}skipped{% else %}not applicable{% endif %}
   delegate_to: localhost
-
+  when: pos_image_cmd is defined
