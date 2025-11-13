@@ -1,6 +1,6 @@
 ---
 # ================================
-# POS role main.yml — FINAL STABLE WITH FILE LOGS
+# POS role main.yml — FINAL FIXED (display + file logs OK)
 # ================================
 
 - name: (POS) Free any existing allocation for {{ node }}
@@ -9,14 +9,17 @@
 - name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
-# Determine if node is a RAN node
-- name: Determine if this node is a RAN node
+# Determine node type and ensure defaults are set
+- name: Determine node parameters
   set_fact:
     is_ran_node: "{{ (rru | default('')) in ['benetel1', 'benetel2'] }}"
-    ran_boot_mode: "{{ ran_boot_mode | default('live') }}"
-    ran_image_type: "{{ ran_image_type | default('standard') }}"
+    ran_boot_mode: "{{ ran_boot_mode | default(hostvars[node].get('ran_boot_mode', 'live')) }}"
+    ran_image_type: "{{ ran_image_type | default(hostvars[node].get('ran_image_type', 'standard')) }}"
 
-# Build image command
+# ===================================================
+# BUILD IMAGE COMMAND
+# ===================================================
+
 - name: Set POS image command and type for RAN {{ node }}
   set_fact:
     pos_image_cmd: >-
@@ -44,7 +47,7 @@
   when: not is_ran_node | bool
 
 # ===================================================
-# DEBUG + LOG BEFORE RESET
+# PRE-RESET DEBUG + LOG
 # ===================================================
 
 - name: Get current BIOS kernel parameters (if accessible)
@@ -52,7 +55,7 @@
   register: bios_cmdline
   changed_when: false
 
-- name: Show PRE-RESET DEBUG INFO for {{ node }}
+- name: Show PRE-RESET INFO for {{ node }}
   debug:
     msg: |
       🔍 PRE-RESET INFO for {{ node }}
@@ -63,7 +66,7 @@
       Boot Mode     : {{ ran_boot_mode | default('unknown') }}
       BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
 
-- name: Write pre-reset debug info to /tmp/pos_debug.log
+- name: Write pre-reset info to /tmp/pos_debug.log
   ansible.builtin.blockinfile:
     path: /tmp/pos_debug.log
     create: yes
@@ -116,7 +119,7 @@
   when: is_ran_node | bool
 
 # ===================================================
-# POST-RESET LOG ENTRY
+# POST-RESET LOG
 # ===================================================
 
 - name: Append post-reset info to /tmp/pos_debug.log
@@ -126,7 +129,7 @@
     marker: ""
     block: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (post-reset):
-        Bootstrap     : >-
+        Bootstrap : >-
           {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
             {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
               executed
