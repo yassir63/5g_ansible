@@ -30,9 +30,9 @@
     - role: scenarios/interference/watch
       when: groups['fit_nodes'] | length > 1
 
-- name: Connect first UE on R2Lab to the 5G network
-  hosts: faraday
-  roles:
-    - role: r2lab/ue/connect
-      vars:
-        ue: "{{ groups['qhats'][0] }}"
+#- name: Connect first UE on R2Lab to the 5G network
+#  hosts: faraday
+#  roles:
+#    - role: r2lab/ue/connect
+#      vars:
+#        ue: "{{ groups['qhats'][0] }}"
