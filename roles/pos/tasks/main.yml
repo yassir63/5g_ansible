@@ -1,20 +1,7 @@
 ---
 # ================================
-# POS role main.yml — debug visibility
+# POS role main.yml — stable with pre-reset debug log
 # ================================
-
-- name: Show input variables received by POS role
-  ansible.builtin.debug:
-    msg: |
-      📦 INPUT VARIABLES FOR {{ node }}
-      --------------------------------
-      rru: {{ rru | default('undefined') }}
-      ran_boot_mode: {{ ran_boot_mode | default('undefined') }}
-      pos_image: {{ pos_image | default('undefined') }}
-      pos_rt_image: {{ pos_rt_image | default('undefined') }}
-      boot_parameters_rt: {{ boot_parameters_rt | default('undefined') }}
-      boot_parameters_f1f2: {{ boot_parameters_f1f2 | default('undefined') }}
-      boot_parameters_f3: {{ boot_parameters_f3 | default('undefined') }}
 
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
@@ -22,18 +9,17 @@
 - name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
-# Always define these safely
-- name: Ensure default variables exist
+# Determine if the node is RAN-type
+- name: Determine if this node is a RAN node
   set_fact:
     is_ran_node: "{{ (rru | default('')) in ['benetel1', 'benetel2'] }}"
     ran_boot_mode: "{{ ran_boot_mode | default('live') }}"
     ran_image_type: "{{ ran_image_type | default('standard') }}"
 
-# Define POS image command
-- name: Set POS image command
-  set_fact:
+- name: Set POS image command and type for RAN {{ node }}
+  ansible.builtin.set_fact:
     pos_image_cmd: >-
-      {% if is_ran_node %}
+      {% if rru in ['benetel1', 'benetel2'] %}
         {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
         {% else %}
@@ -43,38 +29,91 @@
         pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
     ran_image_type: >-
-      {% if is_ran_node %}
+      {% if rru in ['benetel1', 'benetel2'] %}
         {{ ran_boot_mode }}
       {% else %}
         standard
       {% endif %}
+  when: is_ran_node | bool
 
-# Get BIOS cmdline if accessible
-- name: Try to read BIOS cmdline (may fail if node offline)
+- name: Set POS image command for non-RAN {{ node }}
+  ansible.builtin.set_fact:
+    pos_image_cmd: "pos nodes image --staging {{ node }} {{ pos_image }}"
+    ran_image_type: "standard"
+  when: not is_ran_node | bool
+
+- name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
+  ansible.builtin.shell: "{{ pos_image_cmd }}"
+
+- name: (POS) Set boot parameters on node {{ node }}
+  ansible.builtin.shell: >-
+    {% if rru in ['benetel1', 'benetel2'] %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
+    {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
+    {% else %}
+      pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
+    {% endif %}
+  when: is_ran_node | bool
+
+# ---------------------------------------------
+# PRE-RESET DEBUG LOGGING
+# ---------------------------------------------
+- name: Get current BIOS kernel parameters (if accessible)
   shell: ssh -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' 2>/dev/null || echo "unavailable"
   register: bios_cmdline
   changed_when: false
 
-# Display pre-reset summary
-- name: Show POS image summary (pre-reset)
-  debug:
-    msg: |
-      🧩 POS IMAGE SUMMARY (pre-reset) for {{ node }}
-      -------------------------------------
-      Image Command : {{ pos_image_cmd }}
-      Image Type    : {{ ran_image_type }}
-      RRU Type      : {{ rru | default('unknown') }}
-      Boot Mode     : {{ ran_boot_mode }}
-      BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
-
-- name: Write summary to /tmp/pos_summary.log
+- name: Write pre-reset debug info to /tmp/pos_debug.log
   lineinfile:
-    path: /tmp/pos_summary.log
+    path: /tmp/pos_debug.log
     line: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (pre-reset):
         Image Command : {{ pos_image_cmd }}
         Image Type    : {{ ran_image_type }}
         RRU Type      : {{ rru | default('unknown') }}
-        Boot Mode     : {{ ran_boot_mode }}
+        Boot Mode     : {{ ran_boot_mode | default('unknown') }}
         BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
+  delegate_to: localhost
+
+# ---------------------------------------------
+# RESET + BOOTSTRAP
+# ---------------------------------------------
+- name: (POS) Reset {{ node }}
+  shell: pos nodes reset "{{ node }}"
+
+- name: (POS) Wait for SSH to be available on {{ node }}
+  wait_for:
+    host: "{{ node }}"
+    port: 22
+    timeout: 300
+
+- name: Bootstrap {{ node }} if RAN node for Benetel
+  ansible.builtin.shell: >-
+    {% if rru in ['benetel1', 'benetel2'] and ran_boot_mode == 'disk' %}
+      pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
+    {% else %}
+      echo "BOOTSTRAP_SKIPPED"
+    {% endif %}
+  register: bootstrap_result
+  when: is_ran_node | bool
+
+# ---------------------------------------------
+# POST-RESET SUMMARY (adds bootstrap info)
+# ---------------------------------------------
+- name: Append post-reset info to /tmp/pos_debug.log
+  lineinfile:
+    path: /tmp/pos_debug.log
+    line: |
+      {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (post-reset):
+        Bootstrap     : >-
+          {% if bootstrap_result is defined and bootstrap_result.stdout is defined %}
+            {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
+              executed
+            {% else %}
+              skipped
+            {% endif %}
+          {% else %}
+            not applicable
+          {% endif %}
   delegate_to: localhost
