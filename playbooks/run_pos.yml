@@ -1,11 +1,8 @@
+---
 - hosts: webshell
   gather_facts: false
   tasks:
     - name: Run POS role on {{ node }}
       include_role:
         name: pos
-      vars:
-        node: "{{ node }}"
-        rru: "{{ (hostvars[groups['faraday'][0]].rru if (groups['faraday'] is defined and groups['faraday'] | length > 0) else 'N/A') }}"
-        # injecte toutes les variables spécifiques du node
-        <<: "{{ hostvars[node] }}"
+      vars: "{{ hostvars[node] | combine({'node': node, 'rru': hostvars[groups['faraday'][0]].rru | default('unknown')}) }}"
