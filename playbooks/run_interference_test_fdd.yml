@@ -1,0 +1,97 @@
+---
+- name: Run downlink iperf test
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Start downlink iperf3 on first UE in background for 5 minutes
+      shell: >
+        ssh root@{{ groups['qhats'][0] }} 
+        'iperf3 -c {{ hostvars[groups["qhats"][0]].upf_ip }} -R -t 300 -J log_downlink_interference_test.json'
+      delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: downlink_iperf_job
+
+    - name: Wait 100 seconds before running noise generator
+      wait_for:
+        timeout: 100
+
+- name: Run noise generator from fit node on the downlink frequency for 100 seconds
+  hosts: faraday
+  vars:
+    node: "{{ groups['fit_nodes'][1] }}"
+    freq: "{{ hostvars[groups['faraday'][0]].dl_freq }}"
+    time: 100
+  roles:
+    - role: scenarios/interference/run
+      when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
+
+- name: Run noise generator from USRP on the downlink frequency for 100 seconds
+  hosts: faraday
+  vars:
+    node: "{{ hostvars[groups['faraday'][0]].interference_usrp }}"
+    freq: "{{ hostvars[groups['faraday'][0]].dl_freq }}"
+    time: 100
+  roles:
+    - role: scenarios/interference/run
+      when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
+
+- name: Wait for downlink iperf job to finish
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait for downlink iperf job
+      async_status:
+        jid: "{{ downlink_iperf_job.ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10
+
+- name: Run uplink iperf test
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Start uplink iperf3 on first UE in background for 5 minutes
+      shell: >
+        ssh root@{{ groups['qhats'][0] }} 
+        'iperf3 -c {{ hostvars[groups["qhats"][0]].upf_ip }} -t 300 -J log_uplink_interference_test.json'
+      delegate_to: faraday.inria.fr
+      async: 1800
+      poll: 0
+      register: uplink_iperf_job
+
+    - name: Wait 100 seconds before running noise generator
+      wait_for:
+        timeout: 100
+
+- name: Run noise generator from fit node on the uplink frequency for 100 seconds
+  hosts: faraday
+  vars:
+    node: "{{ groups['fit_nodes'][1] }}"
+    freq: "{{ hostvars[groups['faraday'][0]].ul_freq }}"
+    time: 100
+  roles:
+    - role: scenarios/interference/run
+      when: hostvars[groups['faraday'][0]].interference_usrp == 'fit'
+
+- name: Run noise generator from USRP on the uplink frequency for 100 seconds
+  hosts: faraday
+  vars:
+    node: "{{ hostvars[groups['faraday'][0]].interference_usrp }}"
+    time: 100
+  roles:
+    - role: scenarios/interference/run
+      when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
+
+- name: Wait for uplink iperf job to finish
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait for uplink iperf job
+      async_status:
+        jid: "{{ uplink_iperf_job.ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10

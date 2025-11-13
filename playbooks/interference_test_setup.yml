@@ -1,24 +1,8 @@
 ---
-- name: Setup first fit node on R2Lab
+- name: Setup fit node on R2Lab for noise genaration
   hosts: faraday
   vars:
     fit_node: "{{ groups['fit_nodes'][0] }}"
-    fit_number: "{{ hostvars[fit_node].fit_number }}"
-    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
-  roles:
-    - role: scenarios/interference/setup
-
-- name: Setup first fit node for spectre visualization (uhd_fft)
-  hosts: faraday
-  vars:
-    fit_node: "{{ groups['fit_nodes'][0] }}"
-  roles:
-    - role: scenarios/interference/watch
-
-- name: Setup second fit node on R2Lab for noise genaration
-  hosts: faraday
-  vars:
-    fit_node: "{{ groups['fit_nodes'][1] }}"
     fit_number: "{{ hostvars[fit_node].fit_number }}"
     fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
   roles:
@@ -32,6 +16,19 @@
   roles:
     - role: r2lab/rru
       when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
+
+- name: Setup fit node on R2Lab for spectre visualization (uhd_fft)
+  hosts: faraday
+  vars:
+    fit_node: "{{ groups['fit_nodes'][1] }}"
+    fit_number: "{{ hostvars[fit_node].fit_number }}"
+    fit_usrp: "{{ hostvars[fit_node].fit_usrp }}"
+  roles:
+    - role: scenarios/interference/setup
+    # Run only if we have a second fit node
+      when: groups['fit_nodes'] | length > 1
+    - role: scenarios/interference/watch
+      when: groups['fit_nodes'] | length > 1
 
 - name: Connect first UE on R2Lab to the 5G network
   hosts: faraday
