@@ -1,7 +1,20 @@
 ---
 # ================================
-# POS role main.yml — simplified & robust
+# POS role main.yml — debug visibility
 # ================================
+
+- name: Show input variables received by POS role
+  ansible.builtin.debug:
+    msg: |
+      📦 INPUT VARIABLES FOR {{ node }}
+      --------------------------------
+      rru: {{ rru | default('undefined') }}
+      ran_boot_mode: {{ ran_boot_mode | default('undefined') }}
+      pos_image: {{ pos_image | default('undefined') }}
+      pos_rt_image: {{ pos_rt_image | default('undefined') }}
+      boot_parameters_rt: {{ boot_parameters_rt | default('undefined') }}
+      boot_parameters_f1f2: {{ boot_parameters_f1f2 | default('undefined') }}
+      boot_parameters_f3: {{ boot_parameters_f3 | default('undefined') }}
 
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
@@ -42,9 +55,7 @@
   register: bios_cmdline
   changed_when: false
 
-# ================================
 # Display pre-reset summary
-# ================================
 - name: Show POS image summary (pre-reset)
   debug:
     msg: |
@@ -67,43 +78,3 @@
         Boot Mode     : {{ ran_boot_mode }}
         BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
   delegate_to: localhost
-
-# ================================
-# Apply image and reboot
-# ================================
-- name: Flash POS image
-  shell: "{{ pos_image_cmd }}"
-
-- name: Apply boot parameters
-  shell: >-
-    {% if is_ran_node %}
-      pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
-    {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
-      pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
-    {% else %}
-      pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
-    {% endif %}
-
-- name: Reset node
-  shell: pos nodes reset "{{ node }}"
-  register: reset_result
-  ignore_errors: true
-
-# Wait for SSH to return (optional)
-- name: Wait for SSH to be available
-  wait_for:
-    host: "{{ node }}"
-    port: 22
-    timeout: 300
-  ignore_errors: true
-
-# Bootstrap (unchanged)
-- name: Bootstrap if RAN Benetel
-  shell: >-
-    {% if is_ran_node and ran_boot_mode == 'disk' %}
-      pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
-    {% else %}
-      echo "BOOTSTRAP_SKIPPED"
-    {% endif %}
-  register: bootstrap_result
-  when: is_ran_node | bool
