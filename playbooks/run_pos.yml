@@ -1,8 +1,8 @@
+---
 - hosts: webshell
   gather_facts: false
   tasks:
-    - name: Run pos role on {{ node }}
+    - name: Run POS role on {{ node }}
       include_role:
         name: pos
-      vars:
-        node: "{{ node }}"
+      vars: "{{ hostvars[node] | combine({'node': node, 'rru': hostvars[groups['faraday'][0]].rru}) }}"
