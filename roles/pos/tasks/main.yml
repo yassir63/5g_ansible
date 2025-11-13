@@ -1,102 +1,79 @@
 ---
-# roles/pos/tasks/main.yml
-# Corrected POS role with proper logic and pre-reset logging
-
 - name: (POS) Free any existing allocation for {{ node }}
-  ansible.builtin.shell: pos allocations free -k "{{ node }}"
+  shell: pos allocations free -k "{{ node }}"
 
 - name: (POS) Allocate {{ node }}
-  ansible.builtin.shell: pos allocations allocate "{{ node }}"
+  shell: pos allocations allocate "{{ node }}"
 
-# Load role defaults explicitly (in case they're needed for templating)
 - name: Load POS defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: pos_defaults
+  include_vars: "{{ role_path }}/defaults/main.yml"
 
 - name: Determine RRU type
-  ansible.builtin.set_fact:
-    rru_type: "{{ hostvars.get(groups.get('faraday', [])[0], {}).get('rru', 'unknown') }}"
+  set_fact:
+    rru_type: "{{ hostvars[groups['faraday'][0]].rru | default('unknown') }}"
 
 - name: Determine if node is RAN
-  ansible.builtin.set_fact:
-    is_ran_node: "{{ node in (groups.get('ran_node') | default([])) }}"
+  set_fact:
+    is_ran_node: "{{ node in (groups['ran_node'] | default([])) }}"
 
 - name: Compute POS image command
   ansible.builtin.set_fact:
     pos_image_cmd: >-
-      {% if is_ran_node and rru_type in ['benetel1', 'benetel2'] %}
+      {% if node == groups['ran_node'][0]
+         and rru_type in ['benetel1', 'benetel2'] %}
       pos node image {{ node }} boot-local
+      {% elif node in ['sopnode-f3'] %}
+      pos nodes image --staging {{ node }} {{ pos_rt_image }}
       {% else %}
-      pos nodes image --staging {{ node }} {{ pos_defaults.pos_image }}
+      pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
-
-    pos_boot_params: >-
-      {% if is_ran_node and rru_type in ['benetel1', 'benetel2'] %}
-      {{ pos_defaults.boot_parameters_rt }}
+    boot_params: >-
+      {% if rru_type in ['benetel1', 'benetel2'] %}
+      {{ boot_parameters_rt }}
       {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
-      {{ pos_defaults.boot_parameters_f1f2 }}
+      {{ boot_parameters_f1f2 }}
       {% else %}
-      {{ pos_defaults.boot_parameters_f3 }}
+      {{ boot_parameters_f3 }}
       {% endif %}
 
-# 🧾 Log configuration before reset
 - name: Log POS configuration pre-reset
-  ansible.builtin.copy:
-    dest: "/tmp/pos_pre_reset_{{ node }}.log"
-    content: |
-      --------------------------------------------------------
-      {{ ansible_date_time.iso8601 }} - {{ node }} (pre-reset)
-      --------------------------------------------------------
-      RRU Type         : {{ rru_type }}
-      Is RAN Node      : {{ is_ran_node }}
-      POS Image Cmd    : {{ pos_image_cmd }}
-      POS Boot Params  : {{ pos_boot_params }}
-      --------------------------------------------------------
+  ansible.builtin.shell: |
+    echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
+    echo "$(date) - {{ node }} (pre-reset):" >> /tmp/pos_pre_reset_{{ node }}.log
+    echo "  Image Command : {{ pos_image_cmd }}" >> /tmp/pos_pre_reset_{{ node }}.log
+    echo "" >> /tmp/pos_pre_reset_{{ node }}.log
+    echo "  RRU Type      : {{ rru_type }}" >> /tmp/pos_pre_reset_{{ node }}.log
+    echo "  Boot Params   : {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
+    echo "  BIOS Cmdline  :" >> /tmp/pos_pre_reset_{{ node }}.log
+    pos nodes biosget {{ node }} >> /tmp/pos_pre_reset_{{ node }}.log 2>&1
+    echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
 
-# === Log configuration before reset ===
-- name: Log POS configuration before reset
-  ansible.builtin.copy:
-    dest: "/tmp/pos_pre_reset_{{ node }}.log"
-    content: |
-      --------------------------------------------------------
-      POS CONFIGURATION PRE-RESET for {{ node }}
-      --------------------------------------------------------
-      RRU Type         : {{ hostvars[groups['faraday'][0]].rru | default('unknown') }}
-      POS Image Cmd    : {{ pos_image_cmd | default('undefined') }}
-      Boot Parameters  : >-
-        {% if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
-        {{ boot_parameters_rt }}
-        {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
-        {{ boot_parameters_f1f2 }}
-        {% else %}
-        {{ boot_parameters_f3 }}
-        {% endif %}
-      --------------------------------------------------------
-  delegate_to: localhost
-  
-# 🖼️ Flash image
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   ansible.builtin.shell: "{{ pos_image_cmd }}"
 
-# 🧬 Apply correct boot parameters (only if RAN node)
-- name: (POS) Set boot parameters on node {{ node }}
+- name: (POS) Set boot parameters on node {{ node }} for RRU {{ rru_type }}
   ansible.builtin.shell: >-
-    pos nodes bootparameter {{ node }} "{{ pos_boot_params }}"
-  when: is_ran_node
+    {% if rru_type in ['benetel1', 'benetel2'] %}
+    pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
+    {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
+    pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
+    {% else %}
+    pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
+    {% endif %}
+  when: node == groups['ran_node'][0]
 
-# 🔁 Reset node
 - name: (POS) Reset {{ node }}
-  ansible.builtin.shell: pos nodes reset "{{ node }}"
+  shell: pos nodes reset "{{ node }}"
 
-# ⏱️ Wait for SSH
 - name: (POS) Wait for SSH to be available on {{ node }}
-  ansible.builtin.wait_for:
+  wait_for:
     host: "{{ node }}"
     port: 22
     timeout: 300
 
-# 🧩 Bootstrap if Benetel RRU
 - name: Bootstrap {{ node }} if RAN node for Benetel
-  ansible.builtin.shell: pos node bootstrap {{ node }}
-  when: is_ran_node and rru_type in ['benetel1', 'benetel2']
+  ansible.builtin.shell: >-
+    {% if rru_type in ['benetel1', 'benetel2'] %}
+    pos node bootstrap {{ node }}
+    {% endif %}
+  when: node == groups['ran_node'][0]
