@@ -182,7 +182,7 @@ if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -gt 0 ]]; then
     VIZ_USRPs=("b210" "b205mini")
     # Remove the interference USRP from the list of available USRPs and ask user to select one for spectrum visualization (if wanted)
     for i in "${!VIZ_USRPs[@]}"; do
-      if [[ "${VIS_USRPs[i]}" == "$noise_usrp" ]]; then
+      if [[ "${VIZ_USRPs[i]}" == "$noise_usrp" ]]; then
         unset 'VIZ_USRPs[i]'
       fi
     done
