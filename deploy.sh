@@ -385,7 +385,7 @@ done
 
 fit_lines=()
 append_fit() {
-  local name="$1" num="$2 usrp="$3
+  local name="$1" num="$2" usrp="$3"
   fit_lines+=("$name ansible_host=$name ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=$num fit_usrp=$usrp")
 }
 
