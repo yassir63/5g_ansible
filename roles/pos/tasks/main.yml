@@ -1,20 +1,43 @@
 ---
+# roles/pos/tasks/main.yml
+# Rôle POS (robuste si exécuté depuis localhost). Accepte optionnellement "node_vars" dict
+# contenant toutes les variables spécifiques au node (ex: ran_boot_mode, rru, ansible_user, etc.)
+
+- name: Prepare local helpers
+  set_fact:
+    _hostvars_node: "{{ hostvars.get(node, {}) }}"
+    _node_vars: "{{ node_vars | default({}) }}"
+
+# Determine if this node is a RAN node (use node_vars if provided, else hostvars)
 - name: Determine if this node is a RAN node
   ansible.builtin.set_fact:
-    is_ran_node: "{{ node in groups['ran_node'] }}"
-  # pas run_once: true — on veut l'évaluer pour la cible actuelle
+    is_ran_node: "{{ (_node_vars.get('is_ran_node') is not none) | ternary(_node_vars.get('is_ran_node'), (node in groups['ran_node'])) }}"
 
 - name: (POS) Free any existing allocation for {{ node }}
-  shell: pos allocations free -k "{{ node }}"
+  ansible.builtin.shell: pos allocations free -k "{{ node }}"
+  register: _pos_free
+  changed_when: "'changed' in (_pos_free.stdout | default('')) or _pos_free.rc == 0"
 
 - name: (POS) Allocate {{ node }}
-  shell: pos allocations allocate "{{ node }}"
+  ansible.builtin.shell: pos allocations allocate "{{ node }}"
+  register: _pos_alloc
 
+# Compute effective variables preferring node_vars, then hostvars, then defaults
+- name: Compute effective run-time variables for {{ node }}
+  set_fact:
+    _effective_rru: >-
+      {{ _node_vars.get('rru',
+         (_hostvars_node.get('rru') if _hostvars_node is defined else (hostvars.get(groups['faraday'][0],{}).get('rru','unknown')))) }}
+    _effective_ran_boot_mode: >-
+      {{ _node_vars.get('ran_boot_mode', _hostvars_node.get('ran_boot_mode', 'live')) }}
+    _effective_ansible_user: "{{ _node_vars.get('ansible_user', _hostvars_node.get('ansible_user', '')) }}"
+
+# Set POS image command and ran_image_type depending on RRU and boot mode
 - name: Set POS image command and type for RAN {{ node }}
   ansible.builtin.set_fact:
     pos_image_cmd: >-
-      {% set rru = rru | default('unknown') %}
-      {% set ran_boot_mode = hostvars[node].get('ran_boot_mode', 'live') %}
+      {% set rru = _effective_rru %}
+      {% set ran_boot_mode = _effective_ran_boot_mode %}
       {% if rru in ['benetel1', 'benetel2'] %}
         {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
@@ -25,9 +48,9 @@
         pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
     ran_image_type: >-
-      {% set rru = rru | default('unknown') %}
+      {% set rru = _effective_rru %}
       {% if rru in ['benetel1', 'benetel2'] %}
-        {{ hostvars[node].get('ran_boot_mode', 'live') }}
+        {{ _effective_ran_boot_mode }}
       {% else %}
         standard
       {% endif %}
@@ -41,10 +64,11 @@
 
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   ansible.builtin.shell: "{{ pos_image_cmd }}"
+  register: _pos_flash
 
 - name: (POS) Set boot parameters on node {{ node }}
   ansible.builtin.shell: >-
-    {% if rru in ['benetel1', 'benetel2'] %}
+    {% if _effective_rru in ['benetel1', 'benetel2'] %}
       pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
     {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
       pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
@@ -52,19 +76,23 @@
       pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
     {% endif %}
   when: is_ran_node
+  register: _pos_bootparam
+  failed_when: _pos_bootparam.rc not in [0, 2]  # adapt if pos returns different codes
 
 - name: (POS) Reset {{ node }}
-  shell: pos nodes reset "{{ node }}"
+  ansible.builtin.shell: pos nodes reset "{{ node }}"
+  register: _pos_reset
+  changed_when: _pos_reset.rc == 0
 
 - name: (POS) Wait for SSH to be available on {{ node }}
-  wait_for:
+  ansible.builtin.wait_for:
     host: "{{ node }}"
     port: 22
     timeout: 300
 
 - name: Bootstrap {{ node }} if RAN node for Benetel
   ansible.builtin.shell: >-
-    {% if rru in ['benetel1', 'benetel2'] and hostvars[node].get('ran_boot_mode', 'live') == 'disk' %}
+    {% if _effective_rru in ['benetel1', 'benetel2'] and _effective_ran_boot_mode == 'disk' %}
       pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
     {% else %}
       echo "BOOTSTRAP_SKIPPED"
@@ -72,21 +100,32 @@
   register: bootstrap_result
   when: is_ran_node
 
-- name: Get current BIOS kernel parameters (if accessible)
-  ansible.builtin.shell: cat /proc/cmdline || echo "unavailable"
-  register: bios_cmdline
-  ignore_errors: true
+# Try to read BIOS kernel cmdline *from the node* if possible; fallback to node_vars / hostvars
+- name: Try to get BIOS kernel cmdline from node (delegated) or fallbacks
+  block:
+    - name: Read /proc/cmdline on target node (delegated)
+      ansible.builtin.command: cat /proc/cmdline
+      delegate_to: "{{ node }}"
+      register: bios_cmdline_raw
+      become: true
+      changed_when: false
+      failed_when: false
+  rescue:
+    - set_fact:
+        bios_cmdline_raw:
+          stdout: "{{ _node_vars.get('bios_cmdline', _hostvars_node.get('bios_cmdline', 'unavailable')) }}"
+          rc: 0
 
 - name: Show POS image summary for {{ node }}
   ansible.builtin.debug:
     msg: |
-      POS IMAGE SUMMARY for {{ node }}
+      ✅ POS IMAGE SUMMARY for {{ node }}
       -------------------------------------
       Image Command : {{ pos_image_cmd }}
       Image Type    : {{ ran_image_type }}
-      RRU Type      : {{ rru | default('unknown') }}
-      Boot Mode     : {{ hostvars[node].get('ran_boot_mode', 'unknown') }}
-      BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
+      RRU Type      : {{ _effective_rru | default('unknown') }}
+      Boot Mode     : {{ _effective_ran_boot_mode | default('unknown') }}
+      BIOS Cmdline  : {{ bios_cmdline_raw.stdout | default('unavailable') }}
       Bootstrap     : >-
         {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
           {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
@@ -99,15 +138,15 @@
         {% endif %}
 
 - name: Add summary entry for node
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /tmp/pos_summary.log
     line: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} :
         Image Command : {{ pos_image_cmd }}
         Image Type    : {{ ran_image_type }}
-        RRU Type      : {{ rru | default('unknown') }}
-        Boot Mode     : {{ hostvars[node].get('ran_boot_mode', 'unknown') }}
-        BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
+        RRU Type      : {{ _effective_rru | default('unknown') }}
+        Boot Mode     : {{ _effective_ran_boot_mode | default('unknown') }}
+        BIOS Cmdline  : {{ bios_cmdline_raw.stdout | default('unavailable') }}
         Bootstrap     : >-
           {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
             {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
