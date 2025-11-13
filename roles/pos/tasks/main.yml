@@ -54,6 +54,27 @@
       POS Boot Params  : {{ pos_boot_params }}
       --------------------------------------------------------
 
+# === Log configuration before reset ===
+- name: Log POS configuration before reset
+  ansible.builtin.copy:
+    dest: "/tmp/pos_pre_reset_{{ node }}.log"
+    content: |
+      --------------------------------------------------------
+      POS CONFIGURATION PRE-RESET for {{ node }}
+      --------------------------------------------------------
+      RRU Type         : {{ hostvars[groups['faraday'][0]].rru | default('unknown') }}
+      POS Image Cmd    : {{ pos_image_cmd | default('undefined') }}
+      Boot Parameters  : >-
+        {% if hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
+        {{ boot_parameters_rt }}
+        {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
+        {{ boot_parameters_f1f2 }}
+        {% else %}
+        {{ boot_parameters_f3 }}
+        {% endif %}
+      --------------------------------------------------------
+  delegate_to: localhost
+  
 # 🖼️ Flash image
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   ansible.builtin.shell: "{{ pos_image_cmd }}"
