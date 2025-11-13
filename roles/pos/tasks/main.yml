@@ -19,21 +19,23 @@
 - name: Compute POS image command
   ansible.builtin.set_fact:
     pos_image_cmd: >-
-      {% if node == groups['ran_node'][0]
-         and rru_type in ['benetel1', 'benetel2'] %}
+      {% if node in groups['ran_node']
+         and node == 'sopnode-f3'
+         and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+         and hostvars[node].get('ran_boot_mode', '') == 'disk' %}
       pos node image {{ node }} boot-local
-      {% elif node in ['sopnode-f3'] %}
-      pos nodes image --staging {{ node }} {{ pos_rt_image }}
       {% else %}
       pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
     boot_params: >-
-      {% if rru_type in ['benetel1', 'benetel2'] %}
+      {% if node in groups['ran_node']
+         and node == 'sopnode-f3'
+         and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
       {{ boot_parameters_rt }}
-      {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
-      {{ boot_parameters_f1f2 }}
-      {% else %}
+      {% elif node in groups['ran_node'] and node == 'sopnode-f3' %}
       {{ boot_parameters_f3 }}
+      {% else %}
+      {{ boot_parameters_f1f2 }}
       {% endif %}
 
 - name: Log POS configuration pre-reset
@@ -54,7 +56,7 @@
 - name: (POS) Set boot parameters on node {{ node }} for RRU {{ rru_type }}
   ansible.builtin.shell: >-
     {% if rru_type in ['benetel1', 'benetel2'] %}
-    pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
+    pos nodes bootparameter {{ node }} {{ boot_parameters_rt_f3 }}
     {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
     pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
     {% else %}
