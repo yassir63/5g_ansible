@@ -1,6 +1,6 @@
 ---
 # ================================
-# POS role main.yml — CLEANED & SAFE
+# POS role main.yml — CLEANED & SAFE (final working version)
 # Writes pre/post debug into /tmp/pos_debug.log and avoids hostvars lookup errors
 # ================================
 
@@ -10,18 +10,16 @@
 - name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
-# Make a local, safe copy of node-specific variables (avoid hostvars[] KeyError)
-- name: Gather node parameters (safe defaults)
+# Safe variable resolution
+- name: Gather node parameters safely
   set_fact:
-    _hostvars_node: "{{ hostvars.get(node, {}) | default({}) }}"
-    rru: "{{ rru | default(_hostvars_node.get('rru', '')) }}"
-    ran_boot_mode: "{{ ran_boot_mode | default(_hostvars_node.get('ran_boot_mode', '')) }}"
-    ran_image_type: "{{ ran_image_type | default(_hostvars_node.get('ran_image_type', '')) }}"
+    rru: "{{ rru | default(hostvars.get(node, {}).get('rru', '')) }}"
+    ran_boot_mode: "{{ ran_boot_mode | default(hostvars.get(node, {}).get('ran_boot_mode', '')) }}"
+    ran_image_type: "{{ ran_image_type | default(hostvars.get(node, {}).get('ran_image_type', '')) }}"
     is_ran_node: "{{ (rru | default('')) in ['benetel1', 'benetel2'] }}"
-  # only use hostvars.get guard to avoid error when role is run from localhost
   changed_when: false
 
-# Ensure sensible defaults if still empty
+# Ensure defaults for RAN
 - name: Ensure defaults for RAN-related vars
   set_fact:
     ran_boot_mode: "{{ ran_boot_mode | default('live') }}"
@@ -59,7 +57,7 @@
   when: not is_ran_node | bool
 
 # ===================================================
-# PRE-RESET DEBUG + LOG (written to /tmp/pos_debug.log on controller)
+# PRE-RESET DEBUG + LOG
 # ===================================================
 
 - name: Get current BIOS kernel parameters (if accessible)
@@ -83,7 +81,7 @@
   ansible.builtin.blockinfile:
     path: /tmp/pos_debug.log
     create: yes
-    marker: "#### POS DEBUG ####"
+    marker: ""
     block: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (pre-reset):
         Image Command : {{ pos_image_cmd }}
@@ -116,7 +114,7 @@
   shell: pos nodes reset "{{ node }}"
   register: pos_reset_result
   failed_when: false
-  changed_when: "'changed' in pos_reset_result.stdout or pos_reset_result.rc == 0"
+  changed_when: pos_reset_result.rc == 0
 
 - name: (POS) Wait for SSH to be available on {{ node }}
   wait_for:
@@ -138,19 +136,19 @@
   failed_when: false
 
 # ===================================================
-# POST-RESET LOG (append info about bootstrap)
+# POST-RESET LOG
 # ===================================================
 
 - name: Append post-reset info to /tmp/pos_debug.log
   ansible.builtin.blockinfile:
     path: /tmp/pos_debug.log
     create: yes
-    marker: "#### POS DEBUG ####"
+    marker: ""
     block: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (post-reset):
-        Reset result rc: {{ pos_reset_result.rc | default('N/A') }}
-        Wait SSH: {{ wait_ssh is defined and (wait_ssh.elapsed | default('N/A')) or 'N/A' }}
-        Bootstrap : >-
+        Reset RC: {{ pos_reset_result.rc | default('N/A') }}
+        SSH Wait: {{ wait_ssh.elapsed | default('N/A') }}
+        Bootstrap: >-
           {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
             {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
               executed
