@@ -31,7 +31,7 @@
       {% if node in groups['ran_node']
          and node == 'sopnode-f3'
          and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
-      {{ boot_parameters_rt }}
+      {{ boot_parameters_rt_f3 }}
       {% elif node in groups['ran_node'] and node == 'sopnode-f3' %}
       {{ boot_parameters_f3 }}
       {% else %}
