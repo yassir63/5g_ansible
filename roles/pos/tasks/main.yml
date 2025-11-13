@@ -1,6 +1,6 @@
 ---
 # ================================
-# POS role main.yml (version stable et safe)
+# POS role main.yml (stable, debug before reset + full logging)
 # ================================
 
 - name: (POS) Free any existing allocation for {{ node }}
@@ -9,7 +9,7 @@
 - name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
-# Détermine si le noeud est un ran_node
+# Determine if the node is a RAN node
 - name: Determine if this node is a RAN node
   set_fact:
     is_ran_node: "{{ 'ran_node' in (group_names | default([])) or (ran_boot_mode is defined) }}"
@@ -54,6 +54,41 @@
     {% endif %}
   when: is_ran_node | bool
 
+# Get BIOS cmdline before reset
+- name: Get current BIOS kernel parameters (if accessible)
+  shell: ssh -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' || echo "unavailable"
+  register: bios_cmdline
+  changed_when: false
+
+# =======================
+# Debug + write summary BEFORE reset
+# =======================
+- name: Show POS image summary for {{ node }}
+  ansible.builtin.debug:
+    msg: |
+      ✅ POS IMAGE SUMMARY for {{ node }} (before reset)
+      -------------------------------------
+      Image Command : {{ pos_image_cmd }}
+      Image Type    : {{ ran_image_type }}
+      RRU Type      : {{ rru | default('unknown') }}
+      Boot Mode     : {{ ran_boot_mode | default('unknown') }}
+      BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
+
+- name: Write pre-reset summary for {{ node }} to /tmp/pos_summary.log
+  lineinfile:
+    path: /tmp/pos_summary.log
+    line: |
+      {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (pre-reset):
+        Image Command : {{ pos_image_cmd }}
+        Image Type    : {{ ran_image_type }}
+        RRU Type      : {{ rru | default('unknown') }}
+        Boot Mode     : {{ ran_boot_mode | default('unknown') }}
+        BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
+  delegate_to: localhost
+
+# =======================
+# Reset and post-steps
+# =======================
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
 
@@ -73,44 +108,15 @@
   register: bootstrap_result
   when: is_ran_node | bool
 
-# Lecture optionnelle des paramètres BIOS actuels si possible
-- name: Get current BIOS kernel parameters (if accessible)
-  shell: ssh -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' || echo "unavailable"
-  register: bios_cmdline
-  changed_when: false
-
-- name: Show POS image summary for {{ node }}
-  ansible.builtin.debug:
-    msg: |
-      ✅ POS IMAGE SUMMARY for {{ node }}
-      -------------------------------------
-      Image Command : {{ pos_image_cmd }}
-      Image Type    : {{ ran_image_type }}
-      RRU Type      : {{ rru | default('unknown') }}
-      Boot Mode     : {{ ran_boot_mode | default('unknown') }}
-      BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
-      Bootstrap     : >-
-        {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
-          {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
-            executed
-          {% else %}
-            skipped
-          {% endif %}
-        {% else %}
-          not applicable
-        {% endif %}
-
-- name: Add summary entry for node
+# =======================
+# Append bootstrap result AFTER reboot
+# =======================
+- name: Append bootstrap result to /tmp/pos_summary.log
   lineinfile:
     path: /tmp/pos_summary.log
     line: |
-      {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} :
-        Image Command : {{ pos_image_cmd }}
-        Image Type    : {{ ran_image_type }}
-        RRU Type      : {{ rru | default('unknown') }}
-        Boot Mode     : {{ ran_boot_mode | default('unknown') }}
-        BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
-        Bootstrap     : >-
+      {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (post-reset):
+        Bootstrap Result : >-
           {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
             {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
               executed
@@ -120,4 +126,5 @@
           {% else %}
             not applicable
           {% endif %}
+  when: is_ran_node | bool
   delegate_to: localhost
