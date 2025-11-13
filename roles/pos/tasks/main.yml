@@ -1,8 +1,6 @@
 ---
-# ================================
-# POS role main.yml — CLEANED & SAFE (final working version)
-# Writes pre/post debug into /tmp/pos_debug.log and avoids hostvars lookup errors
-# ================================
+# POS role main.yml — Fixed: reliable hostvars, image selection, and robust logging (append)
+# Writes pre/post debug into /tmp/pos_debug.log on controller (append mode)
 
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
@@ -10,30 +8,40 @@
 - name: (POS) Allocate {{ node }}
   shell: pos allocations allocate "{{ node }}"
 
-# Safe variable resolution
+# ---------------------
+# Safe variable resolution with fallbacks
+# ---------------------
 - name: Gather node parameters safely
   set_fact:
-    rru: "{{ rru | default(hostvars.get(node, {}).get('rru', '')) }}"
-    ran_boot_mode: "{{ ran_boot_mode | default(hostvars.get(node, {}).get('ran_boot_mode', '')) }}"
-    ran_image_type: "{{ ran_image_type | default(hostvars.get(node, {}).get('ran_image_type', '')) }}"
-    is_ran_node: "{{ (rru | default('')) in ['benetel1', 'benetel2'] }}"
+    # prefer explicit rru variable, else hostvars[node].rru, else faraday group's rru (if set)
+    rru: >-
+      {{ rru
+         | default(hostvars.get(node, {}).get('rru',
+           (hostvars.get(groups['faraday']|first, {}).get('rru') if (groups['faraday'] is defined and groups['faraday']|length > 0) else ''))) }}
+    # boot mode: prefer given var, else hostvars[node].ran_boot_mode, default to 'live'
+    ran_boot_mode: "{{ ran_boot_mode | default(hostvars.get(node, {}).get('ran_boot_mode', 'live')) }}"
+    # ran_image_type kept for compatibility; we compute image_selected below
+    ran_image_type: "{{ ran_image_type | default(hostvars.get(node, {}).get('ran_image_type', 'standard')) }}"
+    is_ran_node: "{{ ( (rru | default('')) in ['benetel1', 'benetel2'] ) }}"
   changed_when: false
 
-# Ensure defaults for RAN
-- name: Ensure defaults for RAN-related vars
+# ---------------------
+# Compute selected image and pos command deterministically
+# ---------------------
+- name: Compute selected image and pos image command
   set_fact:
-    ran_boot_mode: "{{ ran_boot_mode | default('live') }}"
-    ran_image_type: "{{ ran_image_type | default('standard') }}"
-  changed_when: false
-
-# ===================================================
-# BUILD IMAGE COMMAND
-# ===================================================
-
-- name: Set POS image command and type for RAN {{ node }}
-  set_fact:
+    image_selected: >-
+      {% if is_ran_node %}
+        {% if ran_boot_mode == 'disk' %}
+          boot-local
+        {% else %}
+          {{ pos_rt_image }}
+        {% endif %}
+      {% else %}
+        {{ pos_image }}
+      {% endif %}
     pos_image_cmd: >-
-      {% if rru in ['benetel1', 'benetel2'] %}
+      {% if is_ran_node %}
         {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
         {% else %}
@@ -42,26 +50,13 @@
       {% else %}
         pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
-    ran_image_type: >-
-      {% if rru in ['benetel1', 'benetel2'] %}
-        {{ ran_boot_mode }}
-      {% else %}
-        standard
-      {% endif %}
-  when: is_ran_node | bool
+  changed_when: false
 
-- name: Set POS image command for non-RAN {{ node }}
-  set_fact:
-    pos_image_cmd: "pos nodes image --staging {{ node }} {{ pos_image }}"
-    ran_image_type: "standard"
-  when: not is_ran_node | bool
-
-# ===================================================
-# PRE-RESET DEBUG + LOG
-# ===================================================
-
+# ---------------------
+# PRE-RESET: read BIOS cmdline (best effort)
+# ---------------------
 - name: Get current BIOS kernel parameters (if accessible)
-  shell: ssh -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' 2>/dev/null || echo "unavailable"
+  shell: ssh -o BatchMode=yes -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' 2>/dev/null || echo "unavailable"
   register: bios_cmdline
   changed_when: false
   failed_when: false
@@ -72,32 +67,32 @@
       🔍 PRE-RESET INFO for {{ node }}
       -------------------------------------
       Image Command : {{ pos_image_cmd }}
-      Image Type    : {{ ran_image_type }}
+      Image Type    : {{ image_selected | default('unknown') }}
       RRU Type      : {{ rru | default('unknown') }}
       Boot Mode     : {{ ran_boot_mode | default('unknown') }}
       BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
 
-- name: Write pre-reset info to /tmp/pos_debug.log
-  ansible.builtin.blockinfile:
-    path: /tmp/pos_debug.log
-    create: yes
-    marker: ""
-    block: |
-      {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (pre-reset):
-        Image Command : {{ pos_image_cmd }}
-        Image Type    : {{ ran_image_type }}
-        RRU Type      : {{ rru | default('unknown') }}
-        Boot Mode     : {{ ran_boot_mode | default('unknown') }}
-        BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
-      ------------------------------------------------------------------------
+- name: Append pre-reset info to /tmp/pos_debug.log (controller)
   delegate_to: localhost
+  shell: |
+    printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') - {{ node }} (pre-reset):" >> /tmp/pos_debug.log
+    printf '  Image Command : %s\n' "{{ pos_image_cmd }}" >> /tmp/pos_debug.log
+    printf '  Image Type    : %s\n' "{{ image_selected | default('unknown') }}" >> /tmp/pos_debug.log
+    printf '  RRU Type      : %s\n' "{{ rru | default('unknown') }}" >> /tmp/pos_debug.log
+    printf '  Boot Mode     : %s\n' "{{ ran_boot_mode | default('unknown') }}" >> /tmp/pos_debug.log
+    printf '  BIOS Cmdline  : %s\n' "{{ bios_cmdline.stdout | default('unavailable') }}" >> /tmp/pos_debug.log
+    printf '------------------------------------------------------------------------\n' >> /tmp/pos_debug.log
+  args:
+    warn: false
 
-# ===================================================
-# FLASH + RESET + BOOTSTRAP
-# ===================================================
-
+# ---------------------
+# FLASH / BOOTPARAM / RESET / WAIT
+# ---------------------
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   shell: "{{ pos_image_cmd }}"
+  register: pos_flash
+  failed_when: false
+  changed_when: pos_flash.rc == 0
 
 - name: (POS) Set boot parameters on node {{ node }}
   shell: >-
@@ -109,6 +104,9 @@
       pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
     {% endif %}
   when: is_ran_node | bool
+  register: pos_bootparam
+  failed_when: false
+  changed_when: pos_bootparam.rc == 0
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
@@ -126,7 +124,7 @@
 
 - name: Bootstrap {{ node }} if RAN node for Benetel
   shell: >-
-    {% if rru in ['benetel1', 'benetel2'] and ran_boot_mode == 'disk' %}
+    {% if is_ran_node and ran_boot_mode == 'disk' %}
       pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
     {% else %}
       echo "BOOTSTRAP_SKIPPED"
@@ -135,28 +133,26 @@
   when: is_ran_node | bool
   failed_when: false
 
-# ===================================================
-# POST-RESET LOG
-# ===================================================
-
-- name: Append post-reset info to /tmp/pos_debug.log
-  ansible.builtin.blockinfile:
-    path: /tmp/pos_debug.log
-    create: yes
-    marker: ""
-    block: |
-      {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (post-reset):
-        Reset RC: {{ pos_reset_result.rc | default('N/A') }}
-        SSH Wait: {{ wait_ssh.elapsed | default('N/A') }}
-        Bootstrap: >-
-          {% if bootstrap_result is defined and (bootstrap_result.stdout is defined) %}
-            {% if 'BOOTSTRAP_EXECUTED' in bootstrap_result.stdout %}
-              executed
-            {% else %}
-              skipped
-            {% endif %}
-          {% else %}
-            not applicable
-          {% endif %}
-      ------------------------------------------------------------------------
+# ---------------------
+# POST-RESET: append bootstrap/reset info to centralized log (controller)
+# ---------------------
+- name: Append post-reset info to /tmp/pos_debug.log (controller)
   delegate_to: localhost
+  shell: |
+    printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') - {{ node }} (post-reset):" >> /tmp/pos_debug.log
+    printf '  Reset RC      : %s\n' "{{ pos_reset_result.rc | default('N/A') }}" >> /tmp/pos_debug.log
+    printf '  Flash RC      : %s\n' "{{ pos_flash.rc | default('N/A') }}" >> /tmp/pos_debug.log
+    printf '  Bootparam RC  : %s\n' "{{ pos_bootparam.rc | default('N/A') }}" >> /tmp/pos_debug.log
+    printf '  SSH Wait      : %s\n' "{{ wait_ssh.elapsed | default('N/A') }}" >> /tmp/pos_debug.log
+    if [ -n "{{ bootstrap_result.stdout | default('') }}" ]; then
+      if echo "{{ bootstrap_result.stdout }}" | grep -q "BOOTSTRAP_EXECUTED"; then
+        printf '  Bootstrap     : executed\n' >> /tmp/pos_debug.log
+      else
+        printf '  Bootstrap     : skipped\n' >> /tmp/pos_debug.log
+      fi
+    else
+      printf '  Bootstrap     : not applicable\n' >> /tmp/pos_debug.log
+    fi
+    printf '------------------------------------------------------------------------\n' >> /tmp/pos_debug.log
+  args:
+    warn: false
