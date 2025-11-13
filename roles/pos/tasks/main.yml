@@ -48,8 +48,8 @@
     {% endif %}
   when: is_ran_node | bool
 
-- name: (POS) Reset {{ node }}
-  shell: pos nodes reset "{{ node }}"
+#- name: (POS) Reset {{ node }}
+#  shell: pos nodes reset "{{ node }}"
 
 - name: (POS) Wait for SSH to be available on {{ node }}
   wait_for:
