@@ -1,3 +1,6 @@
 ---
 node: n320
 time: 300
+freq: hostvars[groups['faraday'][0]].freq
+gain: hostvars[groups['faraday'][0]].gain
+bandwidth: hostvars[groups['faraday'][0]].noise_bandwidth
