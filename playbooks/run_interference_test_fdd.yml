@@ -19,7 +19,7 @@
 - name: Run noise generator from fit node on the downlink frequency for 100 seconds
   hosts: faraday
   vars:
-    node: "{{ groups['fit_nodes'][1] }}"
+    node: "{{ groups['fit_nodes'][0] }}"
     freq: "{{ hostvars[groups['faraday'][0]].dl_freq }}"
     time: 100
   roles:
@@ -68,7 +68,7 @@
 - name: Run noise generator from fit node on the uplink frequency for 100 seconds
   hosts: faraday
   vars:
-    node: "{{ groups['fit_nodes'][1] }}"
+    node: "{{ groups['fit_nodes'][0] }}"
     freq: "{{ hostvars[groups['faraday'][0]].ul_freq }}"
     time: 100
   roles:
