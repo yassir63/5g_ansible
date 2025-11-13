@@ -1,6 +1,6 @@
 ---
 # ================================
-# POS role main.yml — RESTORED LOGIC using Faraday rru
+# POS role main.yml — FINAL FIX
 # ================================
 
 - name: (POS) Free any existing allocation for {{ node }}
@@ -10,16 +10,16 @@
   shell: pos allocations allocate "{{ node }}"
 
 # ===================================================
-# DETERMINE NODE PARAMETERS (from Faraday if available)
+# DETERMINE PARAMETERS
 # ===================================================
 
-- name: Gather node parameters safely (including RRU from Faraday)
+- name: Gather parameters safely (RRU from Faraday)
   set_fact:
     rru: >-
       {{ (groups['faraday'] is defined and hostvars[groups['faraday'][0]].rru is defined)
           | ternary(hostvars[groups['faraday'][0]].rru, 'unknown') }}
-    ran_boot_mode: "{{ ran_boot_mode | default(hostvars.get(node, {}).get('ran_boot_mode', 'live')) }}"
-    ran_image_type: "{{ ran_image_type | default(hostvars.get(node, {}).get('ran_image_type', 'standard')) }}"
+    ran_boot_mode: "{{ (hostvars.get(node, {}).get('ran_boot_mode') | default(ran_boot_mode, true)) | default('live', true) }}"
+    ran_image_type: "{{ (hostvars.get(node, {}).get('ran_image_type') | default(ran_image_type, true)) | default('standard', true) }}"
     is_ran_node: "{{ (rru in ['benetel1', 'benetel2']) }}"
   changed_when: false
 
@@ -27,7 +27,7 @@
 # BUILD IMAGE COMMAND
 # ===================================================
 
-- name: Set POS image command and type for RAN {{ node }}
+- name: Set POS image command for node {{ node }}
   set_fact:
     pos_image_cmd: >-
       {% if is_ran_node %}
@@ -51,22 +51,11 @@
 # PRE-RESET DEBUG + LOG
 # ===================================================
 
-- name: Get current BIOS kernel parameters (if accessible)
+- name: Get current BIOS kernel parameters
   shell: ssh -o ConnectTimeout=5 root@{{ node }} 'cat /proc/cmdline' 2>/dev/null || echo "unavailable"
   register: bios_cmdline
   changed_when: false
   failed_when: false
-
-- name: Show PRE-RESET INFO for {{ node }}
-  debug:
-    msg: |
-      🔍 PRE-RESET INFO for {{ node }}
-      -------------------------------------
-      Image Command : {{ pos_image_cmd }}
-      Image Type    : {{ ran_image_type }}
-      RRU Type      : {{ rru }}
-      Boot Mode     : {{ ran_boot_mode }}
-      BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
 
 - name: Write pre-reset info to /tmp/pos_debug.log
   ansible.builtin.blockinfile:
@@ -76,9 +65,9 @@
     block: |
       {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }} - {{ node }} (pre-reset):
         Image Command : {{ pos_image_cmd }}
-        Image Type    : {{ ran_image_type }}
+        Image Type    : {{ ran_image_type | default('standard') }}
         RRU Type      : {{ rru }}
-        Boot Mode     : {{ ran_boot_mode }}
+        Boot Mode     : {{ ran_boot_mode | default('live') }}
         BIOS Cmdline  : {{ bios_cmdline.stdout | default('unavailable') }}
       ------------------------------------------------------------------------
   delegate_to: localhost
@@ -90,7 +79,7 @@
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   shell: "{{ pos_image_cmd }}"
 
-- name: (POS) Set boot parameters on node {{ node }}
+- name: (POS) Set boot parameters
   shell: >-
     {% if is_ran_node %}
       pos nodes bootparameter {{ node }} {{ boot_parameters_rt }}
@@ -100,12 +89,12 @@
       pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
     {% endif %}
 
-- name: (POS) Reset {{ node }}
+- name: (POS) Reset node
   shell: pos nodes reset "{{ node }}"
   register: pos_reset_result
   failed_when: false
 
-- name: (POS) Wait for SSH to be available on {{ node }}
+- name: (POS) Wait for SSH
   wait_for:
     host: "{{ node }}"
     port: 22
@@ -113,7 +102,7 @@
   register: wait_ssh
   failed_when: false
 
-- name: Bootstrap {{ node }} if RAN node for Benetel
+- name: Bootstrap if needed
   shell: >-
     {% if is_ran_node and ran_boot_mode == 'disk' %}
       pos node bootstrap {{ node }} && echo "BOOTSTRAP_EXECUTED"
