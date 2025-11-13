@@ -5,4 +5,11 @@
     - name: Run POS role on {{ node }}
       include_role:
         name: pos
-      vars: "{{ hostvars[node] | combine({'node': node, 'rru': hostvars[groups['faraday'][0]].rru}) }}"
+      vars: >
+        {{
+          hostvars[node]
+          | combine({
+              'node': node,
+              'rru': hostvars[groups['faraday'][0]].rru
+            })
+        }}
