@@ -2,11 +2,25 @@
 - hosts: webshell
   gather_facts: false
   tasks:
-    - name: Préparer les variables pour le rôle POS
+    - name: Prepare pos vars for node {{ node }}
       set_fact:
-        pos_vars: "{{ hostvars[node] | combine({'node': node}) | combine({'rru': (hostvars[groups['faraday'][0]].rru | default('unknown'))}) }}"
+        # Variables essentielles passées explicitement au rôle pos.
+        pos_node: "{{ node }}"
+        pos_ansible_user: "{{ hostvars[node].ansible_user | default('') }}"
+        pos_ran_boot_mode: "{{ hostvars[node].ran_boot_mode | default('') }}"
+        pos_rru: "{{ (groups['faraday'] is defined and hostvars[groups['faraday'][0]].rru is defined) | ternary(hostvars[groups['faraday'][0]].rru, 'unknown') }}"
+      vars:
+        node: "{{ node }}"
+      delegate_to: localhost
+      run_once: true
 
-    - name: Exécuter le rôle POS pour {{ node }}
+    - name: Run POS role on {{ node }}
       include_role:
         name: pos
-      vars: "{{ pos_vars }}"
+      vars:
+        # on passe explicitement les noms attendus par le rôle pos
+        node: "{{ pos_node }}"
+        ansible_user: "{{ pos_ansible_user }}"
+        ran_boot_mode: "{{ pos_ran_boot_mode }}"
+        rru: "{{ pos_rru }}"
+      delegate_to: localhost
