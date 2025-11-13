@@ -5,4 +5,8 @@
     - name: Run POS role on {{ node }}
       include_role:
         name: pos
-      vars: "{{ hostvars[node] | combine({'node': node, 'rru': hostvars[groups['faraday'][0]].rru | default('unknown')}) }}"
+      vars:
+        # injecte toutes les variables du node automatiquement
+        _merged_vars: "{{ hostvars[node] | combine({'node': node, 'rru': (hostvars[groups['faraday'][0]].rru | default('unknown'))}) }}"
+        # puis on les "déplie" proprement
+        <<: "{{ _merged_vars }}"
