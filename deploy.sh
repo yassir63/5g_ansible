@@ -156,6 +156,77 @@ else
   echo "$R2LAB_USERNAME" > "$R2LAB_CONFIG"
 fi
 
+# ========== Interference Test Setup ==========
+run_interference_test=false
+# If at least one UE on R2Lab is used, give the option to run an interference test
+if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -gt 0 ]]; then
+  read -rp "Do you want to run an interference test after deployment? [y/N]: " interference_choice
+  if [[ "$interference_choice" =~ ^[Yy]$ ]]; then
+    run_interference_test=true
+    USRPs=("n300" "n320" "b210" "b205mini")
+    # Remove the RU used for RAN from the list of available USRPs for interference if it is a USRP
+    for i in "${!USRPs[@]}"; do
+      if [[ "${USRPs[i]}" == "$R2LAB_RU" ]]; then
+        unset 'USRPs[i]'
+      fi
+    done
+    echo "Select the USRP to use for interference generation:"
+    select noise_usrp in "${USRPs[@]}"; do
+      if [[ -n "$noise_usrp" ]]; then
+        echo "Selected USRP: $noise_usrp"
+        break
+      else
+        echo "Invalid choice. Please try again."
+      fi
+    done
+    VIZ_USRPs=("b210" "b205mini")
+    # Remove the interference USRP from the list of available USRPs and ask user to select one for spectrum visualization (if wanted)
+    for i in "${!VIZ_USRPs[@]}"; do
+      if [[ "${VIZ_USRPs[i]}" == "$noise_usrp" ]]; then
+        unset 'VIZ_USRPs[i]'
+      fi
+    done
+    read -rp "Do you want to setup spectrum visualization using a second USRP? [y/N]: " viz_choice
+    if [[ "$viz_choice" =~ ^[Yy]$ ]]; then
+      echo "Select the USRP to use for spectrum visualization:"
+      select viz_usrp in "${VIZ_USRPs[@]}"; do
+        if [[ -n "$viz_usrp" ]]; then
+          echo "Selected USRP for visualization: $viz_usrp"
+          break
+        else
+          echo "Invalid choice. Please try again."
+        fi
+      done
+    fi
+    # Set MODE for interference test to TDD if OAI RAN is used, FDD if srsRAN RAN is used
+    if [[ "$ran" == "oai" ]]; then
+      echo "Setting MODE to TDD for interference test"
+      export MODE="TDD"
+      # Ask user for interference parameters and export them: FREQ, GAIN, NOISE_BANDWIDTH (defaults are 3411.22M, 110, 20M)
+      read -rp "Enter interference frequency [default: 3411.22M]: " freq_input
+      FREQ="${freq_input:-3411.22M}"
+      read -rp "Enter interference gain in dB [default: 110]: " gain_input
+      GAIN="${gain_input:-110}"
+      read -rp "Enter noise bandwidth in Hz [default: 20M]: " bw_input
+      NOISE_BANDWIDTH="${bw_input:-20M}"
+      export FREQ GAIN NOISE_BANDWIDTH
+    else
+      echo "Setting MODE to FDD for interference test"
+      export MODE="FDD"
+      # Ask user for interference parameters and export them: FREQ_UL, FREQ_DL, GAIN, NOISE_BANDWIDTH (defaults are 1747.5M, 1842.5M, 110, 5M)
+      read -rp "Enter interference uplink frequency [default: 1747.5M]: " freq_ul_input
+      FREQ_UL="${freq_ul_input:-1747.5M}"
+      read -rp "Enter interference downlink frequency [default: 1842.5M]: " freq_dl_input
+      FREQ_DL="${freq_dl_input:-1842.5M}"
+      read -rp "Enter interference gain in dB [default: 110]: " gain_input
+      GAIN="${gain_input:-110}"
+      read -rp "Enter noise bandwidth in Hz [default: 5M]: " bw_input
+      NOISE_BANDWIDTH="${bw_input:-5M}"
+      export FREQ_UL FREQ_DL GAIN NOISE_BANDWIDTH
+    fi
+  fi
+fi
+
 # ========== Summary ==========
 echo
 echo "========== SUMMARY =========="
@@ -164,6 +235,20 @@ echo "RAN:         $ran on $ran_node"
 [[ "$monitoring_enabled" == true ]] && echo "Monitoring:  enabled on $monitor_node" || echo "Monitoring:  disabled"
 echo "Platform:    $platform"
 [[ "$platform" == "r2lab" ]] && echo "RU:          $R2LAB_RU" && echo "UEs:         ${R2LAB_UES[*]}"
+if [[ "$run_interference_test" == true ]]; then
+  echo "Interference Test: enabled"
+  echo "  Interference USRP: $noise_usrp"
+  [[ -n "${viz_usrp:-}" ]] && echo "  Visualization USRP: $viz_usrp"
+  echo "  MODE: $MODE"
+  if [[ "$MODE" == "TDD" ]]; then
+    echo "  FREQ: $FREQ"
+  else
+    echo "  FREQ_UL: $FREQ_UL"
+    echo "  FREQ_DL: $FREQ_DL"
+  fi
+  echo "  GAIN: $GAIN"
+  echo "  NOISE_BANDWIDTH: $NOISE_BANDWIDTH"
+fi
 echo "============================="
 echo
 
@@ -173,6 +258,15 @@ get_storage() {
     sopnode-f1 | sopnode-f2) echo "sda1" ;;
     sopnode-f3) echo "sdb2" ;;
     *) echo "unknown" ;;
+  esac
+}
+
+# Function to determine NIC
+get_nic() {
+  case "$1" in
+    sopnode-f1 | sopnode-f2) echo "ens2f1" ;;
+    sopnode-f3) echo "ens15f1" ;;
+    *) echo "unknown"
   esac
 }
 
@@ -233,22 +327,42 @@ EOF
 # ========== Generate hosts.ini ==========
 echo "Generating hosts.ini..."
 
+# Build faraday line (may include interference params)
+faraday_opts="faraday.inria.fr ansible_user=$R2LAB_USERNAME rru=$R2LAB_RU"
+if [[ "${run_interference_test:-}" == true ]]; then
+  # add interference params
+  # Use the actual noise USRP id for faraday if it's an RU (n300/n320), otherwise use "fit" for b210/b205 variants
+  if [[ "$noise_usrp" == "n300" || "$noise_usrp" == "n320" ]]; then
+    faraday_interference_usrp="$noise_usrp"
+  else
+    faraday_interference_usrp="fit"
+  fi
+  faraday_opts="$faraday_opts interference_usrp=$faraday_interference_usrp gain=$GAIN noise_bandwidth=$NOISE_BANDWIDTH"
+  if [[ "${MODE:-}" == "TDD" ]]; then
+    faraday_opts="$faraday_opts freq=$FREQ"
+  else
+    faraday_opts="$faraday_opts freq_ul=$FREQ_UL freq_dl=$FREQ_DL"
+  fi
+fi
+# keep conf on a separate var so it's easy to change
+faraday_conf="conf=gnb.sa.band78.106prb.n310.7ds2u.conf"
+
 cat > ./inventory/hosts.ini <<EOF
 [webshell]
 localhost ansible_connection=local
 
 [core_node]
-$core_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$core_node") storage=$(get_storage "$core_node")
+$core_node ansible_user=root nic_interface=$(get_nic "$core_node") ip=172.28.2.$(get_ip_suffix "$core_node") storage=$(get_storage "$core_node")
 
 [ran_node]
-$ran_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$ran_node") storage=$(get_storage "$ran_node")
+$ran_node ansible_user=root nic_interface=$(get_nic "$ran_node") ip=172.28.2.$(get_ip_suffix "$ran_node") storage=$(get_storage "$ran_node")
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
 cat >> ./inventory/hosts.ini <<EOF
 
 [monitor_node]
-$monitor_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=$(get_storage "$monitor_node")
+$monitor_node ansible_user=root nic_interface=$(get_nic "$monitor_node") ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=$(get_storage "$monitor_node")
 EOF
 fi
 
@@ -256,16 +370,11 @@ if [[ "$platform" == "r2lab" ]]; then
 cat >> ./inventory/hosts.ini <<EOF
 
 [faraday]
-faraday.inria.fr ansible_user=$R2LAB_USERNAME rru=$R2LAB_RU conf=gnb.sa.band78.106prb.n310.7ds2u.conf
+$faraday_opts $faraday_conf
 
 [qhats]
 EOF
 fi
-# for ue in "${R2LAB_UES[@]}"; do
-#   echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1 nssai=01.000001" >> ./inventory/hosts.ini
-# done
-# cat >> ./inventory/hosts.ini <<EOF
-
 
 for ue in "${R2LAB_UES[@]}"; do
   # derive dnn/upf_ip/nssai from global core/ran + this UE
@@ -275,13 +384,111 @@ for ue in "${R2LAB_UES[@]}"; do
     >> ./inventory/hosts.ini
 done
 
+# Build fit_nodes section.
+# Rules:
+# - If no interference test: keep the original default fit02 (b210).
+# - If interference test:
+#   - If noise_usrp is b210 -> primary=fit02
+#   - If noise_usrp is b205mini -> primary=fit08
+#   - If noise_usrp is n300/n320 and viz_usrp requested:
+#       ensure fitnodes has two slots: first = the "other" fit node, second = the viz fit node
+#   - If both noise and viz are b210/b205mini, first = noise, second = viz
+#
+# Map: b210 -> fit02 (fit_number=2, fit_usrp=b210)
+#      b205mini -> fit08 (fit_number=8, fit_usrp=b205)
+# (we use fit_usrp=b205 for b205mini as in examples)
 
+fit_lines=()
+append_fit() {
+  local name="$1" num="$2" usrp="$3"
+  fit_lines+=("$name ansible_host=$name ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=$num fit_usrp=$usrp")
+}
 
-cat >> ./inventory/hosts.ini <<EOF
+if [[ "${run_interference_test:-}" == true ]]; then
+  # helper to get fit info from usrp id
+  get_fit_info() {
+    case "$1" in
+      b210) echo "fit02 2 b210" ;;
+      b205mini) echo "fit08 8 b205" ;;
+      *) echo "" ;; # n300/n320 -> no direct fit node
+    esac
+  }
+
+  noise_info="$(get_fit_info "$noise_usrp")"
+  viz_info="$(get_fit_info "${viz_usrp:-}")"
+
+  # If noise has a fit mapping, use it as primary
+  if [[ -n "$noise_info" ]]; then
+    read -r n_name n_num n_usrp <<<"$noise_info"
+    # if viz is set and maps to a fit, and it's different, add viz as second
+    if [[ -n "$viz_info" ]]; then
+      read -r v_name v_num v_usrp <<<"$viz_info"
+      # ensure primary != viz; if they are equal (shouldn't happen), swap with the other
+      if [[ "$n_name" == "$v_name" ]]; then
+        # pick the other available fit as secondary if possible
+        if [[ "$n_name" == "fit02" ]]; then
+          append_fit "fit02" 2 b210
+          append_fit "fit08" 8 b205
+        else
+          append_fit "fit08" 8 b205
+          append_fit "fit02" 2 b210
+        fi
+      else
+        append_fit "$n_name" "$n_num" "$n_usrp"
+        append_fit "$v_name" "$v_num" "$v_usrp"
+      fi
+    else
+      # only noise fit present
+      append_fit "$n_name" "$n_num" "$n_usrp"
+    fi
+
+  else
+    # noise is n300/n320 (no fit mapping)
+    if [[ -n "$viz_info" ]]; then
+      # we need two slots, put the OTHER fit first and the viz fit second
+      read -r v_name v_num v_usrp <<<"$viz_info"
+      if [[ "$v_name" == "fit02" ]]; then
+        append_fit "fit08" 8 b205
+        append_fit "$v_name" "$v_num" "$v_usrp"
+      else
+        append_fit "fit02" 2 b210
+        append_fit "$v_name" "$v_num" "$v_usrp"
+      fi
+    else
+      # noise is n300/n320 and no viz requested -> do not add fit nodes (noise is RU-based)
+      # To preserve previous behavior, we still add a commented example entry (no active fit nodes)
+      :
+    fi
+  fi
+
+  # If after all we have no fit_lines, still add a default example like original script did
+  if [[ "${#fit_lines[@]}" -eq 0 ]]; then
+    # no fit nodes to declare (e.g., n300/n320 noise only & no viz) -> add a commented example
+    cat >> ./inventory/hosts.ini <<EOF
+
+[fit_nodes]
+# no FIT nodes required for n300/n320-only interference. Add fit nodes if you want visualization.
+# Example:
+# fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
+EOF
+  else
+    cat >> ./inventory/hosts.ini <<EOF
+
+[fit_nodes]
+EOF
+    for line in "${fit_lines[@]}"; do
+      echo "$line" >> ./inventory/hosts.ini
+    done
+  fi
+
+else
+  # not running interference test: keep original default fit02 entry (as in previous script)
+  cat >> ./inventory/hosts.ini <<EOF
 
 [fit_nodes]
 fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
 EOF
+fi
 
 cat >> ./inventory/hosts.ini <<EOF
 
@@ -301,7 +508,7 @@ ran_node
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
-  echo "monitor_node" >> hosts.ini
+  echo "monitor_node" >> ./inventory/hosts.ini
 fi
 
 export RRU="$R2LAB_RU"
@@ -325,3 +532,11 @@ esac
 
 echo "Launching $script ..."
 ./deployments/$script
+
+echo "Deployment completed."
+
+# Call interference test script if requested
+if [[ "${run_interference_test:-}" == true ]]; then
+  echo "Launching interference test script ..."
+  ./scenarios/run_interference_test.sh
+fi

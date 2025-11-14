@@ -123,18 +123,18 @@
     - role: r2lab/ue/setup
       when: rru != 'rfsim'
 
-# - hosts: faraday
-#   tasks:
-#     - name: Stop all UEs previous connections on R2Lab
-#       include_role:
-#         name: r2lab/ue/stop
-#       vars:
-#         ue: "{{ item }}"
-#       loop: "{{ groups['qhats'] }}"
-#       loop_control:
-#         label: "{{ item }}"
-#       ignore_errors: true
-#       when: rru != 'rfsim'
+- hosts: faraday
+  tasks:
+    - name: Stop all UEs previous connections on R2Lab
+      include_role:
+        name: r2lab/ue/stop
+      vars:
+        ue: "{{ item }}"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        label: "{{ item }}"
+      ignore_errors: true
+      when: rru != 'rfsim'
       
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
