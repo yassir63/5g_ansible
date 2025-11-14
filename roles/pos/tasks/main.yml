@@ -69,8 +69,8 @@
     timeout: 300
 
 - name: Bootstrap {{ node }} if boot on disk
-  shell: >-
-    {% if hostvars[node].get('ran_boot_mode', '') == 'disk' %}
-    pos node bootstrap {{ node }}
-    {% endif %}
-  when: node == groups['ran_node'][0]
+  shell: pos node bootstrap {{ node }}
+  when:
+    - hostvars[node].get('ran_boot_mode', '') == 'disk'
+    - node == groups['ran_node'][0]
+    
