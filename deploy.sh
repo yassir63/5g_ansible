@@ -261,6 +261,15 @@ get_storage() {
   esac
 }
 
+# Function to determine NIC
+get_nic() {
+  case "$1" in
+    sopnode-f1 | sopnode-f2) echo "ens2f1" ;;
+    sopnode-f3) echo "ens15f1" ;;
+    *) echo "unknown"
+  esac
+}
+
 get_ue_vars() {
   # usage: get_ue_vars <qhat>
   # relies on global $core and $ran already set
@@ -343,17 +352,17 @@ cat > ./inventory/hosts.ini <<EOF
 localhost ansible_connection=local
 
 [core_node]
-$core_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$core_node") storage=$(get_storage "$core_node")
+$core_node ansible_user=root nic_interface=$(get_nic "$core_node") ip=172.28.2.$(get_ip_suffix "$core_node") storage=$(get_storage "$core_node")
 
 [ran_node]
-$ran_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$ran_node") storage=$(get_storage "$ran_node")
+$ran_node ansible_user=root nic_interface=$(get_nic "$ran_node") ip=172.28.2.$(get_ip_suffix "$ran_node") storage=$(get_storage "$ran_node")
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
 cat >> ./inventory/hosts.ini <<EOF
 
 [monitor_node]
-$monitor_node ansible_user=root nic_interface=ens2f1 ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=$(get_storage "$monitor_node")
+$monitor_node ansible_user=root nic_interface=$(get_nic "$monitor_node") ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=$(get_storage "$monitor_node")
 EOF
 fi
 
