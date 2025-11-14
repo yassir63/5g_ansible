@@ -53,12 +53,11 @@
     echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
 
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
-  ansible.builtin.shell: "{{ pos_image_cmd }}"
+  shell: "{{ pos_image_cmd }}"
 
 - name: (POS) Set boot parameters on node {{ node }} for RRU {{ rru_type }}
-  ansible.builtin.shell: >-
+  shell: >-
     pos nodes bootparameter {{ node }} {{ boot_params }}
-  when: node == groups['ran_node'][0]
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
@@ -69,9 +68,9 @@
     port: 22
     timeout: 300
 
-- name: Bootstrap {{ node }} if RAN node for Benetel
-  ansible.builtin.shell: >-
-    {% if rru_type in ['benetel1', 'benetel2'] %}
+- name: Bootstrap {{ node }} if boot on disk
+  shell: >-
+    {% if hostvars[node].get('ran_boot_mode', '') == 'disk' %}
     pos node bootstrap {{ node }}
     {% endif %}
   when: node == groups['ran_node'][0]
