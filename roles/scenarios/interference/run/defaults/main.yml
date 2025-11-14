@@ -1,3 +1,6 @@
 ---
 node: n320
 time: 300
+freq: 3411.22M
+gain: 110
+bandwidth: 5M
