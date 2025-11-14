@@ -1,26 +1,32 @@
 ---
-- hosts: webshell
-  gather_facts: false
+# ------------------------------------------------------------
+#  FIX : Load hostvars for ran_node and faraday
+#  Without this, hostvars[...] are EMPTY when using -c local 
+# ------------------------------------------------------------
+- name: Load inventory hostvars needed by POS role
+  hosts: localhost
+  gather_facts: no
   tasks:
-    - name: Prepare pos vars for node {{ node }}
-      set_fact:
-        pos_node: "{{ node }}"
-        pos_ansible_user: "{{ hostvars[node].ansible_user | default('') }}"
-        pos_ran_boot_mode: "{{ hostvars[node].ran_boot_mode | default('') }}"
-        pos_rru: >-
-          {{ (groups['faraday'] is defined and hostvars[groups['faraday'][0]].rru is defined)
-             | ternary(hostvars[groups['faraday'][0]].rru, 'unknown') }}
-      vars:
-        node: "{{ node }}"
-      delegate_to: localhost
-      run_once: true
+    - name: Ensure hostvars for ran_node and faraday are loaded
+      add_host:
+        name: "{{ item }}"
+      loop: >
+        {{ (groups['ran_node'] | default([])) +
+           (groups['faraday'] | default([])) }}
 
-    - name: Run POS role on {{ node }}
+# ------------------------------------------------------------
+#  Run POS on one node
+# ------------------------------------------------------------
+- name: Run POS for selected node
+  hosts: webshell
+  gather_facts: no
+  vars:
+    target_node: "{{ node }}"
+  tasks:
+    - name: Prepare pos vars for node {{ target_node }}
+      set_fact:
+        node: "{{ target_node }}"
+
+    - name: Run POS role on {{ target_node }}
       include_role:
         name: pos
-      vars:
-        node: "{{ pos_node }}"
-        ansible_user: "{{ pos_ansible_user }}"
-        ran_boot_mode: "{{ pos_ran_boot_mode }}"
-        rru: "{{ pos_rru }}"
-
