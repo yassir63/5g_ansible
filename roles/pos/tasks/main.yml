@@ -44,6 +44,8 @@
 
 - name: Log POS configuration pre-reset
   ansible.builtin.shell: |
+    # First clean up file
+    > /tmp/pos_pre_reset_{{ node }}.log
     echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
     echo "$(date) - {{ node }} (pre-reset):" >> /tmp/pos_pre_reset_{{ node }}.log
     echo "  Image Command : {{ pos_image_cmd }}" >> /tmp/pos_pre_reset_{{ node }}.log
@@ -71,6 +73,8 @@
 - name: Bootstrap {{ node }} if boot on disk
   shell: pos node bootstrap {{ node }}
   when:
-    - hostvars[node].get('ran_boot_mode', '') == 'disk'
+    - groups['ran_node'] is defined
     - node == groups['ran_node'][0]
+    - hostvars[node] is defined
+    - hostvars[node].get('ran_boot_mode', '') == 'disk'
     
