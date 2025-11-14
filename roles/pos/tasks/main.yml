@@ -57,13 +57,7 @@
 
 - name: (POS) Set boot parameters on node {{ node }} for RRU {{ rru_type }}
   ansible.builtin.shell: >-
-    {% if rru_type in ['benetel1', 'benetel2'] %}
-    pos nodes bootparameter {{ node }} {{ boot_parameters_rt_f3 }}
-    {% elif node in ['sopnode-f1', 'sopnode-f2'] %}
-    pos nodes bootparameter {{ node }} {{ boot_parameters_f1f2 }}
-    {% else %}
-    pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
-    {% endif %}
+    pos nodes bootparameter {{ node }} {{ boot_params }}
   when: node == groups['ran_node'][0]
 
 - name: (POS) Reset {{ node }}
