@@ -10,7 +10,10 @@
 #   --tags pos_debug  AND  --extra-vars "pos_debug=true"
 - name: DEBUG — Dump all role-relevant variables and hostvars
   tags: pos_debug
-  when: pos_debug | default(false)
+  when:
+    - pos_debug | default(false)
+    - node is defined
+    - node | length > 0  block:
   block:
     - name: Load POS defaults early for debug
       include_vars: "{{ role_path }}/defaults/main.yml"
@@ -91,7 +94,10 @@
 
 - name: Log POS configuration pre-reset
   tags: pos_debug
-  when: pos_debug | default(false)
+  when:
+    - pos_debug | default(false)
+    - node is defined
+    - node | length > 0  block:
   ansible.builtin.shell: |
     # First clean up file
     > /tmp/pos_pre_reset_{{ node }}.log
