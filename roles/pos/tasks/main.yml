@@ -1,4 +1,43 @@
 ---
+- name: DEBUG — Dump all role-relevant variables and hostvars
+  ansible.builtin.shell: |
+    {
+      echo "================ DEBUG FOR NODE: {{ node }} ================"
+      echo "Date: $(date)"
+      echo ""
+
+      echo "--- Inventory groups ---"
+      echo "ran_node = {{ groups['ran_node'] | default([]) }}"
+      echo "faraday = {{ groups['faraday'] | default([]) }}"
+      echo ""
+
+      echo "--- Hostvars[node] ---"
+      echo "{{ hostvars[node] | to_nice_yaml }}"
+      echo ""
+
+      echo "--- hostvars[node].ran_boot_mode ---"
+      echo "{{ hostvars[node].get('ran_boot_mode', '<<UNDEFINED>>') }}"
+      echo ""
+
+      echo "--- hostvars[faraday].rru ---"
+      echo "{{ hostvars[groups['faraday'][0]].get('rru','<<UNDEFINED>>') }}"
+      echo ""
+
+      echo "--- Position of node in ran_node ---"
+      echo "{{ node }} in groups['ran_node'] = {{ node in groups['ran_node'] | default([]) }}"
+      echo ""
+
+      echo "--- Variables loaded from defaults ---"
+      echo "pos_rt_image = {{ pos_rt_image | default('<<UNDEFINED>>') }}"
+      echo "pos_image = {{ pos_image | default('<<UNDEFINED>>') }}"
+      echo "boot_parameters_rt_f3 = {{ boot_parameters_rt_f3 | default('<<UNDEFINED>>') }}"
+      echo "boot_parameters_f3 = {{ boot_parameters_f3 | default('<<UNDEFINED>>') }}"
+      echo "boot_parameters_f1f2 = {{ boot_parameters_f1f2 | default('<<UNDEFINED>>') }}"
+      echo ""
+
+      echo "============================================================"
+    } > /tmp/pos_debug_{{ node }}.log
+
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
 
