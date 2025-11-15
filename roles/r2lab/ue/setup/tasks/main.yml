@@ -33,7 +33,9 @@
   register: power_ue_jobs
 
 - name: Init UEs via jump host
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'qhat-init --mode={{ hostvars[item].mode }} --dnn="{{ hostvars[item].dnn }}" --nssai="{{ hostvars[item].nssai }}"'
+  shell: |
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'qhat-init --mode={{ hostvars[item].mode }} --dnn="{{ hostvars[item].dnn }}" --nssai="{{ hostvars[item].nssai }}"'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'stop.sh'
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0
