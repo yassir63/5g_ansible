@@ -2,6 +2,8 @@
 - name: Load hostvars for selected node
   hosts: "{{ node }}"
   gather_facts: false
+  vars:
+    original_inventory: "{{ original_inventory | default(omit) }}"
   tasks: []
 
 - name: Run POS for selected node
