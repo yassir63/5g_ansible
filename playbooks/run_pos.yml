@@ -1,22 +1,9 @@
 ---
-# ------------------------------------------------------------
-#  FIX : Load hostvars for ran_node and faraday
-#  Without this, hostvars[...] are EMPTY when using -c local 
-# ------------------------------------------------------------
-- name: Load inventory hostvars needed by POS role
-  hosts: localhost
-  gather_facts: no
-  tasks:
-    - name: Ensure hostvars for ran_node and faraday are loaded
-      add_host:
-        name: "{{ item }}"
-      loop: >
-        {{ (groups['ran_node'] | default([])) +
-           (groups['faraday'] | default([])) }}
+- name: Load hostvars for selected node
+  hosts: "{{ node }}"
+  gather_facts: false
+  tasks: []
 
-# ------------------------------------------------------------
-#  Run POS on one node
-# ------------------------------------------------------------
 - name: Run POS for selected node
   hosts: webshell
   gather_facts: no

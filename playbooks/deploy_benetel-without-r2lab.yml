@@ -1,9 +1,4 @@
 ---
-- name: Load complete inventory into hostvars
-  hosts: all
-  gather_facts: no
-  tasks: []
-
 - hosts: webshell
   gather_facts: false
   tasks:
