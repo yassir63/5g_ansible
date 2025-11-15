@@ -1,7 +1,5 @@
 ---
 - name: Load inventory hostvars into Ansible (so hostvars[...] works on localhost)
-  hosts: localhost
-  gather_facts: false
   tasks:
     - name: Ensure ran_node and faraday hosts are known in hostvars
       add_host:
