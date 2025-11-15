@@ -6,8 +6,11 @@
     ansible_host: "{{ hostvars[item].ansible_host | default(None) }}"
   loop: "{{ groups['ran_node'] + groups['faraday'] }}"
 
+# DEBUG BLOCK — executed ONLY if:
+#   --tags pos_debug  AND  --extra-vars "pos_debug=true"
 - name: DEBUG — Dump all role-relevant variables and hostvars
   tags: pos_debug
+  when: pos_debug | default(false)
   block:
     - name: Load POS defaults early for debug
       include_vars: "{{ role_path }}/defaults/main.yml"
@@ -88,6 +91,7 @@
 
 - name: Log POS configuration pre-reset
   tags: pos_debug
+  when: pos_debug | default(false)
   ansible.builtin.shell: |
     # First clean up file
     > /tmp/pos_pre_reset_{{ node }}.log
