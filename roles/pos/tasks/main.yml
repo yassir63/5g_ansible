@@ -1,4 +1,15 @@
 ---
+- name: Load inventory hostvars into Ansible (so hostvars[...] works on localhost)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure ran_node and faraday hosts are known in hostvars
+      add_host:
+        name: "{{ item }}"
+        groups: "loaded_inventory"
+        ansible_host: "{{ hostvars[item].ansible_host | default(None) }}"
+      loop: "{{ groups['ran_node'] + groups['faraday'] }}"
+
 - name: DEBUG — Dump all role-relevant variables and hostvars
   ansible.builtin.shell: |
     {
