@@ -4,8 +4,9 @@
   vars:
     original_inventory: "{{ inventory_file }}"  
   tasks:
-    - debug:
-      msg: "Used inventory in run_pos playbook : {{ original_inventory }}"
+    - name: DEBUG – Inventory
+      debug:
+        msg: "Used inventory for run_pos playbook : {{ original_inventory }}"
       
     - name: Run pos reset in parallel for each sopnode
       ansible.builtin.command: >
