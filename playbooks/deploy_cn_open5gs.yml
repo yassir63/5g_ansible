@@ -1,0 +1,37 @@
+---
+# Assumption: k8s cluster already runs on core_node
+- name: Setup Sopnodes
+  hosts: sopnodes
+  roles:
+    - role: setup/ovs
+
+- name: Prepare Core node for open5gs
+  hosts: core_node
+  roles:
+    - role: setup/cni
+    - role: setup/storage
+
+- name: Configure GRE Tunnel From Core Node to RAN Node
+  hosts: core_node
+  vars:
+    ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+
+- name: Configure GRE Tunnel From RAN Node to Core Node
+  hosts: ran_node
+  vars:
+    ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+
+- name: Deploy Open5gs Core
+  hosts: core_node
+  roles:
+    - role: 5g/core
+
+#- name: Setup iperf3 on UPFs
+#  hosts: core_node
+#  gather_facts: false
+#  roles:
+#    - role: scenarios/iperf/upf
