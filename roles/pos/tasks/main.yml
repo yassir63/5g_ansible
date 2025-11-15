@@ -13,7 +13,7 @@
   when:
     - pos_debug | default(false)
     - node is defined
-    - node | length > 0  block:
+    - node | length > 0
   block:
     - name: Load POS defaults early for debug
       include_vars: "{{ role_path }}/defaults/main.yml"
@@ -97,17 +97,18 @@
   when:
     - pos_debug | default(false)
     - node is defined
-    - node | length > 0  block:
-  ansible.builtin.shell: |
-    # First clean up file
-    > /tmp/pos_pre_reset_{{ node }}.log
-    echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
-    echo "$(date) - {{ node }} (pre-reset):" >> /tmp/pos_pre_reset_{{ node }}.log
-    echo "  Image Command : {{ pos_image_cmd }}" >> /tmp/pos_pre_reset_{{ node }}.log
-    echo "" >> /tmp/pos_pre_reset_{{ node }}.log
-    echo "  RRU Type      : {{ rru_type }}" >> /tmp/pos_pre_reset_{{ node }}.log
-    echo "  Boot Params   : {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
-    echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
+    - node | length > 0
+  block:
+    - ansible.builtin.shell: |
+        # First clean up file
+        > /tmp/pos_pre_reset_{{ node }}.log
+        echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "$(date) - {{ node }} (pre-reset):" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "  Image Command : {{ pos_image_cmd }}" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "  RRU Type      : {{ rru_type }}" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "  Boot Params   : {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
 
 - name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
   shell: "{{ pos_image_cmd }}"
@@ -133,4 +134,3 @@
     - node == groups['ran_node'][0]
     - hostvars[node] is defined
     - hostvars[node].get('ran_boot_mode', '') == 'disk'
-    
