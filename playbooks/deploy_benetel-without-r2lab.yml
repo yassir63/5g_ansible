@@ -40,7 +40,6 @@
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
     - role: setup/optimization/cpu
-    - role: setup/hugepages
 
 - name: PTP setup on ran_node for benetel scenarios
   hosts: ran_node
@@ -114,6 +113,8 @@
   become: true
   gather_facts: true
   roles:
+    - role: setup/hugepages
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: setup/sriov_operator
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: benetel/sriov_nnp_create    

@@ -31,7 +31,4 @@
         msg: "{{ hugepages_status.stdout_lines }}"
 
   when:
-    - groups['ran_node'] is defined
-    - node == groups['ran_node'][0]
-    - hostvars[node] is defined
-    - hostvars[node].get('ran_boot_mode', '') == 'live'
+    {{ ran_boot_mode }} == 'live'
