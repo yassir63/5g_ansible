@@ -1,0 +1,37 @@
+- name: HUGEPAGES_SETUP
+  ansible.builtin.meta: noop
+
+- name: Configure 1G hugepages (40 × 1G), disable 2M, set default=1G – runtime + persistent
+  block:
+    - name: Apply hugepages settings immediately (runtime only)
+      ansible.builtin.shell: |
+        set -euo pipefail
+
+        # Disable 2M transparent hugepages
+        echo never > /sys/kernel/mm/transparent_hugepage/enabled
+        echo 0 > /sys/kernel/mm/transparent_hugepage/hugepages-2048kB/nr_hugepages 2>/dev/null || true
+
+        # Force 1G as default and allocate exactly 40 pages
+        echo 40 > /proc/sys/vm/nr_hugepages
+        echo 1G > /proc/sys/vm/default_hugepagesz 2>/dev/null || true
+
+        # Direct 1G knob (works on some kernels/distros)
+        echo 40 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages 2>/dev/null || true
+      become: true
+      changed_when: true
+
+    - name: Show current hugepages status
+      ansible.builtin.shell: grep -i huge /proc/meminfo
+      register: hugepages_status
+      changed_when: false
+      become: true
+
+    - name: Display hugepages status
+      ansible.builtin.debug:
+        msg: "{{ hugepages_status.stdout_lines }}"
+
+  when:
+    - groups['ran_node'] is defined
+    - node == groups['ran_node'][0]
+    - hostvars[node] is defined
+    - hostvars[node].get('ran_boot_mode', '') == 'live'
