@@ -40,6 +40,7 @@
     - role: setup/k8s/k8s_setup
     - role: setup/ovs
     - role: setup/optimization/cpu
+    - role: setup/hugepages
 
 - name: PTP setup on ran_node for benetel scenarios
   hosts: ran_node
