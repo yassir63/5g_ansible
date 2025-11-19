@@ -30,5 +30,4 @@
       ansible.builtin.debug:
         msg: "{{ hugepages_status.stdout_lines }}"
 
-  when:
-    {{ ran_boot_mode }} == 'live'
+  when: ran_boot_mode == 'live'
