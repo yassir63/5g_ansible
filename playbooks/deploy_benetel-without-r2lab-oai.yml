@@ -45,22 +45,22 @@
   become: true
   roles:
     - role: setup/optimization/nic
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+      when: fhi72
     - role: benetel/ptp
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+      when: fhi72
 
 - name: Hugepages setup on ran_node for benetel scenarios
   hosts: ran_node
   become: true
   roles:
     - role: setup/hugepages
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+      when: fhi72
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
   roles:
     - role: setup/ntp # forces core-node to have similar date than ran-node, else possible k8s certificate issues
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+      when: fhi72
     - role: setup/k8s/cluster_create
 
 - name: Join Kubernetes Cluster on Workers
@@ -68,7 +68,7 @@
   become: true
   roles:
     - role: setup/k8s/cluster_join
-      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
+      when: not core_is_ran or not core_is_monitor
 
 - name: Install Multus / CNAO
   hosts: core_node
@@ -81,11 +81,11 @@
   become: true
   roles:
     - role: setup/k8s/aw2s_specific_tuning
-      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
+      when: aw2s and f1f2_ran
     - role: setup/k8s/aw2s_specific_tuning_f3
-      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']
+      when: aws2s and f3_ran
     - role: setup/k8s/benetel_specific_tuning_f3
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] and groups['ran_node'][0] in ['sopnode-f3']
+      when: fhi72 and f3_ran
 
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
@@ -98,9 +98,9 @@
   gather_facts: true
   roles:
     - role: setup/sriov_operator
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+      when: fhi72
     - role: benetel/sriov_nnp_create    
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+      when: fhi72
 
 - name: Deploy OAI CN and RAN
   hosts: ran_node

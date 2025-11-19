@@ -2,18 +2,13 @@
 - name: RESTART_K8S_ADDS_ON
   ansible.builtin.meta: noop
 
-- name: Set default for full_oai if undefined
-  set_fact:
-    full_oai: false
-  when: full_oai is not defined
-
 - name: Ensure Open vSwitch is installed
   apt:
     name: openvswitch-switch
     state: present
     update_cache: yes
   become: true
-  when: full_oai == false
+  when: not core_is_ran
 
 - name: Create OVS bridges for ovs-cni
   command: "ovs-vsctl --may-exist add-br {{ item }}"
@@ -22,19 +17,19 @@
     - n3br
     - n4br
   become: true
-  when: full_oai == false
+  when: not core_is_ran
 
 - name: Render NetworkAddonsConfig manifest locally
   ansible.builtin.template:
     src: network-addons-config.yaml.j2
     dest: /tmp/network-addons-config.yaml
-  when: full_oai == false
+  when: not core_is_ran
 
 - name: Render NetworkAddonsConfig manifest locally
   ansible.builtin.template:
     src: network-addons-config-full-oai.yaml.j2
     dest: /tmp/network-addons-config.yaml
-  when: full_oai == true
+  when: core_is_ran
 
 - name: Apply Cluster-Network-Addons Operator manifests
   ansible.builtin.shell: |
