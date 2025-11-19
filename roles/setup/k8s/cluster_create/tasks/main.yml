@@ -305,6 +305,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
+  when: full_oai == false
 
 # === JOIN COMMAND =============================================================
 - name: Generate join command
