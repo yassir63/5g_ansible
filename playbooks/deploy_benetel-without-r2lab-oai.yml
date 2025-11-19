@@ -70,11 +70,16 @@
     - role: setup/k8s/cluster_join
       when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
 
+- name: Install Multus / CNAO
+  hosts: core_node
+  become: true
+  roles:
+    - role: setup/cni
+
 - name: Apply specific tuning on RAN Node
   hosts: ran_node
   become: true
   roles:
-    - role: setup/cni
     - role: setup/k8s/aw2s_specific_tuning
       when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
     - role: setup/k8s/aw2s_specific_tuning_f3
