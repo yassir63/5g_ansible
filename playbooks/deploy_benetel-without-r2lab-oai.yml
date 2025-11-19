@@ -62,7 +62,6 @@
     - role: setup/ntp # forces core-node to have similar date than ran-node, else possible k8s certificate issues
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: setup/k8s/cluster_create
-    - role: setup/cni
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
@@ -75,6 +74,7 @@
   hosts: ran_node
   become: true
   roles:
+    - role: setup/cni
     - role: setup/k8s/aw2s_specific_tuning
       when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
     - role: setup/k8s/aw2s_specific_tuning_f3
