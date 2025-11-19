@@ -1,0 +1,101 @@
+---
+- name: Clone open5gs-k8s repo
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: main
+    update: yes
+    force: yes
+
+- name: Update HOST_GNB variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^HOST_GNB='
+    line: "HOST_GNB=\"{{ ansible_hostname }}\""
+    backrefs: true
+
+- name: Update TAG_OAI5G_RRU variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^TAG_OAI5G_RRU='
+    line: "TAG_OAI5G_RRU=\"{{ tag_oai5g_rru }}\""
+    backrefs: true
+
+- name: Update REPO_OAI5G_RRU variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^REPO_OAI5G_RRU='
+    line: "REPO_OAI5G_RRU=\"{{ repo_oai5g_rru }}\""
+    backrefs: true
+
+- name: Update TAG_OAI_CN5G_FED variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^TAG_OAI_CN5G_FED='
+    line: "TAG_OAI_CN5G_FED=\"{{ tag_oai_cn5g_fed }}\""
+    backrefs: true
+
+- name: Update REPO_OAI_CN5G_FED variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^REPO_OAI_CN5G_FED='
+    line: "REPO_OAI_CN5G_FED=\"{{ repo_oai_cn5g_fed }}\""
+    backrefs: true
+
+- name: Update LOCAL_INTERFACE variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^LOCAL_INTERFACE='
+    line: "LOCAL_INTERFACE=\"{{ nic_interface }}\""
+    backrefs: true
+
+- name: Update RRU variable with {{ rru }} in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^RRU='
+    line: "RRU=\"{{ rru }}\""
+    backrefs: true
+
+# - name: Disable FLEXRIC in prepare-demo-oai.sh if using aw2s gnb image
+#   ansible.builtin.lineinfile:
+#     path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+#     regexp: '^FLEXRIC='
+#     line: "FLEXRIC=false"
+#     backrefs: true
+#   when: rru in ['jaguar', 'panther']
+
+- name: Run prepare-demo-oai.sh to pull & configure OAI RAN charts
+  ansible.builtin.command: "{{ script_path }} -a -R {{ rru }} -F {{ conf }}"
+  args:
+    chdir: "{{ repo_dest }}/oai-ran"
+  register: ran_script
+  changed_when: "'OAI5G charts are now configured' in ran_script.stdout"
+
+- name: Ensure Helm is installed
+  ansible.builtin.shell: |
+    if ! command -v helm >/dev/null 2>&1; then
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    fi
+  args:
+    executable: /bin/bash
+  become: true
+
+- name: Install OAI FlexRIC chart using Helm
+  kubernetes.core.helm:
+    name: oai-flexric
+    chart_ref: "{{ charts_base }}/oai-flexric"
+    release_namespace: "{{ ran_ns }}"
+    create_namespace: true
+    state: present
+    wait: true
+  register: helm_flex
+
+- name: Install OAI gNB chart using Helm
+  kubernetes.core.helm:
+    name: oai-gnb
+    chart_ref: "{{ charts_base }}/oai-gnb"
+    release_namespace: "{{ ran_ns }}"
+    create_namespace: true
+    state: present
+    wait: true
+  register: helm_gnb
