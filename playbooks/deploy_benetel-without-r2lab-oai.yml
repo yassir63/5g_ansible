@@ -49,20 +49,19 @@
     - role: benetel/ptp
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
 
+- name: Hugepages setup on ran_node for benetel scenarios
+  hosts: ran_node
+  become: true
+  roles:
+    - role: setup/hugepages
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
   roles:
     - role: setup/ntp # forces core-node to have similar date than ran-node, else possible k8s certificate issues
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: setup/k8s/cluster_create
-
-# Here deploy 5G core
-
-- name: Setup iperf3 on UPFs
-  hosts: core_node
-  gather_facts: false
-  roles:
-    - role: scenarios/iperf/upf
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
@@ -97,9 +96,10 @@
     - role: benetel/sriov_nnp_create    
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
 
-- name: Deploy OAI RAN
+- name: Deploy OAI CN and RAN
   hosts: ran_node
   roles:
+    - role: 5g/oai_core
     - role: 5g/oai_ran
 
 - name: Launch 5G-Monarch monitoring
