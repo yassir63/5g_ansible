@@ -64,7 +64,7 @@
     backrefs: true
 
 - name: Run prepare-demo-oai.sh to pull and configure OAI charts
-  ansible.builtin.command: "{{ prepare-demo }} -a -R {{ rru }} -F {{ conf }}"
+  ansible.builtin.command: "{{ prepare_demo }} -a -R {{ rru }} -F {{ conf }}"
   args:
     chdir: "{{ repo_dest }}"
   register: prepare_script
@@ -80,7 +80,7 @@
   become: true
 
 - name: Run demo-oai.sh start-cn to launch OAI CN pods
-  ansible.builtin.command: "{{ demo-oai }} start-cn"
+  ansible.builtin.command: "{{ demo_oai }} start-cn"
   args:
     chdir: "{{ repo_dest }}"
   register: demo_script
