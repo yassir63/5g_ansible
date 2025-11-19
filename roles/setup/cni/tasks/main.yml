@@ -23,6 +23,13 @@
   ansible.builtin.template:
     src: network-addons-config.yaml.j2
     dest: /tmp/network-addons-config.yaml
+  when: full_oai == false
+
+- name: Render NetworkAddonsConfig manifest locally
+  ansible.builtin.template:
+    src: network-addons-config-full-oai.yaml.j2
+    dest: /tmp/network-addons-config.yaml
+  when: full_oai == true
 
 - name: Apply Cluster-Network-Addons Operator manifests
   ansible.builtin.shell: |
