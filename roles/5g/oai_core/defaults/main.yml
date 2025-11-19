@@ -8,6 +8,6 @@ tag_oai5g_rru: "{{ 'benetel' if rru in ['benetel1', 'benetel2'] else 'gen-cn2' }
 repo_oai_cn5g_fed: "https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed.git"
 tag_oai_cn5g_fed: "{{ 'fhi72-r2lab' if rru in ['benetel1', 'benetel2'] else 'gen-cn2' }}"
 conf: "{{ hostvars[groups['faraday'][0]].conf }}"
-prepare-demo_path: "{{ repo_dest }}/prepare-demo-oai.sh"
-demo_path: "{{ repo_dest }}/demo-oai.sh"
+prepare-demo: "{{ repo_dest }}/prepare-demo-oai.sh"
+demo-oai: "{{ repo_dest }}/demo-oai.sh"
 charts_base: "{{ repo_dest }}/oai-cn5g-fed/charts/oai-5g-ran"
