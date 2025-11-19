@@ -12,7 +12,7 @@
 
 - name: Restore prepare-demo-oai.sh script in {{ repo_dest }}
   ansible.builtin.command: >
-    cp --preserve=all "{{ repo_dest }}/testing/prepare-demo-oai.sh" "{{ dest_dir }}/"
+    cp --preserve=all "{{ repo_dest }}/testing/prepare-demo-oai.sh" "{{ repo_dest }}/"
 
 - name: Update HOST_GNB variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
