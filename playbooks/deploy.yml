@@ -119,7 +119,7 @@
   roles:
     - role: setup/optimization/nic
     - role: setup/netplan
-    - role: 5g/ran
+    - role: 5g/oai_ran
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node

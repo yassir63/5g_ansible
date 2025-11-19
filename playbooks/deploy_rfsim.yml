@@ -84,7 +84,7 @@
     rru: "rfsim"
     conf: "gnb.sa.band78.106prb.rfsim.conf"
   roles:
-    - role: 5g/ran
+    - role: 5g/oai_ran
     - role: 5g/rfsim
 
 - name: Launch 5G-Monarch monitoring
