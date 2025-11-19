@@ -8,6 +8,7 @@
     state: present
     update_cache: yes
   become: true
+  when: full_oai == false
 
 - name: Create OVS bridges for ovs-cni
   command: "ovs-vsctl --may-exist add-br {{ item }}"
@@ -16,6 +17,7 @@
     - n3br
     - n4br
   become: true
+  when: full_oai == false
 
 - name: Render NetworkAddonsConfig manifest locally
   ansible.builtin.template:
