@@ -1,78 +1,16 @@
 ---
-- name: Ensure ran_node and faraday hosts are known in hostvars
-  add_host:
-    name: "{{ item }}"
-    groups: "loaded_inventory"
-    ansible_host: "{{ hostvars[item].ansible_host | default(None) }}"
-  loop: "{{ groups['ran_node'] + groups['faraday'] }}"
-
-# DEBUG BLOCK — executed ONLY if:
-#   --tags pos_debug  AND  --extra-vars "pos_debug=true"
-- name: DEBUG — Dump all role-relevant variables and hostvars
-  tags: pos_debug
-  when:
-    - pos_debug | default(false)
-    - node is defined
-    - node | length > 0
-  block:
-    - name: Load POS defaults early for debug
-      include_vars: "{{ role_path }}/defaults/main.yml"
-
-    - name: Dump debug information to /tmp/pos_debug_{{ node }}.log
-      ansible.builtin.shell: |
-        {
-          echo "================ DEBUG FOR NODE: {{ node }} ================"
-          echo "Date: $(date)"
-          echo ""
-
-          echo "--- Inventory groups ---"
-          echo "ran_node = {{ groups['ran_node'] | default([]) }}"
-          echo "faraday = {{ groups['faraday'] | default([]) }}"
-          echo ""
-
-          echo "--- Hostvars[node] ---"
-          echo "{{ hostvars[node] | to_nice_yaml }}"
-          echo ""
-
-          echo "--- ran_boot_mode (from inventory) ---"
-          echo "{{ hostvars[node].ran_boot_mode | default('<<UNDEFINED>>') }}"
-          echo ""
-
-          echo "--- Variables loaded from defaults ---"
-          echo "pos_rt_image = {{ pos_rt_image }}"
-          echo "pos_image = {{ pos_image }}"
-          echo "boot_parameters_rt_f3 = {{ boot_parameters_rt_f3 }}"
-          echo "boot_parameters_f3 = {{ boot_parameters_f3 }}"
-          echo "boot_parameters_f1f2 = {{ boot_parameters_f1f2 }}"
-          echo ""
-
-          echo "============================================================"
-        } > /tmp/pos_debug_{{ node }}.log
-
-- name: (POS) Free any existing allocation for {{ node }}
-  shell: pos allocations free -k "{{ node }}"
-
-- name: (POS) Allocate {{ node }}
-  shell: pos allocations allocate "{{ node }}"
-
-- name: Load POS defaults
-  include_vars: "{{ role_path }}/defaults/main.yml"
-
-- name: Determine RRU type
+- name: Compute normalized POS facts
   set_fact:
-    rru_type: "{{ hostvars[groups['faraday'][0]].rru | default('unknown') }}"
+    is_ran: "{{ node == ran_node_name }}"
+    is_f3: "{{ node == 'sopnode-f3' }}"
+    rru_type: "{{ rru_type }}"
+    boot_mode: "{{ hostvars[node].ran_boot_mode | default('unknown') }}"
 
-- name: Determine if node is RAN
+- name: Compute POS image command
   set_fact:
-    is_ran_node: "{{ node in (groups['ran_node'] | default([])) }}"
-
-- name: Compute POS image command and boot params
-  ansible.builtin.set_fact:
     pos_image_cmd: >-
-      {% if node in groups['ran_node']
-         and node == 'sopnode-f3'
-         and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
-        {% if hostvars[node].get('ran_boot_mode', '') == 'disk' %}
+      {% if is_ran and is_f3 and fhi72 %}
+        {% if boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
         {% else %}
           pos nodes image --staging {{ node }} {{ pos_rt_image }}
@@ -81,56 +19,19 @@
         pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
 
+- name: Select POS boot parameters
+  set_fact:
     boot_params: >-
-      {% if node in groups['ran_node']
-         and node == 'sopnode-f3'
-         and hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2'] %}
+      {% if is_ran and is_f3 and fhi72 %}
         {{ boot_parameters_rt_f3 }}
-      {% elif node in groups['ran_node'] and node == 'sopnode-f3' %}
+      {% elif is_ran and is_f3 %}
         {{ boot_parameters_f3 }}
       {% else %}
         {{ boot_parameters_f1f2 }}
       {% endif %}
 
-- name: Log POS configuration pre-reset
-  tags: pos_debug
-  when:
-    - pos_debug | default(false)
-    - node is defined
-    - node | length > 0
-  block:
-    - ansible.builtin.shell: |
-        # First clean up file
-        > /tmp/pos_pre_reset_{{ node }}.log
-        echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "$(date) - {{ node }} (pre-reset):" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "  Image Command : {{ pos_image_cmd }}" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "  RRU Type      : {{ rru_type }}" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "  Boot Params   : {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
-
-- name: (POS) Flash image {{ pos_image_cmd }} to {{ node }}
+- name: Flash POS image
   shell: "{{ pos_image_cmd }}"
 
-- name: (POS) Set boot parameters on node {{ node }} for RRU {{ rru_type }}
-  shell: |
-    echo "pos nodes bootparameter {{ node }} --raw {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
-    pos nodes bootparameter {{ node }} --raw {{ boot_params }}
-
-- name: (POS) Reset {{ node }}
-  shell: pos nodes reset "{{ node }}"
-
-- name: (POS) Wait for SSH to be available on {{ node }}
-  wait_for:
-    host: "{{ node }}"
-    port: 22
-    timeout: 300
-
-- name: Bootstrap {{ node }} if boot on disk
-  shell: pos node bootstrap {{ node }}
-  when:
-    - groups['ran_node'] is defined
-    - node == groups['ran_node'][0]
-    - hostvars[node] is defined
-    - hostvars[node].get('ran_boot_mode', '') == 'disk'
+- name: Apply POS boot parameters
+  shell: pos nodes bootparameter {{ node }} --raw "{{ boot_params }}"

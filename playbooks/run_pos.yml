@@ -2,20 +2,15 @@
 - name: Load hostvars for selected node
   hosts: "{{ node }}"
   gather_facts: false
-  vars:
-    original_inventory: "{{ original_inventory | default(omit) }}"
   tasks: []
-
+  
 - name: Run POS for selected node
   hosts: webshell
-  gather_facts: no
+  gather_facts: false
   vars:
-    target_node: "{{ node }}"
+    node: "{{ node }}"
   tasks:
-    - name: Prepare pos vars for node {{ target_node }}
-      set_fact:
-        node: "{{ target_node }}"
 
-    - name: Run POS role on {{ target_node }}
+    - name: Run POS role for {{ node }}
       include_role:
         name: pos
