@@ -50,6 +50,13 @@
     - role: benetel/ptp
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
 
+- name: Hugepages setup on ran_node for benetel scenarios
+  hosts: ran_node
+  become: true
+  roles:
+    - role: setup/hugepages
+      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
+
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node
   roles:
@@ -113,8 +120,6 @@
   become: true
   gather_facts: true
   roles:
-    - role: setup/hugepages
-      when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: setup/sriov_operator
       when: hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']
     - role: benetel/sriov_nnp_create    
