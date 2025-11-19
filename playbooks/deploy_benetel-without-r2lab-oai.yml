@@ -1,4 +1,19 @@
 ---
+- hosts: all
+  gather_facts: false
+
+  pre_tasks:
+    - name: Import global variables from group_vars/all.yml
+      set_fact:
+        "{{ item }}": "{{ lookup('template', vars[item]) }}"
+      loop:
+        - core_is_ran
+        - core_is_monitor
+        - fhi72
+        - aw2s
+        - f1f2_ran
+        - f3_ran
+
 - hosts: webshell
   gather_facts: false
   vars:

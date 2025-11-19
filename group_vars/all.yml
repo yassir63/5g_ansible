@@ -1,8 +1,9 @@
-core_is_ran: "{{ groups['ran_node'][0] == groups['core_node'][0] }}"
-core_is_monitor: "{{  groups['core_node'][0] != groups['monitor_node'][0] }}"
+core_is_ran_expr: "groups['ran_node'][0] == groups['core_node'][0]"
+core_is_monitor_expr: "groups['core_node'][0] != groups['monitor_node'][0]"
 
-fhi72: "hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']"
-aw2s: "{{ hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] }}"
+fhi72_expr: "hostvars[groups['faraday'][0]].rru in ['benetel1', 'benetel2']"
+aw2s_expr: "hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther']"
 
-f1f2_ran: "{{ groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2'] }}"
-f3_ran: "{{ groups['ran_node'][0] in ['sopnode-f3'] }}"
+f1f2_ran_expr: "groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']"
+f3_ran_expr:  "groups['ran_node'][0] in ['sopnode-f3']"
+
