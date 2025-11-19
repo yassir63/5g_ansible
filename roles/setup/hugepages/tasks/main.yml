@@ -3,20 +3,23 @@
 
 - name: Configure 1G hugepages (40 × 1G), disable 2M, set default=1G – runtime + persistent
   block:
+
     - name: Apply hugepages settings immediately (runtime only)
       ansible.builtin.shell: |
-        set -euo pipefail
+        set -e
 
-        # Disable 2M transparent hugepages
-        echo never > /sys/kernel/mm/transparent_hugepage/enabled
-        echo 0 > /sys/kernel/mm/transparent_hugepage/hugepages-2048kB/nr_hugepages 2>/dev/null || true
-
-        # Force 1G as default and allocate exactly 40 pages
+        # Allocate 40×1G pages through procfs
         echo 40 > /proc/sys/vm/nr_hugepages
-        echo 1G > /proc/sys/vm/default_hugepagesz 2>/dev/null || true
 
-        # Direct 1G knob (works on some kernels/distros)
-        echo 40 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages 2>/dev/null || true
+        # Use 1G hugepage sysfs interface if present
+        if [ -d /sys/kernel/mm/hugepages/hugepages-1048576kB ]; then
+            echo 40 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+        fi
+
+        # Disable 2M hugepages if supported
+        if [ -d /sys/kernel/mm/hugepages/hugepages-2048kB ]; then
+            echo 0 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+        fi
       become: true
       changed_when: true
 
@@ -30,4 +33,5 @@
       ansible.builtin.debug:
         msg: "{{ hugepages_status.stdout_lines }}"
 
-  when: ran_boot_mode == 'live'
+  when:
+    - ran_boot_mode == "live"
