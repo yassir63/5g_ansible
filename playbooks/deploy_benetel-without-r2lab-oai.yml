@@ -49,12 +49,12 @@
     - role: benetel/ptp
       when: fhi72
 
-- name: Hugepages setup on ran_node for benetel scenarios
-  hosts: ran_node
-  become: true
-  roles:
-    - role: setup/hugepages
-      when: fhi72
+#- name: Hugepages setup on ran_node for benetel scenarios
+#  hosts: ran_node
+#  become: true
+#  roles:
+#    - role: setup/hugepages
+#      when: fhi72
 
 - name: Create and Setup Kubernetes Cluster On Master
   hosts: core_node

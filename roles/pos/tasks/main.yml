@@ -115,8 +115,8 @@
 
 - name: (POS) Set boot parameters on node {{ node }} for RRU {{ rru_type }}
   shell: |
-    echo "pos nodes bootparameter {{ node }} {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
-    pos nodes bootparameter {{ node }} {{ boot_params }}
+    echo "pos nodes bootparameter {{ node }} --raw {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
+    pos nodes bootparameter {{ node }} --raw {{ boot_params }}
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
