@@ -68,7 +68,6 @@
   become: true
   roles:
     - role: setup/k8s/cluster_join
-      when: not core_is_ran or not core_is_monitor
 
 - name: Install Multus / CNAO
   hosts: core_node
