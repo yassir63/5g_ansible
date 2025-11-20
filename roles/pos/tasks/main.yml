@@ -56,4 +56,4 @@
 
 - name: Bootstrap {{ node }} if boot on disk
   shell: pos node bootstrap {{ node }}
-  when is_ran and boot_mode == 'disk'
+  when: is_ran and boot_mode == 'disk'
