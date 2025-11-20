@@ -5,7 +5,7 @@
     is_f3: "{{ node == 'sopnode-f3' }}"
     rru_type: "{{ rru_type }}"
     fhi72: "{{ fhi72 }}"
-    ran_boot_mode: "{{ ran_boot_mode }}"
+    ran_boot_mode: "{{ hostvars[node].boot_mode | default('unknown') }}"
 
 - name: DEBUG — Dump all role-relevant variables and hostvars
   tags: pos_debug
