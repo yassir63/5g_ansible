@@ -6,6 +6,36 @@
     rru_type: "{{ rru_type }}"
     boot_mode: "{{ hostvars[node].ran_boot_mode | default('unknown') }}"
 
+- name: DEBUG — Dump all role-relevant variables and hostvars
+  tags: pos_debug
+  block:
+    - name: Load POS defaults early for debug
+      include_vars: "{{ role_path }}/defaults/main.yml"
+
+    - name: Dump debug information to /tmp/pos_debug_{{ node }}.log
+      ansible.builtin.shell: |
+        {
+          echo "================ DEBUG FOR NODE: {{ node }} ================"
+          echo "Date: $(date)"
+          echo ""
+
+          echo "ran_node_name = {{ ran_node_name | default([]) }}"
+          echo "rru_type = {{ rru_type | default([]) }}"
+          echo "is_ran = {{ is_ran | default([]) }}"
+          echo "is_f3 = {{ is_f3 | default([]) }}"
+          echo "boot_mode = {{ boot_mode | default([]) }}"
+
+          echo "--- Variables loaded from defaults ---"
+          echo "pos_rt_image = {{ pos_rt_image }}"
+          echo "pos_image = {{ pos_image }}"
+          echo "boot_parameters_rt_f3 = {{ boot_parameters_rt_f3 }}"
+          echo "boot_parameters_f3 = {{ boot_parameters_f3 }}"
+          echo "boot_parameters_f1f2 = {{ boot_parameters_f1f2 }}"
+          echo ""
+
+          echo "============================================================"
+        } > /tmp/pos_debug_{{ node }}.log
+
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
 
