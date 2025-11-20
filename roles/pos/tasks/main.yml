@@ -78,10 +78,6 @@
 
 - name: Log POS configuration pre-reset
   tags: pos_debug
-  when:
-    - pos_debug | default(false)
-    - node is defined
-    - node | length > 0
   block:
     - ansible.builtin.shell: |
         # First clean up file
