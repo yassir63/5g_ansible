@@ -6,6 +6,15 @@
     rru_type: "{{ rru_type }}"
     boot_mode: "{{ hostvars[node].ran_boot_mode | default('unknown') }}"
 
+- name: (POS) Free any existing allocation for {{ node }}
+  shell: pos allocations free -k "{{ node }}"
+
+- name: (POS) Allocate {{ node }}
+  shell: pos allocations allocate "{{ node }}"
+
+- name: Load POS defaults
+  include_vars: "{{ role_path }}/defaults/main.yml"
+
 - name: Compute POS image command
   set_fact:
     pos_image_cmd: >-
@@ -35,3 +44,16 @@
 
 - name: Apply POS boot parameters
   shell: pos nodes bootparameter {{ node }} --raw "{{ boot_params }}"
+
+- name: (POS) Reset {{ node }}
+  shell: pos nodes reset "{{ node }}"
+
+- name: (POS) Wait for SSH to be available on {{ node }}
+  wait_for:
+    host: "{{ node }}"
+    port: 22
+    timeout: 300
+
+- name: Bootstrap {{ node }} if boot on disk
+  shell: pos node bootstrap {{ node }}
+  when is_ran and boot_mode == 'disk'
