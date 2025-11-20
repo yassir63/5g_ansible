@@ -34,3 +34,43 @@
 - debug:
     msg: "{{ tuned_status.stdout }}"
   when: inventory_hostname != "sopnode-f3"
+
+# IRQ PINNING: ens15f0np0 → cores 14-31 (RAN ONLY)
+- name: Apply NIC IRQ pinning only on RAN nodes
+  when: inventory_hostname == "sopnode-f3"
+  block:
+
+    - name: Find IRQs for ens15f0np0
+      ansible.builtin.shell: "grep -i 'ens15f0np0' /proc/interrupts | awk '{print $1}' | tr -d ':'"
+      register: ovs_irq_list
+      changed_when: false
+      become: true
+
+    - name: Apply IRQ affinity live (use CPU list instead of masks)
+      ansible.builtin.shell: |
+        echo 14-31 > /proc/irq/{{ item }}/smp_affinity_list
+      loop: "{{ ovs_irq_list.stdout_lines }}"
+      become: true
+
+    - name: Make IRQ pinning persistent on reboot
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/irq-affinity-ens15f0np0.service
+        content: |
+          [Unit]
+          Description=Pin IRQs for ens15f0np0
+          After=multi-user.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/sh -c 'for i in {{ ovs_irq_list.stdout_lines | join(" ") }}; do echo 14-31 > /proc/irq/$i/smp_affinity_list; done'
+
+          [Install]
+          WantedBy=multi-user.target
+      become: true
+
+    - name: Enable IRQ affinity service
+      ansible.builtin.systemd:
+        daemon_reload: yes
+        name: irq-affinity-ens15f0np0.service
+        enabled: yes
+      become: true
