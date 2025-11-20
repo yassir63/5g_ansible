@@ -96,6 +96,25 @@
     - role: r2lab/cleanup
       when: rru != 'rfsim'
 
+- name: Setup UEs on R2Lab
+  hosts: faraday
+  roles:
+    - role: r2lab/ue/setup
+      when: rru != 'rfsim'
+
+- hosts: faraday
+  tasks:
+    - name: Stop all UEs previous connections on R2Lab
+      include_role:
+        name: r2lab/ue/stop
+      vars:
+        ue: "{{ item }}"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        label: "{{ item }}"
+      ignore_errors: true
+      when: rru != 'rfsim'
+
 - name: Power ON RRU on R2Lab
   hosts: faraday
   roles:
@@ -116,25 +135,6 @@
 #       when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
 #     - role: setup/k8s/aw2s_specific_tuning_f3
 #       when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']    
-
-- name: Setup UEs on R2Lab
-  hosts: faraday
-  roles:
-    - role: r2lab/ue/setup
-      when: rru != 'rfsim'
-
-- hosts: faraday
-  tasks:
-    - name: Stop all UEs previous connections on R2Lab
-      include_role:
-        name: r2lab/ue/stop
-      vars:
-        ue: "{{ item }}"
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        label: "{{ item }}"
-      ignore_errors: true
-      when: rru != 'rfsim'
       
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
