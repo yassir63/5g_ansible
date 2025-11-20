@@ -221,11 +221,18 @@
       }
   become: true
 
-- name: Download and install CNI plugins
+- name: Download CNI plugins tarball
+  ansible.builtin.get_url:
+    url: "https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
+    dest: /tmp/cni-plugins.tgz
+    mode: '0644'
+    timeout: 60
+  become: true
+
+- name: Extract CNI plugins
   ansible.builtin.unarchive:
-    src: "https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
+    src: /tmp/cni-plugins.tgz
     dest: /opt/cni/bin
-    remote_src: true
   become: true
 
 - name: Ensure kube-flannel namespace exists
