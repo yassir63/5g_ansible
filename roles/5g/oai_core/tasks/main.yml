@@ -53,7 +53,7 @@
   ansible.builtin.lineinfile:
     path: "{{ repo_dest }}/prepare-demo-oai.sh"
     regexp: '^LOCAL_INTERFACE='
-    line: "LOCAL_INTERFACE=\"{{ nic_interface }}\""
+    line: "LOCAL_INTERFACE=\"{{ multus_phy_if }}\""
     backrefs: true
 
 - name: Update RRU variable with {{ rru }} in prepare-demo-oai.sh
