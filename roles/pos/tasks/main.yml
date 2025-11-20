@@ -4,7 +4,8 @@
     is_ran: "{{ node == ran_node_name }}"
     is_f3: "{{ node == 'sopnode-f3' }}"
     rru_type: "{{ rru_type }}"
-    boot_mode: "{{ hostvars[node].ran_boot_mode | default('unknown') }}"
+    fhi72: "{{ fhi72 }}"
+    ran_boot_mode: "{{ ran_boot_mode }}"
 
 - name: DEBUG — Dump all role-relevant variables and hostvars
   tags: pos_debug
@@ -23,7 +24,7 @@
           echo "rru_type = {{ rru_type | default([]) }}"
           echo "is_ran = {{ is_ran | default([]) }}"
           echo "is_f3 = {{ is_f3 | default([]) }}"
-          echo "boot_mode = {{ boot_mode | default([]) }}"
+          echo "ran_boot_mode = {{ ran_boot_mode | default([]) }}"
 
           echo "--- Variables loaded from defaults ---"
           echo "pos_rt_image = {{ pos_rt_image }}"
@@ -49,7 +50,7 @@
   set_fact:
     pos_image_cmd: >-
       {% if is_ran and is_f3 and fhi72 %}
-        {% if boot_mode == 'disk' %}
+        {% if ran_boot_mode == 'disk' %}
           pos node image {{ node }} boot-local
         {% else %}
           pos nodes image --staging {{ node }} {{ pos_rt_image }}
@@ -74,6 +75,24 @@
 
 - name: Apply POS boot parameters
   shell: pos nodes bootparameter {{ node }} --raw "{{ boot_params }}"
+
+- name: Log POS configuration pre-reset
+  tags: pos_debug
+  when:
+    - pos_debug | default(false)
+    - node is defined
+    - node | length > 0
+  block:
+    - ansible.builtin.shell: |
+        # First clean up file
+        > /tmp/pos_pre_reset_{{ node }}.log
+        echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "$(date) - {{ node }} (pre-reset):" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "  Image Command : {{ pos_image_cmd }}" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "  RRU Type      : {{ rru_type }}" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "  Boot Params   : {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
