@@ -52,4 +52,14 @@
   loop: "{{ set_ue_jobs.results }}"
   loop_control:
     label: "{{ item.item }}"
+
+- name: Prepare UE "{{ ue }}" via jump host
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'prepare-ue --dnn="{{ hostvars[item].dnn }}" --nssai="{{ hostvars[item].nssai }}"'
+  delegate_to: faraday.inria.fr
+  async: 1800
+  poll: 0
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    label: "{{ item }}"
+  register: prepare_ue_jobs
   
