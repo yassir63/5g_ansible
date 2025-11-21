@@ -1,4 +1,7 @@
 ---
+- name: RESTART_DPDK_CONFIG
+  ansible.builtin.meta: noop
+
 - name: Load variables from group_vars/ran_node.yml
   ansible.builtin.include_vars:
     file: /home/turletti/xp/post5g-beta/ptp_test/5g_ansible/group_vars/ran_node.yml
