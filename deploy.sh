@@ -344,8 +344,19 @@ if [[ "${run_interference_test:-}" == true ]]; then
     faraday_opts="$faraday_opts freq_ul=$FREQ_UL freq_dl=$FREQ_DL"
   fi
 fi
-# keep conf on a separate var so it's easy to change
-faraday_conf="conf=gnb.sa.band78.106prb.n310.7ds2u.conf"
+# choose faraday conf based on RU
+# choose gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf if jaguar or panther
+# choose gnb.sa.band78.106prb.n310.7ds2u.conf if n300 or n320
+faraday_conf=""
+case "$R2LAB_RU" in
+  jaguar | panther)
+    faraday_conf="gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf" ;;
+  n300 | n320)
+    faraday_conf="gnb.sa.band78.106prb.n310.7ds2u.conf" ;;
+  *)
+    echo "❌ Unknown RU for faraday conf: $R2LAB_RU"
+    exit 1 ;;
+esac
 
 cat > ./inventory/hosts.ini <<EOF
 [webshell]
