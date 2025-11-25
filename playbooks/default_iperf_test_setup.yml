@@ -1,12 +1,10 @@
 ---
-- hosts: faraday
+# Connect only the first UE 
+- name: Connect first UE on R2Lab to 5G network
+  hosts: faraday
   tasks:
-    - name: Connect UEs on R2Lab to 5G network
+    - name: Connect first UE on R2Lab to 5G network
       include_role:
         name: r2lab/ue/connect
       vars:
-        ue: "{{ item }}"
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        label: "{{ item }}"
-      ignore_errors: true
+        ue: "{{ groups['qhats'][0] }}"

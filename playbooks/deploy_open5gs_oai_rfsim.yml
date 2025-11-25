@@ -87,13 +87,14 @@
   hosts: ran_node
   vars:
     rru: "rfsim"
-    conf: "gnb.sa.band78.106prb.rfsim.conf"
   roles:
     - role: 5g/ran/ran_r2lab
     - role: 5g/ran/rfsim
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
+  vars:
+    set_gnb_monitoring: true
   roles:
     - role: monarch/monitoring
       when: monitoring_enabled
