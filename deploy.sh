@@ -805,16 +805,16 @@ if [[ "$run_scenario" == true ]]; then
   echo "Running $scenario"
   case "$scenario" in
     "Default Iperf Test (without interference)")
-      ./run_iperf_test.sh -d
+      ./scenarios/run_iperf_test.sh -d
       ;;
     "Parallel Iperf Test (without interference)")
-      ./run_iperf_test.sh -p
+      ./scenarios/run_iperf_test.sh -p
       ;;
     "RFSIM Iperf Test")
-      ./run_iperf_test.sh -s
+      ./scenarios/run_iperf_test.sh -s
       ;;
     "Interference Test")
-      ./run_iperf_test.sh -i
+      ./scenarios/run_iperf_test.sh -i
       ;;
     *)
       echo "❌ Unknown iperf test scenario: $scenario"
