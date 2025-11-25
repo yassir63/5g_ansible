@@ -350,9 +350,9 @@ fi
 faraday_conf=""
 case "$R2LAB_RU" in
   jaguar | panther)
-    faraday_conf="gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf" ;;
+    faraday_conf="conf=gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf" ;;
   n300 | n320)
-    faraday_conf="gnb.sa.band78.106prb.n310.7ds2u.conf" ;;
+    faraday_conf="conf=gnb.sa.band78.106prb.n310.7ds2u.conf" ;;
   *)
     echo "❌ Unknown RU for faraday conf: $R2LAB_RU"
     exit 1 ;;
