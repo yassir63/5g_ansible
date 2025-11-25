@@ -736,10 +736,15 @@ fi
 # Reserve only if slices were reserved successfully and use the same duration.
 if [[ "$platform" == "r2lab" && "$slices_reserved" == true ]]; then
   echo "Reserving R2Lab testbed..."
-  start_time=$(date +"%H:%M")
-  end_time=$(date -d "+$duration_minutes minutes" +"%H:%M")
-  rhubarbe_output=$(ssh "$R2LAB_USERNAME"@faraday.inria.fr rhubarbe book "$start_time" "$end_time" -e "$R2LAB_EMAIL" -p "$R2LAB_PASSWORD" -s "$R2LAB_USERNAME" -v 2>&1)
-  if [[ $? -ne 0 ]]; then
+  start_time=$(date +"%Y-%m-%dT%H:%M")
+  end_time=$(date -d "+$duration_minutes minutes" +"%Y-%m-%dT%H:%M")
+  rhubarbe_output=$(ssh "$R2LAB_USERNAME"@faraday.inria.fr "rhubarbe book '$start_time' '$end_time' -e '$R2LAB_EMAIL' -p '$R2LAB_PASSWORD' -s '$R2LAB_USERNAME' -v; echo EXIT_CODE:\$?" 2>&1)
+
+  # Extract the exit code from the output
+  exit_code=$(echo "$rhubarbe_output" | grep "EXIT_CODE:" | cut -d: -f2)
+  rhubarbe_output=$(echo "$rhubarbe_output" | grep -v "EXIT_CODE:")
+
+  if [[ "$exit_code" -ne 0 ]]; then
     echo "❌ R2Lab reservation failed."
     echo "Error details: $rhubarbe_output"
     read -rp "Do you want to ignore the R2Lab reservation failure and continue? [y/N]: " ignore_r2lab_choice
@@ -765,6 +770,7 @@ if [[ "$platform" == "r2lab" && "$slices_reserved" == true ]]; then
 fi
 
 # ========== Deployment ==========
+echo ""
 echo "Starting deployment..."
 # Call appropriate deployment script
 key="${core}-${ran}-${platform}"
