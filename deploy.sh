@@ -248,15 +248,20 @@ if [[ "$scenario_choice" =~ ^[Yy]$ ]]; then
     options+=("Interference Test")
   fi
 
-  select scenario in "${options[@]}"; do
-    if [[ -n "$scenario" ]]; then
-      echo "Selected scenario: $scenario"
-      run_scenario=true
-      break
-    else
-      echo "❌ Invalid choice. Please try again."
-    fi
+  for i in "${!options[@]}"; do
+    echo "$((i+1))) ${options[$i]}"
   done
+
+  read -rp "Enter your choice: " scenario_choice
+
+  if [[ "$scenario_choice" =~ ^[0-9]+$ ]] &&
+    ((scenario_choice >= 1 && scenario_choice <= ${#options[@]})); then
+    scenario="${options[$((scenario_choice - 1))]}"
+    echo "Selected scenario: $scenario"
+    run_scenario=true
+  else
+    echo "❌ Invalid choice"
+  fi
 fi
 
 # ========== Iperf Tests Setup (without interference) ==========
@@ -282,14 +287,17 @@ if [[ "$run_scenario" == true && "$scenario" == "Interference Test" ]]; then
   done
   echo ""
   echo "Select the USRP to use for interference generation:"
-  select noise_usrp in "${USRPs[@]}"; do
-    if [[ -n "$noise_usrp" ]]; then
-      echo "Selected USRP: $noise_usrp"
-      break
-    else
-      echo "❌ Invalid choice. Please try again."
-    fi
+  for i in "${!USRPs[@]}"; do
+    echo "$((i+1))) ${USRPs[$i]}"
   done
+  read -rp "Enter your choice: " choice
+  if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#USRPs[@]} )); then
+    noise_usrp="${USRPs[$((choice-1))]}"
+    echo "Selected USRP: $noise_usrp"
+  else
+    echo "❌ Invalid choice"
+    exit 1
+  fi
   VIZ_USRPs=("b210" "b205mini")
   # Remove the interference USRP from the list of available USRPs and ask user to select one for spectrum visualization (if wanted)
   for i in "${!VIZ_USRPs[@]}"; do
@@ -302,14 +310,17 @@ if [[ "$run_scenario" == true && "$scenario" == "Interference Test" ]]; then
   if [[ "$viz_choice" =~ ^[Yy]$ ]]; then
     echo ""
     echo "Select the USRP to use for spectrum visualization:"
-    select viz_usrp in "${VIZ_USRPs[@]}"; do
-      if [[ -n "$viz_usrp" ]]; then
-        echo "Selected USRP for visualization: $viz_usrp"
-        break
-      else
-        echo "❌ Invalid choice. Please try again."
-      fi
+    for i in "${!VIZ_USRPs[@]}"; do
+      echo "$((i+1))) ${VIZ_USRPs[$i]}"
     done
+    read -rp "Enter your choice: " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#VIZ_USRPs[@]} )); then
+      viz_usrp="${VIZ_USRPs[$((choice-1))]}"
+      echo "Selected USRP for visualization: $viz_usrp"
+    else
+      echo "❌ Invalid choice"
+      exit 1
+    fi
   fi
   # Set MODE for interference test to TDD if OAI RAN is used, FDD if srsRAN RAN is used
   if [[ "$ran" == "oai" ]]; then
