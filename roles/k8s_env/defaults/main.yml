@@ -1,0 +1,4 @@
+---
+k9s_version: "latest"
+k9s_deb_url: "https://github.com/derailed/k9s/releases/{{ k9s_version }}/download/k9s_linux_amd64.deb"
+k9s_deb_path: "/tmp/k9s_linux_amd64.deb"

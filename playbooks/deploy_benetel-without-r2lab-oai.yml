@@ -39,6 +39,7 @@
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
     - role: setup/optimization/cpu
+    - role: k8s_env
 
 - name: PTP setup on ran_node for benetel scenarios
   hosts: ran_node

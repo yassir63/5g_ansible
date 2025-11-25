@@ -1,0 +1,41 @@
+---
+- name: RESTART_K8S_ENV
+  ansible.builtin.meta: noop
+
+# Install k9s
+- name: Download k9s .deb package
+  ansible.builtin.get_url:
+    url: "{{ k9s_deb_url }}"
+    dest: "{{ k9s_deb_path }}"
+    mode: '0644'
+
+- name: Install k9s
+  ansible.builtin.apt:
+    deb: "{{ k9s_deb_path }}"
+    state: present
+  become: true
+
+- name: Ensure k9s binary is available
+  ansible.builtin.command: k9s version
+  register: k9s_check
+  changed_when: false
+
+- debug:
+    var: k9s_check.stdout
+
+# define k kubectl alias
+- name: Ensure kubectl alias exists for all
+  lineinfile:
+    path: /etc/bash.bashrc
+    regexp: '^alias k='
+    line: "alias k=kubectl"
+    state: present
+  become: true
+
+# install logs.sh OAI5G script
+- name: Install custom script to /usr/local/bin
+  copy:
+    src: "{{ playbook_dir }}/../ran-scripts/logs.sh"
+    dest: /usr/local/bin/logs.sh
+    mode: '0755'
+  become: true
