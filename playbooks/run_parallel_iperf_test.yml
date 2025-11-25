@@ -11,7 +11,7 @@
     - name: Start iperf3 on {{ ue1 }} in background
       shell: >
         ssh root@{{ ue1 }}
-        'iperf3 -c {{ hostvars[ue1].upf_ip }} --bidir -t 400 -J log_iperf_test.json'
+        'iperf3 -c {{ hostvars[ue1].upf_ip }} --bidir -t 300 -J log_iperf_test.json'
       async: 1800
       poll: 0
       register: ue1_job
@@ -23,7 +23,7 @@
     - name: Start iperf3 on {{ ue2 }} in background
       shell: >
         ssh root@{{ ue2 }}
-        'iperf3 -c {{ hostvars[ue2].upf_ip }} --bidir -t 400 -J log_iperf_test.json'
+        'iperf3 -c {{ hostvars[ue2].upf_ip }} --bidir -t 300 -J log_iperf_test.json'
       async: 1800
       poll: 0
       register: ue2_job
@@ -35,7 +35,7 @@
     - name: Start iperf3 on {{ ue3 }} in background
       shell: >
         ssh root@{{ ue3 }}
-        'iperf3 -c {{ hostvars[ue3].upf_ip }} --bidir -p 5202 -t 400 -J log_iperf_test.json'
+        'iperf3 -c {{ hostvars[ue3].upf_ip }} --bidir -p 5202 -t 300 -J log_iperf_test.json'
       async: 1800
       poll: 0
       register: ue3_job
@@ -47,7 +47,7 @@
     - name: Start iperf3 on {{ ue4 }} in background
       shell: >
         ssh root@{{ ue4 }}
-        'iperf3 -c {{ hostvars[ue4].upf_ip }} --bidir -p 5202 -t 400 -J log_iperf_test.json'
+        'iperf3 -c {{ hostvars[ue4].upf_ip }} --bidir -p 5202 -t 300 -J log_iperf_test.json'
       async: 1800
       poll: 0
       register: ue4_job
