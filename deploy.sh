@@ -155,7 +155,7 @@ R2LAB_UES=()
 
 # If R2Lab platform is selected, ask for RU and UEs
 if [[ "$platform" == "r2lab" ]]; then
-  R2LAB_RUs=("jaguar", "panther", "n300", "n320")
+  R2LAB_RUs=("jaguar" "panther" "n300" "n320")
   # Select RU
   # Make jaguar the default if the user just presses enter
   echo ""
@@ -236,13 +236,13 @@ if [[ "$scenario_choice" =~ ^[Yy]$ ]]; then
   echo "Select the scenario to run:"
   options=()
   if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 1 ]]; then
-    options+=("Default Iperf Test without interference. Will run on the first UE: ${R2LAB_UES[0]}")
+    options+=("Default Iperf Test (without interference)")
   fi
   if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 4 ]]; then
-    options+=("Parallel Iperf Test without interference. Will run on the first 4 UEs: ${R2LAB_UES[0]}, ${R2LAB_UES[1]}, ${R2LAB_UES[2]}, ${R2LAB_UES[3]}")
+    options+=("Parallel Iperf Test (without interference)")
   fi
   if [[ "$platform" == "rfsim" && "$ran" == "oai" ]]; then
-    options+=("RFSIM Iperf Test. Will run on 2 OAI-NR UEs simulated on RFSIM")
+    options+=("RFSIM Iperf Test")
   fi
   if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 1 ]]; then
     options+=("Interference Test")
@@ -263,7 +263,7 @@ fi
 # For the normal iperf tests without interference, we do not need any additional user inputs, since the UEs are assumed to be already connected to the network after deployment.
 # We sill use the run_iperf_test.sh script to run the selected iperf test scenario after deployment.
 run_iperf_test=false
-if [[ "$run_scenario" == true && ( "$scenario" == "Default Iperf Test without interference. Will run on the first UE: ${R2LAB_UES[0]}" || "$scenario" == "Parallel Iperf Test without interference. Will run on the first 4 UEs: ${R2LAB_UES[0]}, ${R2LAB_UES[1]}, ${R2LAB_UES[2]}, ${R2LAB_UES[3]}" || "$scenario" == "RFSIM Iperf Test. Will run on 2 OAI-NR UEs simulated on RFSIM" ) ]]; then
+if [[ "$run_scenario" == true && ( "$scenario" == "Default Iperf Test (without interference)" || "$scenario" == "Parallel Iperf Test (without interference)" || "$scenario" == "RFSIM Iperf Test" ) ]]; then
   run_iperf_test=true
 fi
 
@@ -366,9 +366,19 @@ fi
 if [[ "$run_iperf_test" == true ]]; then
   echo "Iperf Test: enabled"
   echo "  Scenario: $scenario"
-else
-  echo "Iperf Test: disabled"
+  case "$scenario" in
+    "Default Iperf Test (without interference)")
+      echo "Will run iperf on ${R2LAB_UES[0]} for 5 minutes in downlink then uplink (10 minutes in total for the scenario)"
+      ;;
+    "Parallel Iperf Test (without interference)")
+      echo "Will run a bidirectional iperf on ${R2LAB_UES[0]}, ${R2LAB_UES[1]}, ${R2LAB_UES[2]} and ${R2LAB_UES[3]} respectively for 5 minutes each, with an in-between wait time of 100 seconds (10 minutes in total for the scenario)"
+      ;;
+    "RFSIM Iperf Test")
+      echo "Will run iperf on OAI-NR-UE1 then OAI-NR-UE2 for 200 seconds each with an in-between wait time of 100 seconds in downlink then uplink (10 minutes in total for the scenario)"
+      ;;
+  esac
 fi
+
 echo "============================="
 echo  
 
@@ -777,13 +787,13 @@ echo ""
 if [[ "$run_iperf_test" == true ]]; then
   echo "Running $scenario"
   case "$scenario" in
-    "Default Iperf Test without interference. Will run on the first UE: ${R2LAB_UES[0]}")
+    "Default Iperf Test (without interference)")
       ./run_iperf_test.sh -d
       ;;
-    "Parallel Iperf Test without interference. Will run on the first 4 UEs: ${R2LAB_UES[0]}, ${R2LAB_UES[1]}, ${R2LAB_UES[2]}, ${R2LAB_UES[3]}")
+    "Parallel Iperf Test (without interference)")
       ./run_iperf_test.sh -p
       ;;
-    "RFSIM Iperf Test. Will run on 2 OAI-NR UEs simulated on RFSIM")
+    "RFSIM Iperf Test")
       ./run_iperf_test.sh -s
       ;;
     "Interference Test")

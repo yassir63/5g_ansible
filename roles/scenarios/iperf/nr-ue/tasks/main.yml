@@ -60,30 +60,34 @@
   register: ue3_install
   changed_when: false
 
+- name: Run reverse iperf3 client on NR-UE for 200s (Downlink Test on Slice 1)
+  shell: |
+    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -t 200 -R'
+
+- name: Wait 100 seconds before running next test
+  pause:
+    seconds: 100
+
+- name: Run reverse iperf3 client on NR-UE2 for 200s (Downlink Test on Slice 2)
+  shell: |
+    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -t 200 -R'
+
+- name: Wait 200 seconds for the iperf to end
+  pause:
+    seconds: 200
+
 - name: Run iperf3 client on NR-UE for 200s (Uplink Test on Slice 1)
   shell: |
     kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -t 200'
 
-- name: Wait 10 seconds before running next test
+- name: Wait 100 seconds before running next test
   pause:
-    seconds: 10
+    seconds: 100
 
 - name: Run iperf3 client on NR-UE2 for 200s (Uplink Test on Slice 2)
   shell: |
     kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -t 200'
 
-- name: Wait 10 seconds before running next test
+- name: Wait 200 seconds for the iperf to end
   pause:
-    seconds: 10
-
-- name: Run reverse iperf3 client on NR-UE for 200s (Downlink Test on Slice 1)
-  shell: |
-    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -t 200 -R'
-
-- name: Wait 10 seconds before running next test
-  pause:
-    seconds: 10
-
-- name: Run reverse iperf3 client on NR-UE2 for 200s (Downlink Test on Slice 2)
-  shell: |
-    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -t 200 -R'
+    seconds: 200
