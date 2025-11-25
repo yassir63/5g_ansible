@@ -801,7 +801,7 @@ echo ""
 # echo "  -d           Use default iperf test playbook"
 # echo "  -p           Use parallel iperf test playbook"
 # echo "  -i           Use interference iperf test playbook"
-if [[ "$run_iperf_test" == true ]]; then
+if [[ "$run_scenario" == true ]]; then
   echo "Running $scenario"
   case "$scenario" in
     "Default Iperf Test (without interference)")
@@ -856,6 +856,7 @@ fi
 if [[ "$run_interference_test" == true && -n "${viz_usrp:-}" ]]; then
   echo ""
   echo ""
+  echo "=========================================="
   echo "To access the Spectrum Visualization VNC session, launch SSH port forwarding and connect with a VNC viewer: "
   echo "Step 1: On your local machine, launch SSH tunnel with port forwarding: "
   echo ""
