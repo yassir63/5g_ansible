@@ -1,0 +1,25 @@
+---
+- name: RESET Power OFF "n300" PDU outlet
+  ansible.builtin.command: rhubarbe pdu off "n300"
+  delegate_to: faraday.inria.fr
+  register: pdu_off
+  changed_when: "'OFF' in pdu_off.stdout"
+  failed_when: >
+    pdu_off.rc != 0 and 'OFF' not in pdu_off.stdout
+
+- name: RESET Power ON "{{ rru }}" PDU outlet
+  shell: rhubarbe pdu on "{{ rru }}"
+  delegate_to: faraday.inria.fr
+
+- name: Verify PDU status
+  shell: rhubarbe pdu status "{{ rru }}"
+  register: pdu_status
+  delegate_to: faraday.inria.fr
+
+- name: Show PDU status
+  debug:
+    var: pdu_status.stdout
+
+- name: Wait 60 seconds for the "{{ rru }}" RRU to be ready
+  pause:
+    seconds: 60

@@ -90,9 +90,14 @@
     values_files:
       - "{{ values_file }}"
     state: present
-    wait: true
+    wait: true        # Helm waits for resources to be Ready
     atomic: true
-# --- gNB pod discovery & wait ---
+
+- name: Wait 15 seconds for the gNB to be ready
+  pause:
+    seconds: 15
+
+# --- gNB pod discovery ---
 - name: Snapshot gNB pods by selectors
   kubernetes.core.k8s_info:
     kind: Pod
@@ -100,35 +105,116 @@
     label_selectors: "{{ srs_gnb_label_selectors }}"
   register: srs_gnb_pods
 
-- name: Debug gNB names/phases (selectors)
+# Enhanced debugging: show per-container details
+- name: Debug gNB pod and container states
   ansible.builtin.debug:
-    msg:
-      - "selectors={{ srs_gnb_label_selectors | join(',') }}"
-      - "names={{ srs_gnb_pods.resources | map(attribute='metadata.name') | list }}"
-      - "phases={{ srs_gnb_pods.resources | map(attribute='status.phase') | list }}"
+    msg: |
+      {% for pod in srs_gnb_pods.resources %}
+      Pod: {{ pod.metadata.name }}
+      Phase: {{ pod.status.phase }}
+      Containers:
+      {% for c in pod.status.containerStatuses %}
+        - name: {{ c.name }}
+          ready: {{ c.ready }}
+          restartCount: {{ c.restartCount }}
+          state:
+            {% if 'waiting' in c.state %}
+              waiting: {{ c.state.waiting.reason }}
+            {% elif 'running' in c.state %}
+              running: Running
+            {% elif 'terminated' in c.state %}
+              terminated: {{ c.state.terminated.reason }}
+            {% else %}
+              unknown
+            {% endif %}
+      {% endfor %}
 
-- name: Wait for gNB pods Ready via selectors
-  ansible.builtin.command: >
-    {{ kubectl_bin | default('kubectl') }}
-    wait --for=condition=Ready
-    pod -l {{ srs_gnb_label_selectors | join(',') }}
-    -n {{ open5gs_ns }} --timeout=600s
-  register: gnb_wait
-  changed_when: false
-  failed_when: gnb_wait.rc != 0
+      {% endfor %}
 
-- name: Refresh gNB pods after wait
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ open5gs_ns }}"
-    label_selectors: "{{ srs_gnb_label_selectors }}"
-  register: srs_gnb_pods
-# Pick the first gNB pod name (useful for exec steps)
+# Pick the first gNB pod name (used for exec / status checks)
 - name: Select a gNB pod name (from selectors)
   ansible.builtin.set_fact:
     gnb_pod_name: "{{ (srs_gnb_pods.resources | first).metadata.name }}"
 
-# gNB starts automatically via its entrypoint
+# Inspect ONLY the 'gnb' container state after the grace period
+- name: Inspect 'gnb' container detailed state after grace period
+  ansible.builtin.command: >
+    {{ kubectl_bin | default('kubectl') }} get pod {{ gnb_pod_name }}
+    -n {{ open5gs_ns }}
+    -o jsonpath='{.status.containerStatuses[?(@.name=="gnb")].ready}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.waiting.reason}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.terminated.reason}'
+  register: gnb_container_state
+  changed_when: false
+  failed_when: false
+
+- name: Debug 'gnb' container state summary
+  ansible.builtin.debug:
+    msg: "gnb container state: {{ gnb_container_state.stdout | default('') }}"
+
+- name: Set gNB recovery flag and retry max (based on 'gnb' container only)
+  ansible.builtin.set_fact:
+    gnb_recovered: >-
+      {{
+        'true' in (gnb_container_state.stdout | default('')) and
+        'CrashLoopBackOff' not in (gnb_container_state.stdout | default('')) and
+        'Error' not in (gnb_container_state.stdout | default(''))
+      }}
+    gnb_rru_retry_max: 3
+
+- name: Retry RRU reset + gNB wait (max {{ gnb_rru_retry_max }} times)
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/rru_gnb_retry.yaml"
+  loop: "{{ range(0, gnb_rru_retry_max | int) | list }}"
+  loop_control:
+    loop_var: retry_index
+  when:
+    - rru in ['n320', 'n300']
+    - not (gnb_recovered | bool)
+  
+- name: Fail if gNB still not recovered after all retries
+  ansible.builtin.fail:
+    msg: >
+      gNB could not establish connection with the RRU ({{ rru }})
+      after {{ gnb_rru_retry_max }} attempts. Deployment aborted.
+  when:
+    - rru in ['n320', 'n300']
+    - not (gnb_recovered | bool)
+
+# - name: Wait for gNB pods Ready via selectors
+#   ansible.builtin.command: >
+#     {{ kubectl_bin | default('kubectl') }}
+#     wait --for=condition=Ready
+#     pod -l {{ srs_gnb_label_selectors | join(',') }}
+#     -n {{ open5gs_ns }} --timeout=600s
+#   register: gnb_wait
+#   changed_when: false
+#   failed_when: false
+
+# - name: Refresh gNB pods after wait
+#   kubernetes.core.k8s_info:
+#     kind: Pod
+#     namespace: "{{ open5gs_ns }}"
+#     label_selectors: "{{ srs_gnb_label_selectors }}"
+#   register: srs_gnb_pods
+
+# # Pick the first gNB pod name (used for exec steps)
+# - name: Select a gNB pod name (from selectors)
+#   ansible.builtin.set_fact:
+#     gnb_pod_name: "{{ (srs_gnb_pods.resources | first).metadata.name }}"
+
+# # gNB starts automatically via its entrypoint
+
+# # Handling n320 and n300 address attribution problem
+
+# # - name: Initialize gNB recovery flag and retry max
+# #   ansible.builtin.set_fact:
+# #     gnb_recovered: false
+# #     gnb_rru_retry_max: 3
+
+# - name: Initialize gNB recovery flag and retry max
+#   ansible.builtin.set_fact:
+#     gnb_recovered: "{{ gnb_wait.rc == 0 }}"
+#     gnb_rru_retry_max: 3
+
+
 
 # ------------------------------
 # Helm-based Telegraf deployment
