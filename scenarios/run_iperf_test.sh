@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Install required Ansible collections
-ansible-galaxy install -r collections/requirements.yml
+ansible-galaxy install -r ../collections/requirements.yml
 
 # Default playbooks
-SETUP_PLAYBOOK="playbooks/default_iperf_test_setup.yml"
-TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
+SETUP_PLAYBOOK="../playbooks/default_iperf_test_setup.yml"
+TEST_PLAYBOOK="../playbooks/run_default_iperf_test.yml"
 
 # By default, run setup
 RUN_SETUP=true
@@ -33,22 +33,22 @@ while getopts ":dpi" opt; do
   case ${opt} in
     s )
       RUN_SETUP=false
-      TEST_PLAYBOOK="playbooks/run_rfsim_iperf_test.yml"
+      TEST_PLAYBOOK="../playbooks/run_rfsim_iperf_test.yml"
       ;;
     d )
       RUN_SETUP=false
-      TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
+      TEST_PLAYBOOK="../playbooks/run_default_iperf_test.yml"
       ;;
     p )
       RUN_SETUP=false
-      TEST_PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
+      TEST_PLAYBOOK="../playbooks/run_parallel_iperf_test.yml"
       ;;
     i )
-      SETUP_PLAYBOOK="playbooks/interference_test_setup.yml"
+      SETUP_PLAYBOOK="../playbooks/interference_test_setup.yml"
       if [[ "$MODE" == "TDD" ]]; then
-          TEST_PLAYBOOK="playbooks/run_interference_test_tdd.yml"
+          TEST_PLAYBOOK="../playbooks/run_interference_test_tdd.yml"
       elif [[ "$MODE" == "FDD" ]]; then
-          TEST_PLAYBOOK="playbooks/run_interference_test_fdd.yml"
+          TEST_PLAYBOOK="../playbooks/run_interference_test_fdd.yml"
       else
           echo "Error: MODE must be set to either 'TDD' or 'FDD' as environment variable for interference test."
           exit 1
