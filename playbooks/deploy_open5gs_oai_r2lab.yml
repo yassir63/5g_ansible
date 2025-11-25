@@ -117,7 +117,7 @@
 - name: Power ON RRU on R2Lab
   hosts: faraday
   roles:
-    - role: r2lab/rru
+    - role: r2lab/rru/setup
 
 - name: Deploy OAI RAN
   hosts: ran_node

@@ -14,7 +14,7 @@
   vars:
     rru: "{{ hostvars[groups['faraday'][0]].interference_usrp }}"
   roles:
-    - role: r2lab/rru
+    - role: r2lab/rru/setup
       when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
 
 - name: Setup fit node on R2Lab for spectre visualization (uhd_fft)
