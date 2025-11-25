@@ -10,11 +10,31 @@ This repository provides a fully automated [Ansible](https://www.ansible.com/) f
 
 It supports:
 
-- **R2Lab deployments** (Open5GS core + OAI on R2Lab resources).
+- **R2Lab deployments** (Open5GS core + OAI/srsRAN on R2Lab resources).
 - **RF Simulation** (no R2Lab devices).
-- **Multiple RAN combos**: OAI gNB (rfsim), srsRAN gNB (ZMQ), UERANSIM gNB/UE.
+- **Multiple RAN combos**: OAI gNB/UE, srsRAN gNB/UE, UERANSIM gNB/UE.
 
 This work was done by **Yassir Amami** and **Ziyad Mabrouk** as part of our mission at [Inria Sophia Antipolis](https://www.inria.fr/en/inria-centre-universite-cote-azur).
+
+---
+
+
+
+## 🔍 Explore the Codebases
+
+This repository integrates and builds upon several open-source projects to provide a comprehensive 5G deployment and monitoring framework. If you want to dive deeper or customize the components, feel free to explore the following codebases:
+
+- [**/5g_ansible**](https://github.com/yassir63/5g_ansible): Automates the full testbed setup and orchestrates the execution of experimental scenarios. ( This exact Repo !)
+- [**/oai-cn5g-fed**](https://github.com/yassir63/oai-cn5g-fed): OpenAirInterface 5G Core Network Helm charts.
+- [**/oai5g-rru**](https://github.com/yassir63/oai5g-rru): OpenAirInterface 5G Core Network Deployment on SophiaNode/R2lab using Helm Charts and nepi-ng.
+- [**/open5gs-k8s**](https://github.com/yassir63/open5gs-k8s): 5G Open5GS Core network deployment on Kubernetes.
+- [**/5g-monarch**](https://github.com/Ziyad-Mabrouk/5g-monarch): Extends Monarch for RAN metrics and new KPIs.
+- [**/flexric**](https://github.com/Ziyad-Mabrouk/flexric): Modified FlexRIC with new E2SM for adaptive log control.
+- [**/oai-gnb-log-parser**](https://github.com/Ziyad-Mabrouk/oai-gnb-log-parser): Lightweight Prometheus exporter for OAI gNB logs.
+- [**/openairinterface5g**](https://github.com/Ziyad-Mabrouk/openairinterface5g): Modified OAI gNB with E2SM support for monitoring interval control.
+- [**/srsran-helm**](https://github.com/Ziyad-Mabrouk/srsran-helm): Dockerfiles and Kubernetes deployment manifests for srsRAN, srsUE, and Telegraf-based monitoring integration.
+
+Feel free to fork these repositories and make your own changes to suit your experimentation needs. Contributions and feedback are always welcome!
 
 ---
 
@@ -48,54 +68,51 @@ From the SLICES Webshell:
 ```bash
 git clone https://github.com/yassir63/5g_ansible.git
 cd 5g_ansible
-./deploy.sh r2lab
+./deploy.sh
 ```
 
-This will:
+This will provide you with an interactive menu which depending on your choices will : 
 
 - Allocate and reset reserved machines via `pos`.
 - Install required packages.
 - Set up a Kubernetes cluster across nodes.
-- Deploy **Open5GS Core** (with slice support via the `open5gs-k8s` dependency).
-- Deploy the **Monarch** monitoring stack which allows the monitoring of the Core as well as the OAI gNB or the srsRAN gNB for now.
+- Deploy **5G Core** and **5G gNB**.
+- Deploy the **Monarch** monitoring stack if specified which allows the monitoring of the Core, the gNB as well as machine performance and energy usage.
 - Prepare R2Lab resources (RRU, UEs, Fit Nodes) as required.
 
-> **Note:** By default, UEs are prepared but not necessarily connected. Use one of the **iperf test scenarios** below to exercise the system, or adjust the last section of the relevant deploy playbook if you want automatic attach.
+> **Note:** By default, UEs are prepared but not necessarily connected for all scenarios. Use one of the **iperf test scenarios** below to exercise the system, or adjust the last section of the relevant deploy playbook if you want automatic attach.
 
 ---
 
 ## 🧭 Unified Deployment Launcher
 
-Use the top-level `deploy.sh` to select a deployment target explicitly:
+Use the top-level `deploy.sh` to interactively configure and deploy your 5G network. The script provides a menu-driven interface to select the core, RAN, platform, and other deployment options.
+
+### Interactive Deployment
+
+Run the script without arguments to start the interactive menu:
 
 ```bash
-./deploy.sh <target>
+./deploy.sh
 ```
 
-Available **targets**:
+The script will guide you through the following steps:
+- Select the **Core Network** (OAI or Open5GS).
+- Select the **RAN** (OAI, srsRAN, or UERANSIM).
+- Choose the deployment nodes (`sopnode-f1`, `sopnode-f2`, or `sopnode-f3`).
+- Optionally enable **monitoring** and select a monitoring node.
+- Choose the deployment platform (`R2Lab` or `RFSIM`).
+- Configure additional options such as interference tests (if applicable).
 
-- `r2lab` → `deployments/deploy.sh`
-  - Runs **Open5GS core + OAI** on **R2Lab**.
-- `oai_rfsim` → `deployments/deploy_rfsim_oai_core.sh`
-  - Runs **OAI core + OAI gNB** with **RFSIM** (emulated).
-- `open5gs_rfsim` → `deployments/deploy_open5gs_rfsim.sh`
-  - Runs **Open5GS core + OAI gNB** with **RFSIM** (emulated).
-- `open5gs_srsran` → `deployments/deploy_open5gs_srsRAN.sh`
-  - Runs **Open5GS core + srsRAN gNB + UEs** (**ZMQ** emulated).
-- `open5gs_ueransim` → `deployments/deploy_open5gs_ueransim.sh`
-  - Runs **Open5GS core + UERANSIM gNB + emulated UEs**.
+### Example
 
-Examples:
+Interactive deployment:
 
 ```bash
-./deploy.sh r2lab
-./deploy.sh oai_rfsim
-./deploy.sh open5gs_rfsim
-./deploy.sh open5gs_srsran
-./deploy.sh open5gs_ueransim
+./deploy.sh
 ```
 
-> The wrapper is **explicit only** (no extra options forwarded). If you need to pass Ansible variables later, run the underlying playbooks directly or extend the wrapper.
+> **Note:** The interactive menu allows for more customization, such as enabling monitoring or configuring interference tests. For advanced use cases, you can also modify the underlying playbooks or extend the wrapper script.
 
 ---
 
@@ -160,20 +177,6 @@ cd iperfTests
 
 ---
 
-## 🛰 RF Simulation Mode (no R2Lab)
-
-To run the setup **without** R2Lab devices using RF Simulation only:
-
-```bash
-./deploy.sh open5gs_rfsim
-# then
-cd iperfTests && ./run_rfsim_iperf_test.sh
-```
-
-The playbooks will create NR-UE pods (e.g., `oai-nr-ue`, `oai-nr-ue2`, `oai-nr-ue3`) on Kubernetes.
-
----
-
 ## 🧾 Inventory Configuration
 
 All deployments are driven by `inventory/hosts.ini`:
@@ -220,7 +223,7 @@ ran_node
 monitor_node
 ```
 
-> **IMPORTANT:** set `ansible_user` in `[faraday]` to your actual R2Lab slice name.
+> **IMPORTANT:** This file is dynamiccaly composed by your entries within the interactive deployment script. You will be asked during the first time to speicify once your actual r2lab slice name if you ever decide to use it.
 
 ---
 
