@@ -29,6 +29,18 @@
 #     backrefs: true
 #   when: rru in ['jaguar', 'panther']
 
+- name: Normalize flags
+  ansible.builtin.set_fact:
+    mon_enabled: "{{ (monitoring_enabled | default(false)) | bool }}"
+
+- name: Enable FLEXRIC in prepare-demo-oai.sh if monitoring is enabled
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/oai-ran/prepare-demo-oai.sh"
+    regexp: '^FLEXRIC='
+    line: "FLEXRIC=true"
+    backrefs: true
+  when: mon_enabled
+
 - name: Run prepare-demo-oai.sh to pull & configure OAI RAN charts
   ansible.builtin.command: "{{ script_path }} -a -R {{ rru }} -F {{ conf }}"
   args:
@@ -36,15 +48,16 @@
   register: ran_script
   changed_when: "'OAI5G charts are now configured' in ran_script.stdout"
 
-#- name: Install OAI FlexRIC chart using Helm
-#  kubernetes.core.helm:
-#    name: oai-flexric
-#    chart_ref: "{{ charts_base }}/oai-flexric"
-#    release_namespace: "{{ ran_ns }}"
-#    create_namespace: true
-#    state: present
-#    wait: true
-#  register: helm_flex
+- name: Install OAI FlexRIC chart using Helm if monitoring is enabled
+  kubernetes.core.helm:
+    name: oai-flexric
+    chart_ref: "{{ charts_base }}/oai-flexric"
+    release_namespace: "{{ ran_ns }}"
+    create_namespace: true
+    state: present
+    wait: true
+  register: helm_flex
+  when: mon_enabled
 
 - name: Install OAI gNB chart using Helm
   kubernetes.core.helm:

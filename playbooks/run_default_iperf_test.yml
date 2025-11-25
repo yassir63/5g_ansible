@@ -1,22 +1,45 @@
 ---
-- name: Iperf3 reverse client test for 200 seconds on each UE via Faraday (Downlink Test)
+- name: Run downlink then uplink iperf3 tests on first UE
   hosts: faraday
   gather_facts: false
-  tasks:
-    - name: Run iperf3 reverse client on each UE for 200s
-      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -t 200 -R -J log_dl_test.json'
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        loop_var: ue
-      delegate_to: faraday.inria.fr
 
-- name: Iperf3 client test for 200 seconds on each UE via Faraday (Uplink Test)
-  hosts: faraday
-  gather_facts: false
+  vars:
+    ue1: "{{ groups['qhats'][0] }}"
+
   tasks:
-    - name: Run iperf3 client on each UE for 200s
-      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -t 200 -J log_ul_test.json'
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        loop_var: ue
-      delegate_to: faraday.inria.fr
+
+    - name: Start DOWNLINK iperf3 on {{ ue1 }} (UE → UPF)
+      shell: >
+        ssh root@{{ ue1 }}
+        'iperf3 -c {{ hostvars[ue1].upf_ip }} --bidir -t 300 -J log_iperf_dl.json'
+      async: 1200
+      poll: 0
+      register: dl_job
+
+    - name: Wait for downlink job to finish
+      async_status:
+        jid: "{{ dl_job.ansible_job_id }}"
+      register: dl_result
+      until: dl_result.finished
+      retries: 60
+      delay: 5
+
+    - name: Wait 30 seconds before uplink test
+      wait_for:
+        timeout: 30
+
+    - name: Start UPLINK iperf3 on {{ ue1 }} (UPF → UE using -R)
+      shell: >
+        ssh root@{{ ue1 }}
+        'iperf3 -c {{ hostvars[ue1].upf_ip }} --bidir -R -t 300 -J log_iperf_ul.json'
+      async: 1200
+      poll: 0
+      register: ul_job
+
+    - name: Wait for uplink job to finish
+      async_status:
+        jid: "{{ ul_job.ansible_job_id }}"
+      register: ul_result
+      until: ul_result.finished
+      retries: 60
+      delay: 5

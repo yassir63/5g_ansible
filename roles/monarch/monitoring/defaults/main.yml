@@ -1,1 +1,2 @@
 repo_dest: "~/5g-monarch"
+set_gnb_monitoring: false
