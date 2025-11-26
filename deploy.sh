@@ -773,7 +773,7 @@ fi
 echo ""
 echo "Starting deployment..."
 # Call appropriate deployment script
-key="${core}-${ran}-${platform}"
+key="${core,,}-${ran,,}-${platform,,}"
 script=""
 case "$key" in
   oai-oai-rfsim)            script="deploy_oai_rfsim.sh" ;;
