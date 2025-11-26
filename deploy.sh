@@ -702,12 +702,12 @@ duration_minutes=120
 # Try to reserve for 120 minutes
 echo "Trying to reserve nodes: ${nodes_to_reserve[*]} for $duration_minutes minutes..."
 reservation_output=$(pos calendar create -d "$duration_minutes" -s "now" "${nodes_to_reserve[@]}" 2>&1)
-if [[ $? -ne 0 ]]; then
+if [[ $? -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
   # If it fails, try with 60 minutes
   echo "❌ Reservation for 120 minutes failed. Trying to reserve for $duration_minutes minutes..."
   duration_minutes=60
   reservation_output=$(pos calendar create -d "$duration_minutes" -s "now" "${nodes_to_reserve[@]}" 2>&1)
-  if [[ $? -ne 0 ]]; then
+  if [[ $? -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
     echo "❌ Reservation for 60 minutes also failed."
     echo "Error details: $reservation_output"
     read -rp "Do you want to ignore the reservation failure and continue? [y/N]: " ignore_choice
@@ -857,9 +857,9 @@ if [[ "$run_interference_test" == true && -n "${viz_usrp:-}" ]]; then
   echo ""
   echo ""
   echo "=========================================="
+  echo ""
   echo "To access the Spectrum Visualization VNC session, launch SSH port forwarding and connect with a VNC viewer: "
   echo "Step 1: On your local machine, launch SSH tunnel with port forwarding: "
-  echo ""
   # Get fit node name from (if viz_usrp is b210 -> fit02, if b205mini -> fit08)
   if [[ "$viz_usrp" == "b210" ]]; then
     fit_node="fit02"
@@ -870,6 +870,11 @@ if [[ "$run_interference_test" == true && -n "${viz_usrp:-}" ]]; then
   echo "ssh -t ${R2LAB_USERNAME}@faraday.inria.fr -L 5901:127.0.0.1:5901 ssh root@${fit_node} -L 5901:127.0.0.1:5901"
   echo ""
   echo "Step 2: Open your VNC viewer and connect to localhost:1 (using password: 1234567890)"
+  echo ""
+  echo "Note: to rerun this interference scenario, do: "
+  echo ""
+  echo "export MODE=${MODE}"
+  echo "./scenarios/run_iperf_test.sh -i --no-setup"
   echo ""
 fi
 
