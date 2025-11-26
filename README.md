@@ -4,9 +4,9 @@
 
 This repository provides a fully automated [Ansible](https://www.ansible.com/) framework for deploying and monitoring a sliced 5G network on Kubernetes. It is intended to be run from the [SLICES platform Webshell](https://post-5g-web.slices-ri.eu/), assuming you have:
 
-- A valid [SLICES account](https://doc.slices-ri.eu/).
-- A valid reservation for the machines `sopnode-f1`, `sopnode-f2`, and `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
-- A valid [R2Lab account and reservation](https://r2lab.inria.fr/tuto-010-registration.md).
+- A valid [SLICES account](https://doc.slices-ri.eu/SupportingServices/getanaccount.html).
+- A valid [R2Lab account](https://r2lab.inria.fr/tuto-010-registration.md).
+- Working SSH connection from your Duckburg to R2LAB. For that, the public SSH key of your Duckburg should be [uploaded to R2LAB](https://r2lab.inria.fr/tuto-010-registration.md).
 
 It supports:
 
@@ -48,9 +48,8 @@ Feel free to fork these repositories and make your own changes to suit your expe
 │  ├─ deploy_open5gs_rfsim.sh  # Open5GS core + OAI gNB (RFSIM emulated)
 │  ├─ deploy_open5gs_srsRAN.sh # Open5GS core + srsRAN gNB + UEs (ZMQ emulated)
 │  └─ deploy_open5gs_ueransim.sh # Open5GS core + UERANSIM gNB + emulated UEs
-├─ iperfTests/                 # Iperf test scenarios & runners (moved here)
-│  ├─ run_iperf_test.sh        # Default/parallel/interference test runner
-│  └─ run_rfsim_iperf_test.sh  # RFSim iperf tests
+├─ scenarios/                  # Iperf test scenarios
+│  └─ run_iperf_test.sh        # Default/parallel/interference/rfsim test runner
 ├─ playbooks/                  # Ansible playbooks
 ├─ inventory/                  # hosts.ini and group_vars
 ├─ collections/                # Ansible collections
@@ -73,14 +72,14 @@ cd 5g_ansible
 
 This will provide you with an interactive menu which depending on your choices will : 
 
-- Allocate and reset reserved machines via `pos`.
+- Allocate and reset reserved resources.
 - Install required packages.
 - Set up a Kubernetes cluster across nodes.
 - Deploy **5G Core** and **5G gNB**.
 - Deploy the **Monarch** monitoring stack if specified which allows the monitoring of the Core, the gNB as well as machine performance and energy usage.
 - Prepare R2Lab resources (RRU, UEs, Fit Nodes) as required.
 
-> **Note:** By default, UEs are prepared but not necessarily connected for all scenarios. Use one of the **iperf test scenarios** below to exercise the system, or adjust the last section of the relevant deploy playbook if you want automatic attach.
+> **Note:** By default, UEs are prepared and connected for all scenarios. Use one of the **iperf test scenarios** below to exercise the system, or adjust the last section of the relevant deploy playbook if you don't want your UEs to automatically attach.
 
 ---
 
@@ -118,62 +117,59 @@ Interactive deployment:
 
 ## 📶 Iperf Test Scenarios
 
-After deployment, choose one of the following scenarios. The helper script is now under `iperfTests/`. ( works only for the R2Lab scenario for now )
+After deployment, choose one of the following scenarios. The helper script is under `scenarios/`.
 
 #### Command Overview
 
 ```bash
-cd iperfTests
-./run_iperf_test.sh [OPTION] [--no-setup]
+./scenarios/run_iperf_test.sh [OPTION] [--no-setup]
 ```
 
-- `-d`: Run the default iperf test
-- `-p`: Run the parallel iperf test
-- `-i`: Run the interference test
-- `--no-setup`: Skip the setup phase (useful for repeat runs)
+- `-d`: Runs the default iperf test
+- `-p`: Runs the parallel iperf test
+- `-i`: Runs the interference test
+- `-s`: Runs RFSim iperf test
+- `--no-setup`: Skips the setup phase (useful for repeat runs)
 
 ### 1) Default Iperf Test
 
 ```bash
-cd iperfTests
-./run_iperf_test.sh -d
+./scenarios/run_iperf_test.sh -d
 ```
 
-- Connects UEs defined in `[qhats]`.
-- Each UE runs downlink then uplink iperf3 separately.
+- Connects the *first* UE defined in `[qhats]`.
+- The UE runs iperf for 5 minutes on downlink then uplink (10 minutes in total for the scenario).
 
-### 2) Parallel Iperf Tests
+### 2) Parallel Iperf Test
 
 ```bash
-cd iperfTests
-./run_iperf_test.sh -p
+./scenarios/run_iperf_test.sh -p
 ```
 
-- Connects the *first 4* UEs.
-- Each UE runs bidirectional iperf3 for 400s, staggered by 100s.
+- Connects the *first 4* UEs defined in `[qhats]`.
+- Each UE runs bidirectional iperf3 for 5 minutes, staggered by 100s. (10 minutes in total for the scenario).
 
 ### 3) Interference Test + Spectrum Visualization
 
 ```bash
-cd iperfTests
-./run_iperf_test.sh -i
+./scenarios/run_iperf_test.sh -i
 ```
 
-- Connects the first UE.
+- Connects the *first* UE.
 - Spectrum visualization (`uhd_fft`) on the first fit node.
 - Noise generation via second fit node (`interference_usrp=fit`) or specific USRP (`n300`/`n320`).
-- Noise starts 100s after UE begins bidirectional iperf3.
+- Noise starts 100s after UE begins a 5-minutes-long bidirectional iperf3.
+> **Note:** This scenario requires the user to export a `MODE` environment variable that takes either `TDD` if OAI RAN is deployed, or `FDD` if srsRAN is deployed (based on the gNB configuration we set).
 
-#### RF Simulation Iperf
+### 4) RF Simulation Iperf Test
 
 ```bash
-cd iperfTests
-./run_rfsim_iperf_test.sh
+./scenarios/run_iperf_test.sh -s
 ```
 
-- Runs uplink then downlink iperf on RFSim UEs (slice 1 & 2).
+- Runs iperf on downlink then uplink, on RFSim UEs OAI-NR-UE1 then OAI-NR-UE2, for 200s each, staggered by 100s (10 minutes in total for the scenario).
 
-> Use `--no-setup` to skip connection & device config when re-running a scenario without changes.
+> Use `--no-setup` to skip device config when re-running a scenario without changes.
 
 ---
 
@@ -223,7 +219,7 @@ ran_node
 monitor_node
 ```
 
-> **IMPORTANT:** This file is dynamiccaly composed by your entries within the interactive deployment script. You will be asked during the first time to speicify once your actual r2lab slice name if you ever decide to use it.
+> **IMPORTANT:** This file is dynamiccaly composed by your entries within the interactive deployment script. You will be asked during the first time to speicify once your actual R2LAB slice name (username), email, and password, if you ever decide to use it.
 
 ---
 
@@ -248,8 +244,7 @@ After deployment, the terminal prints the SSH command to access the **Monarch** 
 
 ## 🧰 Troubleshooting
 
-- Ensure SSH access from Webshell → `faraday.inria.fr` and from your local machine → Webshell.
-- Verify reservations in the Duckburg and R2Lab calendars.
+- Ensure SSH access from Duckburg to R2LAB (`faraday.inria.fr)` and from your local machine to Duckburg.
 - Testbeds evolve; changes on SLICES/R2Lab can affect experiments.
 
 ---
