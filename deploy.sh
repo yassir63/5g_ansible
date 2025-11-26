@@ -702,12 +702,14 @@ duration_minutes=120
 # Try to reserve for 120 minutes
 echo "Trying to reserve nodes: ${nodes_to_reserve[*]} for $duration_minutes minutes..."
 reservation_output=$(pos calendar create -d "$duration_minutes" -s "now" "${nodes_to_reserve[@]}" 2>&1)
-if [[ $? -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
+reservation_exit_code=$?
+if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
   # If it fails, try with 60 minutes
   echo "❌ Reservation for 120 minutes failed. Trying to reserve for $duration_minutes minutes..."
   duration_minutes=60
   reservation_output=$(pos calendar create -d "$duration_minutes" -s "now" "${nodes_to_reserve[@]}" 2>&1)
-  if [[ $? -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
+  reservation_exit_code=$?
+  if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
     echo "❌ Reservation for 60 minutes also failed."
     echo "Error details: $reservation_output"
     read -rp "Do you want to ignore the reservation failure and continue? [y/N]: " ignore_choice
