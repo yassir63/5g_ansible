@@ -54,7 +54,8 @@
     rru_file_map:
       benetel: values-benetel.yaml
       liteon:  values-liteon.yaml
-      n300:    values-n300.yaml
+      #n300:    values-n300.yaml
+      n300:    values-n300-n78-20MHz.yaml
       n320:    values-n320.yaml
       rfsim:   values-rfsim.yaml
 
