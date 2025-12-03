@@ -6,7 +6,7 @@
     -o ConnectTimeout=5 -n root@{{ item }} \
     qhat-init --mode={{ hostvars[item].mode }} \
               --dnn={{ hostvars[item].dnn }} \
-              --nssai={{ hostvars[item].nssai }}
+              --nssai="{{ hostvars[item].nssai }}"
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0
