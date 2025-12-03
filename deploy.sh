@@ -444,21 +444,21 @@ get_ue_vars() {
   if [[ "$core_l" == "oai" && "$ran_l" == "oai" ]]; then
     upf_ip="10.0.0.1"
     if [[ "$dnn" == "internet" ]]; then
-      nssai="01.0xFFFFFF"
+      nssai="01.FFFFFF"
     else
       nssai="01.000001"
     fi
 
   elif [[ "$core_l" == "open5gs" && "$ran_l" == "oai" ]]; then
     if [[ "$dnn" == "internet" ]]; then
-      upf_ip="10.41.0.1"; nssai="01.0xFFFFFF"
+      upf_ip="10.41.0.1"; nssai="01.FFFFFF"
     else
       upf_ip="10.42.0.1"; nssai="01.000001"
     fi
 
   elif [[ "$core_l" == "open5gs" && "$ran_l" != "oai" ]]; then
     if [[ "$dnn" == "internet" ]]; then
-      upf_ip="10.41.0.1"; nssai="01.000001"
+      upf_ip="10.41.0.1"; nssai="01.FFFFFF"
     else
       upf_ip="10.42.0.1"; nssai="01.000002"
     fi
