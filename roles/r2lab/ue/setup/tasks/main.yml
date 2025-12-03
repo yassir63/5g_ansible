@@ -32,29 +32,13 @@
     label: "{{ item }}"
   register: power_ue_jobs
 
-- name: Set MBIM/QMI mode on UEs
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'set-{{ hostvars[item].mode }}'
-  delegate_to: faraday.inria.fr
-  async: 1800
-  poll: 0
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    label: "{{ item }}"
-  register: set_ue_jobs
-
-- name: Wait for setup to finish on all UEs
-  async_status:
-    jid: "{{ item.ansible_job_id }}"
-  register: job_result
-  until: job_result.finished
-  retries: 100
-  delay: 10
-  loop: "{{ set_ue_jobs.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-
-- name: Prepare UE "{{ ue }}" via jump host
-  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'prepare-ue --dnn="{{ hostvars[item].dnn }}" --nssai="{{ hostvars[item].nssai }}"'
+- name: Init UE "{{ item }}" via jump host
+  shell: >
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    -o ConnectTimeout=5 -n root@{{ item }} \
+    qhat-init --mode="{{ hostvars[item].mode }}" \
+              --dnn="{{ hostvars[item].dnn }}" \
+              --nssai="{{ hostvars[item].nssai }}"
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0
