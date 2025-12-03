@@ -1,0 +1,7 @@
+---
+
+- name: Test qhat-init
+  hosts: faraday
+  roles:
+    - role: r2lab/ue/test
+      when: rru != 'rfsim'
