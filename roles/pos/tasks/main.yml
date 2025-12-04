@@ -19,6 +19,11 @@
     pos nodes bootparameter {{ node }} {{ boot_parameters_f3 }}
   when: rru in ['jaguar', 'panther'] and node in ['sopnode-f3']
 
+- name: (POS) Set boot parameters on sopnode-f3 for RRU {{ hostvars[groups['faraday'][0]].rru }}
+  shell: >
+    pos nodes bootparameter {{ node }} {{ boot_parameters_n3xx }}
+  when: rru in ['n300', 'n320'] and node in ['sopnode-f3']
+
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
 
