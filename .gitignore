@@ -1,3 +1,4 @@
 .vault_pass.txt
 .r2lab_config
 inventory/hosts.ini
+playbooks/admin.conf
