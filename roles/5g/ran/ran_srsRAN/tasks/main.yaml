@@ -91,7 +91,7 @@
     values_files:
       - "{{ values_file }}"
     state: present
-    wait: true        # Helm waits for resources to be Ready
+    wait: true
     atomic: true
 
 - name: Wait 15 seconds for the gNB to be ready
@@ -132,35 +132,48 @@
 
       {% endfor %}
 
-# Pick the first gNB pod name (used for exec / status checks)
+# Pick the first gNB pod name
 - name: Select a gNB pod name (from selectors)
   ansible.builtin.set_fact:
     gnb_pod_name: "{{ (srs_gnb_pods.resources | first).metadata.name }}"
 
-# Inspect ONLY the 'gnb' container state after the grace period
-- name: Inspect 'gnb' container detailed state after grace period
+- name: Probe 'gnb' container state 3 times with small delay
   ansible.builtin.command: >
+    bash -lc "
     {{ kubectl_bin | default('kubectl') }} get pod {{ gnb_pod_name }}
     -n {{ open5gs_ns }}
     -o jsonpath='{.status.containerStatuses[?(@.name=="gnb")].ready}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.waiting.reason}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.terminated.reason}'
-  register: gnb_container_state
+    "
+  register: gnb_state_probes
   changed_when: false
   failed_when: false
+  loop: "{{ range(0, 3) | list }}"
+  loop_control:
+    loop_var: probe_index
 
-- name: Debug 'gnb' container state summary
+- name: Show gNB sampled states
   ansible.builtin.debug:
-    msg: "gnb container state: {{ gnb_container_state.stdout | default('') }}"
+    var: gnb_state_probes.results
 
-- name: Set gNB recovery flag and retry max (based on 'gnb' container only)
+# Decide if ANY of the 3 samples shows ERROR or CRASHLOOP
+- name: Compute retry need based on 3 probes
   ansible.builtin.set_fact:
-    gnb_recovered: >-
+    gnb_need_retry: >-
       {{
-        'true' in (gnb_container_state.stdout | default('')) and
-        'CrashLoopBackOff' not in (gnb_container_state.stdout | default('')) and
-        'Error' not in (gnb_container_state.stdout | default(''))
+        (
+          gnb_state_probes.results | map(attribute='stdout')
+          | select('search', 'CrashLoopBackOff') | list | length > 0
+        )
+        or
+        (
+          gnb_state_probes.results | map(attribute='stdout')
+          | select('search', 'Error') | list | length > 0
+        )
       }}
+    gnb_recovered: "{{ not gnb_need_retry }}"
     gnb_rru_retry_max: 3
 
+# Retry mechanism
 - name: Retry RRU reset + gNB wait (max {{ gnb_rru_retry_max }} times)
   ansible.builtin.include_tasks: "{{ role_path }}/tasks/rru_gnb_retry.yaml"
   loop: "{{ range(0, gnb_rru_retry_max | int) | list }}"
@@ -168,8 +181,8 @@
     loop_var: retry_index
   when:
     - rru in ['n320', 'n300']
-    - not (gnb_recovered | bool)
-  
+    - gnb_need_retry | bool
+
 - name: Fail if gNB still not recovered after all retries
   ansible.builtin.fail:
     msg: >
@@ -177,45 +190,7 @@
       after {{ gnb_rru_retry_max }} attempts. Deployment aborted.
   when:
     - rru in ['n320', 'n300']
-    - not (gnb_recovered | bool)
-
-# - name: Wait for gNB pods Ready via selectors
-#   ansible.builtin.command: >
-#     {{ kubectl_bin | default('kubectl') }}
-#     wait --for=condition=Ready
-#     pod -l {{ srs_gnb_label_selectors | join(',') }}
-#     -n {{ open5gs_ns }} --timeout=600s
-#   register: gnb_wait
-#   changed_when: false
-#   failed_when: false
-
-# - name: Refresh gNB pods after wait
-#   kubernetes.core.k8s_info:
-#     kind: Pod
-#     namespace: "{{ open5gs_ns }}"
-#     label_selectors: "{{ srs_gnb_label_selectors }}"
-#   register: srs_gnb_pods
-
-# # Pick the first gNB pod name (used for exec steps)
-# - name: Select a gNB pod name (from selectors)
-#   ansible.builtin.set_fact:
-#     gnb_pod_name: "{{ (srs_gnb_pods.resources | first).metadata.name }}"
-
-# # gNB starts automatically via its entrypoint
-
-# # Handling n320 and n300 address attribution problem
-
-# # - name: Initialize gNB recovery flag and retry max
-# #   ansible.builtin.set_fact:
-# #     gnb_recovered: false
-# #     gnb_rru_retry_max: 3
-
-# - name: Initialize gNB recovery flag and retry max
-#   ansible.builtin.set_fact:
-#     gnb_recovered: "{{ gnb_wait.rc == 0 }}"
-#     gnb_rru_retry_max: 3
-
-
+    - gnb_need_retry | bool
 
 # ------------------------------
 # Helm-based Telegraf deployment
