@@ -21,7 +21,9 @@
   ansible.builtin.git:
     repo: https://github.com/richardcochran/linuxptp.git
     dest: /tmp/linuxptp
-    version: master
+    #version: master
+    version: v4.4
+    force: yes
     depth: 1
   become: yes
   register: git_clone

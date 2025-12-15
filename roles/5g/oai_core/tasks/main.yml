@@ -84,5 +84,5 @@
   args:
     chdir: "{{ repo_dest }}"
   register: demo_script
-  changed_when: "'OAI5G CN is running' in demo_script.stdout"
+  changed_when: "'All 5G Core pods are READY' in demo_script.stdout"
 

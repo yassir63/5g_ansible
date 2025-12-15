@@ -7,5 +7,5 @@
   args:
     chdir: "{{ repo_dest }}"
   register: gnb_script
-  changed_when: "'OAI5G CN is running' in gnb_script.stdout"
+  changed_when: "'When you finish' in gnb_script.stdout"
 
