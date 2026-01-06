@@ -20,6 +20,16 @@
   pip:
     name: virtualenv
 
+- name: Fix Python libs for Kubernetes modules
+  pip:
+    name:
+      - "kubernetes>=32.0.0"
+      - "openshift>=0.13.0"
+      - "urllib3<2"
+    state: latest
+    executable: pip3
+  become: true
+
 - name: Disable swap
   shell: |
     swapoff -a
