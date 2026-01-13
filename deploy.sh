@@ -12,6 +12,7 @@ CYAN="\033[1;36m"
 RESET="\033[0m"
 
 # Default parameters
+DEFAULT_DURATION="120"
 DEFAULT_CORE_NODE="sopnode-f2"
 DEFAULT_RAN_NODE="sopnode-f3"
 DEFAULT_MONITOR_NODE="sopnode-f1"
@@ -694,6 +695,28 @@ export monitoring_enabled="$monitoring_enabled"
 export CORE="$core"
 export RAN="$ran"
 
+
+################################# DEBUG NOW
+echo "Starting deployment..."
+# Call appropriate deployment script
+key="${core,,}-${ran,,}-${platform,,}"
+script=""
+case "$key" in
+  oai-oai-rfsim)            script="deploy_oai_rfsim.sh" ;;
+  oai-oai-r2lab)            script="deploy_oai_r2lab.sh" ;;
+  open5gs-oai-rfsim)        script="deploy_open5gs_oai_rfsim.sh" ;;
+  open5gs-oai-r2lab)        script="deploy_open5gs_oai_r2lab.sh" ;;
+  open5gs-srsran-r2lab)     script="deploy_open5gs_srsRAN_r2lab.sh" ;;
+  open5gs-srsran-rfsim)     script="deploy_open5gs_srsRAN_rfsim.sh" ;;
+  open5gs-ueransim-rfsim)   script="deploy_open5gs_ueransim.sh" ;;
+  *) echo "❌ Unknown deployment key: $key"; exit 1 ;;
+esac
+
+echo "Launching $script ..."
+exit
+################################# DEBUG NOW
+
+
 # ========== Reserve Nodes on SLICES ==========
 # Create a calendar entry for the required nodes with the command: 
 # pos calendar create -d <duration in minutes> -s "now" <node/nodes separated by space>
@@ -710,19 +733,19 @@ fi
 nodes_to_reserve=($(printf "%s\n" "${nodes_to_reserve[@]}" | sort -u))
 reservation_id=""
 slices_reserved=false
-duration_minutes=120
-# Try to reserve for 120 minutes
+duration_minutes="${DEFAULT_DURATION}"
+# Try to reserve 
 echo "Trying to reserve nodes: ${nodes_to_reserve[*]} for $duration_minutes minutes..."
 reservation_output=$(pos calendar create -d "$duration_minutes" -s "now" "${nodes_to_reserve[@]}" 2>&1)
 reservation_exit_code=$?
-if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
+if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "${reservation_output}" ]]; then
   # If it fails, try with 60 minutes
-  echo "❌ Reservation for 120 minutes failed. Trying to reserve for $duration_minutes minutes..."
+  echo "❌ Reservation for ${reservation_output} minutes failed. Trying to reserve for 60 minutes..."
   duration_minutes=60
   reservation_output=$(pos calendar create -d "$duration_minutes" -s "now" "${nodes_to_reserve[@]}" 2>&1)
   reservation_exit_code=$?
   if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
-    echo "❌ Reservation for 60 minutes also failed."
+    echo "❌ Reservation for 60 minutes failed too."
     echo "Error details: $reservation_output"
     read -rp "Do you want to ignore the reservation failure and continue? [y/N]: " ignore_choice
     if [[ ! "$ignore_choice" =~ ^[Yy]$ ]]; then
@@ -795,7 +818,7 @@ case "$key" in
   open5gs-oai-rfsim)        script="deploy_open5gs_oai_rfsim.sh" ;;
   open5gs-oai-r2lab)        script="deploy_open5gs_oai_r2lab.sh" ;;
   open5gs-srsran-r2lab)     script="deploy_open5gs_srsRAN_r2lab.sh" ;;
-  open5gs-srsran-rfsim)       script="deploy_open5gs_srsRAN_rfsim.sh" ;;
+  open5gs-srsran-rfsim)     script="deploy_open5gs_srsRAN_rfsim.sh" ;;
   open5gs-ueransim-rfsim)   script="deploy_open5gs_ueransim.sh" ;;
   *) echo "❌ Unknown deployment key: $key"; exit 1 ;;
 esac
