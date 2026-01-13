@@ -166,7 +166,7 @@ R2LAB_UES=()
 
 # If R2Lab platform is selected, ask for RU and UEs
 if [[ "$platform" == "r2lab" ]]; then
-  R2LAB_RUs=("jaguar" "panther" "n300" "n320")
+  R2LAB_RUs=("benetel1" "benetel2" "jaguar" "panther" "n300" "n320")
   # Select RU
   # Make jaguar the default if the user just presses enter
   echo ""
@@ -525,9 +525,9 @@ case "$R2LAB_RU" in
   jaguar | panther)
       faraday_conf="conf=gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf" ;;
   benetel1 | benetel2)
-      faraday_conf="conf=gnb.sa.band78.273prb.fhi72.4x4-benetel550-ci-scripts.conf"
+      faraday_conf="conf=gnb.sa.band78.273prb.fhi72.4x4-benetel550-ci-scripts.conf" ;;
   n300 | n320)
-    faraday_conf="conf=gnb.sa.band78.106prb.n310.7ds2u.conf" ;;
+      faraday_conf="conf=gnb.sa.band78.106prb.n310.7ds2u.conf" ;;
   rfsim)
     faraday_conf="conf=gnb.sa.band78.106prb.rfsim.conf" ;;
   *)
