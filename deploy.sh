@@ -435,9 +435,16 @@ get_storage() {
 # Function to determine NIC
 get_nic() {
   case "$1" in
-    sopnode-f1 | sopnode-f2) echo "ens2f1" ;;
-    sopnode-f3) echo "ens15f1" ;;
-    *) echo "❌ unknown"
+      sopnode-f1 | sopnode-f2)
+	  echo "ens2f1" ;;
+      sopnode-f3)
+	  case "$R2LAB_RU" in
+	      "benetel1"|"benetel2")
+		  echo "enp59s0f1np1" ;;
+	      *)
+		  echo "ens15f1" ;;
+	  esac ;;
+      *) echo "❌ unknown"
   esac
 }
 
