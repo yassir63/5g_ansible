@@ -443,7 +443,7 @@ get_nic() {
       sopnode-f3)
 	  case "$R2LAB_RU" in
 	      "benetel1"|"benetel2")
-		  echo "enp59s0f1np1" ;;
+		  echo "ens15f1np1" ;;
 	      *)
 		  echo "ens15f1" ;;
 	  esac ;;
