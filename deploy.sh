@@ -58,6 +58,7 @@ echo "Select the node to deploy CORE ($core) on (default: ${DEFAULT_CORE_NODE}):
 echo "1) sopnode-f1"
 echo "2) sopnode-f2"
 echo "3) sopnode-f3"
+echo "4) sopnode-w3"
 read -rp "Enter choice [1-4]: " core_node_choice
 if [[ -z "$core_node_choice" ]]; then
   core_node=${DEFAULT_CORE_NODE}
@@ -66,7 +67,7 @@ else
     1) core_node="sopnode-f1" ;;
     2) core_node="sopnode-f2" ;;
     3) core_node="sopnode-f3" ;;
-    3) core_node="sopnode-w3" ;;
+    4) core_node="sopnode-w3" ;;
     *) echo "❌ Invalid core node"; exit 1 ;;
   esac
 fi
