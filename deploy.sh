@@ -58,7 +58,7 @@ echo "Select the node to deploy CORE ($core) on (default: ${DEFAULT_CORE_NODE}):
 echo "1) sopnode-f1"
 echo "2) sopnode-f2"
 echo "3) sopnode-f3"
-read -rp "Enter choice [1-3]: " core_node_choice
+read -rp "Enter choice [1-4]: " core_node_choice
 if [[ -z "$core_node_choice" ]]; then
   core_node=${DEFAULT_CORE_NODE}
 else
@@ -66,6 +66,7 @@ else
     1) core_node="sopnode-f1" ;;
     2) core_node="sopnode-f2" ;;
     3) core_node="sopnode-f3" ;;
+    3) core_node="sopnode-w3" ;;
     *) echo "❌ Invalid core node"; exit 1 ;;
   esac
 fi
@@ -188,9 +189,9 @@ if [[ "$platform" == "r2lab" ]]; then
   echo "RU is $R2LAB_RU"
   case "$R2LAB_RU" in
       "benetel1"|"benetel2")
-	  echo "Currently Benetel scenarios mandates OAI core + ran on sopnode-f3, enforcing parameters..."
+	  echo "Currently Benetel scenarios mandates OAI core and OAI ran on sopnode-f3, enforcing parameters..."
 	  ran="oai"; core="$ran"
-	  ran_node="sopnode-f3"; core_node="${ran_node}"
+	  ran_node="sopnode-f3";
         ;;
   esac
 
@@ -419,6 +420,7 @@ get_ip_suffix() {
     sopnode-f1) echo "76" ;;
     sopnode-f2) echo "77" ;;
     sopnode-f3) echo "95" ;;
+    sopnode-w3) echo "71" ;;
     *) echo "XX" ;;
   esac
 }
@@ -426,7 +428,7 @@ get_ip_suffix() {
 # Function to determine storage based on node
 get_storage() {
   case "$1" in
-    sopnode-f1 | sopnode-f2) echo "sda1" ;;
+    sopnode-f1 | sopnode-f2 | sopnode-w3) echo "sda1" ;;
     sopnode-f3) echo "sdb2" ;;
     *) echo "❌ unknown" ;;
   esac
@@ -444,6 +446,8 @@ get_nic() {
 	      *)
 		  echo "ens15f1" ;;
 	  esac ;;
+      sopnode-w3)
+	  echo "enp59s0f1np1" ;;
       *) echo "❌ unknown"
   esac
 }
