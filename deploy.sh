@@ -690,6 +690,33 @@ if [[ "$monitoring_enabled" == true ]]; then
   echo "monitor_node" >> ./inventory/hosts.ini
 fi
 
+
+# Append useful variables
+cat >> ./inventory/hosts.ini <<EOF
+
+[all:vars]
+# ---- Node aliases ----
+core_node_name={{ groups['core_node'][0] }}
+ran_node_name={{ groups['ran_node'][0] }}
+monitor_node_name={{ groups['monitor_node'][0] }}
+faraday_node_name={{ groups['faraday'][0] }}
+
+# ---- RRU information (from Faraday) ----
+rru_type={{ hostvars[faraday_node_name].rru }}
+
+# ---- RRU families ----
+fhi72={{ rru_type in ['benetel1','benetel2'] }}
+aw2s={{ rru_type in ['jaguar','panther'] }}
+
+# ---- RAN variants ----
+f1f2_ran={{ ran_node_name in ['sopnode-f1','sopnode-f2'] }}
+f3_ran={{ ran_node_name == 'sopnode-f3' }}
+
+# ---- Boolean true if CORE pods and RAN pods run on the same server ----
+# e.g., false with the current open5gs+oai_ran scenario, true with the current oai_cn+oai_ran scenario
+core_is_ran=true
+EOF
+
 export RRU="$R2LAB_RU"
 export monitoring_enabled="$monitoring_enabled"
 export CORE="$core"
@@ -699,17 +726,29 @@ export RAN="$ran"
 ################################# DEBUG NOW
 echo "Starting deployment..."
 # Call appropriate deployment script
-key="${core,,}-${ran,,}-${platform,,}"
-script=""
-case "$key" in
-  oai-oai-rfsim)            script="deploy_oai_rfsim.sh" ;;
-  oai-oai-r2lab)            script="deploy_oai_r2lab.sh" ;;
-  open5gs-oai-rfsim)        script="deploy_open5gs_oai_rfsim.sh" ;;
-  open5gs-oai-r2lab)        script="deploy_open5gs_oai_r2lab.sh" ;;
-  open5gs-srsran-r2lab)     script="deploy_open5gs_srsRAN_r2lab.sh" ;;
-  open5gs-srsran-rfsim)     script="deploy_open5gs_srsRAN_rfsim.sh" ;;
-  open5gs-ueransim-rfsim)   script="deploy_open5gs_ueransim.sh" ;;
-  *) echo "❌ Unknown deployment key: $key"; exit 1 ;;
+case "$R2LAB_RU" in
+    "benetel1"|"benetel2")
+	script="deploy_oai_oai_fhi72.sh" ;;
+    *)		
+	key="${core,,}-${ran,,}-${platform,,}"
+	script=""
+	case "$key" in
+	    oai-oai-rfsim)
+		script="deploy_oai_rfsim.sh" ;;
+	    oai-oai-r2lab)
+		script="deploy_oai_r2lab.sh" ;;
+	    open5gs-oai-rfsim)
+		script="deploy_open5gs_oai_rfsim.sh" ;;
+	    open5gs-oai-r2lab)
+		script="deploy_open5gs_oai_r2lab.sh" ;;
+	    open5gs-srsran-r2lab)
+		script="deploy_open5gs_srsRAN_r2lab.sh" ;;
+	    open5gs-srsran-rfsim)
+		script="deploy_open5gs_srsRAN_rfsim.sh" ;;
+	    open5gs-ueransim-rfsim)
+		script="deploy_open5gs_ueransim.sh" ;;
+	    *) echo "❌ Unknown deployment key: $key"; exit 1 ;;
+	esac
 esac
 
 echo "Launching $script ..."
