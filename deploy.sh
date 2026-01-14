@@ -185,6 +185,13 @@ if [[ "$platform" == "r2lab" ]]; then
       exit 1
     fi
   fi
+  case "$R2LAB_RU" in
+      "benetel1"|"benetel2")
+	  echo "Currently Benetel scenarios mandates OAI core + ran on sopnode-f3, enforcing parameters..."
+	  ran="oai"; core="$ran"
+	  ran_node="sopnode-f3"; core_node="${ran_node}"
+        ;;
+  esac
 
   QHATS=("qhat01" "qhat02" "qhat03" "qhat10" "qhat11")
   # Select UEs
