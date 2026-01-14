@@ -185,6 +185,7 @@ if [[ "$platform" == "r2lab" ]]; then
       exit 1
     fi
   fi
+  echo "RU is $R2LAB_RU"
   case "$R2LAB_RU" in
       "benetel1"|"benetel2")
 	  echo "Currently Benetel scenarios mandates OAI core + ran on sopnode-f3, enforcing parameters..."
