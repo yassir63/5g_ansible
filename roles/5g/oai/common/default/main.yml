@@ -1,0 +1,13 @@
+---
+repo_url: "https://github.com/sopnode/oai5g-rru.git"
+repo_dest: "~/oai5g-rru"
+core_ns: oai5g
+repo_oai5g_rru: "https://github.com/sopnode/oai5g-rru.git"
+tag_oai5g_rru: "v2.2.0-r2lab"
+repo_oai_cn5g_fed: "https://gitlab.eurecom.fr/oai/orchestration/charts.git"
+tag_oai_cn5g_fed: "main"
+prepare_demo: "{{ repo_dest }}/prepare-demo-oai.sh"
+demo_oai: "{{ repo_dest }}/demo-oai.sh"
+charts_base: "{{ repo_dest }}/charts"
+multus_core_if: {{ hostvars[groups['core_node'][0]].nic_interface }}
+multus_ran_if: {{ hostvars[groups['ran_node'][0]].nic_interface }}

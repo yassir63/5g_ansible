@@ -1,0 +1,430 @@
+---
+- name: Clone repo srsRAN
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: "{{ version | default('main') }}"
+    update: no
+    force: yes
+  
+# ------------------------------
+# Namespace
+# ------------------------------
+- name: Ensure namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ open5gs_ns }}"
+    state: present
+
+- name: Normalize flags
+  ansible.builtin.set_fact:
+    rru_l: "{{ (rru | default('') | string | lower | trim) }}"
+    mon_enabled: "{{ (monitoring_enabled | default(false)) | bool }}"
+
+# See types as well (very handy)
+- name: Show normalized vars + types
+  ansible.builtin.debug:
+    msg:
+      - "rru='{{ rru }}'  -> rru_l='{{ rru_l }}'"
+
+# (If your play doesn't already gather facts)
+- name: Gather env facts (remote)
+  ansible.builtin.setup:
+    filter: ansible_env
+  when: ansible_env is not defined
+
+# Ensure we have remote env facts
+- name: Gather env facts (remote)
+  ansible.builtin.setup:
+    filter: ansible_env
+  when: ansible_env is not defined
+
+# Normalize repo_dest to an absolute remote path (expand ~, trim)
+- name: Normalize repo_dest to remote HOME
+  ansible.builtin.set_fact:
+    repo_dest_abs: "{{ (repo_dest | default('~/srsran-helm') | trim)
+                       | regex_replace('^~/?', ansible_env.HOME ~ '/') }}"
+
+# Choose filename from rru (lower/trim), fall back to values.yaml
+- name: Select values filename from rru
+  ansible.builtin.set_fact:
+    values_filename: "{{ rru_file_map[(rru | default('rfsim') | string | trim | lower)] | default('values.yaml') }}"
+  vars:
+    rru_file_map:
+      benetel: values-benetel.yaml
+      liteon:  values-liteon.yaml
+      #n300:    values-n300.yaml
+      n300:    values-n300-n78-20MHz.yaml
+      n320:    values-n320.yaml
+      rfsim:   values-rfsim.yaml
+
+# Build full path with path_join (prevents spaces/slash issues)
+- name: Build absolute values_file path
+  ansible.builtin.set_fact:
+    values_file: "{{ [repo_dest_abs, 'charts', 'srsran-gnb', values_filename] | path_join }}"
+
+# Sanity check
+- name: debug
+  ansible.builtin.debug:
+    msg:
+      - "repo_dest_abs='{{ repo_dest_abs }}'"
+      - "values_file='{{ values_file }}'"
+
+# Ensure file exists
+- name: Ensure values file exists (remote)
+  ansible.builtin.stat:
+    path: "{{ values_file }}"
+  register: values_stat
+
+- name: Fail if values file missing
+  ansible.builtin.fail:
+    msg: "Values file not found: {{ values_file }}"
+  when: not values_stat.stat.exists
+
+# Deploy with kubernetes.core.helm (use chart_ref + values_files)
+- name: Deploy srsRAN gNB using Helm
+  kubernetes.core.helm:
+    name: srsran-gnb
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
+    release_namespace: "{{ open5gs_ns }}"
+    values_files:
+      - "{{ values_file }}"
+    state: present
+    wait: true
+    atomic: true
+
+- name: Wait 15 seconds for the gNB to be ready
+  pause:
+    seconds: 15
+
+# --- gNB pod discovery ---
+- name: Snapshot gNB pods by selectors
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors: "{{ srs_gnb_label_selectors }}"
+  register: srs_gnb_pods
+
+# Enhanced debugging: show per-container details
+- name: Debug gNB pod and container states
+  ansible.builtin.debug:
+    msg: |
+      {% for pod in srs_gnb_pods.resources %}
+      Pod: {{ pod.metadata.name }}
+      Phase: {{ pod.status.phase }}
+      Containers:
+      {% for c in pod.status.containerStatuses %}
+        - name: {{ c.name }}
+          ready: {{ c.ready }}
+          restartCount: {{ c.restartCount }}
+          state:
+            {% if 'waiting' in c.state %}
+              waiting: {{ c.state.waiting.reason }}
+            {% elif 'running' in c.state %}
+              running: Running
+            {% elif 'terminated' in c.state %}
+              terminated: {{ c.state.terminated.reason }}
+            {% else %}
+              unknown
+            {% endif %}
+      {% endfor %}
+
+      {% endfor %}
+
+# Pick the first gNB pod name
+- name: Select a gNB pod name (from selectors)
+  ansible.builtin.set_fact:
+    gnb_pod_name: "{{ (srs_gnb_pods.resources | first).metadata.name }}"
+
+- name: Probe 'gnb' container state 3 times with small delay
+  ansible.builtin.command: >
+    bash -l "
+    {{ kubectl_bin | default('kubectl') }} get pod {{ gnb_pod_name }}
+    -n {{ open5gs_ns }}
+    -o jsonpath='{.status.containerStatuses[?(@.name=="gnb")].ready}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.waiting.reason}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.terminated.reason}'
+    " 
+  register: gnb_state_probes
+  changed_when: false
+  failed_when: false
+  loop: "{{ range(0, 3) | list }}"
+  loop_control:
+    loop_var: probe_index
+
+- name: Show gNB sampled states
+  ansible.builtin.debug:
+    var: gnb_state_probes.results
+
+Decide if ANY of the 3 samples shows ERROR or CRASHLOOP
+- name: Compute retry need based on 3 probes
+  ansible.builtin.set_fact:
+    gnb_need_retry: >-
+      {{
+        (
+          gnb_state_probes.results | map(attribute='stdout')
+          | select('search', 'CrashLoopBackOff') | list | length > 0
+        )
+        or
+        (
+          gnb_state_probes.results | map(attribute='stdout')
+          | select('search', 'Error') | list | length > 0
+        )
+      }}
+    gnb_recovered: "{{ not gnb_need_retry }}"
+
+# Retry mechanism
+- name: Retry RRU reset + gNB wait (max {{ gnb_rru_retry_max }} times)
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/rru_gnb_retry.yaml"
+  loop: "{{ range(0, gnb_rru_retry_max | int) | list }}"
+  loop_control:
+    loop_var: retry_index
+  when:
+    - rru in ['n320', 'n300']
+    - gnb_need_retry | bool
+  
+- name: Fail if gNB still not recovered after all retries
+  ansible.builtin.fail:
+    msg: >
+      gNB could not establish connection with the RRU ({{ rru }})
+      after {{ gnb_rru_retry_max }} attempts. Deployment aborted.
+  when:
+    - rru in ['n320', 'n300']
+    - gnb_need_retry | bool
+
+
+# ------------------------------
+# Helm-based Telegraf deployment
+# ------------------------------
+- name: Deploy Telegraf using Helm
+  when: mon_enabled
+  kubernetes.core.helm:
+    name: telegraf
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'telegraf'] | path_join }}"
+    release_namespace: "{{ open5gs_ns }}"
+    values_files:
+      - "{{ [repo_dest_abs, 'charts', 'telegraf', 'values.yaml'] | path_join }}"
+    state: present
+    wait: true
+    atomic: true
+    timeout: 600s
+  register: telegraf_apply
+
+# ------------------------------
+# Deploy srsRAN UEs (tmux-managed in a single pod)
+# ------------------------------
+# ------------------------------
+# Helm-based UE deployment (RFSIM ONLY)
+# ------------------------------
+
+- block:
+    - name: Deploy srsRAN UE using Helm
+      kubernetes.core.helm:
+        name: srsran-ue
+        chart_ref: "{{ [repo_dest_abs, 'charts', 'srsue'] | path_join }}"
+        release_namespace: "{{ open5gs_ns }}"
+        values_files:
+          - "{{ [repo_dest_abs, 'charts', 'srsue', 'values.yaml'] | path_join }}"
+        # Optional overrides:
+        # values:
+        #   ueCount: {{ ue_count | default(3) }}
+        state: present
+        wait: true
+        atomic: true
+        timeout: 600s
+      register: srs_ue_apply
+
+    # --- UE pod discovery & wait ---
+    - name: List all pods in {{ open5gs_ns }}
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ open5gs_ns }}"
+      register: all_pods
+
+    - name: Filter UE pods by provided selectors (if any)
+      when: srs_ue_label_selectors is defined and (srs_ue_label_selectors | length) > 0
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ open5gs_ns }}"
+        label_selectors: "{{ srs_ue_label_selectors }}"
+      register: ue_by_labels
+
+    - name: Build UE pod candidates
+      ansible.builtin.set_fact:
+        ue_candidates: >-
+          {{
+            (ue_by_labels.resources if (ue_by_labels is defined and (ue_by_labels.resources | length) > 0)
+             else
+             (all_pods.resources
+               | selectattr('metadata.name','search','^(srsran-ue|srsue|ue)[0-9-]'))
+             ) | list
+          }}
+
+    - name: Debug available pod names (when no UE candidates)
+      ansible.builtin.debug:
+        msg: "{{ all_pods.resources | map(attribute='metadata.name') | list }}"
+      when: ue_candidates | length == 0
+
+    - name: Fail if no UE pods were found
+      ansible.builtin.fail:
+        msg: "No UE pods found via selectors {{ srs_ue_label_selectors | default([]) }} or name patterns ^(srsran-ue|srsue|ue)"
+      when: ue_candidates | length == 0
+
+    - name: Choose the first UE pod
+      ansible.builtin.set_fact:
+        ue_pod_name: "{{ (ue_candidates | first).metadata.name }}"
+
+    - name: Wait for chosen UE pod to be Ready
+      ansible.builtin.command: >
+        {{ kubectl_bin }} wait --for=condition=Ready pod/{{ ue_pod_name }}
+        -n {{ open5gs_ns }} --timeout=600s
+      register: ue_wait
+      changed_when: false
+      failed_when: ue_wait.rc != 0
+
+    # -----------------------------------------
+    # UE in one pod + tmux-managed processes
+    # -----------------------------------------
+
+    # Build ue indices 1..N
+    - name: Build ue indices
+      ansible.builtin.set_fact:
+        ue_indices: "{{ range(1, ue_count + 1) | list }}"
+
+    # (optional) sanity: tmux present in the pod
+    - name: Check tmux exists in UE pod
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} --
+        tmux -V
+      register: tmux_ver
+      changed_when: false
+      failed_when: false
+
+    # Ensure tmux session 'ran' exists
+    - name: Create tmux session 'ran' if missing
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} --
+        /bin/sh -lc "tmux has-session -t ran || tmux new-session -d -s ran"
+      changed_when: true
+      failed_when: false
+
+    # Start/refresh UE windows and run start_ue.sh in each
+    - name: Start each UE in its own tmux window
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} --
+        /bin/sh -lc "
+          tmux list-windows -t ran | grep -q 'ue{{ idx }}' && tmux kill-window -t ran:ue{{ idx }} || true;
+          tmux new-window -t ran -n ue{{ idx }} 'bash -lc \"/srsran/config/start_ue.sh {{ idx }}\"'
+        "
+      loop: "{{ ue_indices }}"
+      loop_control:
+        loop_var: idx
+      register: tmux_ue_windows
+      changed_when: true
+      failed_when: false
+
+    # Wait for each UE to be up
+    - name: Wait until each UE is up (pid OR srsue process)
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/sh -lc
+        'ok=1; for i in $(seq 1 {{ ue_count }}); do
+           if ! { test -f /tmp/ue${i}.pid || pgrep -af "srsue .*ue_${i}\\.conf" >/dev/null; }; then
+             ok=0; break;
+           fi
+         done; test "$ok" = "1"'
+      register: ue_up_check
+      changed_when: false
+      failed_when: false
+      retries: 60
+      delay: 2
+      until: ue_up_check.rc == 0
+
+    - name: Pause briefly before starting GNU Radio
+      ansible.builtin.pause:
+        seconds: 2
+
+    - name: Start GNU in tmux window 'gnu'
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} --
+        /bin/sh -lc "
+          tmux list-windows -t ran | grep -q '^\\s*[0-9]\\+: gnu\\b' && tmux kill-window -t ran:gnu || true;
+          tmux new-window -t ran -n gnu 'bash -lc \"/srsran/config/start_gnu.sh {{ ue_count }}\"'
+        "
+      register: tmux_gnu_win
+      changed_when: true
+      failed_when: false
+
+    - name: Wait for GNU to print its prompt
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/sh -lc
+        "grep -q 'Press Enter to quit' /var/log/gnu_multi_ue.log"
+      register: gnu_log_wait
+      changed_when: false
+      failed_when: false
+      retries: 30
+      delay: 2
+      until: gnu_log_wait.rc == 0
+
+    - name: Show GNU status (process + log tail)
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/sh -lc
+        "echo '== ps =='; pgrep -af 'python3 .*srsran/config/multi_ue_scenario.py' || true;
+         echo '== gnu log tail =='; tail -n 50 /var/log/gnu_multi_ue.log || true"
+      register: gnu_status
+      changed_when: false
+      failed_when: false
+
+    - name: GNU status
+      ansible.builtin.debug:
+        msg: "{{ gnu_status.stdout }}"
+
+    - name: Pause briefly before adding default route
+      ansible.builtin.pause:
+        seconds: 2
+
+    - name: Add default route once (inside the UE pod)
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }} exec {{ ue_pod_name }} -- /bin/bash -lc
+        'UE_COUNT={{ ue_count }} /srsran/config/add_route.sh'
+      register: route_once
+      changed_when: false
+      failed_when: false
+
+    - name: Extract UE IP addresses from logs
+      ansible.builtin.command: >
+        {{ kubectl_bin }} -n {{ open5gs_ns }}
+        exec {{ ue_pod_name }} -- /bin/sh -lc
+        "grep -m1 'PDU Session Establishment successful' /var/log/ue{{ idx }}.log | awk '{print \$NF}'"
+      loop: "{{ ue_indices }}"
+      loop_control:
+        loop_var: idx
+        extended: true
+      register: ue_ips
+      changed_when: false
+      failed_when: false
+
+    - name: Show UE IP addresses
+      ansible.builtin.debug:
+        msg: "UE{{ idx }} → {{ ue_ips.results[ansible_loop.index0].stdout | default('N/A') }}"
+      loop: "{{ ue_indices }}"
+      loop_control:
+        loop_var: idx
+        extended: true
+
+    # Summary
+    - name: Summary (RFSIM)
+      ansible.builtin.debug:
+        msg:
+          - "UEs started in tmux session 'ran': windows ue1..ue{{ ue_count }}, logs /var/log/ueN.log"
+          - "GNU multi-UE started in tmux window 'gnu': log /var/log/gnu_multi_ue.log"
+          - "Routes attempted via add_route.sh (non-fatal if some UEs absent)"
+          - "Inspect tmux: kubectl -n {{ open5gs_ns }} exec -it {{ ue_pod_name }} -- tmux attach -t ran"
+
+  when: (rru | lower | trim) == 'rfsim'
+
+- name: Summary (Non-RFSIM)
+  ansible.builtin.debug:
+    msg:
+      - "gNB deployed via Helm chart 'srsran-gnb' in namespace {{ open5gs_ns }}"
+      - "Telegraf deployed via Helm chart 'telegraf' in namespace {{ open5gs_ns }}"
+      - "UE deployment skipped (rru={{ rru }})"
+  when: rru != 'rfsim'

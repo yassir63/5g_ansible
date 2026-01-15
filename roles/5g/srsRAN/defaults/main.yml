@@ -1,0 +1,20 @@
+---
+repo_url: "https://github.com/turletti/srsran-helm.git"
+version: main
+
+ran_ns: open5gs
+open5gs_ns: "open5gs"
+
+repo_dest: "~/srsran-helm"
+
+srs_gnb_label_selectors:
+  - "app=srsran"
+  - "component=gnb"
+
+srs_ue_label_selectors:
+  - "app=srsran"
+  - "component=ue"
+
+ue_count: 3
+
+kubectl_bin: "kubectl"

@@ -1,0 +1,106 @@
+# One retry attempt for gNB + optional RRU reset
+# retry_index is provided by the loop in main.yml
+
+# 1) Check current 'gnb' container state (same logic as main)
+- name: "Attempt {{ retry_index + 1 }} - check 'gnb' container state"
+  ansible.builtin.command: >
+    {{ kubectl_bin | default('kubectl') }} get pod {{ gnb_pod_name }}
+    -n {{ open5gs_ns }}
+    -o jsonpath='{.status.containerStatuses[?(@.name=="gnb")].ready}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.waiting.reason}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.terminated.reason}'
+  register: gnb_retry_state
+  changed_when: false
+  failed_when: false
+
+- name: "Attempt {{ retry_index + 1 }} - debug 'gnb' container state"
+  ansible.builtin.debug:
+    msg: "Attempt {{ retry_index + 1 }} - gnb container state: {{ gnb_retry_state.stdout | default('') }}"
+
+# 2) Consider gNB healthy if:
+#    - 'ready' is true
+#    - no CrashLoopBackOff
+#    - no Error
+- name: "Attempt {{ retry_index + 1 }} - mark recovered if 'gnb' container looks healthy"
+  ansible.builtin.set_fact:
+    gnb_recovered: >-
+      {{
+        'true' in (gnb_retry_state.stdout | default('')) and
+        'CrashLoopBackOff' not in (gnb_retry_state.stdout | default('')) and
+        'Error' not in (gnb_retry_state.stdout | default(''))
+      }}
+
+- name: "Attempt {{ retry_index + 1 }} - skip RRU reset because gNB looks healthy"
+  ansible.builtin.debug:
+    msg: "Attempt {{ retry_index + 1 }} - gNB looks healthy, skipping RRU reset."
+  when: gnb_recovered | default(false) | bool
+
+# 3) If still unhealthy, reset RRU + redeploy gNB + re-check
+- name: "Attempt {{ retry_index + 1 }} - reset RRU and redeploy because gNB still unhealthy"
+  when: not (gnb_recovered | default(false) | bool)
+  block:
+
+    # You can keep your role here if it already handles faraday, or replace with direct rhubarbe+delegate_to
+    - name: "Attempt {{ retry_index + 1 }} - run r2lab/rru/reset role"
+      include_role:
+        name: r2lab/rru/reset
+      run_once: true
+
+    - name: "Attempt {{ retry_index + 1 }} - uninstall existing srsRAN gNB release (if any)"
+      kubernetes.core.helm:
+        name: srsran-gnb
+        release_namespace: "{{ open5gs_ns }}"
+        state: absent
+      ignore_errors: true   # in case it was already gone
+
+    - name: Wait 30 seconds for the gNB to undeploy properly
+      pause:
+        seconds: 30
+
+    - name: "Attempt {{ retry_index + 1 }} - deploy fresh srsRAN gNB using Helm"
+      kubernetes.core.helm:
+        name: srsran-gnb
+        chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
+        release_namespace: "{{ open5gs_ns }}"
+        values_files:
+          - "{{ values_file }}"
+        state: present
+        wait: true
+        atomic: true
+
+    # Optional small delay to let pod settle
+    - name: "Attempt {{ retry_index + 1 }} - wait a bit after redeploy"
+      ansible.builtin.wait_for:
+        timeout: 20
+
+    # IMPORTANT: refresh pod list and gnb_pod_name after redeploy
+    - name: "Attempt {{ retry_index + 1 }} - snapshot gNB pods after redeploy"
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ open5gs_ns }}"
+        label_selectors: "{{ srs_gnb_label_selectors }}"
+      register: srs_gnb_pods_after
+
+    - name: "Attempt {{ retry_index + 1 }} - select a new gNB pod name after redeploy"
+      ansible.builtin.set_fact:
+        gnb_pod_name: "{{ (srs_gnb_pods_after.resources | first).metadata.name }}"
+
+    - name: "Attempt {{ retry_index + 1 }} - re-check 'gnb' container state after reset"
+      ansible.builtin.command: >
+        {{ kubectl_bin | default('kubectl') }} get pod {{ gnb_pod_name }}
+        -n {{ open5gs_ns }}
+        -o jsonpath='{.status.containerStatuses[?(@.name=="gnb")].ready}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.waiting.reason}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.terminated.reason}'
+      register: gnb_retry_state_after_reset
+      changed_when: false
+      failed_when: false
+
+    - name: "Attempt {{ retry_index + 1 }} - debug 'gnb' container state after reset"
+      ansible.builtin.debug:
+        msg: "Attempt {{ retry_index + 1 }} - gnb container state after reset: {{ gnb_retry_state_after_reset.stdout | default('') }}"
+
+    - name: "Attempt {{ retry_index + 1 }} - set recovered flag based on post-reset state"
+      ansible.builtin.set_fact:
+        gnb_recovered: >-
+          {{
+            'true' in (gnb_retry_state_after_reset.stdout | default('')) and
+            'CrashLoopBackOff' not in (gnb_retry_state_after_reset.stdout | default('')) and
+            'Error' not in (gnb_retry_state_after_reset.stdout | default(''))
+          }}

@@ -1,0 +1,11 @@
+---
+- name: RESTART_OAI_CORE
+  ansible.builtin.meta: noop
+
+- name: Run demo-oai.sh start-cn to launch OAI CN pods
+  ansible.builtin.command: "{{ demo_oai }} start-cn"
+  args:
+    chdir: "{{ repo_dest }}"
+  register: demo_script
+  changed_when: "'All 5G Core pods are READY' in demo_script.stdout"
+

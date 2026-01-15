@@ -100,8 +100,9 @@
 - name: Deploy OAI CN and RAN
   hosts: ran_node
   roles:
-    - role: 5g/core/oai_core
-    - role: 5g/ran/oai_ran
+    - role: 5g/oai/setup
+    - role: 5g/oai/core
+    - role: 5g/oai/ran
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
