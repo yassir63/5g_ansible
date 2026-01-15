@@ -17,7 +17,8 @@ DEFAULT_CORE_NODE="sopnode-f2"
 DEFAULT_RAN_NODE="sopnode-f3"
 DEFAULT_MONITOR_NODE="sopnode-f1"
 
-INVENTORY="./inventory/hosts.ini"
+DIR_INVENTORY="./default/inventory"
+INVENTORY="${DIR_INVENTORY}/hosts.ini"
 
 DEFAULT_CORE="open5gs"
 DEFAULT_RAN="oai"
@@ -729,7 +730,7 @@ ran_node_name="${ran_node}"
 monitor_node_name="${monitor_node}"
 faraday_node_name="faraday.inria.fr"
 
-# ---- RRU information (from Faraday) ----
+# ---- RRU information ----
 rru="${R2LAB_RU}"
 
 # ---- RRU families ----
@@ -740,8 +741,9 @@ aw2s=$( [[ "$rru" == "jaguar" || "$rru" == "panther" ]] && echo true || echo fal
 f1f2_ran=$( [[ "${ran_node" == "sopnode-f1" || "${ran_node}" == "sopnode-f2" ]] && echo true || echo false )
 f3_ran=$( [[ "${ran_node" == "sopnode-f3" ]] && echo true || echo false )
 
-# ---- Other booleans
-bridge_enabled=$( [[ "$fhi72" == "false" ]] && echo true || echo false ) # to decide if OVS bridge needed between core_node and ran_node
+# ---- Other boolean parameters
+# bridge_enabled is true if OVS bridge required between core_node and ran_node
+bridge_enabled=$( [[ "$fhi72" == "false" ]] && echo true || echo false )
 monitoring_enabled=${monitoring_enabled}
 
 EOF
@@ -872,7 +874,13 @@ case "$R2LAB_RU" in
 esac
 
 echo "Launching $script ..."
-./deployments/$script
+#./deployments/$script
+
+ansible-galaxy install -r collections/requirements.yml
+if [[ "$platform" == "r2lab" ]]; then
+    ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+fi
+ansible-playbook -i "$INVENTORY" playbooks/deploy.yml 2>&1 | tee logs.txt
 
 echo ""
 echo "=========================================="
