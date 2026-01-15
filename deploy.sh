@@ -573,12 +573,12 @@ $core_node ansible_user=root nic_interface=$(get_nic "$core_node") ip=172.28.2.$
 
 [ran_node]
 $ran_node ansible_user=root nic_interface=$(get_nic "$ran_node") ip=172.28.2.$(get_ip_suffix "$ran_node") storage=$(get_storage "$ran_node") boot_mode=live
+
+[monitor_node]
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
-cat >> "$INVENTORY" <<EOF
-
-[monitor_node]
+    cat >> "$INVENTORY" <<EOF
 $monitor_node ansible_user=root nic_interface=$(get_nic "$monitor_node") ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=$(get_storage "$monitor_node")
 EOF
 fi
