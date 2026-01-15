@@ -10,6 +10,11 @@
     update: yes
     force: yes
 
+- name: Retrieve physical interfaces for multus on the core and ran nodes
+  set_fact:
+    multus_core_if: "{{ hostvars[groups['core_node'][0]].nic_interface }}"
+    multus_ran_if: "{{ hostvars[groups['ran_node'][0]].nic_interface }}"
+
 - name: Restore prepare-demo-oai.sh script in {{ repo_dest }}
   ansible.builtin.command: >
     cp --preserve=all "{{ repo_dest }}/testing/prepare-demo-oai.sh" "{{ repo_dest }}/"
