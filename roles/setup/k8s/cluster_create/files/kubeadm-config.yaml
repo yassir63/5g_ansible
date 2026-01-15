@@ -15,7 +15,7 @@ memorySwap: {}
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 kubernetesVersion: "v1.32.9"
-controlPlaneEndpoint: "sopnode-w3:6443"
+controlPlaneEndpoint: "{{ core_node_name }}:6443"
 networking:
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/12"
