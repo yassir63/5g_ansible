@@ -1,0 +1,24 @@
+# --- Kubelet Configuration ---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+resolvConf: "/run/systemd/resolve/resolv.conf"
+cgroupDriver: systemd
+failSwapOn: false
+featureGates:
+  CPUManager: true
+  CPUManagerPolicyOptions: true
+containerLogMaxSize: 50Mi
+memorySwap: {}
+
+---
+# --- Cluster Configuration ---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: "v1.32.9"
+controlPlaneEndpoint: "{{ hostvars[core_node].ansible_host }}:6443"
+networking:
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+  dnsDomain: "cluster.local"
+controllerManager: {}
+scheduler: {}

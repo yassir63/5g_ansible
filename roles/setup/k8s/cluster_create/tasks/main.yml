@@ -53,10 +53,9 @@
 
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
-  ansible.builtin.copy:
-    src: kubeadm-config.yaml
+  ansible.builtin.template:
+    src: kubeadm-config.yaml.j2
     dest: /root/kubeadm-config.yaml
-    mode: '0644'
   become: true
 
 - name: Initialize Kubernetes cluster
