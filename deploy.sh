@@ -725,7 +725,13 @@ cat >> "$INVENTORY" <<EOF
 # ---- Node aliases ----
 core_node_name="${core_node}"
 ran_node_name="${ran_node}"
+EOF
+if [[ "$monitoring_enabled" == true ]]; then
+    cat >> "$INVENTORY" <<EOF
 monitor_node_name="${monitor_node}"
+EOF
+fi
+cat >> "$INVENTORY" <<EOF
 faraday_node_name="faraday.inria.fr"
 
 # ---- RRU information ----
@@ -743,7 +749,6 @@ f3_ran=$( [[ "${ran_node}" == "sopnode-f3" ]] && echo true || echo false )
 # bridge_enabled is true if OVS bridge required between core_node and ran_node
 bridge_enabled=$( [[ "$fhi72" == "false" ]] && echo true || echo false )
 monitoring_enabled=${monitoring_enabled}
-
 EOF
 
 export RRU="$R2LAB_RU"
