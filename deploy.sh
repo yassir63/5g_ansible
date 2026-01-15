@@ -17,7 +17,7 @@ DEFAULT_CORE_NODE="sopnode-f2"
 DEFAULT_RAN_NODE="sopnode-f3"
 DEFAULT_MONITOR_NODE="sopnode-f1"
 
-DIR_INVENTORY=".inventory/default"
+DIR_INVENTORY="./inventory/default"
 INVENTORY="${DIR_INVENTORY}/hosts.ini"
 
 DEFAULT_CORE="open5gs"
