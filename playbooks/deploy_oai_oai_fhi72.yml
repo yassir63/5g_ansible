@@ -85,7 +85,7 @@
   hosts: monitor_node
   roles:
     - role: monarch/deploy
-    when: monitoring_enabled
+      when: monitoring_enabled
 
 - name: SRIOV setup
   hosts: ran_node
@@ -107,4 +107,4 @@
   hosts: monitor_node
   roles:
     - role: monarch/monitoring
-    when: monitoring_enabled
+      when: monitoring_enabled
