@@ -2,7 +2,6 @@
 repo_url: "https://github.com/sopnode/oai5g-rru.git"
 repo_dest: "~/oai5g-rru"
 core_ns: oai5g
-rru: "{{ hostvars[groups['faraday'][0]].rru }}"
 repo_oai5g_rru: "https://github.com/sopnode/oai5g-rru.git"
 tag_oai5g_rru: "{{ 'benetel' if rru in ['benetel1', 'benetel2'] else 'gen-cn2' }}"
 repo_oai_cn5g_fed: "https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed.git"

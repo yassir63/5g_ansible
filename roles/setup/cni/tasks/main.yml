@@ -8,7 +8,7 @@
     state: present
     update_cache: yes
   become: true
-  when: not core_is_ran
+  when: bridge_enabled
 
 - name: Create OVS bridges for ovs-cni
   command: "ovs-vsctl --may-exist add-br {{ item }}"
@@ -17,19 +17,19 @@
     - n3br
     - n4br
   become: true
-  when: not core_is_ran
+  when: bridge_enabled
 
 - name: Render NetworkAddonsConfig manifest locally
   ansible.builtin.template:
     src: network-addons-config.yaml.j2
     dest: /tmp/network-addons-config.yaml
-  when: not core_is_ran
+  when: bridge_enabled
 
 - name: Render NetworkAddonsConfig manifest locally
   ansible.builtin.template:
     src: network-addons-config-full-oai.yaml.j2
     dest: /tmp/network-addons-config.yaml
-  when: core_is_ran
+  when: not bridge_enabled
 
 - name: Apply Cluster-Network-Addons Operator manifests
   ansible.builtin.shell: |

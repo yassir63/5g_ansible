@@ -81,10 +81,11 @@
     - role: setup/k8s/benetel_specific_tuning_f3
       when: fhi72 and f3_ran
 
-- name: Optionally deploy 5G-Monarch
+- name: Deploy 5G-Monarch
   hosts: monitor_node
   roles:
     - role: monarch/deploy
+    when: monitoring_enabled
 
 - name: SRIOV setup
   hosts: ran_node
@@ -106,3 +107,4 @@
   hosts: monitor_node
   roles:
     - role: monarch/monitoring
+    when: monitoring_enabled

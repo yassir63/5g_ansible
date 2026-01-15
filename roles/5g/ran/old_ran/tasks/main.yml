@@ -62,7 +62,7 @@
 #     regexp: '^FLEXRIC='
 #     line: "FLEXRIC=false"
 #     backrefs: true
-#   when: rru in ['jaguar', 'panther']
+#   when: aw2s
 
 - name: Run prepare-demo-oai.sh to pull & configure OAI RAN charts
   ansible.builtin.command: "{{ script_path }} -a -R {{ rru }} -F {{ conf }}"

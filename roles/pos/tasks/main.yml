@@ -3,7 +3,7 @@
   set_fact:
     is_ran: "{{ node == ran_node_name }}"
     is_f3: "{{ node == 'sopnode-f3' }}"
-    rru_type: "{{ rru_type }}"
+    rru: "{{ rru }}"
     fhi72: "{{ fhi72 }}"
     ran_boot_mode: "{{ hostvars[node].boot_mode | default('unknown') }}"
 
@@ -21,7 +21,7 @@
           echo ""
 
           echo "ran_node_name = {{ ran_node_name | default([]) }}"
-          echo "rru_type = {{ rru_type | default([]) }}"
+          echo "rru = {{ rru | default([]) }}"
           echo "is_ran = {{ is_ran | default([]) }}"
           echo "is_f3 = {{ is_f3 | default([]) }}"
           echo "ran_boot_mode = {{ ran_boot_mode | default([]) }}"
@@ -86,7 +86,7 @@
         echo "$(date) - {{ node }} (pre-reset):" >> /tmp/pos_pre_reset_{{ node }}.log
         echo "  Image Command : {{ pos_image_cmd }}" >> /tmp/pos_pre_reset_{{ node }}.log
         echo "" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "  RRU Type      : {{ rru_type }}" >> /tmp/pos_pre_reset_{{ node }}.log
+        echo "  RRU Type      : {{ rru }}" >> /tmp/pos_pre_reset_{{ node }}.log
         echo "  Boot Params   : {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
         echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
 

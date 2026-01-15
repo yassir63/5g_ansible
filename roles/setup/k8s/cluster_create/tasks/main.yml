@@ -312,7 +312,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
-  when: not core_is_ran
+  when: bridge_enabled
 
 # === JOIN COMMAND =============================================================
 - name: Generate join command

@@ -191,9 +191,13 @@ if [[ "$platform" == "r2lab" ]]; then
   case "$R2LAB_RU" in
       "benetel1"|"benetel2")
 	  echo "Currently Benetel scenarios mandates OAI core and OAI ran on sopnode-f3, enforcing parameters..."
-	  ran="oai"; core="$ran"
+	  core="$oai"
+	  ran="oai";
 	  ran_node="sopnode-f3";
-        ;;
+	  fhi72=true
+          ;;
+      *)
+	  fhi72=false ;;
   esac
 
   QHATS=("qhat01" "qhat02" "qhat03" "qhat10" "qhat11")
@@ -520,7 +524,7 @@ EOF
 echo "Generating hosts.ini..."
 
 # Build faraday line (may include interference params)
-faraday_opts="faraday.inria.fr ansible_user=$R2LAB_USERNAME rru=$R2LAB_RU"
+faraday_opts="faraday.inria.fr ansible_user=$R2LAB_USERNAME 
 if [[ "${run_interference_test:-}" == true ]]; then
   # add interference params
   # Use the actual noise USRP id for faraday if it's an RU (n300/n320), otherwise use "fit" for b210/b205 variants
@@ -722,19 +726,20 @@ monitor_node_name={{ groups['monitor_node'][0] }}
 faraday_node_name={{ groups['faraday'][0] }}
 
 # ---- RRU information (from Faraday) ----
-rru_type={{ hostvars[faraday_node_name].rru }}
+rru={{ hostvars[faraday_node_name].rru }}
 
 # ---- RRU families ----
-fhi72={{ rru_type in ['benetel1','benetel2'] }}
-aw2s={{ rru_type in ['jaguar','panther'] }}
+fhi72={{ rru in ['benetel1','benetel2'] }}
+aw2s={{ rru in ['jaguar','panther'] }}
 
 # ---- RAN variants ----
 f1f2_ran={{ ran_node_name in ['sopnode-f1','sopnode-f2'] }}
 f3_ran={{ ran_node_name == 'sopnode-f3' }}
 
-# ---- Boolean true if CORE pods and RAN pods run on the same server ----
-# e.g., false with the current open5gs+oai_ran scenario, true with the current oai_cn+oai_ran scenario
-core_is_ran=true
+# ---- Other booleans
+bridge_enabled=$( [[ "$fhi72" == "false" ]] && echo true || echo false ) # to decide if OVS bridge needed between core_node and ran_node
+monitoring_enabled=${monitoring_enabled}
+
 EOF
 
 export RRU="$R2LAB_RU"
@@ -846,7 +851,8 @@ case "$R2LAB_RU" in
 	    oai-oai-rfsim)
 		script="deploy_oai_rfsim.sh" ;;
 	    oai-oai-r2lab)
-		script="deploy_oai_r2lab.sh" ;;
+		#script="deploy_oai_r2lab.sh" ;;
+		script="deploy_oai_oai_fhi72.sh" ;;
 	    open5gs-oai-rfsim)
 		script="deploy_open5gs_oai_rfsim.sh" ;;
 	    open5gs-oai-r2lab)
