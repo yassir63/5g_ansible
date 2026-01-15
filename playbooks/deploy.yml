@@ -1,11 +1,17 @@
 ---
 - hosts: webshell
   gather_facts: false
+  vars:
+    original_inventory: "{{ inventory_file }}"  
   tasks:
+    - name: DEBUG – Inventory
+      debug:
+        msg: "Used inventory for run_pos playbook : {{ original_inventory }}"
+      
     - name: Run pos reset in parallel for each sopnode
       ansible.builtin.command: >
-        ansible-playbook -i inventory/hosts.ini playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
-      args: 
+        ansible-playbook -i {{ inventory_file }} playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
+      args:
         chdir: "{{ playbook_dir | dirname }}"
       async: 1800
       poll: 0
@@ -14,7 +20,7 @@
         label: "{{ item }}"
       register: prepare_jobs
 
-    - name: Wait for all Sopnodes used to be reset
+    - name: Wait for all sopnodes used to be reset
       async_status:
         jid: "{{ item.ansible_job_id }}"
       register: job_result
@@ -25,115 +31,81 @@
       loop_control:
         label: "{{ item.item }}"
 
-- name: Setup Sopnodes
+- name: Common sopnodes setup
   hosts: sopnodes
   roles:
     - role: setup/common
+    - role: setup/netplan
     - role: setup/containerd
     - role: setup/k8s/k8s_setup
-    - role: setup/ovs
+    - role: setup/k8s/k8s_env
     - role: setup/optimization/cpu
 
-- name: Create and Setup Kubernetes Cluster On Master
-  hosts: core_node
-  roles:
-    - role: setup/k8s/cluster_create
-    - role: setup/cni
-    - role: setup/storage
-
-- name: Configure GRE Tunnel From Core Node to RAN Node
-  hosts: core_node
-  vars:
-    ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
-  roles:
-    - role: setup/gre_tunnel
-
-- name: Configure GRE Tunnel From RAN Node to Core Node
+- name: PTP setup on ran_node for fhi72 scenarios
   hosts: ran_node
-  vars:
-    ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+  become: true
   roles:
-    - role: setup/gre_tunnel
+    - role: setup/optimization/nic
+      when: fhi72
+    - role: setup/ptp
+      when: fhi72
 
-- name: Deploy Open5gs Core
+- name: Create and setup Kubernetes Cluster on Master
   hosts: core_node
   roles:
-    - role: 5g/core
-
-- name: Setup iperf3 on UPFs
-  hosts: core_node
-  gather_facts: false
-  roles:
-    - role: scenarios/iperf/upf
+    # forces core-node to have similar date than ran-node, else possible k8s certificate issues
+    - role: setup/ntp 
+      when: fhi72
+    - role: setup/k8s/cluster_create
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
   become: true
   roles:
     - role: setup/k8s/cluster_join
-      when: groups['core_node'][0] != groups['ran_node'][0] or groups['core_node'][0] != groups['monitor_node'][0]
 
-- name: Apply specific tunig on RAN Node if AW2s RRUs are used
+- name: Install Multus / CNAO # only once workers have joined
+  hosts: core_node
+  become: true
+  roles:
+    - role: setup/cni
+
+- name: Apply specific tuning on RAN Node
   hosts: ran_node
   become: true
   roles:
     - role: setup/k8s/aw2s_specific_tuning
-      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f1', 'sopnode-f2']
+      when: aw2s and f1f2_ran
     - role: setup/k8s/aw2s_specific_tuning_f3
-      when: hostvars[groups['faraday'][0]].rru in ['jaguar', 'panther'] and groups['ran_node'][0] in ['sopnode-f3']    
+      when: aw2s and f3_ran
+    - role: setup/k8s/benetel_specific_tuning_f3
+      when: fhi72 and f3_ran
 
-- name: Deploy 5G-Monarch for monitoring
+- name: Deploy 5G-Monarch
   hosts: monitor_node
   roles:
     - role: monarch/deploy
+      when: monitoring_enabled
 
-- name: Cleanup R2Lab
-  hosts: faraday
+- name: SRIOV setup
+  hosts: ran_node
+  become: true
+  gather_facts: true
   roles:
-    - role: r2lab/cleanup
+    - role: setup/sriov_operator
+      when: fhi72
+    - role: setup/sriov_nnp_create    
+      when: fhi72
 
-- name: Setup UEs on R2Lab
-  hosts: faraday
-  roles:
-    - role: r2lab/ue/setup
-
-- hosts: faraday
-  tasks:
-    - name: Stop all UEs previous connections on R2Lab
-      include_role:
-        name: r2lab/ue/stop
-      vars:
-        ue: "{{ item }}"
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        label: "{{ item }}"
-      ignore_errors: true
-      
-- name: Power ON RRU on R2Lab
-  hosts: faraday
-  roles:
-    - role: r2lab/rru
-
-- name: Deploy OAI RAN
+- name: Deploy OAI CN and RAN
   hosts: ran_node
   roles:
-    - role: setup/optimization/nic
-    - role: setup/netplan
-    - role: 5g/oai_ran
+    - role: 5g/oai/setup
+    - role: 5g/oai/core
+    - role: 5g/oai/ran
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
   roles:
     - role: monarch/monitoring
-
-#- hosts: faraday
-#  tasks:
-#    - name: Connect UEs on R2Lab to 5g network
-#      include_role:
-#        name: r2lab/ue/connect
-#      vars:
-#        ue: "{{ item }}"
-#      loop: "{{ groups['qhats'] }}"
-#      loop_control:
-#        label: "{{ item }}"
-#      ignore_errors: true
+      when: monitoring_enabled
