@@ -16,6 +16,9 @@ DEFAULT_DURATION="120"
 DEFAULT_CORE_NODE="sopnode-f2"
 DEFAULT_RAN_NODE="sopnode-f3"
 DEFAULT_MONITOR_NODE="sopnode-f1"
+
+INVENTORY="./inventory/hosts.ini"
+
 DEFAULT_CORE="open5gs"
 DEFAULT_RAN="oai"
 DEFAULT_PLATFORM="r2lab"
@@ -188,7 +191,7 @@ if [[ "$platform" == "r2lab" ]]; then
     fi
   fi
   echo "RU is $R2LAB_RU"
-  case "$R2LAB_RU" in
+  case "${R2LAB_RU}" in
       "benetel1"|"benetel2")
 	  echo "Currently Benetel scenarios mandates OAI core and OAI ran on sopnode-f3, enforcing parameters..."
 	  core="$oai"
@@ -560,7 +563,7 @@ case "$R2LAB_RU" in
     exit 1 ;;
 esac
 
-cat > ./inventory/hosts.ini <<EOF
+cat > "$INVENTORY" <<EOF
 [webshell]
 localhost ansible_connection=local
 
@@ -572,7 +575,7 @@ $ran_node ansible_user=root nic_interface=$(get_nic "$ran_node") ip=172.28.2.$(g
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
-cat >> ./inventory/hosts.ini <<EOF
+cat >> "$INVENTORY" <<EOF
 
 [monitor_node]
 $monitor_node ansible_user=root nic_interface=$(get_nic "$monitor_node") ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=$(get_storage "$monitor_node")
@@ -580,7 +583,7 @@ EOF
 fi
 
 if [[ "$platform" == "r2lab" ]]; then
-cat >> ./inventory/hosts.ini <<EOF
+cat >> "$INVENTORY" <<EOF
 
 [faraday]
 $faraday_opts $faraday_conf
@@ -594,7 +597,7 @@ for ue in "${R2LAB_UES[@]}"; do
   eval "$(get_ue_vars "$ue")" || { echo "Failed to compute vars for $ue"; exit 1; }
 
   echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim dnn=$dnn upf_ip=$upf_ip nssai=$nssai" \
-    >> ./inventory/hosts.ini
+    >> "$INVENTORY"
 done
 
 # Build fit_nodes section.
@@ -668,7 +671,7 @@ if [[ "${run_interference_test:-}" == true ]]; then
   # If after all we have no fit_lines, still add a default example like original script did
   if [[ "${#fit_lines[@]}" -eq 0 ]]; then
     # no fit nodes to declare (e.g., n300/n320 noise only & no viz) -> add a commented example
-    cat >> ./inventory/hosts.ini <<EOF
+    cat >> "$INVENTORY" <<EOF
 
 [fit_nodes]
 # no FIT nodes required for n300/n320-only interference. Add fit nodes if you want visualization.
@@ -676,25 +679,25 @@ if [[ "${run_interference_test:-}" == true ]]; then
 # fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
 EOF
   else
-    cat >> ./inventory/hosts.ini <<EOF
+    cat >> "$INVENTORY" <<EOF
 
 [fit_nodes]
 EOF
     for line in "${fit_lines[@]}"; do
-      echo "$line" >> ./inventory/hosts.ini
+      echo "$line" >> "$INVENTORY"
     done
   fi
 
 else
   # not running interference test: keep original default fit02 entry (as in previous script)
-  cat >> ./inventory/hosts.ini <<EOF
+  cat >> "$INVENTORY" <<EOF
 
 [fit_nodes]
 fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
 EOF
 fi
 
-cat >> ./inventory/hosts.ini <<EOF
+cat >> "$INVENTORY" <<EOF
 
 [sopnodes:children]
 core_node
@@ -702,40 +705,40 @@ ran_node
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
-  echo "monitor_node" >> ./inventory/hosts.ini
+  echo "monitor_node" >> "$INVENTORY"
 fi
 
-cat >> ./inventory/hosts.ini <<EOF
+cat >> "$INVENTORY" <<EOF
 
 [k8s_workers:children]
 ran_node
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
-  echo "monitor_node" >> ./inventory/hosts.ini
+  echo "monitor_node" >> "$INVENTORY"
 fi
 
 
 # Append useful variables
-cat >> ./inventory/hosts.ini <<EOF
+cat >> "$INVENTORY" <<EOF
 
 [all:vars]
 # ---- Node aliases ----
-core_node_name={{ groups['core_node'][0] }}
-ran_node_name={{ groups['ran_node'][0] }}
-monitor_node_name={{ groups['monitor_node'][0] }}
-faraday_node_name={{ groups['faraday'][0] }}
+core_node_name="${core_node}"
+ran_node_name="${ran_node}"
+monitor_node_name="${monitor_node}"
+faraday_node_name="faraday.inria.fr"
 
 # ---- RRU information (from Faraday) ----
-rru={{ hostvars[faraday_node_name].rru }}
+rru="${R2LAB_RU}"
 
 # ---- RRU families ----
-fhi72={{ rru in ['benetel1','benetel2'] }}
-aw2s={{ rru in ['jaguar','panther'] }}
+fhi72=${fhi72}
+aw2s=$( [[ "$rru" == "jaguar" || "$rru" == "panther" ]] && echo true || echo false )
 
 # ---- RAN variants ----
-f1f2_ran={{ ran_node_name in ['sopnode-f1','sopnode-f2'] }}
-f3_ran={{ ran_node_name == 'sopnode-f3' }}
+f1f2_ran=$( [[ "${ran_node" == "sopnode-f1" || "${ran_node}" == "sopnode-f2" ]] && echo true || echo false )
+f3_ran=$( [[ "${ran_node" == "sopnode-f3" ]] && echo true || echo false )
 
 # ---- Other booleans
 bridge_enabled=$( [[ "$fhi72" == "false" ]] && echo true || echo false ) # to decide if OVS bridge needed between core_node and ran_node
