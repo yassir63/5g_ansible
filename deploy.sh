@@ -524,7 +524,7 @@ EOF
 echo "Generating hosts.ini..."
 
 # Build faraday line (may include interference params)
-faraday_opts="faraday.inria.fr ansible_user=$R2LAB_USERNAME 
+faraday_opts="faraday.inria.fr ansible_user=$R2LAB_USERNAME"
 if [[ "${run_interference_test:-}" == true ]]; then
   # add interference params
   # Use the actual noise USRP id for faraday if it's an RU (n300/n320), otherwise use "fit" for b210/b205 variants
@@ -540,6 +540,7 @@ if [[ "${run_interference_test:-}" == true ]]; then
     faraday_opts="$faraday_opts freq_ul=$FREQ_UL freq_dl=$FREQ_DL"
   fi
 fi
+
 # choose faraday conf based on RU
 # choose gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf if jaguar or panther
 # choose gnb.sa.band78.106prb.n310.7ds2u.conf if n300 or n320
