@@ -733,7 +733,7 @@ rru="${R2LAB_RU}"
 
 # ---- RRU families ----
 fhi72=${fhi72}
-aw2s=$( [[ "$rru" == "jaguar" || "$rru" == "panther" ]] && echo true || echo false )
+aw2s=$( [[ "${R2LAB_RU}" == "jaguar" || "${R2LAB_RU}" == "panther" ]] && echo true || echo false )
 
 # ---- RAN variants ----
 f1f2_ran=$( [[ "${ran_node}" == "sopnode-f1" || "${ran_node}" == "sopnode-f2" ]] && echo true || echo false )
