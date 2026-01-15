@@ -704,7 +704,6 @@ cat >> "$INVENTORY" <<EOF
 core_node
 ran_node
 EOF
-
 if [[ "$monitoring_enabled" == true ]]; then
   echo "monitor_node" >> "$INVENTORY"
 fi
@@ -714,7 +713,6 @@ cat >> "$INVENTORY" <<EOF
 [k8s_workers:children]
 ran_node
 EOF
-
 if [[ "$monitoring_enabled" == true ]]; then
   echo "monitor_node" >> "$INVENTORY"
 fi
@@ -738,8 +736,8 @@ fhi72=${fhi72}
 aw2s=$( [[ "$rru" == "jaguar" || "$rru" == "panther" ]] && echo true || echo false )
 
 # ---- RAN variants ----
-f1f2_ran=$( [[ "${ran_node" == "sopnode-f1" || "${ran_node}" == "sopnode-f2" ]] && echo true || echo false )
-f3_ran=$( [[ "${ran_node" == "sopnode-f3" ]] && echo true || echo false )
+f1f2_ran=$( [[ "${ran_node}" == "sopnode-f1" || "${ran_node}" == "sopnode-f2" ]] && echo true || echo false )
+f3_ran=$( [[ "${ran_node}" == "sopnode-f3" ]] && echo true || echo false )
 
 # ---- Other boolean parameters
 # bridge_enabled is true if OVS bridge required between core_node and ran_node
