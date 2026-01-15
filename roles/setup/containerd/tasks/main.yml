@@ -95,6 +95,14 @@
     replace: 'snapshotter = "native"'
   become: true
 
+# ---- Kubernetes 1.32+ requires pause:3.10
+- name: Force correct pause image for Kubernetes >= 1.32
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: 'sandbox_image\s*=\s*".*"'
+    replace: 'sandbox_image = "registry.k8s.io/pause:3.10"'
+  become: true
+
 # ---- Restart and enable
 - name: Restart & enable containerd
   ansible.builtin.systemd:
