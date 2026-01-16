@@ -16,7 +16,7 @@
 - name: Download prepare-demo-oai.sh from GitHub
   get_url:
     url: "https://raw.githubusercontent.com/sopnode/oai5g-rru/refs/heads/{{ tag_oai5g_rru }}/testing/prepare-demo-oai.sh"
-    dest: "{{ prepare_demo.sh }}"
+    dest: "{{ prepare_demo_script }}"
     mode: '0755'
     force: yes
 
@@ -27,7 +27,7 @@
 
 - name: Update HOST_GNB variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
-    path: "{{ prepare_demo.sh }}"
+    path: "{{ prepare_demo_script }}"
     regexp: '^HOST_GNB='
     line: "HOST_GNB=\"{{ inventory_hostname }}\""
     backrefs: true
@@ -41,48 +41,48 @@
 
 - name: Update REPO_OAI5G_RRU variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
-    path: "{{ prepare-demo-oai.sh }}"
+    path: "{{ prepare_demo_script }}"
     regexp: '^REPO_OAI5G_RRU='
     line: "REPO_OAI5G_RRU=\"{{ repo_oai5g_rru }}\""
     backrefs: true
 
 - name: Update TAG_OAI_CN5G_FED variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
-    path: "{{ prepare-demo-oai.sh }}"
+    path: "{{ prepare_demo_script }}"
     regexp: '^TAG_OAI_CN5G_FED='
     line: "TAG_OAI_CN5G_FED=\"{{ tag_oai_cn5g_fed }}\""
     backrefs: true
 
 - name: Update REPO_OAI_CN5G_FED variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
-    path: "{{ prepare-demo-oai.sh }}"
+    path: "{{ prepare_demo_script }}"
     regexp: '^REPO_OAI_CN5G_FED='
     line: "REPO_OAI_CN5G_FED=\"{{ repo_oai_cn5g_fed }}\""
     backrefs: true
 
 - name: Update LOCAL_CORE_INTERFACE variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
-    path: "{{ prepare-demo-oai.sh }}"
+    path: "{{ prepare_demo_script }}"
     regexp: '^LOCAL_CORE_INTERFACE='
     line: "LOCAL_CORE_INTERFACE=\"{{ multus_core_if }}\""
     backrefs: true
 
 - name: Update LOCAL_RAN_INTERFACE variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
-    path: "{{ prepare-demo-oai.sh }}"
+    path: "{{ prepare_demo_script }}"
     regexp: '^LOCAL_RAN_INTERFACE='
     line: "LOCAL_RAN_INTERFACE=\"{{ multus_ran_if }}\""
     backrefs: true
 
 - name: Update RRU variable with {{ rru }} in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
-    path: "{{ prepare-demo-oai.sh }}"
+    path: "{{ prepare_demo_script }}"
     regexp: '^RRU='
     line: "RRU=\"{{ rru }}\""
     backrefs: true
 
 - name: Run prepare-demo-oai.sh to pull and configure OAI charts
-  ansible.builtin.command: "{{ prepare_demo.sh }} -a"
+  ansible.builtin.command: "{{ prepare_demo_script }} -a"
   args:
     chdir: "{{ repo_dest }}"
   register: prepare_script
