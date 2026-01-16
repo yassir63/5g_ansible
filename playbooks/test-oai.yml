@@ -1,6 +1,10 @@
 - name: Deploy OAI CN and RAN
   hosts: ran_node
   gather_facts: true
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "group_vars/all/5g_profile_default.yaml"
   roles:
     - role: 5g/oai/setup
       when: core == 'oai' or ran == 'oai'
