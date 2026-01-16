@@ -114,10 +114,12 @@
   vars_files:
     - group_vars/all/5g_profiles/default.yaml
   roles:
-    - 5g/open5gs/fiveg_profile
-    - 5g/open5gs/open5gs_repo
-    - 5g/open5gs/open5gs_config
-  when: core == 'open5gs'
+    - role: 5g/open5gs/fiveg_profile
+      when: core == 'open5gs'
+    - role: 5g/open5gs/open5gs_repo
+      when: core == 'open5gs'
+    - role: 5g/open5gs/open5gs_config
+      when: core == 'open5gs'
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
