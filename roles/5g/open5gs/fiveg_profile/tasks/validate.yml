@@ -8,7 +8,6 @@
 - name: Validate slices
   assert:
     that:
-      - slices | length > 0
       - slice.name is defined
       - slice.sst is defined
       - slice.dnn is defined
@@ -19,7 +18,7 @@
 - name: Validate UE slice references
   assert:
     that:
-      - ue.slice in slices | map(attribute='name') | list
+      - ue.value.slice in slices | map(attribute='name') | list
   loop: "{{ ues | dict2items }}"
   loop_control:
     loop_var: ue
