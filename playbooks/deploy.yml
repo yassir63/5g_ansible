@@ -116,8 +116,6 @@
   roles:
     - role: 5g/open5gs/fiveg_profile
       when: core == 'open5gs'
-    - role: 5g/open5gs/open5gs_repo
-      when: core == 'open5gs'
     - role: 5g/open5gs/open5gs_config
       when: core == 'open5gs'
 
