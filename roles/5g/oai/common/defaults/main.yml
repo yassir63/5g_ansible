@@ -1,5 +1,5 @@
 ---
-dir_oai: "{{ ansible_env.HOME/oai }}"
+dir_oai: "{{ ansible_env.HOME }}/oai"
 repo_url: "https://github.com/sopnode/oai5g-rru.git"
 repo_dest: "{{ dir_oai }}/oai5g-rru"
 core_ns: oai5g
