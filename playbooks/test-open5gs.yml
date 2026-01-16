@@ -1,0 +1,9 @@
+- name: Deploy Open5GS CN
+  hosts: core_node
+  vars_files:
+    - group_vars/all/5g_profiles/default.yaml
+  roles:
+    - 5g/open5gs/fiveg_profile
+    - 5g/open5gs/open5gs_repo
+    - 5g/open5gs/open5gs_config
+  when: core == 'open5gs'

@@ -1,0 +1,4 @@
+- name: Generate Open5GS Helm values from 5G profile
+  template:
+    src: values-5g.yaml.j2
+    dest: /tmp/open5gs-values.yaml

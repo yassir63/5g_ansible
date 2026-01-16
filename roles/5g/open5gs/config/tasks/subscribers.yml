@@ -1,0 +1,9 @@
+- name: Generate Open5GS subscribers JSON
+  template:
+    src: subscribers.json.j2
+    dest: /tmp/open5gs-subscribers.json
+
+- name: Import subscribers into Open5GS
+  command: >
+    kubectl exec -n open5gs deploy/open5gs-mongodb --
+    open5gs-dbctl import /tmp/open5gs-subscribers.json

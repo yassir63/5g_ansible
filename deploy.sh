@@ -722,6 +722,10 @@ fi
 cat >> "$INVENTORY" <<EOF
 
 [all:vars]
+# ---- CORE / RAN type ----
+core="$core"
+ran="$ran"
+
 # ---- Node aliases ----
 core_node_name="${core_node}"
 ran_node_name="${ran_node}"
@@ -741,7 +745,7 @@ rru="${R2LAB_RU}"
 fhi72=${fhi72}
 aw2s=$( [[ "${R2LAB_RU}" == "jaguar" || "${R2LAB_RU}" == "panther" ]] && echo true || echo false )
 
-# ---- RAN variants ----
+# ---- hosts variants for RAN ----
 f1f2_ran=$( [[ "${ran_node}" == "sopnode-f1" || "${ran_node}" == "sopnode-f2" ]] && echo true || echo false )
 f3_ran=$( [[ "${ran_node}" == "sopnode-f3" ]] && echo true || echo false )
 
@@ -751,10 +755,11 @@ bridge_enabled=$( [[ "$fhi72" == "false" ]] && echo true || echo false )
 monitoring_enabled=${monitoring_enabled}
 EOF
 
-export RRU="$R2LAB_RU"
-export monitoring_enabled="$monitoring_enabled"
-export CORE="$core"
-export RAN="$ran"
+# to cleanup?
+#export RRU="$R2LAB_RU"
+#export monitoring_enabled="$monitoring_enabled"
+#export CORE="$core"
+#export RAN="$ran"
 
 
 # ========== Reserve Nodes on SLICES ==========

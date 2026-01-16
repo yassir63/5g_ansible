@@ -1,0 +1,7 @@
+- name: Deploy OAI CN and RAN
+  hosts: ran_node
+  roles:
+    - role: 5g/oai/setup
+      when: core == 'oai' or ran == 'oai'
+    - role: 5g/oai/config
+      when: core == 'oai' or ran == 'oai'

@@ -1,0 +1,17 @@
+- name: Ensure 5G config directory exists
+  file:
+    path: /etc/oai
+    state: directory
+    mode: '0755'
+
+- name: Render 5G environment file
+  template:
+    src: 5g-env.sh.j2
+    dest: /etc/oai/5g-env.sh
+    mode: '0644'
+  register: fiveg_env
+
+- name: Show if 5G parameters changed
+  debug:
+    msg: "5G parameters updated"
+  when: fiveg_env.changed

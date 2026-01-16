@@ -101,8 +101,23 @@
   hosts: ran_node
   roles:
     - role: 5g/oai/setup
+      when: core == 'oai' or ran == 'oai'
+    - role: 5g/oai/config
+      when: core == 'oai' or ran == 'oai'
     - role: 5g/oai/core
+      when: core == 'oai'
     - role: 5g/oai/ran
+      when: ran == 'oai'
+      
+- name: Deploy Open5GS CN
+  hosts: core_node
+  vars_files:
+    - group_vars/all/5g_profiles/default.yaml
+  roles:
+    - 5g/open5gs/fiveg_profile
+    - 5g/open5gs/open5gs_repo
+    - 5g/open5gs/open5gs_config
+  when: core == 'open5gs'
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node

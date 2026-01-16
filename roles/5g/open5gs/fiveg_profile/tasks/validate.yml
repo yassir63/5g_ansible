@@ -1,0 +1,25 @@
+- name: Validate PLMN
+  assert:
+    that:
+      - plmn.mcc is defined
+      - plmn.mnc is defined
+      - plmn.tac is defined
+
+- name: Validate slices
+  assert:
+    that:
+      - slices | length > 0
+      - slice.name is defined
+      - slice.sst is defined
+      - slice.dnn is defined
+  loop: "{{ slices }}"
+  loop_control:
+    loop_var: slice
+
+- name: Validate UE slice references
+  assert:
+    that:
+      - ue.slice in slices | map(attribute='name') | list
+  loop: "{{ ues | dict2items }}"
+  loop_control:
+    loop_var: ue

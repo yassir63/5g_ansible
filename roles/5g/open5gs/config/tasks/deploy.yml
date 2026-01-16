@@ -1,0 +1,8 @@
+- name: Deploy Open5GS
+  kubernetes.core.helm:
+    name: open5gs
+    chart_ref: open5gs/open5gs
+    release_namespace: open5gs
+    create_namespace: true
+    values_files:
+      - /tmp/open5gs-values.yaml
