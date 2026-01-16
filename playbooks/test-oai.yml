@@ -1,8 +1,6 @@
 - name: Deploy OAI CN and RAN
   hosts: ran_node
   gather_facts: false
-  vars_files:
-    - group_vars/all/5g_profile_default.yaml
   roles:
     - role: 5g/oai/setup
       when: core == 'oai' or ran == 'oai'
