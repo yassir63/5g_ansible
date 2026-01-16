@@ -1,9 +1,5 @@
 # automatically loaded by ansible
 
-# Profil actif, peut être surchargé via -e
-fiveg_profile: "{{ fiveg_profile | default('default') }}"
-
-# Charger le bon profil
-vars_files:
-  - "group_vars/all/fiveg_profile_{{ fiveg_profile }}.yaml"
+# Active profile, can be overloaded via -e
+fiveg_profile: default
 
