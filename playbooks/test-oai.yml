@@ -1,6 +1,6 @@
 - name: Deploy OAI CN and RAN
   hosts: ran_node
-  gather_facts: false
+  gather_facts: true
   roles:
     - role: 5g/oai/setup
       when: core == 'oai' or ran == 'oai'
