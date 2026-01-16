@@ -1,0 +1,6 @@
+# automatically loaded by ansible
+
+fiveg_profile: "{{ fiveg_profile | default('default') }}"
+
+vars_files:
+  - "{{ inventory_dir }}/group_vars/all/5g_profiles/{{ fiveg_profile }}.yaml"
