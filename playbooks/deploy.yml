@@ -87,6 +87,10 @@
     - role: monarch/deploy
       when: monitoring_enabled
 
+- name: Check fhi72 value before SRIOV role
+  debug:
+    var: fhi72
+
 - name: SRIOV setup
   hosts: ran_node
   become: true
