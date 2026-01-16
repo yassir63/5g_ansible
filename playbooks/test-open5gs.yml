@@ -1,5 +1,6 @@
 - name: Deploy Open5GS CN
-  hosts: core_node
+  #hosts: core_node
+  hosts: ran_node
   pre_tasks:
     - name: Load 5G profile
       include_vars:
@@ -7,7 +8,7 @@
   roles:
     - role: 5g/open5gs/fiveg_profile
       when: core == 'open5gs'
-    - role: 5g/open5gs/setup
-      when: core == 'open5gs'
+    #- role: 5g/open5gs/setup
+    #  when: core == 'open5gs'
     - role: 5g/open5gs/config
       when: core == 'open5gs'
