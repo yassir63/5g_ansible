@@ -34,7 +34,7 @@
 
 - name: Update TAG_OAI5G_RRU variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
-    path: "{{ prepare-demo-oai.sh }}"
+    path: "{{ prepare_demo_script }}"
     regexp: '^TAG_OAI5G_RRU='
     line: "TAG_OAI5G_RRU=\"{{ tag_oai5g_rru }}\""
     backrefs: true
