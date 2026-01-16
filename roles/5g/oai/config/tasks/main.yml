@@ -4,6 +4,10 @@
     state: directory
     mode: '0755'
 
+- name: DEBUG plmn
+  debug:
+    var: plmn
+    
 - name: Render 5G environment file
   template:
     src: 5g-env.sh.j2
@@ -15,3 +19,4 @@
   debug:
     msg: "5G parameters updated"
   when: fiveg_env.changed
+
