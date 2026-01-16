@@ -23,7 +23,7 @@
   ansible.builtin.lineinfile:
     path: "{{ repo_dest }}/prepare-demo-oai.sh"
     regexp: '^HOST_GNB='
-    line: "HOST_GNB=\"{{ ansible_hostname }}\""
+    line: "HOST_GNB=\"{{ inventory_hostname }}\""
     backrefs: true
 
 - name: Update TAG_OAI5G_RRU variable in prepare-demo-oai.sh
