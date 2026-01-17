@@ -133,6 +133,26 @@
     state: restarted
   become: true
 
+- name: Ensure kube-proxy config directory exists
+  ansible.builtin.file:
+    path: /var/lib/kube-proxy
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Symlink kubeproxy-config.yaml to ConfigMap file
+  ansible.builtin.file:
+    src: /etc/kubernetes/config.conf
+    dest: /var/lib/kube-proxy/kubeproxy-config.yaml
+    state: link
+  become: true
+
+- name: Restart kube-proxy to pick up new config
+  ansible.builtin.systemd:
+    name: kube-proxy
+    state: restarted
+  become: true
+
 - name: Remove stale node entry from cluster
   delegate_to: "{{ groups['core_node'][0] }}"
   become: true

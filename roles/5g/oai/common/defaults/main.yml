@@ -2,7 +2,6 @@
 dir_oai: "{{ ansible_env.HOME }}/oai"
 repo_url: "https://github.com/sopnode/oai5g-rru.git"
 repo_dest: "{{ dir_oai }}/oai5g-rru"
-core_ns: oai5g
 repo_oai5g_rru: "https://github.com/sopnode/oai5g-rru.git"
 tag_oai5g_rru: "v2.2.0-r2lab"
 repo_oai_cn5g_fed: "https://gitlab.eurecom.fr/oai/orchestration/charts.git"

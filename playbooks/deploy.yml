@@ -1,7 +1,7 @@
 ---
-- name: Normalize boolean variables from inventory
+- name: Normalize boolean variables from the inventory
   hosts: all
-  gather_facts: false
+  gather_facts: true   # true to get ansible_env and ansible_hostname
   pre_tasks:
     - name: Force boolean variables to proper boolean type
       set_fact:
@@ -11,15 +11,16 @@
         f3_ran: "{{ f3_ran | bool }}"
         bridge_enabled: "{{ bridge_enabled | bool }}"
         monitoring_enabled: "{{ monitoring_enabled | bool }}"
+
     - name: Show all boolean vars
       debug:
         msg: |
-          fhi72 = {{ fhi72 }}
-          aw2s = {{ aw2s }}
-          f1f2_ran = {{ f1f2_ran }}
-          f3_ran = {{ f3_ran }}
-          bridge_enabled = {{ bridge_enabled }}
-          monitoring_enabled = {{ monitoring_enabled }}
+          fhi72 = {{ fhi72 | default('undefined') }}
+          aw2s = {{ aw2s | default('undefined') }}
+          f1f2_ran = {{ f1f2_ran | default('undefined') }}
+          f3_ran = {{ f3_ran | default('undefined') }}
+          bridge_enabled = {{ bridge_enabled | default('undefined') }}
+          monitoring_enabled = {{ monitoring_enabled | default('undefined') }}
 
 - hosts: webshell
   gather_facts: false

@@ -38,6 +38,13 @@
     multus_core_if: "{{ hostvars[groups['core_node'][0]].nic_interface }}"
     multus_ran_if: "{{ hostvars[groups['ran_node'][0]].nic_interface }}"
 
+- name: Update NS variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ prepare_demo_script }}"
+    regexp: '^NS='
+    line: "NS=\"{{ core }}\""
+    backrefs: true
+
 - name: Update HOST_GNB variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
