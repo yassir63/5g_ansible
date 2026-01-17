@@ -1,14 +1,21 @@
 ---
+# -------------------------------------------------------------------
+# Open5GS deployment role
+# -------------------------------------------------------------------
+
 - name: RESTART_OPEN5GS
   ansible.builtin.meta: noop
 
 - name: Normalize booleans at playbook start
   import_tasks: "{{ playbook_dir }}/../tasks/reload_booleans.yml"
-      
+
 - name: Load 5G profile
   include_vars:
     file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
 
+# -------------------------------------------------------------------
+# Clone Open5GS k8s repo
+# -------------------------------------------------------------------
 - name: Clone Open5GS k8s repo
   git:
     repo: https://github.com/sopnode/open5gs-k8s.git
@@ -30,8 +37,11 @@
     name: open5gs
     state: present
     kubeconfig: /etc/kubernetes/admin.conf
+  become: true
 
+# -------------------------------------------------------------------
 # Persistent Volume for MongoDB
+# -------------------------------------------------------------------
 - name: Ensure local directory exists for MongoDB PV
   file:
     path: /root/open5gs-mongodb-data
@@ -41,7 +51,7 @@
     mode: '0755'
   become: true
 
-- name: Create PersistentVolume for MongoDB
+- name: Create MongoDB PersistentVolume if it does not exist
   kubernetes.core.k8s:
     state: present
     definition:
@@ -54,22 +64,13 @@
           storage: 1Gi
         accessModes:
           - ReadWriteOnce
-        persistentVolumeReclaimPolicy: Retain
+        persistentVolumeReclaimPolicy: Delete
         hostPath:
           path: /root/open5gs-mongodb-data
     kubeconfig: /etc/kubernetes/admin.conf
   become: true
 
-- name: Check if datadir-mongodb-0 PVC exists
-  kubernetes.core.k8s_info:
-    kind: PersistentVolumeClaim
-    namespace: open5gs
-    name: datadir-mongodb-0
-    kubeconfig: /etc/kubernetes/admin.conf
-  register: mongodb_pvc_info
-  ignore_errors: yes
-
-- name: Create PVC if it does not exist
+- name: Ensure MongoDB PVC exists
   kubernetes.core.k8s:
     state: present
     definition:
@@ -85,11 +86,13 @@
           requests:
             storage: 1Gi
     kubeconfig: /etc/kubernetes/admin.conf
-  when: mongodb_pvc_info.resources | length == 0
-
-- name: Deploy Open5GS core using deploy-core.sh with realtime logs
   become: true
-  shell: |
-    stdbuf -oL bash /root/open5gs-k8s/deploy-core.sh | tee /tmp/open5gs-core-deploy.log
+
+# -------------------------------------------------------------------
+# Deploy Open5GS via deploy-core.sh
+# -------------------------------------------------------------------
+- name: Deploy Open5GS core using deploy-core.sh with realtime logs
+  shell: stdbuf -oL bash ./deploy-core.sh | tee /tmp/open5gs-deploy.log
   args:
     chdir: /root/open5gs-k8s
+  become: true
