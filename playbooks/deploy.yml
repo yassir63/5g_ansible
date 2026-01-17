@@ -1,10 +1,12 @@
 ---
 - hosts: all
   gather_facts: true
-  pre_tasks:
-    - name: Correct booleans from the inventory
-      import_tasks: ../tasks/reload_booleans.yml
-
+  tasks:
+    - name: Normalize booleans
+      block:
+        - set_fact: inventory_booleans=["fhi72","aw2s","f1f2_ran","f3_ran","bridge_enabled","monitoring_enabled"]
+        - set_fact: "{{ item }}={{ hostvars[inventory_hostname][item]|bool }}"
+          loop: "{{ inventory_booleans }}"
 
 - name: Normalize boolean variables from inventory
   hosts: all
@@ -146,11 +148,35 @@
     - role: setup/gre_tunnel
       when: core == 'oai' and ran == 'oai' and not fhi72
 
-- hosts: all
-  gather_facts: true
-  pre_tasks:
-    - name: RESTART_HERE
-      import_tasks: ../tasks/reload_booleans.yml
+- name: RESTART_HERE
+  debug:
+    msg: "Starting boolean normalization on all hosts"  
+- name: Normalize booleans on all hosts
+  block:
+    - name: Define list of inventory booleans to normalize
+      set_fact:
+        inventory_booleans:
+          - fhi72
+          - aw2s
+          - f1f2_ran
+          - f3_ran
+          - bridge_enabled
+          - monitoring_enabled
+    - name: Force inventory booleans to real booleans
+      set_fact:
+        "{{ item }}": "{{ hostvars[target_host][item] | bool }}"
+      loop: "{{ inventory_booleans }}"
+      loop_control:
+        loop_var: item
+    - name: Debug normalized booleans
+      debug:
+        msg: "{{ item }} = {{ hostvars[target_host][item] }}"
+      loop: "{{ inventory_booleans }}"
+      loop_control:
+        loop_var: item
+  loop: "{{ ansible_play_hosts }}"
+  loop_control:
+    loop_var: target_host
 
 - name: Deploy OAI CN/RAN
   hosts: ran_node
