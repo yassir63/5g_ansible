@@ -43,38 +43,32 @@
     mode: '0755'
   become: true
 
-- name: Create PersistentVolume for MongoDB
-  kubernetes.core.k8s:
-    api_version: v1
-    kind: PersistentVolume
-    name: datadir-mongodb
-    state: present
-    kubeconfig: /etc/kubernetes/admin.conf
-    definition:
-      spec:
-        capacity:
-          storage: 1Gi
-        accessModes:
-          - ReadWriteOnce
-        persistentVolumeReclaimPolicy: Retain
-        hostPath:
-          path: /root/open5gs-mongodb-data
-
-- name: Create PersistentVolumeClaim for MongoDB
-  kubernetes.core.k8s:
-    api_version: v1
+- name: Check if datadir-mongodb-0 PVC exists
+  kubernetes.core.k8s_info:
     kind: PersistentVolumeClaim
-    name: datadir-mongodb-0
     namespace: open5gs
-    state: present
+    name: datadir-mongodb-0
     kubeconfig: /etc/kubernetes/admin.conf
+  register: mongodb_pvc_info
+  ignore_errors: yes
+
+- name: Create PVC if it does not exist
+  kubernetes.core.k8s:
+    state: present
     definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: datadir-mongodb-0
+        namespace: open5gs
       spec:
         accessModes:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 1Gi
+            storage: 6Gi
+  when: mongodb_pvc_info.resources | length == 0
+  kubeconfig: /etc/kubernetes/admin.conf
 
 - name: Deploy Open5GS core via Kustomize with realtime logs
   shell: |
