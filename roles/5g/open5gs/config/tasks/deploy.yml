@@ -1,5 +1,5 @@
 ---
-- name: Clone Open5GS k8s repo
+- name: Ensure Open5GS k8s repo is cloned
   git:
     repo: https://github.com/sopnode/open5gs-k8s.git
     dest: /root/open5gs-k8s
@@ -13,27 +13,8 @@
     dest: /root/open5gs-k8s/open5gs/values-5g.yaml
   become: true
 
-- name: Ensure open5gs namespace exists
-  kubernetes.core.k8s:
-    api_version: v1
-    kind: Namespace
-    name: open5gs
-    state: present
-    kubeconfig: /etc/kubernetes/admin.conf
-
-- name: Apply Open5GS manifests via Kustomize
-  shell: kubectl apply -k /root/open5gs-k8s/open5gs --kubeconfig=/etc/kubernetes/admin.conf
+- name: Deploy Open5GS core using deploy-core.sh
+  shell: bash deploy-core.sh
   args:
-    chdir: /root/open5gs-k8s/open5gs
+    chdir: /root/open5gs-k8s
   become: true
-
-- name: Wait for Open5GS MongoDB deployment to be ready
-  kubernetes.core.k8s_info:
-    kind: Deployment
-    namespace: open5gs
-    name: open5gs-mongodb
-    kubeconfig: /etc/kubernetes/admin.conf
-  register: mongodb_deploy
-  retries: 30
-  delay: 10
-  until: mongodb_deploy.resources[0].status.availableReplicas | default(0) >= 1
