@@ -5,6 +5,10 @@
 - name: Normalize booleans at playbook start
   import_tasks: "{{ playbook_dir }}/../tasks/reload_booleans.yml"
       
+- name: Load 5G profile
+  include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+
 - name: Clone Open5GS k8s repo
   git:
     repo: https://github.com/sopnode/open5gs-k8s.git
