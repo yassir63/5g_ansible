@@ -2,31 +2,8 @@
 - hosts: all
   gather_facts: true
   tasks:
-    - name: Normalize inventory booleans
-      block:
-        - set_fact:
-            inventory_booleans:
-              - fhi72
-              - aw2s
-              - f1f2_ran
-              - f3_ran
-              - bridge_enabled
-              - monitoring_enabled
-
-        - set_fact:
-            "{{ item }}": "{{ hostvars[target_host][item] | bool }}"
-          loop: "{{ inventory_booleans }}"
-          loop_control:
-            loop_var: item
-
-        - debug:
-            msg: "{{ item }} = {{ hostvars[target_host][item] }}"
-          loop: "{{ inventory_booleans }}"
-          loop_control:
-            loop_var: item
-      loop: "{{ ansible_play_hosts }}"
-      loop_control:
-        loop_var: target_host
+    - name: Normalize booleans at playbook start
+      import_tasks: ../tasks/reload_booleans.yml
 
 - hosts: webshell
   gather_facts: false
@@ -139,28 +116,10 @@
       when: core == 'oai' and ran == 'oai' and not fhi72
 
 - name: RESTART_HERE
-  hosts: core_node
+  hosts: all
   gather_facts: false
   tasks:
-    - debug:
-        msg: "Restart point for boolean normalization (static)"
-- name: Define list of inventory booleans
-  set_fact:
-    inventory_booleans:
-      - fhi72
-      - aw2s
-      - f1f2_ran
-      - f3_ran
-      - bridge_enabled
-      - monitoring_enabled
-- name: Force inventory booleans to real booleans
-  set_fact:
-    "{{ item }}": "{{ hostvars[inventory_hostname][item] | bool }}"
-  loop: "{{ inventory_booleans }}"
-- name: Debug normalized booleans
-  debug:
-    msg: "{{ item }} = {{ hostvars[inventory_hostname][item] }}"
-  loop: "{{ inventory_booleans }}"
+    - import_tasks: ../tasks/reload_booleans.yml
   
 - name: Deploy Open5GS CN
   hosts: core_node

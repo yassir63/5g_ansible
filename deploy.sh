@@ -881,7 +881,7 @@ case "$R2LAB_RU" in
 	esac
 esac
 
-echo "Launching $script ..."
+echo "Launching script ..."
 #./deployments/$script
 
 ansible-galaxy install -r collections/requirements.yml
