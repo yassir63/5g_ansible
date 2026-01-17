@@ -75,20 +75,14 @@
   register: kubeadm_init
   become: true
 
-# === FIX KUBE-PROXY CONFIG FILE MISMATCH ROBUSTE =============================
-- name: Patch kube-proxy DaemonSet to use correct config.conf
+# === FIX KUBE-PROXY ROBUSTE ==================================================
+- name: Delete kube-proxy DaemonSet (it will be recreated with correct config)
   ansible.builtin.shell: |
-    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system patch ds kube-proxy \
-      --type=json \
-      -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/args/0", "value":"--config=/var/lib/kube-proxy/config.conf"}]'
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system delete ds kube-proxy
+  ignore_errors: true
   become: true
 
-- name: Restart kube-proxy pods to apply corrected config path
-  ansible.builtin.shell: |
-    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system delete pod -l k8s-app=kube-proxy
-  become: true
-
-- name: Wait for kube-proxy pods to be Running
+- name: Wait until kube-proxy pods are recreated and Ready
   ansible.builtin.shell: |
     kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system wait pod -l k8s-app=kube-proxy --for=condition=Ready --timeout=180s
   become: true
