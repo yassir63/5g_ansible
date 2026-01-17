@@ -64,7 +64,7 @@
           - ReadWriteOnce
         resources:
           requests:
-            storage: 6Gi
+            storage: 1Gi
     kubeconfig: /etc/kubernetes/admin.conf
   when: mongodb_pvc_info.resources | length == 0
 
