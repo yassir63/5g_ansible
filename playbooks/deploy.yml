@@ -141,7 +141,7 @@
 
 - hosts: all
   gather_facts: true
-  pre_tasks:
+  tasks:
     - name: RESTART_HERE
       block:
         - name: Define list of inventory booleans to normalize
@@ -153,11 +153,17 @@
               - f3_ran
               - bridge_enabled
               - monitoring_enabled
+
         - name: Force inventory booleans to real booleans
           set_fact:
             "{{ item }}": "{{ hostvars[inventory_hostname][item] | bool }}"
           loop: "{{ inventory_booleans }}"
-      name: RESTART_HERE
+          become: false
+
+        - name: Debug normalized booleans
+          debug:
+            msg: "{{ item }} = {{ hostvars[inventory_hostname][item] }}"
+          loop: "{{ inventory_booleans }}"
 
 - name: Deploy OAI CN/RAN
   hosts: ran_node
