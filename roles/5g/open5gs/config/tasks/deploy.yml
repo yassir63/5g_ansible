@@ -15,7 +15,4 @@
 
 - name: Apply Open5GS manifests via Kustomize
   become: true
-  shell: |
-    kubectl apply -k /root/open5gs-k8s/open5gs --kubeconfig=/etc/kubernetes/admin.conf
-  args:
-    warn: false
+  shell: kubectl apply -k /root/open5gs-k8s/open5gs --kubeconfig=/etc/kubernetes/admin.conf
