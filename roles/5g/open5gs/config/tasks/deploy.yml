@@ -31,9 +31,7 @@
     state: present
     kubeconfig: /etc/kubernetes/admin.conf
 
-# -------------------------------------------------------------------
-# Persistent Volume pour MongoDB
-# -------------------------------------------------------------------
+# Persistent Volume for MongoDB
 - name: Ensure local directory exists for MongoDB PV
   file:
     path: /root/open5gs-mongodb-data
@@ -67,8 +65,8 @@
         resources:
           requests:
             storage: 6Gi
+    kubeconfig: /etc/kubernetes/admin.conf
   when: mongodb_pvc_info.resources | length == 0
-  kubeconfig: /etc/kubernetes/admin.conf
 
 - name: Deploy Open5GS core via Kustomize with realtime logs
   shell: |
