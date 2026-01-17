@@ -75,10 +75,13 @@
   register: kubeadm_init
   become: true
 
-# === KUBE-PROXY ROBUSTE =======================================================
-- name: Wait until kube-proxy DaemonSet is created
+# === KUBE-PROXY ROBUSTE FINAL ================================================
+- name: Wait until at least one kube-proxy pod exists
   ansible.builtin.shell: |
-    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system wait ds/kube-proxy --for=condition=Available --timeout=180s
+    until kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system get pod -l k8s-app=kube-proxy --no-headers 2>/dev/null | grep .; do
+      echo "Waiting for kube-proxy pod to appear..."
+      sleep 5
+    done
   become: true
 
 - name: Restart kube-proxy pods to reload config.conf (if any exist)
