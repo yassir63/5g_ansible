@@ -1,7 +1,10 @@
 ---
 - name: RESTART_OPEN5GS
   ansible.builtin.meta: noop
-  
+
+- name: Normalize booleans at playbook start
+  import_tasks: "{{ role_path }}/../tasks/reload_booleans.yml"
+      
 - name: Clone Open5GS k8s repo
   git:
     repo: https://github.com/sopnode/open5gs-k8s.git
