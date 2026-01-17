@@ -2,6 +2,18 @@
 - name: RESTART_AFTER_REBOOT
   ansible.builtin.meta: noop
 
+- name: Refresh boolean variables on all hosts
+  ansible.builtin.set_fact:
+    fhi72: "{{ (hostvars[item].get('fhi72', False) | bool) }}"
+    aw2s: "{{ (hostvars[item].get('aw2s', False) | bool) }}"
+    f1f2_ran: "{{ (hostvars[item].get('f1f2_ran', False) | bool) }}"
+    f3_ran: "{{ (hostvars[item].get('f3_ran', False) | bool) }}"
+    bridge_enabled: "{{ (hostvars[item].get('bridge_enabled', False) | bool) }}"
+    monitoring_enabled: "{{ (hostvars[item].get('monitoring_enabled', False) | bool) }}"
+  loop: "{{ groups['all'] }}"
+  delegate_to: "{{ item }}"
+  run_once: true
+  
 - name: Ensure required apt packages are installed
   apt:
     name:
