@@ -75,14 +75,13 @@
   register: kubeadm_init
   become: true
 
-# === FIX KUBE-PROXY ROBUSTE ==================================================
-- name: Delete kube-proxy DaemonSet (it will be recreated with correct config)
+# === FIX KUBE-PROXY ROBUSTE SANS PATCH NI DELETE =============================
+- name: Ensure kube-proxy pods are restarted to reload config.conf
   ansible.builtin.shell: |
-    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system delete ds kube-proxy
-  ignore_errors: true
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system delete pod -l k8s-app=kube-proxy
   become: true
 
-- name: Wait until kube-proxy pods are recreated and Ready
+- name: Wait until kube-proxy pods are Running
   ansible.builtin.shell: |
     kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system wait pod -l k8s-app=kube-proxy --for=condition=Ready --timeout=180s
   become: true
