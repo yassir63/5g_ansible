@@ -116,7 +116,7 @@
       when: core == 'oai' and ran == 'oai' and not fhi72
 
 - name: RESTART_HERE
-  hosts: all
+  hosts: localhost
   gather_facts: false
   tasks:
     - import_tasks: ../tasks/reload_booleans.yml
