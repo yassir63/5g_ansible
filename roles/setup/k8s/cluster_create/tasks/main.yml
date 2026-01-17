@@ -63,6 +63,38 @@
   register: kubeadm_init
   become: true
 
+# === FIX KUBE-PROXY CONFIG FILE MISMATCH =====================================
+- name: Ensure kube-proxy DaemonSet points to correct config file
+  kubernetes.core.k8s:
+    kind: DaemonSet
+    namespace: kube-system
+    name: kube-proxy
+    merge_type: strategic
+    patch:
+      spec:
+        template:
+          spec:
+            containers:
+            - name: kube-proxy
+              args:
+              - --config=/var/lib/kube-proxy/config.conf
+  become: true
+
+- name: Restart kube-proxy pods to apply corrected config path
+  kubernetes.core.k8s:
+    kind: Pod
+    namespace: kube-system
+    label_selectors:
+      - k8s-app=kube-proxy
+    state: absent
+  become: true
+
+- name: Wait for kube-proxy pods to be Running
+  ansible.builtin.shell: |
+    kubectl -n kube-system wait pod -l k8s-app=kube-proxy --for=condition=Ready --timeout=180s
+  become: true
+
+
 # ---- Sanitize kubelet extra args: remove deprecated CNI flags if present ----
 - name: Check for deprecated kubelet flags in /etc/default/kubelet
   ansible.builtin.shell: |
