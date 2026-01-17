@@ -93,11 +93,27 @@
   gather_facts: true
   roles:
     - role: setup/sriov_operator
-      when: fhi72
+      when: fhi72 and f3_ran
     - role: setup/sriov_nnp_create    
-      when: fhi72
+      when: fhi72 and f3_ran
 
-- name: Deploy OAI CN and RAN
+- name: Configure GRE Tunnel From Core Node to RAN Node for OAI CN/RAN scenario
+  hosts: core_node
+  vars:
+    ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+      when: core == 'oai' and ran == 'oai' and not fhi72
+
+- name: Configure GRE Tunnel From RAN Node to Core Node
+  hosts: ran_node
+  vars:
+    ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+  roles:
+    - role: setup/gre_tunnel
+      when: core == 'oai' and ran == 'oai' and not fhi72
+
+- name: Deploy OAI CN/RAN
   hosts: ran_node
   pre_tasks:
     - name: Load 5G profile
@@ -112,7 +128,7 @@
       when: core == 'oai'
     - role: 5g/oai/ran
       when: ran == 'oai'
-      
+
 - name: Deploy Open5GS CN
   hosts: core_node
   pre_tasks:
