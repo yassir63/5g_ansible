@@ -87,22 +87,9 @@
     kubeconfig: /etc/kubernetes/admin.conf
   when: mongodb_pvc_info.resources | length == 0
 
-- name: Deploy Open5GS core via Kustomize with realtime logs
+- name: Deploy Open5GS core using deploy-core.sh with realtime logs
+  become: true
   shell: |
-    stdbuf -oL kubectl apply -k /root/open5gs-k8s/open5gs --kubeconfig=/etc/kubernetes/admin.conf | tee /tmp/open5gs-deploy.log
+    stdbuf -oL bash /root/open5gs-k8s/deploy-core.sh | tee /tmp/open5gs-core-deploy.log
   args:
     chdir: /root/open5gs-k8s
-  become: true
-
-- name: Wait for Open5GS pods to be ready
-  shell: |
-    for pod in mongodb nrf scp amf udr bsf webui; do
-      until kubectl get pods -n open5gs -l "app.kubernetes.io/name=$pod" -o jsonpath='{.items[0].status.containerStatuses[0].ready}' --kubeconfig=/etc/kubernetes/admin.conf | grep true >/dev/null; do
-        echo "Waiting for pod $pod..."
-        sleep 5
-      done
-      echo "$pod ready"
-    done
-  args:
-    chdir: /root/open5gs-k8s
-  become: true
