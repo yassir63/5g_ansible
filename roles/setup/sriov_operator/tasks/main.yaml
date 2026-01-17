@@ -1,5 +1,5 @@
 ---
-- name: RESTART_HERE
+- name: RESTART_SRIOV
   ansible.builtin.meta: noop
 
 - name: Update APT package cache

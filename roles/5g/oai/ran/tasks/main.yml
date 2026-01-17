@@ -3,7 +3,7 @@
   ansible.builtin.meta: noop
 
 - name: Run demo-oai.sh start-gnb to launch OAI gnb pod
-  ansible.builtin.command: "{{ demo_oai }} start-gnb"
+  ansible.builtin.command: "{{ demo_oai_script }} start-gnb"
   args:
     chdir: "{{ repo_dest }}"
   register: gnb_script
