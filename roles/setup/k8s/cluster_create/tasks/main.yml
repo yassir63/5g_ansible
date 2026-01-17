@@ -69,7 +69,7 @@
     kind: DaemonSet
     namespace: kube-system
     name: kube-proxy
-    merge_type: strategic
+    merge_type: strategic-merge
     patch:
       spec:
         template:
@@ -93,7 +93,6 @@
   ansible.builtin.shell: |
     kubectl -n kube-system wait pod -l k8s-app=kube-proxy --for=condition=Ready --timeout=180s
   become: true
-
 
 # ---- Sanitize kubelet extra args: remove deprecated CNI flags if present ----
 - name: Check for deprecated kubelet flags in /etc/default/kubelet
