@@ -13,6 +13,14 @@
     dest: /root/open5gs-k8s/open5gs/values-5g.yaml
   become: true
 
+- name: Ensure open5gs namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: open5gs
+    state: present
+    kubeconfig: /etc/kubernetes/admin.conf
+    
 - name: Apply Open5GS manifests via Kustomize
   become: true
   shell: kubectl apply -k /root/open5gs-k8s/open5gs --kubeconfig=/etc/kubernetes/admin.conf
