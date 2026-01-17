@@ -1,4 +1,11 @@
 ---
+- hosts: all
+  gather_facts: true
+  pre_tasks:
+    - name: Correct booleans from the inventory
+      import_tasks: ../tasks/reload_booleans.yml
+
+
 - name: Normalize boolean variables from inventory
   hosts: all
   gather_facts: true
@@ -141,29 +148,9 @@
 
 - hosts: all
   gather_facts: true
-  tasks:
+  pre_tasks:
     - name: RESTART_HERE
-      block:
-        - name: Define list of inventory booleans to normalize
-          set_fact:
-            inventory_booleans:
-              - fhi72
-              - aw2s
-              - f1f2_ran
-              - f3_ran
-              - bridge_enabled
-              - monitoring_enabled
-
-        - name: Force inventory booleans to real booleans
-          set_fact:
-            "{{ item }}": "{{ hostvars[inventory_hostname][item] | bool }}"
-          loop: "{{ inventory_booleans }}"
-          become: false
-
-        - name: Debug normalized booleans
-          debug:
-            msg: "{{ item }} = {{ hostvars[inventory_hostname][item] }}"
-          loop: "{{ inventory_booleans }}"
+      import_tasks: ../tasks/restart_booleans.yml
 
 - name: Deploy OAI CN/RAN
   hosts: ran_node
