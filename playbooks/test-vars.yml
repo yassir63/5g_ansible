@@ -1,0 +1,27 @@
+- name: Preflight – Normalize boolean variables and show inventory vars
+  hosts: all
+  gather_facts: false
+  pre_tasks:
+
+    - name: Force boolean variables to proper boolean type
+      set_fact:
+        fhi72: "{{ fhi72 | bool }}"
+        aw2s: "{{ aw2s | bool }}"
+        f1f2_ran: "{{ f1f2_ran | bool }}"
+        f3_ran: "{{ f3_ran | bool }}"
+        bridge_enabled: "{{ bridge_enabled | bool }}"
+        monitoring_enabled: "{{ monitoring_enabled | bool }}"
+
+    - name: Show all boolean vars
+      debug:
+        msg:
+          - "fhi72 = {{ fhi72 }}"
+          - "aw2s = {{ aw2s }}"
+          - "f1f2_ran = {{ f1f2_ran }}"
+          - "f3_ran = {{ f3_ran }}"
+          - "bridge_enabled = {{ bridge_enabled }}"
+          - "monitoring_enabled = {{ monitoring_enabled }}"
+
+    - name: Show all [all:vars] from inventory
+      debug:
+        var: hostvars[inventory_hostname]
