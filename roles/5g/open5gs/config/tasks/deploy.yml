@@ -1,4 +1,7 @@
 ---
+- name: RESTART_OPEN5GS
+  ansible.builtin.meta: noop
+  
 - name: Clone Open5GS k8s repo
   git:
     repo: https://github.com/sopnode/open5gs-k8s.git
@@ -20,6 +23,51 @@
     name: open5gs
     state: present
     kubeconfig: /etc/kubernetes/admin.conf
+
+# -------------------------------------------------------------------
+# Persistent Volume pour MongoDB
+# -------------------------------------------------------------------
+- name: Ensure local directory exists for MongoDB PV
+  file:
+    path: /root/open5gs-mongodb-data
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Create PersistentVolume for MongoDB
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: PersistentVolume
+    name: datadir-mongodb
+    state: present
+    kubeconfig: /etc/kubernetes/admin.conf
+    definition:
+      spec:
+        capacity:
+          storage: 1Gi
+        accessModes:
+          - ReadWriteOnce
+        persistentVolumeReclaimPolicy: Retain
+        hostPath:
+          path: /root/open5gs-mongodb-data
+
+- name: Create PersistentVolumeClaim for MongoDB
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: PersistentVolumeClaim
+    name: datadir-mongodb-0
+    namespace: open5gs
+    state: present
+    kubeconfig: /etc/kubernetes/admin.conf
+    definition:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
 
 - name: Deploy Open5GS core via Kustomize with realtime logs
   shell: |
