@@ -3,7 +3,7 @@
   ansible.builtin.meta: noop
 
 - name: Normalize booleans at playbook start
-  import_tasks: "{{ role_path }}/../tasks/reload_booleans.yml"
+  import_tasks: "{{ playbook_dir }}/tasks/reload_booleans.yml"
       
 - name: Clone Open5GS k8s repo
   git:
