@@ -1,23 +1,21 @@
 ---
-- name: Generate Open5GS Helm values from 5G profile
-  template:
-    src: values-5g.yaml.j2
-    dest: /tmp/open5gs-values.yaml
-  become: true
-
-- name: Ensure Open5GS Git repo is cloned locally
+- name: Clone Open5GS k8s repo
   git:
-    repo: 'https://github.com/sopnode/open5gs-k8s.git'
+    repo: https://github.com/sopnode/open5gs-k8s.git
     dest: /root/open5gs-k8s
     version: main
-    force: yes
+    force: true
   become: true
 
-- name: Deploy Open5GS via Helm from local chart
-  shell: |
-    helm upgrade --install open5gs /root/open5gs-k8s/charts/open5gs \
-      --namespace open5gs --create-namespace \
-      -f /tmp/open5gs-values.yaml
-  args:
-    chdir: /root
+- name: Generate Open5GS values from 5G profile
+  template:
+    src: values-5g.yaml.j2
+    dest: /root/open5gs-k8s/open5gs/values-5g.yaml
+  become: true
+
+- name: Apply Open5GS manifests via Kustomize
+  kubernetes.core.k8s:
+    state: present
+    src: /root/open5gs-k8s/open5gs
+    kubeconfig: /etc/kubernetes/admin.conf
   become: true
