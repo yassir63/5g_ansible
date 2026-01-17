@@ -133,25 +133,45 @@
     state: restarted
   become: true
 
-- name: Ensure kube-proxy config directory exists
-  ansible.builtin.file:
-    path: /var/lib/kube-proxy
-    state: directory
-    mode: '0755'
-  become: true
+- name: Ensure kube-proxy config exists and symlink is correct
+  block:
+    - name: Ensure kube-proxy directory exists
+      ansible.builtin.file:
+        path: /var/lib/kube-proxy
+        state: directory
+        mode: '0755'
+      become: true
 
-- name: Symlink kubeproxy-config.yaml to ConfigMap file
-  ansible.builtin.file:
-    src: /etc/kubernetes/config.conf
-    dest: /var/lib/kube-proxy/kubeproxy-config.yaml
-    state: link
-  become: true
+    - name: Check if kube-proxy config exists on disk
+      ansible.builtin.stat:
+        path: /etc/kubernetes/config.conf
+      register: kubeproxy_conf
+      become: true
 
-- name: Restart kube-proxy to pick up new config
-  ansible.builtin.systemd:
-    name: kube-proxy
-    state: restarted
-  become: true
+    - name: Create symlink to kube-proxy config if it exists
+      ansible.builtin.file:
+        src: /etc/kubernetes/config.conf
+        dest: /var/lib/kube-proxy/kubeproxy-config.yaml
+        state: link
+        force: yes
+      become: true
+      when: kubeproxy_conf.stat.exists
+
+    - name: Create empty kubeproxy-config.yaml if missing
+      ansible.builtin.copy:
+        dest: /var/lib/kube-proxy/kubeproxy-config.yaml
+        content: ""
+        force: yes
+      become: true
+      when: not kubeproxy_conf.stat.exists
+
+    - name: Warn user if using empty kube-proxy config
+      ansible.builtin.debug:
+        msg: >
+          "⚠️ kube-proxy configuration not found on disk; an empty file has been created.
+          The DaemonSet ConfigMap should provide the real config."
+      become: true
+      when: not kubeproxy_conf.stat.exists
 
 - name: Remove stale node entry from cluster
   delegate_to: "{{ groups['core_node'][0] }}"
