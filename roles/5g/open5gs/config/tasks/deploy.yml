@@ -41,6 +41,25 @@
     mode: '0755'
   become: true
 
+- name: Create PersistentVolume for MongoDB
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: datadir-mongodb
+      spec:
+        capacity:
+          storage: 1Gi
+        accessModes:
+          - ReadWriteOnce
+        persistentVolumeReclaimPolicy: Retain
+        hostPath:
+          path: /root/open5gs-mongodb-data
+    kubeconfig: /etc/kubernetes/admin.conf
+  become: true
+
 - name: Check if datadir-mongodb-0 PVC exists
   kubernetes.core.k8s_info:
     kind: PersistentVolumeClaim
