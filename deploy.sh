@@ -885,6 +885,9 @@ echo "Launching script ..."
 #./deployments/$script
 
 ansible-galaxy install -r collections/requirements.yml
+# First check if all hosts are reachable
+ansible -i inventory/default/hosts.ini all -m ping
+
 #temporary disable r2lab playbook
 #if [[ "$platform" == "r2lab" ]]; then
 #    ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
