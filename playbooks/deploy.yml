@@ -1,24 +1,29 @@
 ---
 - name: Normalize boolean variables from inventory
   hosts: all
-  gather_facts: true  # nécessaire pour ansible_env, ansible_hostname, etc.
+  gather_facts: true
   pre_tasks:
 
-    - name: Convert all inventory boolean-like variables to real booleans
+    - name: Define list of inventory booleans to normalize
       set_fact:
-        "{{ item.key }}": "{{ item.value | bool }}"
-      loop: "{{ vars | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
-      when: item.value in ['true','false', True, False]
+        inventory_booleans:
+          - fhi72
+          - aw2s
+          - f1f2_ran
+          - f3_ran
+          - bridge_enabled
+          - monitoring_enabled
 
-    - name: Show normalized boolean variables
+    - name: Force inventory booleans to real booleans
+      set_fact:
+        "{{ item }}": "{{ hostvars[inventory_hostname][item] | bool }}"
+      loop: "{{ inventory_booleans }}"
+      become: false
+
+    - name: Debug normalized booleans
       debug:
-        msg: "{{ item.key }} = {{ item.value | bool }}"
-      loop: "{{ vars | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
-      when: item.value in ['true','false', True, False]
+        msg: "{{ item }} = {{ hostvars[inventory_hostname][item] }}"
+      loop: "{{ inventory_booleans }}"
 
 - hosts: webshell
   gather_facts: false
