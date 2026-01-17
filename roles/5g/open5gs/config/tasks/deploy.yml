@@ -1,4 +1,18 @@
-- name: Deploy Open5GS
+- name: Ensure Open5GS Helm repo is added (root $HOME)
+  kubernetes.core.helm_repository:
+    name: open5gs
+    repo_url: https://open5gs.github.io/helm-charts/
+    kubeconfig: /etc/kubernetes/admin.conf
+  environment:
+    HOME: /root
+
+- name: Generate Open5GS Helm values from 5G profile
+  template:
+    src: values-5g.yaml.j2
+    dest: /tmp/open5gs-values.yaml
+  become: true
+
+- name: Deploy Open5GS via Helm
   kubernetes.core.helm:
     name: open5gs
     chart_ref: open5gs/open5gs
@@ -6,3 +20,7 @@
     create_namespace: true
     values_files:
       - /tmp/open5gs-values.yaml
+    kubeconfig: /etc/kubernetes/admin.conf
+  environment:
+    HOME: /root
+  become: true
