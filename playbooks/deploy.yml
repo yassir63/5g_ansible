@@ -1,26 +1,24 @@
 ---
-- name: Normalize boolean variables from the inventory
+- name: Normalize boolean variables from inventory
   hosts: all
-  gather_facts: true   # true to get ansible_env and ansible_hostname
+  gather_facts: true  # nécessaire pour ansible_env, ansible_hostname, etc.
   pre_tasks:
-    - name: Force boolean variables to proper boolean type
-      set_fact:
-        fhi72: "{{ fhi72 | bool }}"
-        aw2s: "{{ aw2s | bool }}"
-        f1f2_ran: "{{ f1f2_ran | bool }}"
-        f3_ran: "{{ f3_ran | bool }}"
-        bridge_enabled: "{{ bridge_enabled | bool }}"
-        monitoring_enabled: "{{ monitoring_enabled | bool }}"
 
-    - name: Show all boolean vars
+    - name: Convert all inventory boolean-like variables to real booleans
+      set_fact:
+        "{{ item.key }}": "{{ item.value | bool }}"
+      loop: "{{ vars | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: item.value in ['true','false', True, False]
+
+    - name: Show normalized boolean variables
       debug:
-        msg: |
-          fhi72 = {{ fhi72 | default('undefined') }}
-          aw2s = {{ aw2s | default('undefined') }}
-          f1f2_ran = {{ f1f2_ran | default('undefined') }}
-          f3_ran = {{ f3_ran | default('undefined') }}
-          bridge_enabled = {{ bridge_enabled | default('undefined') }}
-          monitoring_enabled = {{ monitoring_enabled | default('undefined') }}
+        msg: "{{ item.key }} = {{ item.value | bool }}"
+      loop: "{{ vars | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: item.value in ['true','false', True, False]
 
 - hosts: webshell
   gather_facts: false
