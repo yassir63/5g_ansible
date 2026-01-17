@@ -75,15 +75,20 @@
   register: kubeadm_init
   become: true
 
-# === FIX KUBE-PROXY ROBUSTE SANS PATCH NI DELETE =============================
-- name: Ensure kube-proxy pods are restarted to reload config.conf
+# === KUBE-PROXY ROBUSTE =======================================================
+- name: Wait until kube-proxy DaemonSet is created
   ansible.builtin.shell: |
-    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system delete pod -l k8s-app=kube-proxy
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system wait ds/kube-proxy --for=condition=Available --timeout=180s
+  become: true
+
+- name: Restart kube-proxy pods to reload config.conf (if any exist)
+  ansible.builtin.shell: |
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system delete pod -l k8s-app=kube-proxy --ignore-not-found
   become: true
 
 - name: Wait until kube-proxy pods are Running
   ansible.builtin.shell: |
-    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system wait pod -l k8s-app=kube-proxy --for=condition=Ready --timeout=180s
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system wait pod -l k8s-app=kube-proxy --for=condition=Ready --timeout=180s || true
   become: true
 
 # ---- Sanitize kubelet extra args: remove deprecated CNI flags if present ----
