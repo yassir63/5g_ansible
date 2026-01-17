@@ -2,6 +2,18 @@
 - name: RESTART_K8S_CREATE
   ansible.builtin.meta: noop
 
+- name: Refresh boolean variables on all hosts
+  ansible.builtin.set_fact:
+    fhi72: "{{ (hostvars[item].get('fhi72', False) | bool) }}"
+    aw2s: "{{ (hostvars[item].get('aw2s', False) | bool) }}"
+    f1f2_ran: "{{ (hostvars[item].get('f1f2_ran', False) | bool) }}"
+    f3_ran: "{{ (hostvars[item].get('f3_ran', False) | bool) }}"
+    bridge_enabled: "{{ (hostvars[item].get('bridge_enabled', False) | bool) }}"
+    monitoring_enabled: "{{ (hostvars[item].get('monitoring_enabled', False) | bool) }}"
+  loop: "{{ groups['all'] }}"
+  delegate_to: "{{ item }}"
+  run_once: true
+
 # === CLEANUP PHASE ============================================================
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
@@ -62,22 +74,23 @@
   ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
   become: true
-# === FIX KUBE-PROXY CONFIG FILE MISMATCH =====================================
+
+# === FIX KUBE-PROXY CONFIG FILE MISMATCH ROBUSTE =============================
 - name: Patch kube-proxy DaemonSet to use correct config.conf
   ansible.builtin.shell: |
-    kubectl -n kube-system patch ds kube-proxy \
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system patch ds kube-proxy \
       --type=json \
       -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/args/0", "value":"--config=/var/lib/kube-proxy/config.conf"}]'
   become: true
 
 - name: Restart kube-proxy pods to apply corrected config path
   ansible.builtin.shell: |
-    kubectl -n kube-system delete pod -l k8s-app=kube-proxy
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system delete pod -l k8s-app=kube-proxy
   become: true
 
 - name: Wait for kube-proxy pods to be Running
   ansible.builtin.shell: |
-    kubectl -n kube-system wait pod -l k8s-app=kube-proxy --for=condition=Ready --timeout=180s
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system wait pod -l k8s-app=kube-proxy --for=condition=Ready --timeout=180s
   become: true
 
 # ---- Sanitize kubelet extra args: remove deprecated CNI flags if present ----
