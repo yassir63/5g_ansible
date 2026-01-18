@@ -889,9 +889,9 @@ ansible-galaxy install -r collections/requirements.yml
 ansible -i inventory/default/hosts.ini all -m ping
 
 #temporary disable r2lab playbook
-#if [[ "$platform" == "r2lab" ]]; then
-#    ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
-#fi
+if [[ "$platform" == "r2lab" ]]; then
+    ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+fi
 ansible-playbook -i "$INVENTORY" playbooks/deploy.yml 2>&1 | tee logs.txt
 
 echo ""
