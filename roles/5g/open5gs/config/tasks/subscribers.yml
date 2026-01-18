@@ -139,3 +139,24 @@ ues = db.subscribers.find({}, {"imsi":1, "slice_info.name":1, "_id":0})
 for ue in ues:
     print(f"{ue['imsi']} -> slice {ue['slice_info']['name']}")
 PYTHON_SCRIPT
+
+- name: Create list-subscribers.py in mongo-tools
+  copy:
+    dest: "{{ mongo_tools_dir }}/list-subscribers.py"
+    mode: '0755'
+    content: |
+      #!/usr/bin/env python3
+      import pymongo
+
+      client = pymongo.MongoClient("mongodb://localhost:27017")
+      db = client.open5gs
+
+      ues = db.subscribers.find({}, {"imsi":1, "slice_info.name":1, "_id":0})
+
+      for ue in ues:
+          print(f"{ue['imsi']} -> slice {ue['slice_info']['name']}")
+
+- name: List all UEs with their slices
+  command: "{{ python_venv }} list-subscribers.py"
+  args:
+    chdir: "{{ mongo_tools_dir }}"
