@@ -115,14 +115,6 @@
     - role: setup/gre_tunnel
       when: core == 'oai' and ran == 'oai' and not fhi72
 
-- hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-  
 - name: Deploy Open5GS CN
   hosts: core_node
   pre_tasks:
@@ -134,6 +126,30 @@
       when: core == 'open5gs'
     - role: 5g/open5gs/config
       when: core == 'open5gs'
+
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+  
+- name: Deploy OAI CN/RAN
+  hosts: ran_node
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  roles:
+    - role: 5g/oai/setup
+      when: core == 'oai' or ran == 'oai'
+    - role: 5g/oai/config
+      when: core == 'oai' or ran == 'oai'
+    - role: 5g/oai/core
+      when: core == 'oai'
+    - role: 5g/oai/ran
+      when: ran == 'oai'
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
