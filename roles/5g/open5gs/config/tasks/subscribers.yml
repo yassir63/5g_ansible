@@ -1,24 +1,85 @@
 ---
-- name: Generate Open5GS subscribers JSON
-  template:
-    src: subscribers.json.j2
-    dest: /tmp/open5gs-subscribers.json
-  tags: subscribers
-
 - name: Set variables
   set_fact:
     mongo_namespace: "open5gs"
     mongo_pod: "mongodb-0"
     mongo_local_port: 27017
-    subscribers_json: "/tmp/open5gs-subscribers.json"
-    python_script: "{{ playbook_dir }}/roles/5g/open5gs/config/mongo-tools/add-subscribers.py"
+    yaml_file: "{{ playbook_dir }}/group_vars/all/5g_profile_default.yaml"
+    python_script: "~/open5gs-k8s/add-subscribers.py"
+  tags: subscribers
+
+- name: Create add-subscribers.py on control node
+  copy:
+    dest: "{{ python_script }}"
+    mode: '0755'
+    delegate_to: localhost
+    content: |
+      #!/usr/bin/env python3
+      import yaml
+      from bson.objectid import ObjectId
+      from open5gs import Open5GS
+      from port_forwarding import run_with_port_forwarding
+      from logger import log
+      import argparse
+      from functools import partial
+
+      MONGO_URI = "localhost"
+      MONGO_PORT = 27017
+
+      def add_subscribers(yaml_file):
+          with open(yaml_file, "r") as f:
+              cfg = yaml.safe_load(f)
+
+          ues = cfg.get("ues", {})
+          slices = {s["name"]: s for s in cfg.get("slices", [])}
+          security = cfg.get("security", {})
+          plmn = cfg.get("plmn", {})
+
+          db = Open5GS(MONGO_URI, MONGO_PORT)
+          existing = db.get_subscribers()
+          existing_imsis = [sub["imsi"] for sub in existing]
+
+          for ue_name, ue in ues.items():
+              slice_info = slices.get(ue["slice"], {})
+              imsi = f"{plmn.get('mcc','001')}{plmn.get('mnc','01')}{ue['imsi_suffix']}"
+              if imsi in existing_imsis:
+                  log.warning(f"Subscriber {imsi} already exists")
+                  continue
+
+              subscriber = {
+                  "_id": ObjectId(),
+                  "imsi": imsi,
+                  "msisdn": imsi,
+                  "key": security.get("full_key"),
+                  "opc": security.get("opc"),
+                  "subscribed_ue_ambr": {
+                      "uplink": slice_info.get("bandwidth", {}).get("uplink", "20Mbps"),
+                      "downlink": slice_info.get("bandwidth", {}).get("downlink", "40Mbps")
+                  },
+                  "slice_info": {
+                      "name": ue["slice"],
+                      "sst": slice_info.get("sst"),
+                      "sd": slice_info.get("sd"),
+                      "dnn": slice_info.get("dnn"),
+                      "ip_prefix": slice_info.get("ip_prefix")
+                  }
+              }
+
+              db.add_subscriber(subscriber)
+              log.info(f"Added subscriber {ue_name} ({imsi})")
+
+      if __name__ == "__main__":
+          parser = argparse.ArgumentParser()
+          parser.add_argument("yaml_file", help="Path to 5G profile YAML")
+          args = parser.parse_args()
+          run_with_port_forwarding(partial(add_subscribers, args.yaml_file))
   tags: subscribers
 
 - name: Wait for MongoDB pod to be Ready
   command: kubectl wait --for=condition=Ready pod/{{ mongo_pod }} -n {{ mongo_namespace }} --timeout=180s
-  register: pod_ready
   retries: 3
   delay: 5
+  register: pod_ready
   until: pod_ready.rc == 0
   tags: subscribers
 
@@ -46,14 +107,13 @@
     host: 127.0.0.1
     port: "{{ mongo_local_port }}"
     delay: 2
-    timeout: 60
+    timeout: 120
   delegate_to: localhost
   tags: subscribers
 
 - name: Run Python subscriber import locally
-  command: python3 "{{ python_script }}" "{{ subscribers_json }}"
+  command: python3 "{{ python_script }}" "{{ yaml_file }}"
   environment:
-    DATA_FILE: "{{ subscribers_json }}"
     MONGO_URI: "localhost"
     MONGO_PORT: "{{ mongo_local_port }}"
   delegate_to: localhost
