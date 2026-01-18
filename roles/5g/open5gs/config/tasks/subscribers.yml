@@ -5,5 +5,4 @@
 
 - name: Import subscribers into Open5GS
   command: >
-    kubectl exec -n open5gs deploy/open5gs-mongodb --
-    open5gs-dbctl import /tmp/open5gs-subscribers.json
+    kubectl exec -n open5gs mongodb-0 -- open5gs-dbctl import /tmp/open5gs-subscribers.json
