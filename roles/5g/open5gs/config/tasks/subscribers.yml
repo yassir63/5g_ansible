@@ -10,6 +10,12 @@
     name: virtualenv
     executable: pip3
 
+- name: Ensure /root/open5gs-k8s/mongo-tools directory exists
+  file:
+    path: /root/open5gs-k8s/mongo-tools
+    state: directory
+    mode: '0755'
+
 - name: Create Python virtual environment
   command: python3 -m virtualenv /root/open5gs-k8s/venv
   args:
@@ -20,24 +26,20 @@
     requirements: /root/open5gs-k8s/requirements.txt
     virtualenv: /root/open5gs-k8s/venv
 
-- name: Set variables
+- name: Set subscriber variables
   set_fact:
     mongo_namespace: "open5gs"
     mongo_pod: "mongodb-0"
     mongo_local_port: 27017
-    yaml_file: "{{ playbook_dir }}/group_vars/all/5g_profile_default.yaml"
-    python_script: "/root/open5gs-k8s/add-subscribers.py"
+    yaml_file: "{{ playbook_dir }}/../group_vars/all/5g_profile_default.yaml"
+    mongo_tools_dir: "/root/open5gs-k8s/mongo-tools"
+    python_venv: "/root/open5gs-k8s/venv/bin/python"
+    python_script: "add-subscribers.py"
   tags: subscribers
 
-- name: Ensure /root/open5gs-k8s directory exists
-  file:
-    path: /root/open5gs-k8s
-    state: directory
-    mode: '0755'
-
-- name: Create add-subscribers.py on sopnode-w3
+- name: Create add-subscribers.py in mongo-tools
   copy:
-    dest: "{{ python_script }}"
+    dest: /root/open5gs-k8s/mongo-tools/add-subscribers.py
     mode: '0755'
     content: |
       #!/usr/bin/env python3
@@ -108,7 +110,7 @@
   until: pod_ready.rc == 0
   tags: subscribers
 
-- name: Kill old MongoDB port-forward if exists
+- name: Kill existing MongoDB port-forward if any
   shell: |
     if [ -f /tmp/port-forward.pid ]; then
       kill $(cat /tmp/port-forward.pid) || true
@@ -117,7 +119,7 @@
   ignore_errors: yes
   tags: subscribers
 
-- name: Start MongoDB port-forwarding locally
+- name: Start MongoDB port-forward
   shell: |
     nohup kubectl port-forward -n {{ mongo_namespace }} {{ mongo_pod }} {{ mongo_local_port }}:27017 > /tmp/port-forward.log 2>&1 &
     echo $! > /tmp/port-forward.pid
@@ -134,15 +136,20 @@
   tags: subscribers
 
 - name: Run Python subscriber import on sopnode-w3
-  command: python3 "{{ python_script }}" "{{ yaml_file }}"
+  command: >
+    {{ python_venv }} {{ python_script }} {{ yaml_file }}
+  args:
+    chdir: "{{ mongo_tools_dir }}"
   environment:
     MONGO_URI: "localhost"
     MONGO_PORT: "{{ mongo_local_port }}"
   tags: subscribers
 
-- name: Stop MongoDB port-forwarding
+- name: Stop MongoDB port-forward
   shell: |
-    kill $(cat /tmp/port-forward.pid)
-    rm -f /tmp/port-forward.pid /tmp/port-forward.log
+    if [ -f /tmp/port-forward.pid ]; then
+      kill $(cat /tmp/port-forward.pid) || true
+      rm -f /tmp/port-forward.pid /tmp/port-forward.log
+    fi
   ignore_errors: yes
   tags: subscribers
