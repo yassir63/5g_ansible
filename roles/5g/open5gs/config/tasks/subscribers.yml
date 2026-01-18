@@ -12,7 +12,6 @@
   copy:
     dest: "{{ python_script }}"
     mode: '0755'
-    delegate_to: localhost
     content: |
       #!/usr/bin/env python3
       import yaml
@@ -73,6 +72,7 @@
           parser.add_argument("yaml_file", help="Path to 5G profile YAML")
           args = parser.parse_args()
           run_with_port_forwarding(partial(add_subscribers, args.yaml_file))
+  delegate_to: localhost
   tags: subscribers
 
 - name: Wait for MongoDB pod to be Ready
