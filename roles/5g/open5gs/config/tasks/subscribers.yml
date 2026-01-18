@@ -11,7 +11,7 @@
     mongo_pod: "mongodb-0"
     mongo_local_port: 27017
     subscribers_json: "/tmp/open5gs-subscribers.json"
-    python_script: "/root/open5gs-k8s/add-subscribers.py"
+    python_script: "{{ playbook_dir }}/roles/5g/open5gs/config/mongo-tools/add-subscribers.py"
   tags: subscribers
 
 - name: Verify subscribers JSON exists
@@ -37,12 +37,13 @@
     timeout: 20
   tags: subscribers
 
-- name: Run Python subscriber import
+- name: Run Python subscriber import locally
   command: python3 "{{ python_script }}" "{{ subscribers_json }}"
   environment:
     DATA_FILE: "{{ subscribers_json }}"
     MONGO_URI: "localhost"
     MONGO_PORT: "{{ mongo_local_port }}"
+  delegate_to: localhost
   tags: subscribers
 
 - name: Stop MongoDB port-forwarding
