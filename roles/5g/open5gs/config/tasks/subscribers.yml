@@ -21,12 +21,13 @@
   failed_when: not subscribers_json_file.stat.exists
   tags: subscribers
 
-- name: Start MongoDB port-forwarding
+- name: Start MongoDB port-forwarding locally
   shell: |
     nohup kubectl port-forward -n {{ mongo_namespace }} {{ mongo_pod }} {{ mongo_local_port }}:27017 > /tmp/port-forward.log 2>&1 &
     echo $! > /tmp/port-forward.pid
   async: 0
   poll: 0
+  delegate_to: localhost
   tags: subscribers
 
 - name: Wait for MongoDB to be ready
@@ -35,6 +36,7 @@
     port: "{{ mongo_local_port }}"
     delay: 2
     timeout: 20
+  delegate_to: localhost
   tags: subscribers
 
 - name: Run Python subscriber import locally
@@ -51,4 +53,5 @@
     kill $(cat /tmp/port-forward.pid)
     rm -f /tmp/port-forward.pid /tmp/port-forward.log
   ignore_errors: yes
+  delegate_to: localhost
   tags: subscribers
