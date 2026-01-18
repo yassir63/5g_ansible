@@ -1,4 +1,25 @@
 ---
+- name: Ensure python3-pip is installed
+  apt:
+    name: python3-pip
+    state: present
+    update_cache: yes
+
+- name: Ensure virtualenv is installed
+  pip:
+    name: virtualenv
+    executable: pip3
+
+- name: Create Python virtual environment
+  command: python3 -m virtualenv /root/open5gs-k8s/venv
+  args:
+    creates: /root/open5gs-k8s/venv
+
+- name: Install Python requirements in virtualenv
+  pip:
+    requirements: /root/open5gs-k8s/requirements.txt
+    virtualenv: /root/open5gs-k8s/venv
+
 - name: Set variables
   set_fact:
     mongo_namespace: "open5gs"
