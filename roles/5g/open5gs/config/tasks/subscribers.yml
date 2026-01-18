@@ -5,7 +5,15 @@
     mongo_pod: "mongodb-0"
     mongo_local_port: 27017
     yaml_file: "{{ playbook_dir }}/group_vars/all/5g_profile_default.yaml"
-    python_script: "~/open5gs-k8s/add-subscribers.py"
+    python_script: "/root/open5gs-k8s/add-subscribers.py"
+  tags: subscribers
+
+- name: Ensure /root/open5gs-k8s directory exists
+  file:
+    path: /root/open5gs-k8s
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
   tags: subscribers
 
 - name: Create add-subscribers.py on control node
