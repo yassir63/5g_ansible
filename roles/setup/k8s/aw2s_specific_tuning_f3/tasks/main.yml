@@ -75,11 +75,30 @@
   register: merge_result
   changed_when: "'APPLIED' in merge_result.stdout"
 
-- name: Remove kubelet CPU manager checkpoint file
+# --- Patch containerRuntimeEndpoint et thresholds pour kubelet ---
+- name: Patch kubelet containerRuntimeEndpoint and eviction thresholds
   become: true
-  ansible.builtin.file:
-    path: /var/lib/kubelet/cpu_manager_state
-    state: absent
+  ansible.builtin.shell: |
+    python3 - <<'EOF'
+    import yaml, os
+    cfg = "/var/lib/kubelet/config.yaml"
+    if not os.path.exists(cfg): exit(0)
+    with open(cfg) as f: data = yaml.safe_load(f) or {}
+    # Patch container runtime endpoint
+    data["containerRuntimeEndpoint"] = "unix:///var/run/containerd/containerd.sock"
+    # Patch image GC thresholds
+    data["imageGCHighThresholdPercent"] = 85
+    data["imageGCLowThresholdPercent"] = 80
+    # Patch eviction thresholds
+    data.setdefault("evictionHard", {})
+    data["evictionHard"]["nodefs.available"] = "10%"
+    data["evictionHard"]["imagefs.available"] = "15%"
+    with open(cfg+".tmp","w") as f: yaml.safe_dump(data,f,default_flow_style=False,sort_keys=False)
+    os.replace(cfg+".tmp", cfg)
+    print("KUBELET PATCHED")
+    EOF
+  register: kubelet_patch
+  changed_when: "'KUBELET PATCHED' in kubelet_patch.stdout"
 
 - name: Restart kubelet
   become: true
@@ -87,3 +106,10 @@
     name: kubelet
     state: restarted
     daemon_reload: yes
+
+- name: Remove kubelet CPU manager checkpoint file
+  become: true
+  ansible.builtin.file:
+    path: /var/lib/kubelet/cpu_manager_state
+    state: absent
+
