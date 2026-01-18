@@ -9,7 +9,7 @@
   set_fact:
     mongo_namespace: "open5gs"
     mongo_pod: "mongodb-0"
-    mongo_local_port: 27017
+    mongo_local_port: 27017  # Vous pouvez changer si ce port est déjà utilisé localement
     subscribers_json: "/tmp/open5gs-subscribers.json"
     python_script: "{{ playbook_dir }}/roles/5g/open5gs/config/mongo-tools/add-subscribers.py"
   tags: subscribers
@@ -19,6 +19,16 @@
     path: "{{ subscribers_json }}"
   register: subscribers_json_file
   failed_when: not subscribers_json_file.stat.exists
+  tags: subscribers
+
+- name: Kill old MongoDB port-forward if exists
+  shell: |
+    if [ -f /tmp/port-forward.pid ]; then
+      kill $(cat /tmp/port-forward.pid) || true
+      rm -f /tmp/port-forward.pid /tmp/port-forward.log
+    fi
+  delegate_to: localhost
+  ignore_errors: yes
   tags: subscribers
 
 - name: Start MongoDB port-forwarding locally
@@ -35,7 +45,7 @@
     host: 127.0.0.1
     port: "{{ mongo_local_port }}"
     delay: 2
-    timeout: 20
+    timeout: 60
   delegate_to: localhost
   tags: subscribers
 
