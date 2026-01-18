@@ -146,3 +146,9 @@
   command: "{{ python_venv }} list-subscribers.py"
   args:
     chdir: "{{ mongo_tools_dir }}"
+  register: ue_list_output
+
+- name: Show imported UEs
+  debug:
+    msg: "{{ ue_list_output.stdout_lines }}"
+
