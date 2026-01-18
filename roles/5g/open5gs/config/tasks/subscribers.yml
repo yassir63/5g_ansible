@@ -1,3 +1,4 @@
+---
 - name: Generate Open5GS subscribers JSON
   template:
     src: subscribers.json.j2
@@ -7,15 +8,10 @@
 - name: Set variables
   set_fact:
     mongo_namespace: "open5gs"
+    mongo_pod: "mongodb-0"
     mongo_local_port: 27017
     subscribers_json: "/tmp/open5gs-subscribers.json"
     python_script: "{{ playbook_dir }}/roles/5g/open5gs/config/mongo-tools/add-subscribers.py"
-  tags: subscribers
-
-- name: Find MongoDB pod dynamically
-  command: kubectl get pods -n {{ mongo_namespace }} -l app=mongodb -o jsonpath='{.items[0].metadata.name}'
-  register: mongo_pod
-  changed_when: false
   tags: subscribers
 
 - name: Verify subscribers JSON exists
@@ -27,7 +23,7 @@
 
 - name: Start MongoDB port-forwarding
   shell: |
-    nohup kubectl port-forward -n {{ mongo_namespace }} {{ mongo_pod.stdout }} {{ mongo_local_port }}:27017 > /tmp/port-forward.log 2>&1 &
+    nohup kubectl port-forward -n {{ mongo_namespace }} {{ mongo_pod }} {{ mongo_local_port }}:27017 > /tmp/port-forward.log 2>&1 &
     echo $! > /tmp/port-forward.pid
   async: 0
   poll: 0
