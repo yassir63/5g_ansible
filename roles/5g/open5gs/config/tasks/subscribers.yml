@@ -2,7 +2,56 @@
   template:
     src: subscribers.json.j2
     dest: /tmp/open5gs-subscribers.json
+  tags: subscribers
 
-- name: Import subscribers into Open5GS
-  command: >
-    kubectl exec -n open5gs mongodb-0 -- open5gs-dbctl import /tmp/open5gs-subscribers.json
+- name: Set variables
+  set_fact:
+    mongo_namespace: "open5gs"
+    mongo_local_port: 27017
+    subscribers_json: "/tmp/open5gs-subscribers.json"
+    python_script: "{{ playbook_dir }}/roles/5g/open5gs/config/mongo-tools/add-subscribers.py"
+  tags: subscribers
+
+- name: Find MongoDB pod dynamically
+  command: kubectl get pods -n {{ mongo_namespace }} -l app=mongodb -o jsonpath='{.items[0].metadata.name}'
+  register: mongo_pod
+  changed_when: false
+  tags: subscribers
+
+- name: Verify subscribers JSON exists
+  stat:
+    path: "{{ subscribers_json }}"
+  register: subscribers_json_file
+  failed_when: not subscribers_json_file.stat.exists
+  tags: subscribers
+
+- name: Start MongoDB port-forwarding
+  shell: |
+    nohup kubectl port-forward -n {{ mongo_namespace }} {{ mongo_pod.stdout }} {{ mongo_local_port }}:27017 > /tmp/port-forward.log 2>&1 &
+    echo $! > /tmp/port-forward.pid
+  async: 0
+  poll: 0
+  tags: subscribers
+
+- name: Wait for MongoDB to be ready
+  wait_for:
+    host: 127.0.0.1
+    port: "{{ mongo_local_port }}"
+    delay: 2
+    timeout: 20
+  tags: subscribers
+
+- name: Run Python subscriber import
+  command: python3 "{{ python_script }}" "{{ subscribers_json }}"
+  environment:
+    DATA_FILE: "{{ subscribers_json }}"
+    MONGO_URI: "localhost"
+    MONGO_PORT: "{{ mongo_local_port }}"
+  tags: subscribers
+
+- name: Stop MongoDB port-forwarding
+  shell: |
+    kill $(cat /tmp/port-forward.pid)
+    rm -f /tmp/port-forward.pid /tmp/port-forward.log
+  ignore_errors: yes
+  tags: subscribers
