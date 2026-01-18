@@ -125,3 +125,17 @@
     {{ python_venv }} {{ python_script }} {{ yaml_file }}
   args:
     chdir: "{{ mongo_tools_dir }}"
+
+- name: List all UEs with their slices
+  command: >
+    {{ python_venv }} - <<'PYTHON_SCRIPT'
+import pymongo
+import json
+
+client = pymongo.MongoClient("mongodb://localhost:27017")
+db = client.open5gs
+ues = db.subscribers.find({}, {"imsi":1, "slice_info.name":1, "_id":0})
+
+for ue in ues:
+    print(f"{ue['imsi']} -> slice {ue['slice_info']['name']}")
+PYTHON_SCRIPT
