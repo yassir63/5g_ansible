@@ -1,77 +1,127 @@
-#!/usr/bin/env python3
-"""
-Script YAML-ready pour importer automatiquement les abonnés Open5GS
-à partir de group_vars/all/5g_profile_default.yaml.
+---
+- name: Set variables
+  set_fact:
+    mongo_namespace: "open5gs"
+    mongo_pod: "mongodb-0"
+    mongo_local_port: 27017
+    yaml_file: "{{ playbook_dir }}/group_vars/all/5g_profile_default.yaml"
+    python_script: "/root/open5gs-k8s/add-subscribers.py"
+  tags: subscribers
 
-Fonctionnalités :
-- Lecture directe du YAML
-- Création d'abonnés dans MongoDB via Open5GS
-- Idempotence : les IMSI existants ne sont pas recréés
-- Compatible avec port-forwarding automatique
-"""
+- name: Ensure /root/open5gs-k8s directory exists
+  file:
+    path: /root/open5gs-k8s
+    state: directory
+    mode: '0755'
 
-import yaml
-from bson.objectid import ObjectId
-from open5gs import Open5GS
-from port_forwarding import run_with_port_forwarding
-from logger import log
-import argparse
-from functools import partial
+- name: Create add-subscribers.py on sopnode-w3
+  copy:
+    dest: "{{ python_script }}"
+    mode: '0755'
+    content: |
+      #!/usr/bin/env python3
+      import yaml
+      from bson.objectid import ObjectId
+      from open5gs import Open5GS
+      from port_forwarding import run_with_port_forwarding
+      from logger import log
+      import argparse
+      from functools import partial
 
-# MongoDB local
-MONGO_URI = "localhost"
-MONGO_PORT = 27017
+      MONGO_URI = "localhost"
+      MONGO_PORT = 27017
 
-def add_subscribers(yaml_file):
-    # Lecture du YAML
-    with open(yaml_file, "r") as f:
-        cfg = yaml.safe_load(f)
+      def add_subscribers(yaml_file):
+          with open(yaml_file, "r") as f:
+              cfg = yaml.safe_load(f)
 
-    ues = cfg.get("ues", {})
-    slices = {s["name"]: s for s in cfg.get("slices", [])}
-    security = cfg.get("security", {})
-    plmn = cfg.get("plmn", {})
+          ues = cfg.get("ues", {})
+          slices = {s["name"]: s for s in cfg.get("slices", [])}
+          security = cfg.get("security", {})
+          plmn = cfg.get("plmn", {})
 
-    db = Open5GS(MONGO_URI, MONGO_PORT)
+          db = Open5GS(MONGO_URI, MONGO_PORT)
+          existing = db.get_subscribers()
+          existing_imsis = [sub["imsi"] for sub in existing]
 
-    # Récupère les IMSI déjà présents pour idempotence
-    existing = db.get_subscribers()
-    existing_imsis = [sub["imsi"] for sub in existing]
+          for ue_name, ue in ues.items():
+              slice_info = slices.get(ue["slice"], {})
+              imsi = f"{plmn.get('mcc','001')}{plmn.get('mnc','01')}{ue['imsi_suffix']}"
+              if imsi in existing_imsis:
+                  log.warning(f"Subscriber {imsi} already exists, skipping")
+                  continue
 
-    for ue_name, ue in ues.items():
-        slice_info = slices.get(ue["slice"], {})
-        imsi = f"{plmn.get('mcc','001')}{plmn.get('mnc','01')}{ue['imsi_suffix']}"
+              subscriber = {
+                  "_id": ObjectId(),
+                  "imsi": imsi,
+                  "msisdn": imsi,
+                  "key": security.get("full_key"),
+                  "opc": security.get("opc"),
+                  "subscribed_ue_ambr": {
+                      "uplink": slice_info.get("bandwidth", {}).get("uplink", "20Mbps"),
+                      "downlink": slice_info.get("bandwidth", {}).get("downlink", "40Mbps")
+                  },
+                  "slice_info": {
+                      "name": ue["slice"],
+                      "sst": slice_info.get("sst"),
+                      "sd": slice_info.get("sd"),
+                      "dnn": slice_info.get("dnn"),
+                      "ip_prefix": slice_info.get("ip_prefix")
+                  }
+              }
 
-        if imsi in existing_imsis:
-            log.warning(f"Subscriber {imsi} already exists, skipping")
-            continue
+              db.add_subscriber(subscriber)
+              log.info(f"Added subscriber {ue_name} ({imsi})")
 
-        subscriber = {
-            "_id": ObjectId(),
-            "imsi": imsi,
-            "msisdn": imsi,
-            "key": security.get("full_key"),
-            "opc": security.get("opc"),
-            "subscribed_ue_ambr": {
-                "uplink": slice_info.get("bandwidth", {}).get("uplink", "20Mbps"),
-                "downlink": slice_info.get("bandwidth", {}).get("downlink", "40Mbps")
-            },
-            "slice_info": {
-                "name": ue["slice"],
-                "sst": slice_info.get("sst"),
-                "sd": slice_info.get("sd"),
-                "dnn": slice_info.get("dnn"),
-                "ip_prefix": slice_info.get("ip_prefix")
-            }
-        }
+      if __name__ == "__main__":
+          parser = argparse.ArgumentParser(description="Import Open5GS subscribers from YAML")
+          parser.add_argument("yaml_file", help="Path to 5G profile YAML")
+          args = parser.parse_args()
+          run_with_port_forwarding(partial(add_subscribers, args.yaml_file))
 
-        db.add_subscriber(subscriber)
-        log.info(f"Added subscriber {ue_name} ({imsi})")
+- name: Wait for MongoDB pod to be Ready
+  command: kubectl wait --for=condition=Ready pod/{{ mongo_pod }} -n {{ mongo_namespace }} --timeout=180s
+  retries: 3
+  delay: 5
+  register: pod_ready
+  until: pod_ready.rc == 0
+  tags: subscribers
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Import Open5GS subscribers from YAML")
-    parser.add_argument("yaml_file", help="Chemin vers le fichier YAML des abonnés")
-    args = parser.parse_args()
+- name: Kill old MongoDB port-forward if exists
+  shell: |
+    if [ -f /tmp/port-forward.pid ]; then
+      kill $(cat /tmp/port-forward.pid) || true
+      rm -f /tmp/port-forward.pid /tmp/port-forward.log
+    fi
+  ignore_errors: yes
+  tags: subscribers
 
-    # Exécute avec port-forwarding si nécessaire
-    run_with_port_forwarding(partial(add_subscribers, args.yaml_file))
+- name: Start MongoDB port-forwarding locally
+  shell: |
+    nohup kubectl port-forward -n {{ mongo_namespace }} {{ mongo_pod }} {{ mongo_local_port }}:27017 > /tmp/port-forward.log 2>&1 &
+    echo $! > /tmp/port-forward.pid
+  async: 0
+  poll: 0
+  tags: subscribers
+
+- name: Wait until MongoDB accepts connections
+  wait_for:
+    host: 127.0.0.1
+    port: "{{ mongo_local_port }}"
+    delay: 2
+    timeout: 120
+  tags: subscribers
+
+- name: Run Python subscriber import on sopnode-w3
+  command: python3 "{{ python_script }}" "{{ yaml_file }}"
+  environment:
+    MONGO_URI: "localhost"
+    MONGO_PORT: "{{ mongo_local_port }}"
+  tags: subscribers
+
+- name: Stop MongoDB port-forwarding
+  shell: |
+    kill $(cat /tmp/port-forward.pid)
+    rm -f /tmp/port-forward.pid /tmp/port-forward.log
+  ignore_errors: yes
+  tags: subscribers
