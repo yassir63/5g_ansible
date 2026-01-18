@@ -1,0 +1,52 @@
+---
+# To avoid Pod eviction issues...
+# Prepare RAN live node persistent storage and kubelet config
+- name: "Create containerd mount point"
+  ansible.builtin.file:
+    path: /var/lib/containerd
+    state: directory
+    mode: '0755'
+
+- name: "Mount persistent storage for containerd"
+  ansible.builtin.mount:
+    path: /var/lib/containerd
+    src: "{{ storage }}"
+    fstype: ext4
+    state: mounted
+
+- name: "Ensure kubelet config exists"
+  ansible.builtin.file:
+    path: /var/lib/kubelet/config.yaml
+    state: touch
+    mode: '0644'
+
+- name: "Backup existing kubelet config if present"
+  ansible.builtin.copy:
+    src: /var/lib/kubelet/config.yaml
+    dest: /var/lib/kubelet/config.yaml.bak.{{ ansible_date_time.epoch }}
+    remote_src: true
+  when: ansible.builtin.stat(path='/var/lib/kubelet/config.yaml').stat.exists
+
+- name: "Patch kubelet config rootDir and evictionHard"
+  ansible.builtin.blockinfile:
+    path: /var/lib/kubelet/config.yaml
+    block: |
+      rootDir: /var/lib/containerd
+      evictionHard:
+        nodefs.available: "10%"
+        imagefs.available: "10%"
+    marker: "# {mark} RAN pre-K8s patch"
+
+- name: "Reload systemd and restart containerd"
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
+
+- name: "Restart kubelet"
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
