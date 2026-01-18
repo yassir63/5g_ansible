@@ -11,7 +11,7 @@
     mongo_pod: "mongodb-0"
     mongo_local_port: 27017
     subscribers_json: "/tmp/open5gs-subscribers.json"
-    python_script: "{{ playbook_dir }}/roles/5g/open5gs/config/mongo-tools/add-subscribers.py"
+    python_script: "/root/open5gs-k8s/add-subscribers.py"
   tags: subscribers
 
 - name: Verify subscribers JSON exists
