@@ -9,16 +9,17 @@
   set_fact:
     mongo_namespace: "open5gs"
     mongo_pod: "mongodb-0"
-    mongo_local_port: 27017  # Vous pouvez changer si ce port est déjà utilisé localement
+    mongo_local_port: 27017
     subscribers_json: "/tmp/open5gs-subscribers.json"
     python_script: "{{ playbook_dir }}/roles/5g/open5gs/config/mongo-tools/add-subscribers.py"
   tags: subscribers
 
-- name: Verify subscribers JSON exists
-  stat:
-    path: "{{ subscribers_json }}"
-  register: subscribers_json_file
-  failed_when: not subscribers_json_file.stat.exists
+- name: Wait for MongoDB pod to be Ready
+  command: kubectl wait --for=condition=Ready pod/{{ mongo_pod }} -n {{ mongo_namespace }} --timeout=180s
+  register: pod_ready
+  retries: 3
+  delay: 5
+  until: pod_ready.rc == 0
   tags: subscribers
 
 - name: Kill old MongoDB port-forward if exists
@@ -40,7 +41,7 @@
   delegate_to: localhost
   tags: subscribers
 
-- name: Wait for MongoDB to be ready
+- name: Wait until MongoDB accepts connections
   wait_for:
     host: 127.0.0.1
     port: "{{ mongo_local_port }}"
