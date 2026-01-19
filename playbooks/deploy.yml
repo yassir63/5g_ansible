@@ -75,6 +75,14 @@
       ansible.builtin.meta: noop
 
     - import_tasks: ../tasks/reload_booleans.yml
+- hosts: core_node
+  gather_facts: false
+  tasks:
+    - import_tasks: ../tasks/reload_booleans.yml
+- hosts: ran_node
+  gather_facts: false
+  tasks:
+    - import_tasks: ../tasks/reload_booleans.yml
 ####################################################################
   
 - name: Add NoSchedule taint on RAN node (reserved node for RAN pods) 

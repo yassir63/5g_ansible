@@ -1,6 +1,4 @@
 ---
-- name: RESTART_K8S_TAINT
-  ansible.builtin.meta: noop
 
 - name: Check if node already tainted
   ansible.builtin.command: >
