@@ -4,11 +4,16 @@
 
 - name: Load active 5G profile variables
   ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/group_vars/all/5g_profile_{{ fiveg_profile }}.yml"
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
 
-- name: Load active 5G profile variables
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/group_vars/all/5g_profile_{{ fiveg_profile }}.yml"
+- name: Assert 5G profile is loaded
+  ansible.builtin.assert:
+    that:
+      - slices is defined
+      - ues is defined
+    fail_msg: >
+      5G profile not loaded.
+      Expected group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yml
 
 - name: Power ON UEs PDU outlet
   shell: rhubarbe pdu on "{{ item }}"
