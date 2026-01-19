@@ -886,7 +886,7 @@ echo "Launching script ..."
 
 ansible-galaxy install -r collections/requirements.yml
 # First check if all hosts are reachable
-ansible -i "$INVENTORY" "${core_node}" "${ran_node}" -m ping
+ansible -i "$INVENTORY" "${core_node} ${ran_node}" -m ping
 
 #temporary disable r2lab playbook
 if [[ "$platform" == "r2lab" ]]; then
