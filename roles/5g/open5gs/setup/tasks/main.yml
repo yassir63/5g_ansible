@@ -398,52 +398,15 @@
 
 ##### Patch open5gs with new 5G parameters 
 
-- name: Load 5G profile from YAML
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-    name: fiveg_profile_data
+- name: Generate Open5GS scenario ConfigMap from template
+  ansible.builtin.template:
+    src: open5gs-scenario.yaml.j2
+    dest: /tmp/open5gs-scenario.yaml
 
-- name: Validate 5G profile
-  import_tasks: "../../fiveg_profile/tasks/validate.yml"
-  vars:
-    plmn: "{{ fiveg_profile_data.plmn }}"
-    slices: "{{ fiveg_profile_data.slices }}"
-    ues: "{{ fiveg_profile_data.ues }}"
-
-- name: Patch Open5GS configuration for scenario
-  block:
-    - name: Create scenario config map
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: open5gs-scenario
-            namespace: "{{ open5gs_ns }}"
-          data:
-            plmn.yaml: |
-              mcc: "{{ fiveg_profile_data.plmn.mcc }}"
-              mnc: "{{ fiveg_profile_data.plmn.mnc }}"
-              tac: "{{ fiveg_profile_data.plmn.tac }}"
-            slices.yaml: |
-{% for s in fiveg_profile_data.slices %}
-              - name: "{{ s.name }}"
-                sst: "{{ s.sst }}"
-                sd: "{{ s.sd | default('') }}"
-                dnn: "{{ s.dnn }}"
-{% endfor %}
-            ues.yaml: |
-{% for ue_name, ue_val in fiveg_profile_data.ues.items() %}
-              {{ ue_name }}:
-                imsi_suffix: "{{ ue_val.imsi_suffix }}"
-                slice: "{{ ue_val.slice }}"
-{% endfor %}
-    - name: Apply ConfigMap to cluster
-      kubernetes.core.k8s:
-        state: present
-        definition: "{{ lookup('file', '/tmp/open5gs-scenario.yaml') | from_yaml }}"
-  become: true
+- name: Apply Open5GS scenario ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    src: /tmp/open5gs-scenario.yaml
 
 #####
 
@@ -516,24 +479,53 @@
   args:
     chdir: "{{ repo_dest }}"
 
-# following is now done in role open5gs/config/tasks/subscribers.yml
-#- name: Add subscribers
-#  ansible.builtin.shell: |
-#    {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
-#    {{ repo_dest }}/venv/bin/python mongo-tools/add-subscribers.py
-#  args:
-#    chdir: "{{ repo_dest }}"
-#  register: sub_out
-#  changed_when: false
+# Add UEs
+# --- Ensure MongoDB port-forward is ready ---
+- name: Ensure lsof is installed
+  ansible.builtin.apt:
+    name: lsof
+    state: present
+    update_cache: yes
+  become: yes
 
-#- name: Check added subscribers
-#  ansible.builtin.shell: |
-#    {{ repo_dest }}/venv/bin/python mongo-tools/check-subscribers.py
-#  args:
-#    chdir: "{{ repo_dest }}"
-#  register: check_out
-#  changed_when: false
+- name: Check if port 27017 is already used by kubectl
+  ansible.builtin.shell: |
+    lsof -i :{{ mongo_local_port }} | grep kubectl || true
+  register: port_forward_check
+  changed_when: false
 
-#- name: Show Added subscribers
-#  debug:
-#    var: check_out.stdout
+- name: Start MongoDB port-forward if not already running
+  ansible.builtin.shell: |
+    nohup kubectl port-forward -n {{ mongo_namespace }} {{ mongo_pod }} {{ mongo_local_port }}:27017 > /tmp/port-forward.log 2>&1 &
+    echo $! > /tmp/port-forward.pid
+  when: port_forward_check.stdout == ""
+  async: 0
+  poll: 0
+
+- name: Wait until MongoDB accepts connections
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ mongo_local_port }}"
+    delay: 2
+    timeout: 120
+
+- name: Add subscribers
+  ansible.builtin.shell: |
+    {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
+    {{ repo_dest }}/venv/bin/python mongo-tools/add-subscribers.py
+  args:
+    chdir: "{{ repo_dest }}"
+  register: sub_out
+  changed_when: false
+
+- name: Check added subscribers
+  ansible.builtin.shell: |
+    {{ repo_dest }}/venv/bin/python mongo-tools/check-subscribers.py
+  args:
+    chdir: "{{ repo_dest }}"
+  register: check_out
+  changed_when: false
+
+- name: Show Added subscribers
+  debug:
+    var: check_out.stdout
