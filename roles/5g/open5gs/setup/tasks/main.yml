@@ -117,82 +117,38 @@
   register: wait_cni
   changed_when: false
 
-# --- Wait for kube-proxy pods to be Ready ---
-- name: Wait for all kube-proxy pods to have all containers ready
-  shell: |
-    ready=0
-    total=0
-    pods=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o json)
-    total=$(echo "$pods" | jq '.items | length')
-    if [ "$total" -eq 0 ]; then
-      exit 1
-    fi
-    ready=$(echo "$pods" | jq '[.items[].status.containerStatuses[]?.ready] | all')
-    if [ "$ready" = "true" ]; then
-      exit 0
-    else
-      exit 1
-    fi
-  register: kube_proxy_ready
-  retries: 30
-  delay: 5
-  until: kube_proxy_ready.rc == 0
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  args:
-    executable: /bin/bash
+# --- Wait for kube-proxy pods to be Running and Ready (robust) ---
+- name: Wait until all kube-proxy pods have all containers ready
+  vars:
+    retries: 30
+    delay_sec: 5
+  block:
+    - name: Get kube-proxy pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: kube-system
+        label_selectors:
+          - k8s-app=kube-proxy
+      register: kube_proxy_pods
 
-# --- Wait for Kubernetes API endpoints ---
-- name: Wait for kubernetes service endpoint to exist (10.96.0.1)
-  ansible.builtin.shell: |
-    set -eu
-    tries=0
-    until kubectl -n default get endpoints kubernetes -o jsonpath='{.subsets}' | grep -q '.'; do
-      tries=$((tries+1))
-      if [ $tries -gt 30 ]; then
-        echo "no endpoints for kubernetes service after timeout" >&2
-        exit 1
-      fi
-      sleep 2
-    done
-    kubectl -n default get endpoints kubernetes -o wide
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  args:
-    executable: /bin/bash
-  changed_when: false
-  register: kubernetes_endpoints
+    - name: Check kube-proxy pods readiness
+      ansible.builtin.assert:
+        that:
+          - kube_proxy_pods.resources | length > 0
+          - >
+            kube_proxy_pods.resources | map(attribute='status.containerStatuses') | map('map', attribute='ready') | map('all') | list | first
+        fail_msg: "Not all kube-proxy pods are ready"
+      retries: "{{ retries }}"
+      delay: "{{ delay_sec }}"
 
-- name: Verify core node has a route to service IP 10.96.0.1
-  ansible.builtin.shell: |
-    if ip route get 10.96.0.1 >/dev/null 2>&1; then
-      ip route get 10.96.0.1
-      exit 0
-    else
-      echo "no route to 10.96.0.1 on $(hostname)" >&2
-      exit 2
-    fi
-  delegate_to: "{{ item }}"
-  loop: "{{ groups['core_node'] }}"
-  register: route_check
-  failed_when: false
-  changed_when: false
+# --- Ensure MongoDB variables ---
+- name: Set MongoDB variables for port-forward and subscriber import
+  set_fact:
+    mongo_namespace: "open5gs"
+    mongo_pod: "mongodb-0"
+    mongo_local_port: 27017
 
-- name: Debug route check failures if any node lacks route to 10.96.0.1
-  ansible.builtin.debug:
-    msg: "Node {{ item.item }}: rc={{ item.rc }} stdout='{{ item.stdout }}' stderr='{{ item.stderr }}'"
-  loop: "{{ route_check.results }}"
-  when: item.rc != 0
-
-- name: Check if no route to 10.96.0.1 on core node 
-  ansible.builtin.fail:
-    msg: "Core node does not have a route to 10.96.0.1; Kyverno install deferred."
-  when: route_check.results | selectattr('rc','ne',0) | list | length > 0
-
-# --- Kyverno / repo / MongoDB / NADs / Open5GS steps ---
-# (conserve tous les blocs existants jusqu'à MongoDB port-forward)
-
-# --- Ensure lsof is installed for port-forward check ---
+# --- Install lsof for port check ---
 - name: Ensure lsof is installed
   ansible.builtin.apt:
     name: lsof
@@ -200,6 +156,7 @@
     update_cache: yes
   become: yes
 
+# --- Check if port-forward is already running ---
 - name: Check if port 27017 is already used by kubectl
   ansible.builtin.shell: |
     lsof -i :{{ mongo_local_port }} | grep kubectl || true
