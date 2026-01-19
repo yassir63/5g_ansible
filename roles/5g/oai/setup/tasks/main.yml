@@ -2,18 +2,33 @@
 - name: RESTART_OAI_SETUP
   ansible.builtin.meta: noop
 
-- name: Download yq binary
-  ansible.builtin.get_url:
-    url: "https://github.com/mikefarah/yq/releases/download/{{ yq_version }}/yq_linux_amd64"
-    dest: "{{ yq_bin_path }}"
-    mode: '0755'
-    force: yes
+- name: Check if yq is already installed
+  ansible.builtin.stat:
+    path: "{{ yq_bin_path }}"
+  register: yq_bin
+
+- name: Download yq binary using curl or wget
+  ansible.builtin.shell: |
+    set -e
+    if command -v curl >/dev/null 2>&1; then
+      curl -L --fail "{{ yq_url }}" -o "{{ yq_bin_path }}"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -O "{{ yq_bin_path }}" "{{ yq_url }}"
+    else
+      echo "Neither curl nor wget found" >&2
+      exit 1
+    fi
+  args:
+    creates: "{{ yq_bin_path }}"
+  when: not yq_bin.stat.exists
+  become: true
 
 - name: Ensure yq is executable
   ansible.builtin.file:
     path: "{{ yq_bin_path }}"
     mode: '0755'
     state: file
+  become: true
     
 - name: Remove existing OAI directory if it exists
   file:
