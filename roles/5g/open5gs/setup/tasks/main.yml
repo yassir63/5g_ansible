@@ -117,48 +117,27 @@
   register: wait_cni
   changed_when: false
 
-# --- Wait for kube-proxy pods to be Running and Ready (robust version) ---
-- name: Wait until all kube-proxy pods have all containers Ready
+# --- Wait for kube-proxy pods to be Running and Ready ----
+- name: Wait for all kube-proxy pods to have all containers Ready
   vars:
-    retry_count: 0
-    max_retries: 30
-    delay_sec: 5
-  block:
-    - name: Get kube-proxy pods info
-      kubernetes.core.k8s_info:
-        kind: Pod
-        namespace: kube-system
-        label_selectors:
-          - k8s-app=kube-proxy
-      register: kube_proxy_pods
-      changed_when: false
-
-    - name: Check if all kube-proxy pods are Ready
-      set_fact:
-        kube_proxy_ready: >-
-          {{ kube_proxy_pods.resources | length > 0 and
-             (
-               kube_proxy_pods.resources
-               | selectattr('status.containerStatuses','defined')
-               | map(attribute='status.containerStatuses')
-               | map('selectattr', 'ready', 'equalto', false)
-               | list
-               | length
-             ) == 0
-          }}
-
-    - name: Wait before retry
-      ansible.builtin.pause:
-        seconds: "{{ delay_sec }}"
-      when: not kube_proxy_ready and retry_count < max_retries
-
-    - name: Increment retry counter
-      set_fact:
-        retry_count: "{{ retry_count + 1 }}"
-      when: not kube_proxy_ready and retry_count < max_retries
-  until: kube_proxy_ready
-  retries: 30
-  delay: 5
+    retries: 30
+    delay: 5
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: kube-system
+    label_selectors:
+      - k8s-app=kube-proxy
+  register: kube_proxy_pods
+  until: >
+    kube_proxy_pods.resources | length > 0 and
+    (kube_proxy_pods.resources
+     | selectattr('status.containerStatuses','defined')
+     | map(attribute='status.containerStatuses')
+     | map('map', attribute='ready')
+     | map('all') | list | length) == (kube_proxy_pods.resources | length)
+  retries: "{{ retries }}"
+  delay: "{{ delay }}"
+  changed_when: false
 
 
 # --- Wait for kubernetes service endpoint to exist ---
