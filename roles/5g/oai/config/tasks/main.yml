@@ -1,3 +1,8 @@
+---
+- name: Load 5G profile variables
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile }}.yaml"
+
 - name: Ensure 5G config directory exists
   file:
     path: /etc/oai
