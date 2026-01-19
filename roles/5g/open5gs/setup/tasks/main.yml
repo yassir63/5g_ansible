@@ -186,7 +186,16 @@
     msg: "Core node does not have a route to 10.96.0.1; Kyverno install deferred."
   when: route_check.results | selectattr('rc','ne',0) | list | length > 0
 
-# --- Ensure lsof is installed for MongoDB port-forward ---
+- name: Set subscriber variables
+  set_fact:
+    mongo_namespace: "open5gs"
+    mongo_pod: "mongodb-0"
+    mongo_local_port: 27017
+    yaml_file: "/etc/5g_profile_default.yaml"
+    mongo_tools_dir: "/root/open5gs-k8s/mongo-tools"
+    python_venv: "/root/open5gs-k8s/venv/bin/python"
+    python_script: "add-subscribers.py"
+
 - name: Ensure lsof is installed
   ansible.builtin.apt:
     name: lsof
