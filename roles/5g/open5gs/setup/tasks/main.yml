@@ -118,27 +118,26 @@
   changed_when: false
 
 # --- Wait for kube-proxy pods to be Running and Ready ----
-- name: Wait for all kube-proxy pods to have all containers Ready
-  vars:
-    retries: 30
-    delay: 5
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: kube-system
-    label_selectors:
-      - k8s-app=kube-proxy
-  register: kube_proxy_pods
-  until: >
-    kube_proxy_pods.resources | length > 0 and
-    (kube_proxy_pods.resources
-     | selectattr('status.containerStatuses','defined')
-     | map(attribute='status.containerStatuses')
-     | map('map', attribute='ready')
-     | map('all') | list | length) == (kube_proxy_pods.resources | length)
-  retries: "{{ retries }}"
-  delay: "{{ delay }}"
+- name: Wait for all kube-proxy pods to be Ready
+  shell: |
+    set -e
+    for i in $(seq 1 30); do
+      ready=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o jsonpath='{range .items[*]}{.metadata.name}:{range .status.containerStatuses[*]}{.ready};{end}{"\n"}{end}' | grep -c false || true)
+      if [ "$ready" -eq 0 ]; then
+        echo "✅ All kube-proxy pods are ready"
+        exit 0
+      fi
+      echo "⏳ Waiting for kube-proxy pods ($i/30)..."
+      sleep 5
+    done
+    echo "❌ kube-proxy pods not ready after 30 retries"
+    kubectl -n kube-system get pods -o wide
+    exit 1
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   changed_when: false
-
 
 # --- Wait for kubernetes service endpoint to exist ---
 - name: Wait for kubernetes service endpoint to exist (10.96.0.1)
