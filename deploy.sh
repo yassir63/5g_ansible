@@ -541,7 +541,7 @@ EOF
 fi
 
 for ue in "${R2LAB_UES[@]}"; do
-  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim \
+  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim" \
     >> "$INVENTORY"
 done
 
