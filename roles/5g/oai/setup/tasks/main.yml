@@ -2,9 +2,6 @@
 - name: RESTART_OAI_SETUP
   ansible.builtin.meta: noop
 
-# ------------------------------------------------------------
-# yq installation (robuste : curl/wget, pas get_url)
-# ------------------------------------------------------------
 - name: Check if yq is already installed
   ansible.builtin.stat:
     path: "{{ yq_bin_path }}"
@@ -14,9 +11,9 @@
   ansible.builtin.shell: |
     set -e
     if command -v curl >/dev/null 2>&1; then
-      curl -fsSL "{{ yq_url }}" -o "{{ yq_bin_path }}"
+      curl -L --fail "{{ yq_url }}" -o "{{ yq_bin_path }}"
     elif command -v wget >/dev/null 2>&1; then
-      wget -q "{{ yq_url }}" -O "{{ yq_bin_path }}"
+      wget -O "{{ yq_bin_path }}" "{{ yq_url }}"
     else
       echo "Neither curl nor wget found" >&2
       exit 1
@@ -33,124 +30,112 @@
     state: file
   become: true
 
-# ------------------------------------------------------------
-# OAI directory
-# ------------------------------------------------------------
 - name: Remove existing OAI directory if it exists
   ansible.builtin.file:
     path: "{{ dir_oai }}"
     state: absent
 
-- name: Ensure OAI directory exists
+- name: Ensure OAI directory exists in $HOME
   ansible.builtin.file:
     path: "{{ dir_oai }}"
     state: directory
     mode: '0755'
 
-# ------------------------------------------------------------
-# Download prepare-demo-oai.sh (NO get_url)
-# ------------------------------------------------------------
 - name: Download prepare-demo-oai.sh using curl or wget
   ansible.builtin.shell: |
     set -e
     if command -v curl >/dev/null 2>&1; then
-      curl -fsSL "{{ prepare_demo_url }}" -o "{{ prepare_demo_script }}"
+      curl -L --fail \
+        "https://raw.githubusercontent.com/sopnode/oai5g-rru/{{ tag_oai5g_rru }}/testing/prepare-demo-oai.sh" \
+        -o "{{ prepare_demo_script }}"
     elif command -v wget >/dev/null 2>&1; then
-      wget -q "{{ prepare_demo_url }}" -O "{{ prepare_demo_script }}"
+      wget -O "{{ prepare_demo_script }}" \
+        "https://raw.githubusercontent.com/sopnode/oai5g-rru/{{ tag_oai5g_rru }}/testing/prepare-demo-oai.sh"
     else
       echo "Neither curl nor wget found" >&2
       exit 1
     fi
+    chmod 0755 "{{ prepare_demo_script }}"
   args:
     creates: "{{ prepare_demo_script }}"
   become: true
 
-- name: Ensure prepare-demo-oai.sh is executable
-  ansible.builtin.file:
-    path: "{{ prepare_demo_script }}"
-    mode: '0755'
-    state: file
-  become: true
-
-# ------------------------------------------------------------
-# Multus interfaces
-# ------------------------------------------------------------
 - name: Retrieve physical interfaces for multus on the core and ran nodes
   ansible.builtin.set_fact:
     multus_core_if: "{{ hostvars[groups['core_node'][0]].nic_interface }}"
     multus_ran_if: "{{ hostvars[groups['ran_node'][0]].nic_interface }}"
 
-# ------------------------------------------------------------
-# Patch prepare-demo-oai.sh
-# ------------------------------------------------------------
-- name: Update NS variable
+- name: Update NS variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^NS='
     line: "NS=\"{{ core }}\""
+    backrefs: true
 
-- name: Update HOST_GNB variable
+- name: Update HOST_GNB variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^HOST_GNB='
     line: "HOST_GNB=\"{{ inventory_hostname }}\""
+    backrefs: true
 
-- name: Update TAG_OAI5G_RRU variable
+- name: Update TAG_OAI5G_RRU variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^TAG_OAI5G_RRU='
     line: "TAG_OAI5G_RRU=\"{{ tag_oai5g_rru }}\""
+    backrefs: true
 
-- name: Update REPO_OAI5G_RRU variable
+- name: Update REPO_OAI5G_RRU variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^REPO_OAI5G_RRU='
     line: "REPO_OAI5G_RRU=\"{{ repo_oai5g_rru }}\""
+    backrefs: true
 
-- name: Update TAG_OAI_CN5G_FED variable
+- name: Update TAG_OAI_CN5G_FED variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^TAG_OAI_CN5G_FED='
     line: "TAG_OAI_CN5G_FED=\"{{ tag_oai_cn5g_fed }}\""
+    backrefs: true
 
-- name: Update REPO_OAI_CN5G_FED variable
+- name: Update REPO_OAI_CN5G_FED variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^REPO_OAI_CN5G_FED='
     line: "REPO_OAI_CN5G_FED=\"{{ repo_oai_cn5g_fed }}\""
+    backrefs: true
 
-- name: Update LOCAL_CORE_INTERFACE variable
+- name: Update LOCAL_CORE_INTERFACE variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^LOCAL_CORE_INTERFACE='
     line: "LOCAL_CORE_INTERFACE=\"{{ multus_core_if }}\""
+    backrefs: true
 
-- name: Update LOCAL_RAN_INTERFACE variable
+- name: Update LOCAL_RAN_INTERFACE variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^LOCAL_RAN_INTERFACE='
     line: "LOCAL_RAN_INTERFACE=\"{{ multus_ran_if }}\""
+    backrefs: true
 
 - name: Update RRU variable
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^RRU='
     line: "RRU=\"{{ rru }}\""
+    backrefs: true
 
-# ------------------------------------------------------------
-# Run script
-# ------------------------------------------------------------
-- name: Run prepare-demo-oai.sh
+- name: Run prepare-demo-oai.sh to pull and configure OAI charts
   ansible.builtin.command: "./prepare-demo-oai.sh -a"
   args:
     chdir: "{{ dir_oai }}"
   register: prepare_script
   changed_when: "'OAI5G charts are now configured' in prepare_script.stdout"
 
-# ------------------------------------------------------------
-# Helm install (déjà OK)
-# ------------------------------------------------------------
-- name: Ensure Helm is installed
+- name: Ensure Helm is installed, required for demo-oai.sh script
   ansible.builtin.shell: |
     if ! command -v helm >/dev/null 2>&1; then
       curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
