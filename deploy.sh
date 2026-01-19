@@ -829,10 +829,13 @@ echo "Launching script ..."
 #./deployments/$script
 
 ansible-galaxy install -r collections/requirements.yml
-# First check if all hosts are reachable
-ansible -i "$INVENTORY" "${core_node} ${ran_node}" -m ping
+for node in "${core_node}" "${ran_node}" "${monitor_node}"; do
+    pos allocations free -k "$node"
+    pos allocations allocate "$node"
+    ansible -i "$INVENTORY" "$node" -m ping
+done
 
-#temporary disable r2lab playbook
+##temporary disable r2lab playbook
 if [[ "$platform" == "r2lab" ]]; then
     ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
 fi
