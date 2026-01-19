@@ -12,6 +12,7 @@
   debug:
     var: pdu_status.stdout
 
-- name: Wait 210 seconds for the "{{ rru }}" RRU to be ready
-  pause:
-    seconds: 210
+# no need to actively wait for 210, time required for other tasks much longer
+#- name: Wait 210 seconds for the "{{ rru }}" RRU to be ready
+#  pause:
+#    seconds: 210
