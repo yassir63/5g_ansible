@@ -64,10 +64,10 @@ echo "2) sopnode-f2"
 echo "3) sopnode-f3"
 echo "4) sopnode-w3"
 read -rp "Enter choice [1-4]: " core_node_choice
-if [[ -z "$core_node_choice" ]]; then
+if [[ -z "${core_node_choice}" ]]; then
   core_node=${DEFAULT_CORE_NODE}
 else
-  case "$core_node_choice" in
+  case "${core_node_choice}" in
     1) core_node="sopnode-f1" ;;
     2) core_node="sopnode-f2" ;;
     3) core_node="sopnode-f3" ;;
@@ -90,10 +90,10 @@ else
   echo "2) srsRAN"
   echo "3) UERANSIM"
   read -rp "Enter choice [1-3]: " ran_choice
-  if [[ -z "$ran_choice" ]]; then
+  if [[ -z "${ran_choice}" ]]; then
     ran=${DEFAULT_RAN}
   else
-    case "$ran_choice" in
+    case "${ran_choice}" in
       1) ran="oai" ;;
       2) ran="srsRAN" ;;
       3) ran="ueransim" ;;
@@ -110,10 +110,10 @@ echo "1) sopnode-f1"
 echo "2) sopnode-f2"
 echo "3) sopnode-f3"
 read -rp "Enter choice [1-3]: " ran_node_choice
-if [[ -z "$ran_node_choice" ]]; then
+if [[ -z "${ran_node_choice}" ]]; then
   ran_node=${DEFAULT_RAN_NODE}
 else
-  case "$ran_node_choice" in
+  case "${ran_node_choice}" in
     1) ran_node="sopnode-f1" ;;
     2) ran_node="sopnode-f2" ;;
     3) ran_node="sopnode-f3" ;;
@@ -137,10 +137,10 @@ if [[ "$core" != "oai" && "$ran" != "ueransim" ]]; then
     echo "2) sopnode-f2"
     echo "3) sopnode-f3"
     read -rp "Enter choice [1-3]: " monitor_node_choice
-    if [[ -z "$monitor_node_choice" ]]; then
+    if [[ -z "${monitor_node_choice}" ]]; then
       monitor_node=${DEFAULT_MONITOR_NODE}
     else
-      case "$monitor_node_choice" in
+      case "${monitor_node_choice}" in
         1) monitor_node="sopnode-f1" ;;
         2) monitor_node="sopnode-f2" ;;
         3) monitor_node="sopnode-f3" ;;
@@ -384,8 +384,8 @@ fi
 
 echo
 echo "========== SUMMARY =========="
-echo "Core:        $core on $core_node"
-echo "RAN:         $ran on $ran_node"
+echo "Core:        $core on ${core_node}"
+echo "RAN:         $ran on ${ran_node}"
 [[ "$monitoring_enabled" == true ]] && echo "Monitoring:  enabled on $monitor_node" || echo "Monitoring:  disabled"
 echo "Platform:    $platform"
 [[ "$platform" == "r2lab" ]] && echo "RU:          $R2LAB_RU" && echo "UEs:         ${R2LAB_UES[*]}"
@@ -489,7 +489,7 @@ get_ue_vars() {
   esac
 
   # rules by core/ran
-  if [[ "$core_l" == "oai" && "$ran_l" == "oai" ]]; then
+  if [[ "${core_l}" == "oai" && "${ran_l}" == "oai" ]]; then
     upf_ip="10.0.0.1"
     if [[ "$dnn" == "internet" ]]; then
       nssai="01.FFFFFF"
@@ -497,14 +497,14 @@ get_ue_vars() {
       nssai="01.000001"
     fi
 
-  elif [[ "$core_l" == "open5gs" && "$ran_l" == "oai" ]]; then
+  elif [[ "${core_l}" == "open5gs" && "${ran_l}" == "oai" ]]; then
     if [[ "$dnn" == "internet" ]]; then
       upf_ip="10.41.0.1"; nssai="01.FFFFFF"
     else
       upf_ip="10.42.0.1"; nssai="01.000001"
     fi
 
-  elif [[ "$core_l" == "open5gs" && "$ran_l" != "oai" ]]; then
+  elif [[ "${core_l}" == "open5gs" && "${ran_l}" != "oai" ]]; then
     if [[ "$dnn" == "internet" ]]; then
       upf_ip="10.41.0.1"; nssai="01.FFFFFF"
     else
@@ -569,17 +569,17 @@ cat > "$INVENTORY" <<EOF
 localhost ansible_connection=local
 
 [core_node]
-$core_node ansible_user=root nic_interface=$(get_nic "$core_node") ip=172.28.2.$(get_ip_suffix "$core_node") storage=$(get_storage "$core_node")
+${core_node} ansible_user=root nic_interface=$(get_nic "${core_node}") ip=172.28.2.$(get_ip_suffix "${core_node}") storage=$(get_storage "${core_node}")
 
 [ran_node]
-$ran_node ansible_user=root nic_interface=$(get_nic "$ran_node") ip=172.28.2.$(get_ip_suffix "$ran_node") storage=$(get_storage "$ran_node") boot_mode=live
+${ran_node} ansible_user=root nic_interface=$(get_nic "${ran_node}") ip=172.28.2.$(get_ip_suffix "${ran_node}") storage=$(get_storage "${ran_node}") boot_mode=live
 
 [monitor_node]
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
     cat >> "$INVENTORY" <<EOF
-$monitor_node ansible_user=root nic_interface=$(get_nic "$monitor_node") ip=172.28.2.$(get_ip_suffix "$monitor_node") storage=$(get_storage "$monitor_node")
+${monitor_node} ansible_user=root nic_interface=$(get_nic "${monitor_node}") ip=172.28.2.$(get_ip_suffix "${monitor_node}") storage=$(get_storage "${monitor_node}")
 EOF
 fi
 
@@ -770,9 +770,9 @@ EOF
 # If it still fails, ask the user if they want to ignore and continue (not recommended) or exit the script.
 echo ""
 echo "Reserving nodes on SLICES..."
-nodes_to_reserve=("$core_node" "$ran_node")
+nodes_to_reserve=("${core_node}" "${ran_node}")
 if [[ "$monitoring_enabled" == true ]]; then
-  nodes_to_reserve+=("$monitor_node")
+  nodes_to_reserve+=("${monitor_node}")
 fi
 # Remove duplicates
 nodes_to_reserve=($(printf "%s\n" "${nodes_to_reserve[@]}" | sort -u))
@@ -886,7 +886,7 @@ echo "Launching script ..."
 
 ansible-galaxy install -r collections/requirements.yml
 # First check if all hosts are reachable
-ansible -i inventory/default/hosts.ini all -m ping
+ansible -i inventory/default/hosts.ini "${core_node} ${ran_node}" -m ping
 
 #temporary disable r2lab playbook
 if [[ "$platform" == "r2lab" ]]; then
