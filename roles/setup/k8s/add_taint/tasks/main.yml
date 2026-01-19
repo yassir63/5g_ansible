@@ -1,0 +1,17 @@
+---
+- name: RESTART_K8S_TAINT
+  ansible.builtin.meta: noop
+
+- name: Check if node already tainted
+  ansible.builtin.command: >
+    kubectl get node {{ inventory_hostname }}
+    -o jsonpath='{.spec.taints}'
+  register: node_taints
+  changed_when: false
+  failed_when: false
+
+- name: Taint node with NoSchedule
+  ansible.builtin.command: >
+    kubectl taint node {{ inventory_hostname }}
+    node=noschedule:NoSchedule --overwrite
+  when: node_taints.stdout is not search('NoSchedule')

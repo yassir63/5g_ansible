@@ -67,6 +67,13 @@
   roles:
     - role: setup/k8s/cluster_join
 
+- name: Add NoSchedule taint on RAN node (reserved node for RAN pods) 
+  hosts: ran_node
+  become: true
+  roles:
+    - role: setup/k8s/add_taint
+      when: not fhi72
+
 - name: Install Multus / CNAO
   hosts: core_node
   become: true
