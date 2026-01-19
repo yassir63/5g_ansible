@@ -118,64 +118,29 @@
   changed_when: false
 
 # --- Wait for kube-proxy pods to be Ready ---
-- name: Wait until all kube-proxy pods have all containers ready
-  vars:
-    retries: 30
-    delay: 5
-  block:
-    - name: Check kube-proxy pods readiness
-      kubernetes.core.k8s_info:
-        kind: Pod
-        namespace: kube-system
-        label_selectors:
-          - k8s-app=kube-proxy
-      register: kube_proxy_pods
-      environment:
-        KUBECONFIG: /etc/kubernetes/admin.conf
-
-    - name: Set all_ready fact based on kube-proxy pods
-      ansible.builtin.set_fact:
-        all_ready: >-
-          {{
-            (kube_proxy_pods.resources | default([]))
-            | map(attribute='status.containerStatuses')
-            | map('selectattr', 'ready', 'equalto', false)
-            | list
-            | length == 0
-          }}
-
-  until: all_ready
-  retries: "{{ retries }}"
-  delay: "{{ delay }}"
-- name: Wait until all kube-proxy pods have all containers ready
-  vars:
-    retries: 30
-    delay: 5
-  block:
-    - name: Check kube-proxy pods readiness
-      kubernetes.core.k8s_info:
-        kind: Pod
-        namespace: kube-system
-        label_selectors:
-          - k8s-app=kube-proxy
-      register: kube_proxy_pods
-      environment:
-        KUBECONFIG: /etc/kubernetes/admin.conf
-
-    - name: Set all_ready fact based on kube-proxy pods
-      ansible.builtin.set_fact:
-        all_ready: >-
-          {{
-            (kube_proxy_pods.resources | default([]))
-            | map(attribute='status.containerStatuses')
-            | map('selectattr', 'ready', 'equalto', false)
-            | list
-            | length == 0
-          }}
-
-  until: all_ready
-  retries: "{{ retries }}"
-  delay: "{{ delay }}"
+- name: Wait for all kube-proxy pods to have all containers ready
+  shell: |
+    ready=0
+    total=0
+    pods=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o json)
+    total=$(echo "$pods" | jq '.items | length')
+    if [ "$total" -eq 0 ]; then
+      exit 1
+    fi
+    ready=$(echo "$pods" | jq '[.items[].status.containerStatuses[]?.ready] | all')
+    if [ "$ready" = "true" ]; then
+      exit 0
+    else
+      exit 1
+    fi
+  register: kube_proxy_ready
+  retries: 30
+  delay: 5
+  until: kube_proxy_ready.rc == 0
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  args:
+    executable: /bin/bash
 
 # --- Wait for Kubernetes API endpoints ---
 - name: Wait for kubernetes service endpoint to exist (10.96.0.1)
