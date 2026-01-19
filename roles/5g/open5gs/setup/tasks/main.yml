@@ -118,32 +118,64 @@
   changed_when: false
 
 # --- Wait for kube-proxy pods to be Ready ---
-# --- Wait for kube-proxy pods to be Ready ---
-- name: Get kube-proxy pods
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: kube-system
-    label_selectors:
-      - k8s-app=kube-proxy
-  register: kube_proxy_pods
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-
 - name: Wait until all kube-proxy pods have all containers ready
-  ansible.builtin.assert:
-    that:
-      - kube_proxy_pods.resources | length > 0
-      - kube_proxy_pods.resources | map(attribute='status.containerStatuses') 
-        | map('map', attribute='ready') | map('all') | all
-  retries: 30
-  delay: 5
-  until: >
-    kube_proxy_pods.resources | length > 0 and
-    (kube_proxy_pods.resources | map(attribute='status.containerStatuses') 
-     | map('map', attribute='ready') | map('all') | all)
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  changed_when: false
+  vars:
+    retries: 30
+    delay: 5
+  block:
+    - name: Check kube-proxy pods readiness
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: kube-system
+        label_selectors:
+          - k8s-app=kube-proxy
+      register: kube_proxy_pods
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+    - name: Set all_ready fact based on kube-proxy pods
+      ansible.builtin.set_fact:
+        all_ready: >-
+          {{
+            (kube_proxy_pods.resources | default([]))
+            | map(attribute='status.containerStatuses')
+            | map('selectattr', 'ready', 'equalto', false)
+            | list
+            | length == 0
+          }}
+
+  until: all_ready
+  retries: "{{ retries }}"
+  delay: "{{ delay }}"
+- name: Wait until all kube-proxy pods have all containers ready
+  vars:
+    retries: 30
+    delay: 5
+  block:
+    - name: Check kube-proxy pods readiness
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: kube-system
+        label_selectors:
+          - k8s-app=kube-proxy
+      register: kube_proxy_pods
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+    - name: Set all_ready fact based on kube-proxy pods
+      ansible.builtin.set_fact:
+        all_ready: >-
+          {{
+            (kube_proxy_pods.resources | default([]))
+            | map(attribute='status.containerStatuses')
+            | map('selectattr', 'ready', 'equalto', false)
+            | list
+            | length == 0
+          }}
+
+  until: all_ready
+  retries: "{{ retries }}"
+  delay: "{{ delay }}"
 
 # --- Wait for Kubernetes API endpoints ---
 - name: Wait for kubernetes service endpoint to exist (10.96.0.1)
