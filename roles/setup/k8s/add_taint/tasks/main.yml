@@ -14,4 +14,4 @@
   ansible.builtin.command: >
     kubectl taint node {{ inventory_hostname }}
     node=noschedule:NoSchedule --overwrite
-  when: node_taints.stdout is not search('NoSchedule')
+  when: "'NoSchedule' not in node_taints.stdout"
