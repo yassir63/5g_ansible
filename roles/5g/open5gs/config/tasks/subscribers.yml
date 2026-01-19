@@ -26,6 +26,11 @@
     requirements: /root/open5gs-k8s/requirements.txt
     virtualenv: /root/open5gs-k8s/venv
 
+- name: Ensure PyYAML is installed in virtualenv
+  pip:
+    name: PyYAML
+    virtualenv: /root/open5gs-k8s/venv
+
 - name: Set subscriber variables
   set_fact:
     mongo_namespace: "open5gs"
