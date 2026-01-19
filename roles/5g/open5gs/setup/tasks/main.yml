@@ -196,6 +196,7 @@
     python_venv: "/root/open5gs-k8s/venv/bin/python"
     python_script: "add-subscribers.py"
 
+# --- Ensure lsof is installed ---
 - name: Ensure lsof is installed
   ansible.builtin.apt:
     name: lsof
@@ -203,12 +204,14 @@
     update_cache: yes
   become: yes
 
-- name: Check if port 27017 is already used by kubectl
+# --- Check if port 27017 is already used by kubectl ---
+- name: Check for existing MongoDB port-forward
   ansible.builtin.shell: |
-    lsof -i :{{ mongo_local_port }} | grep kubectl || true
+    lsof -iTCP:{{ mongo_local_port }} -sTCP:LISTEN -Fn | grep -q 'kubectl' && echo "exists" || echo ""
   register: port_forward_check
   changed_when: false
 
+# --- Start port-forward only if not existing ---
 - name: Start MongoDB port-forward if not already running
   ansible.builtin.shell: |
     nohup kubectl port-forward -n {{ mongo_namespace }} {{ mongo_pod }} {{ mongo_local_port }}:27017 > /tmp/port-forward.log 2>&1 &
@@ -217,12 +220,13 @@
   async: 0
   poll: 0
 
+# --- Wait until MongoDB is responsive ---
 - name: Wait until MongoDB accepts connections
   ansible.builtin.wait_for:
     host: 127.0.0.1
     port: "{{ mongo_local_port }}"
     delay: 2
-    timeout: 120
+    timeout: 180
 
 # --- Add subscribers ---
 - name: Add subscribers
@@ -242,6 +246,6 @@
   register: check_out
   changed_when: false
 
-- name: Show Added subscribers
+- name: Show added subscribers
   debug:
     var: check_out.stdout
