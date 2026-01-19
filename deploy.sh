@@ -122,6 +122,7 @@ else
     *) echo "❌ Invalid RAN node"; exit 1 ;;
   esac
 fi
+echo "2************ core $core, ran: $ran"
 
 # Select Monitoring Node (only if not OAI core with UERANSIM RAN and if user wants it)
 monitoring_enabled=false
@@ -172,6 +173,8 @@ fi
 R2LAB_RU="$platform" # if rfsim, RU is "rfsim"
 R2LAB_UES=()
 
+echo "3************ core $core, ran: $ran"
+
 # If R2Lab platform is selected, ask for RU and UEs
 if [[ "$platform" == "r2lab" ]]; then
   R2LAB_RUs=("benetel1" "benetel2" "jaguar" "panther" "n300" "n320")
@@ -205,6 +208,7 @@ if [[ "$platform" == "r2lab" ]]; then
       *)
 	  fhi72=false ;;
   esac
+echo "4************ core $core, ran: $ran"
 
   QHATS=("qhat01" "qhat02" "qhat03" "qhat10" "qhat11")
   # Select UEs
