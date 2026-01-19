@@ -76,8 +76,6 @@ else
   esac
 fi
 
-echo "1************ core $core, ran: $ran"
-
 # Select RAN
 if [[ "$core" == "oai" ]]; then
   # If OAI core is selected, only OAI RAN is supported
@@ -122,7 +120,6 @@ else
     *) echo "❌ Invalid RAN node"; exit 1 ;;
   esac
 fi
-echo "2************ core $core, ran: $ran"
 
 # Select Monitoring Node (only if not OAI core with UERANSIM RAN and if user wants it)
 monitoring_enabled=false
@@ -173,8 +170,6 @@ fi
 R2LAB_RU="$platform" # if rfsim, RU is "rfsim"
 R2LAB_UES=()
 
-echo "3************ core $core, ran: $ran"
-
 # If R2Lab platform is selected, ask for RU and UEs
 if [[ "$platform" == "r2lab" ]]; then
   R2LAB_RUs=("benetel1" "benetel2" "jaguar" "panther" "n300" "n320")
@@ -200,15 +195,15 @@ if [[ "$platform" == "r2lab" ]]; then
   case "${R2LAB_RU}" in
       "benetel1"|"benetel2")
 	  echo "Currently Benetel scenarios mandates OAI core and OAI ran on sopnode-f3, enforcing parameters..."
-	  core="$oai"
-	  ran="oai";
-	  ran_node="sopnode-f3";
+	  core="oai"
+	  ran="oai"
+	  ran_node="sopnode-f3"
 	  fhi72=true
           ;;
       *)
-	  fhi72=false ;;
+	  fhi72=false
+	  ;;
   esac
-echo "4************ core $core, ran: $ran"
 
   QHATS=("qhat01" "qhat02" "qhat03" "qhat10" "qhat11")
   # Select UEs
@@ -476,45 +471,6 @@ get_fit_info() {
   esac
 }
 
-get_ue_vars() {
-    # usage: get_ue_vars <qhat>
-    # relies on global $core and $ran already set
-    # nssai and dnn now set in group_vars/all/5g_profile_default.yaml
-  : "${core:?core must be set}"; : "${ran:?ran must be set}"
-
-  local qhat="${1,,}"
-  local core_l="${core,,}"
-  local ran_l="${ran,,}"
-
-  local upf_ip
-
-  echo "************ core $core, core_l ${core_l}, ran: $ran, ran_l: ${ran_l}"
-  exit
-  # rules by core/ran
-  if [[ "${core_l}" == "oai" && "${ran_l}" == "oai" ]]; then
-    upf_ip="10.0.0.1"
-
-  elif [[ "${core_l}" == "open5gs" && "${ran_l}" == "oai" ]]; then
-      upf_ip="10.41.0.1"
-
-  elif [[ "${core_l}" == "open5gs" && "${ran_l}" != "oai" ]]; then
-    if [[ "$dnn" == "internet" ]]; then
-      upf_ip="10.41.0.1"
-    else
-      upf_ip="10.42.0.1"
-    fi
-
-  else
-    echo "❌ Unsupported core/ran combo: core=$core ran=$ran"
-    return 0
-  fi
-
-  # emit KEY=VALUE so caller can eval
-  cat <<EOF
-upf_ip=$upf_ip
-EOF
-}
-
 # ========== Generate hosts.ini ==========
 echo "Generating hosts.ini..."
 
@@ -585,10 +541,7 @@ EOF
 fi
 
 for ue in "${R2LAB_UES[@]}"; do
-  # derive dnn/upf_ip/nssai from global core/ran + this UE
-  eval "$(get_ue_vars "$ue")" || { echo "Failed to compute vars for $ue"; exit 1; }
-
-  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim dnn=$dnn upf_ip=$upf_ip nssai=$nssai" \
+  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim \
     >> "$INVENTORY"
 done
 
