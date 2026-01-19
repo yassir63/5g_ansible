@@ -67,6 +67,16 @@
   roles:
     - role: setup/k8s/cluster_join
 
+####################################################################
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+####################################################################
+  
 - name: Add NoSchedule taint on RAN node (reserved node for RAN pods) 
   hosts: ran_node
   become: true
@@ -135,14 +145,6 @@
     - role: 5g/open5gs/config
       when: core == 'open5gs'
 
-- hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-  
 - name: Deploy OAI CN/RAN
   hosts: ran_node
   pre_tasks:
