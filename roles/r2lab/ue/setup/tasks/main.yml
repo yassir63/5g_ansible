@@ -1,4 +1,7 @@
 ---
+- name: RESTART_UE_SETUP
+  ansible.builtin.meta: noop
+
 - name: Load active 5G profile variables
   ansible.builtin.include_vars:
     file: "{{ playbook_dir }}/group_vars/all/5g_profile_{{ fiveg_profile }}.yml"
