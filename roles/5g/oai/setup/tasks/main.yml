@@ -72,6 +72,16 @@
     line: "NS=\"{{ core }}\""
     backrefs: true
 
+- name: Update HOST_AMF_UPF variable in prepare-demo-oai.sh
+  ansible.builtin.lineinfile:
+    path: "{{ prepare_demo_script }}"
+    regexp: '^HOST_AMF_UPF='
+    line: >
+      HOST_AMF_UPF="{{
+        ran_node_name if fhi72 | bool else core_node_name
+      }}"
+    backrefs: true
+
 - name: Update HOST_GNB variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
