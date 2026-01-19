@@ -150,7 +150,7 @@
   roles:
     - role: 5g/open5gs/fiveg_profile
       when: core == 'open5gs'
-    - role: 5g/open5gs/config
+    - role: 5g/open5gs/setup
       when: core == 'open5gs'
 
 - name: Deploy OAI CN/RAN

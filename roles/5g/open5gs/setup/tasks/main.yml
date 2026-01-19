@@ -396,6 +396,57 @@
   when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
   loop: "{{ nad_list }}"
 
+##### Patch open5gs with new 5G parameters 
+
+- name: Load 5G profile from YAML
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg_profile_data
+
+- name: Validate 5G profile
+  import_tasks: "../../fiveg_profile/tasks/validate.yml"
+  vars:
+    plmn: "{{ fiveg_profile_data.plmn }}"
+    slices: "{{ fiveg_profile_data.slices }}"
+    ues: "{{ fiveg_profile_data.ues }}"
+
+- name: Patch Open5GS configuration for scenario
+  block:
+    - name: Create scenario config map
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: open5gs-scenario
+            namespace: "{{ open5gs_ns }}"
+          data:
+            plmn.yaml: |
+              mcc: "{{ fiveg_profile_data.plmn.mcc }}"
+              mnc: "{{ fiveg_profile_data.plmn.mnc }}"
+              tac: "{{ fiveg_profile_data.plmn.tac }}"
+            slices.yaml: |
+{% for s in fiveg_profile_data.slices %}
+              - name: "{{ s.name }}"
+                sst: "{{ s.sst }}"
+                sd: "{{ s.sd | default('') }}"
+                dnn: "{{ s.dnn }}"
+{% endfor %}
+            ues.yaml: |
+{% for ue_name, ue_val in fiveg_profile_data.ues.items() %}
+              {{ ue_name }}:
+                imsi_suffix: "{{ ue_val.imsi_suffix }}"
+                slice: "{{ ue_val.slice }}"
+{% endfor %}
+    - name: Apply ConfigMap to cluster
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('file', '/tmp/open5gs-scenario.yaml') | from_yaml }}"
+  become: true
+
+#####
+
 - name: Apply Open5GS NFs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
 
@@ -465,23 +516,24 @@
   args:
     chdir: "{{ repo_dest }}"
 
-- name: Add subscribers
-  ansible.builtin.shell: |
-    {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
-    {{ repo_dest }}/venv/bin/python mongo-tools/add-subscribers.py
-  args:
-    chdir: "{{ repo_dest }}"
-  register: sub_out
-  changed_when: false
+# following is now done in role open5gs/config/tasks/subscribers.yml
+#- name: Add subscribers
+#  ansible.builtin.shell: |
+#    {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
+#    {{ repo_dest }}/venv/bin/python mongo-tools/add-subscribers.py
+#  args:
+#    chdir: "{{ repo_dest }}"
+#  register: sub_out
+#  changed_when: false
 
-- name: Check added subscribers
-  ansible.builtin.shell: |
-    {{ repo_dest }}/venv/bin/python mongo-tools/check-subscribers.py
-  args:
-    chdir: "{{ repo_dest }}"
-  register: check_out
-  changed_when: false
+#- name: Check added subscribers
+#  ansible.builtin.shell: |
+#    {{ repo_dest }}/venv/bin/python mongo-tools/check-subscribers.py
+#  args:
+#    chdir: "{{ repo_dest }}"
+#  register: check_out
+#  changed_when: false
 
-- name: Show Added subscribers
-  debug:
-    var: check_out.stdout
+#- name: Show Added subscribers
+#  debug:
+#    var: check_out.stdout
