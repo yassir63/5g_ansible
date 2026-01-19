@@ -1,33 +1,56 @@
 ---
 # To avoid Pod eviction issues...
-# Prepare RAN live node persistent storage and kubelet config
-- name: "Create containerd mount point"
+
+# Persistent storage for containerd
+- name: Ensure storage device exists
+  ansible.builtin.stat:
+    path: "/dev/{{ storage }}"
+  register: storage_device
+
+- name: Fail if storage device does not exist
+  ansible.builtin.fail:
+    msg: "Storage device /dev/{{ storage }} does not exist"
+  when: not storage_device.stat.exists
+
+- name: Create containerd mount point
   ansible.builtin.file:
     path: /var/lib/containerd
     state: directory
     mode: '0755'
 
-- name: "Mount persistent storage for containerd"
+- name: Mount persistent storage for containerd
   ansible.builtin.mount:
     path: /var/lib/containerd
-    src: "{{ storage }}"
+    src: "/dev/{{ storage }}"
     fstype: ext4
     state: mounted
 
-- name: "Ensure kubelet config exists"
+# Prepare kubelet configuration (pre-install safe)
+- name: Ensure kubelet base directory exists
+  ansible.builtin.file:
+    path: /var/lib/kubelet
+    state: directory
+    mode: '0755'
+
+- name: Check if kubelet config exists
+  ansible.builtin.stat:
+    path: /var/lib/kubelet/config.yaml
+  register: kubelet_cfg
+
+- name: Backup existing kubelet config if present
+  ansible.builtin.copy:
+    src: /var/lib/kubelet/config.yaml
+    dest: /var/lib/kubelet/config.yaml.bak.{{ ansible_date_time.epoch }}
+    remote_src: true
+  when: kubelet_cfg.stat.exists
+
+- name: Ensure kubelet config exists
   ansible.builtin.file:
     path: /var/lib/kubelet/config.yaml
     state: touch
     mode: '0644'
 
-- name: "Backup existing kubelet config if present"
-  ansible.builtin.copy:
-    src: /var/lib/kubelet/config.yaml
-    dest: /var/lib/kubelet/config.yaml.bak.{{ ansible_date_time.epoch }}
-    remote_src: true
-  when: ansible.builtin.stat(path='/var/lib/kubelet/config.yaml').stat.exists
-
-- name: "Patch kubelet config rootDir and evictionHard"
+- name: Patch kubelet config rootDir and evictionHard
   ansible.builtin.blockinfile:
     path: /var/lib/kubelet/config.yaml
     block: |
@@ -37,16 +60,32 @@
         imagefs.available: "10%"
     marker: "# {mark} RAN pre-K8s patch"
 
-- name: "Reload systemd and restart containerd"
+# Restart services only if present
+
+- name: Check if containerd service exists
+  ansible.builtin.shell: systemctl list-unit-files | grep -q '^containerd\.service'
+  register: containerd_service
+  changed_when: false
+  failed_when: false
+
+- name: Reload systemd and restart containerd
   ansible.builtin.systemd:
     name: containerd
     state: restarted
     enabled: yes
     daemon_reload: yes
+  when: containerd_service.rc == 0
 
-- name: "Restart kubelet"
+- name: Check if kubelet service exists
+  ansible.builtin.shell: systemctl list-unit-files | grep -q '^kubelet\.service'
+  register: kubelet_service
+  changed_when: false
+  failed_when: false
+
+- name: Restart kubelet
   ansible.builtin.systemd:
     name: kubelet
     state: restarted
     enabled: yes
     daemon_reload: yes
+  when: kubelet_service.rc == 0
