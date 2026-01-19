@@ -48,7 +48,7 @@ read -rp "Enter choice [1-2]: " core_choice
 if [[ -z "$core_choice" ]]; then
   core=${DEFAULT_CORE}
 else
-  case "$core_choice" in
+  case "${core_choice}" in
     1) core="oai" ;;
     2) core="open5gs" ;;
     *) echo "❌ Invalid choice"; exit 1 ;;
@@ -471,44 +471,31 @@ get_fit_info() {
 }
 
 get_ue_vars() {
-  # usage: get_ue_vars <qhat>
-  # relies on global $core and $ran already set
+    # usage: get_ue_vars <qhat>
+    # relies on global $core and $ran already set
+    # nssai and dnn now set in group_vars/all/5g_profile_default.yaml
   : "${core:?core must be set}"; : "${ran:?ran must be set}"
 
   local qhat="${1,,}"
   local core_l="${core,,}"
   local ran_l="${ran,,}"
 
-  local dnn upf_ip nssai
+  local upf_ip
 
-  # qhat → dnn
-  case "$qhat" in
-    qhat01|qhat03|qhat11) dnn="streaming" ;;
-    qhat02|qhat10)        dnn="internet"  ;;
-    *) echo "echo '❌ Unknown qhat: $qhat' >&2; return 1"; return 0 ;;
-  esac
-
+  echo "************ core $core, core_l ${core_l}, ran: $ran, ran_l: ${ran_l}"
+  exit
   # rules by core/ran
   if [[ "${core_l}" == "oai" && "${ran_l}" == "oai" ]]; then
     upf_ip="10.0.0.1"
-    if [[ "$dnn" == "internet" ]]; then
-      nssai="01.FFFFFF"
-    else
-      nssai="01.000001"
-    fi
 
   elif [[ "${core_l}" == "open5gs" && "${ran_l}" == "oai" ]]; then
-    if [[ "$dnn" == "internet" ]]; then
-      upf_ip="10.41.0.1"; nssai="01.FFFFFF"
-    else
-      upf_ip="10.42.0.1"; nssai="01.000001"
-    fi
+      upf_ip="10.41.0.1"
 
   elif [[ "${core_l}" == "open5gs" && "${ran_l}" != "oai" ]]; then
     if [[ "$dnn" == "internet" ]]; then
-      upf_ip="10.41.0.1"; nssai="01.FFFFFF"
+      upf_ip="10.41.0.1"
     else
-      upf_ip="10.42.0.1"; nssai="01.000002"
+      upf_ip="10.42.0.1"
     fi
 
   else
@@ -518,9 +505,7 @@ get_ue_vars() {
 
   # emit KEY=VALUE so caller can eval
   cat <<EOF
-dnn=$dnn
 upf_ip=$upf_ip
-nssai=$nssai
 EOF
 }
 
