@@ -76,6 +76,8 @@ else
   esac
 fi
 
+echo "1************ core $core, ran: $ran"
+
 # Select RAN
 if [[ "$core" == "oai" ]]; then
   # If OAI core is selected, only OAI RAN is supported
