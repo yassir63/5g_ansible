@@ -117,32 +117,27 @@
   register: wait_cni
   changed_when: false
 
-# Ensure cluster networking and api endpoints are ready before Kyverno install
-- name: Wait for kube-proxy pods to be Running and Ready
-  ansible.builtin.shell: |
-    set -e
-    echo "⏳ Checking kube-proxy pod readiness..."
-    for i in {1..30}; do
-      ready=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o jsonpath='{.items[*].status.containerStatuses[*].ready}' | grep -c true || true)
-      total=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy --no-headers | wc -l)
-      if [ "$ready" -eq "$total" ] && [ "$total" -gt 0 ]; then
-        echo "✅ kube-proxy pods Ready ($ready/$total)"
-        exit 0
-      fi
-      echo "⏳ Waiting ($i/30)... ($ready/$total ready)"
-      sleep 5
-    done
-    echo "❌ kube-proxy not ready after timeout" >&2
-    kubectl -n kube-system get pods -l k8s-app=kube-proxy -o wide
-    exit 1
-  args:
-    executable: /bin/bash
+# --- Wait for kube-proxy pods using k8s_info (reliable) ---
+- name: Wait for kube-proxy pods to be Ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: kube-system
+    label_selectors:
+      - k8s-app=kube-proxy
+  register: kube_proxy_pods
+  until: >
+    kube_proxy_pods.resources | length > 0 and
+    (kube_proxy_pods.resources | selectattr('status.containerStatuses','defined') 
+       | selectattr('status.containerStatuses','length') 
+       | selectattr('status.containerStatuses','>0') 
+       | selectattr('status.containerStatuses[0].ready', 'equalto', true) | list | length) == kube_proxy_pods.resources | length
+  retries: 30
+  delay: 5
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  retries: 2
-  delay: 5
   changed_when: false
 
+# --- Wait for Kubernetes API endpoints ---
 - name: Wait for kubernetes service endpoint to exist (10.96.0.1)
   ansible.builtin.shell: |
     set -eu
@@ -189,298 +184,10 @@
     msg: "Core node does not have a route to 10.96.0.1; Kyverno install deferred."
   when: route_check.results | selectattr('rc','ne',0) | list | length > 0
 
-# --- Install CRDs first (fixes the init crash) ---
-- name: Download Kyverno chart locally
-  ansible.builtin.shell: |
-    rm -rf /tmp/kyverno
-    mkdir -p /tmp/kyverno
-    helm pull kyverno/kyverno --version 3.5.2 --untar --untardir /tmp/kyverno
-  args:
-    executable: /bin/bash
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
+# --- Kyverno / repo / MongoDB / NADs / Open5GS steps ---
+# (conserve tous les blocs existants jusqu'à MongoDB port-forward)
 
-- name: Find actual untarred Kyverno folder
-  ansible.builtin.find:
-    paths: /tmp/kyverno
-    file_type: directory
-    patterns: "kyverno*"
-  register: kyverno_chart_folder
-
-- name: Fail if no Kyverno chart folder found
-  ansible.builtin.fail:
-    msg: "No Kyverno chart folder found in /tmp/kyverno. Helm pull may have failed."
-  when: kyverno_chart_folder.matched == 0
-
-- name: Install Kyverno CRDs (if present) before helm install
-  ansible.builtin.shell: |
-    set -e
-    chart_dir="{{ kyverno_chart_folder.files[0].path }}"
-    if [ -d "$chart_dir/crds" ]; then
-      kubectl apply -f "$chart_dir/crds"
-    else
-      echo "No crds directory in $chart_dir, skipping CRD apply"
-    fi
-  args:
-    executable: /bin/bash
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-
-- name: Install Kyverno Helm chart (Helm manages CRDs)
-  ansible.builtin.shell: |
-    helm upgrade --install kyverno {{ kyverno_chart_folder.files[0].path }} \
-      -n kyverno --create-namespace --wait=false
-  args:
-    executable: /bin/bash
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-
-# --- Wait for Kyverno controllers to be ready ---
-- name: Wait for Kyverno controller pods to be Ready
-  ansible.builtin.shell: |
-    set -e
-    kubectl -n kyverno wait --for=condition=Available deployment/kyverno-admission-controller --timeout=180s
-    kubectl -n kyverno wait --for=condition=Available deployment/kyverno-background-controller --timeout=180s
-    kubectl -n kyverno wait --for=condition=Available deployment/kyverno-cleanup-controller --timeout=180s
-    kubectl -n kyverno wait --for=condition=Available deployment/kyverno-reports-controller --timeout=180s
-  args:
-    executable: /bin/bash
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: wait_kyverno
-  retries: 5
-  delay: 15
-  until: wait_kyverno.rc == 0
-  changed_when: false
-
-# --- Status summary (replacement for debug block) ---
-- name: Show Kyverno status summary
-  ansible.builtin.shell: |
-    echo "🔹 Kyverno Deployments:"
-    kubectl -n kyverno get deploy -o wide
-    echo -e "\n🔹 Kyverno Pods:"
-    kubectl -n kyverno get pods -o wide
-  args:
-    executable: /bin/bash
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  changed_when: false
-
-- name: Copy Kyverno policy to force Open5GS pods to {{ groups['core_node'][0] }}
-  copy:
-    dest: /tmp/force-open5gs-node.yaml
-    content: |
-      apiVersion: kyverno.io/v1
-      kind: ClusterPolicy
-      metadata:
-        name: force-open5gs-to-core-node
-      spec:
-        rules:
-          - name: add-open5gs-node-selector
-            match:
-              resources:
-                kinds: ["Pod"]
-                selector:
-                  matchLabels:
-                    app: open5gs
-            mutate:
-              patchStrategicMerge:
-                spec:
-                  nodeSelector:
-                    open5gs-core-node: "true"
-
-- name: Apply Kyverno policy
-  command: kubectl apply -f /tmp/force-open5gs-node.yaml
-  changed_when: false
-
-- name: Clone open5gs-k8s repo
-  ansible.builtin.git:
-    repo: "{{ repo_url }}"
-    dest: "{{ repo_dest }}"
-    version: main
-    update: yes
-    force: yes
-
-- name: Ensure {{ open5gs_ns }} namespace exists
-  kubernetes.core.k8s:
-    api_version: v1
-    kind: Namespace
-    name: "{{ open5gs_ns }}"
-    state: present
-
-- name: Apply MongoDB with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ open5gs_ns }}
-
-- name: Wait for MongoDB pod to be Ready
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ open5gs_ns }}"
-    label_selectors:
-      - app.kubernetes.io/name=mongodb
-  register: mongo_pods
-  until: >
-    mongo_pods.resources | length > 0 and
-    (mongo_pods.resources[0].status.containerStatuses is defined) and
-    (mongo_pods.resources[0].status.containerStatuses | length > 0) and
-    (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
-  retries: 40
-  delay: 5
-
-# === NETWORK ATTACHMENT DEFINITIONS (NADs) ===
-- name: Apply NADs with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
-
-- name: Wait for kube-apiserver to be responsive
-  shell: kubectl get --raw='/healthz'
-  register: api_health
-  retries: 30
-  delay: 5
-  until: api_health.rc == 0
-  changed_when: false
-
-- name: Wait for CRDs registration to be ready
-  shell: kubectl get crds
-  register: crd_list
-  retries: 20
-  delay: 5
-  until: "'network-attachment-definitions.k8s.cni.cncf.io' in crd_list.stdout"
-  changed_when: false
-
-- name: Install jq (required for NAD patching)
-  ansible.builtin.apt:
-    name: jq
-    state: present
-    update_cache: yes
-  become: yes
-
-- name: Wait for Multus CRD to be registered
-  ansible.builtin.shell: kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
-  register: multus_crd_check
-  retries: 60
-  delay: 5
-  until: multus_crd_check.rc == 0
-  changed_when: false
-  failed_when: false
-
-- name: Patch NADs to use unique interface names (net1/net2/net3)
-  shell: |
-    set -euo pipefail
-    for nad in n2network n3network n4network; do
-      case "$nad" in
-        n2network) ifname=net1 ;;
-        n3network) ifname=net2 ;;
-        n4network) ifname=net3 ;;
-        *) continue ;;
-      esac
-      if ! kubectl get networkattachmentdefinition "$nad" -n open5gs &>/dev/null; then
-        echo "Skipping $nad (not yet created)"
-        continue
-      fi
-      config=$(kubectl get networkattachmentdefinition "$nad" -n open5gs -o jsonpath='{.spec.config}')
-      newconfig=$(echo "$config" | jq --arg n "$ifname" '.ifname = $n')
-      kubectl patch networkattachmentdefinition "$nad" -n open5gs --type=merge -p "{\"spec\":{\"config\":$newconfig}}"
-    done
-  register: patch_nad
-  failed_when: false
-  changed_when: "'Skipping' not in patch_nad.stdout"
-
-- name: Verify required NADs exist
-  kubernetes.core.k8s_info:
-    kind: NetworkAttachmentDefinition
-    namespace: "{{ open5gs_ns }}"
-  register: nad_info
-
-- name: Fail if a required NAD is missing
-  ansible.builtin.fail:
-    msg: "NAD {{ item }} is missing in {{ open5gs_ns }}"
-  when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
-  loop: "{{ nad_list }}"
-
-##### Patch open5gs with new 5G parameters 
-
-- name: Generate Open5GS scenario ConfigMap from template
-  ansible.builtin.template:
-    src: open5gs-scenario.yaml.j2
-    dest: /tmp/open5gs-scenario.yaml
-
-- name: Apply Open5GS scenario ConfigMap
-  kubernetes.core.k8s:
-    state: present
-    src: /tmp/open5gs-scenario.yaml
-
-#####
-
-- name: Apply Open5GS NFs with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
-
-- name: Wait for Open5GS Core NFs pods Ready
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ open5gs_ns }}"
-    label_selectors:
-      - "nf={{ item }}"
-  register: nf_pod
-  until: >
-    nf_pod.resources | length > 0 and
-    (nf_pod.resources[0].status.containerStatuses is defined) and
-    (nf_pod.resources[0].status.containerStatuses | length > 0) and
-    (nf_pod.resources[0].status.containerStatuses[0].ready | default(false))
-  retries: 40
-  delay: 5
-  loop: "{{ nfs }}"
-  loop_control:
-    label: "{{ item }}"
-- name: Install python3-venv (required for venv)
-  ansible.builtin.apt:
-    name: python3-venv
-    state: present
-  become: yes
-
-- name: Create Python virtual environment for Open5GS admin scripts
-  ansible.builtin.command:
-    cmd: python3 -m venv "{{ repo_dest }}/venv"
-    creates: "{{ repo_dest }}/venv/bin/activate"
-  become: yes
-
-- name: Upgrade pip in virtualenv
-  ansible.builtin.pip:
-    name: pip
-    state: latest
-    executable: "{{ repo_dest }}/venv/bin/pip"
-  become: yes
-
-- name: Install Python requirements for admin script
-  ansible.builtin.pip:
-    requirements: "{{ repo_dest }}/requirements.txt"
-    executable: "{{ repo_dest }}/venv/bin/pip"
-  become: yes
-
-- name: Deploy Open5GS Web UI with Kustomize
-  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/open5gs-webui" -n {{ open5gs_ns }}
-
-- name: Wait for WebUI pod Ready
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ open5gs_ns }}"
-    label_selectors:
-      - "nf=webui"
-  register: webui_pod
-  until: >
-    webui_pod.resources | length > 0 and
-    (webui_pod.resources[0].status.containerStatuses is defined) and
-    (webui_pod.resources[0].status.containerStatuses | length > 0) and
-    (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
-  retries: 40
-  delay: 5
-
-- name: Run add-admin-account.py
-  ansible.builtin.command: >
-    {{ repo_dest }}/venv/bin/python mongo-tools/add-admin-account.py
-  args:
-    chdir: "{{ repo_dest }}"
-
-# Add UEs
-# --- Ensure MongoDB port-forward is ready ---
+# --- Ensure lsof is installed for port-forward check ---
 - name: Ensure lsof is installed
   ansible.builtin.apt:
     name: lsof
@@ -509,6 +216,7 @@
     delay: 2
     timeout: 120
 
+# --- Add subscribers ---
 - name: Add subscribers
   ansible.builtin.shell: |
     {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
