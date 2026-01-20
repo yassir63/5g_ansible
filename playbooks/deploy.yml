@@ -1,10 +1,4 @@
 ---
-- hosts: all
-  gather_facts: true
-  tasks:
-    - name: Normalize booleans at playbook start
-      import_tasks: ../tasks/reload_booleans.yml
-
 - hosts: webshell
   gather_facts: false
   vars:
@@ -33,6 +27,14 @@
       loop: "{{ prepare_jobs.results }}"
       loop_control:
         label: "{{ item.item }}"
+
+# Following role requires all nodes ssh-reachable
+# so should be run after previous one
+- hosts: all
+  gather_facts: true
+  tasks:
+    - name: Normalize booleans at playbook start
+      import_tasks: ../tasks/reload_booleans.yml
 
 - name: Common sopnodes setup
   hosts: sopnodes
@@ -125,7 +127,9 @@
     - role: setup/gre_tunnel
       when: core == 'oai' and ran == 'oai' and not fhi72
 
-####################################################################
+############################################################################
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
 - hosts: localhost
   gather_facts: false
   tasks:
@@ -141,9 +145,7 @@
   gather_facts: false
   tasks:
     - import_tasks: ../tasks/reload_booleans.yml
-####################################################################
-
-
+############################################################################
 
 - name: Deploy Open5GS CN
   hosts: core_node
