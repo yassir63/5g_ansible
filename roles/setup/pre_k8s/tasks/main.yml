@@ -124,7 +124,6 @@
   when: kubelet_service.rc == 0
 
 # --- Validation of disk pressure fix ---
-# --- Validation of disk pressure fix ---
 - name: Check /var/lib/containerd mount
   ansible.builtin.shell: mount | grep /var/lib/containerd || true
   register: containerd_mount

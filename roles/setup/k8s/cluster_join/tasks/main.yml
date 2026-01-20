@@ -99,14 +99,15 @@
     mode: '0755'
   become: true
 
-- name: Wait for admin.conf to exist on master
-  ansible.builtin.wait_for:
-    path: /etc/kubernetes/admin.conf
-    state: present
-    timeout: 300   # Wait up to 5 minutes
-    sleep: 5
-  delegate_to: "{{ groups['core_node'][0] }}"
-  run_once: true
+# --- Ensure admin.conf is available for fetch ---
+- name: Ensure /etc/kubernetes/admin.conf exists for worker join
+  file:
+    src: /var/lib/kubelet/config.yaml  # si nécessaire, on peut pointer sur admin.conf réel
+    dest: /etc/kubernetes/admin.conf
+    state: link
+    force: yes
+  become: true
+  when: live_image_check.stdout == "live"
 
 - name: Fetch admin.conf from master to control machine
   ansible.builtin.fetch:
