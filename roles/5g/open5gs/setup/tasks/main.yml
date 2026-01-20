@@ -405,41 +405,33 @@
     plmn: "{{ fiveg_profile_data.plmn }}"
     slices: "{{ fiveg_profile_data.slices }}"
     ues: "{{ fiveg_profile_data.ues }}"
+- name: Patch Open5GS configuration for scenario complet
+  ansible.builtin.shell: |
+    cat <<'EOF' | kubectl apply -f -
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: open5gs-config
+      namespace: open5gs
+    data:
+      slices.yaml: |
+        {% for s in fiveg_profile_data.slices %}
+        - name: "{{ s.name }}"
+          sst: "{{ s.sst }}"
+          sd: "{{ s.sd | default('') }}"
+          dnn: "{{ s.dnn }}"
+        {% endfor %}
 
-- name: Patch Open5GS configuration for scenario
-  block:
-    - name: Create scenario config map
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: open5gs-scenario
-            namespace: "{{ open5gs_ns }}"
-          data:
-            plmn.yaml: |
-              mcc: "{{ fiveg_profile_data.plmn.mcc }}"
-              mnc: "{{ fiveg_profile_data.plmn.mnc }}"
-              tac: "{{ fiveg_profile_data.plmn.tac }}"
-            slices.yaml: |
-{% for s in fiveg_profile_data.slices %}
-              - name: "{{ s.name }}"
-                sst: "{{ s.sst }}"
-                sd: "{{ s.sd | default('') }}"
-                dnn: "{{ s.dnn }}"
-{% endfor %}
-            ues.yaml: |
-{% for ue_name, ue_val in fiveg_profile_data.ues.items() %}
-              {{ ue_name }}:
-                imsi_suffix: "{{ ue_val.imsi_suffix }}"
-                slice: "{{ ue_val.slice }}"
-{% endfor %}
-    - name: Apply ConfigMap to cluster
-      kubernetes.core.k8s:
-        state: present
-        definition: "{{ lookup('file', '/tmp/open5gs-scenario.yaml') | from_yaml }}"
-  become: true
+      ues.yaml: |
+        {% for ue_name, ue_val in fiveg_profile_data.ues.items() %}
+        {{ ue_name }}:
+          imsi_suffix: "{{ ue_val.imsi_suffix }}"
+          slice: "{{ ue_val.slice }}"
+        {% endfor %}
+    EOF
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false
 
 #####
 
