@@ -74,26 +74,6 @@
     - role: setup/k8s/add_taint
       when: not fhi72
 
-####################################################################
-- hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: core_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: ran_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-####################################################################
-
-
-
 - name: Install Multus / CNAO
   hosts: core_node
   become: true
@@ -144,6 +124,26 @@
   roles:
     - role: setup/gre_tunnel
       when: core == 'oai' and ran == 'oai' and not fhi72
+
+####################################################################
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+- hosts: core_node
+  gather_facts: false
+  tasks:
+    - import_tasks: ../tasks/reload_booleans.yml
+- hosts: ran_node
+  gather_facts: false
+  tasks:
+    - import_tasks: ../tasks/reload_booleans.yml
+####################################################################
+
+
 
 - name: Deploy Open5GS CN
   hosts: core_node
