@@ -79,6 +79,8 @@
   become: true
   roles:
     - role: setup/cni
+    - role: setup/storage
+      when: core == 'open5gs'
 
 - name: Apply specific tuning on RAN Node
   hosts: ran_node
