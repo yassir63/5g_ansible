@@ -830,8 +830,8 @@ echo "Launching script ..."
 
 ansible-galaxy install -r collections/requirements.yml
 for node in "${core_node}" "${ran_node}" "${monitor_node}"; do
-    pos allocations free -k "$node"
-    pos allocations allocate "$node"
+    #pos allocations free -k "$node"
+    #pos allocations allocate "$node"
     ansible -i "$INVENTORY" "$node" -m ping
 done
 
