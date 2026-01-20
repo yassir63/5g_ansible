@@ -124,19 +124,28 @@
   when: kubelet_service.rc == 0
 
 # --- Validation of disk pressure fix ---
+# --- Validation of containerd mount and kubelet rootDir ---
 - name: Check /var/lib/containerd mount
-  ansible.builtin.shell: mount | grep -q "/var/lib/containerd"
+  ansible.builtin.shell: mount | grep /var/lib/containerd || true
   register: containerd_mount
-  ignore_errors: true
   changed_when: false
+  become: true
 
-- name: Check kubelet config rootDir
-  ansible.builtin.shell: grep -q "^rootDir: /var/lib/containerd" /var/lib/kubelet/config.yaml
+- name: Show /var/lib/containerd mount status
+  ansible.builtin.debug:
+    msg: "{{ containerd_mount.stdout if containerd_mount.stdout else 'not mounted' }}"
+
+- name: Verify kubelet rootDir and evictionHard
+  ansible.builtin.shell: grep -A 3 'evictionHard' /var/lib/kubelet/config.yaml; grep 'rootDir:' /var/lib/kubelet/config.yaml
   register: kubelet_config_check
-  ignore_errors: true
   changed_when: false
+  become: true
+
+- name: Show kubelet config check
+  ansible.builtin.debug:
+    msg: "{{ kubelet_config_check.stdout }}"
 
 - name: Fail if disk pressure patch not applied
   ansible.builtin.fail:
     msg: "Disk pressure fix not applied: check /var/lib/containerd mount or kubelet config"
-  when: containerd_mount.rc != 0 or kubelet_config_check.rc != 0
+  when: containerd_mount.stdout == "" or ('rootDir: /var/lib/containerd' not in kubelet_config_check.stdout)
