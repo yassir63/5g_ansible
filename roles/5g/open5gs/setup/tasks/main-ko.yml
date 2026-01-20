@@ -54,8 +54,7 @@
   command: kubectl label node {{ groups['core_node'][0] }} open5gs-core-node=true --overwrite
   changed_when: false
 
-# === KYVERNO INSTALLATION START =====================================================
-
+# === KYVERNO INSTALLATION =====================================================
 - name: Add and update Kyverno Helm repo
   ansible.builtin.shell: |
     helm repo add kyverno https://kyverno.github.io/kyverno/ || true
@@ -119,29 +118,25 @@
   changed_when: false
 
 # Ensure cluster networking and api endpoints are ready before Kyverno install
-- name: Wait for kube-proxy pods to be Running and Ready
+- name: Wait for all kube-proxy pods to be Ready
   ansible.builtin.shell: |
     set -e
-    echo "⏳ Checking kube-proxy pod readiness..."
-    for i in {1..30}; do
-      ready=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o jsonpath='{.items[*].status.containerStatuses[*].ready}' | grep -c true || true)
-      total=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy --no-headers | wc -l)
-      if [ "$ready" -eq "$total" ] && [ "$total" -gt 0 ]; then
-        echo "✅ kube-proxy pods Ready ($ready/$total)"
+    for i in $(seq 1 30); do
+      not_ready=$(kubectl -n kube-system get pods -l k8s-app=kube-proxy -o jsonpath='{range .items[*]}{.metadata.name}:{range .status.containerStatuses[*]}{.ready};{end}{"\n"}{end}' | grep -c false || true)
+      if [ "$not_ready" -eq 0 ]; then
+        echo "✅ All kube-proxy pods are ready"
         exit 0
       fi
-      echo "⏳ Waiting ($i/30)... ($ready/$total ready)"
+      echo "⏳ Waiting for kube-proxy pods ($i/30)..."
       sleep 5
     done
-    echo "❌ kube-proxy not ready after timeout" >&2
-    kubectl -n kube-system get pods -l k8s-app=kube-proxy -o wide
+    echo "❌ kube-proxy pods not ready after 30 retries"
+    kubectl -n kube-system get pods -o wide
     exit 1
   args:
     executable: /bin/bash
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  retries: 2
-  delay: 5
   changed_when: false
 
 - name: Wait for kubernetes service endpoint to exist (10.96.0.1)
@@ -293,9 +288,6 @@
 - name: Apply Kyverno policy
   command: kubectl apply -f /tmp/force-open5gs-node.yaml
   changed_when: false
-
-
-# === KYVERNO INSTALLATION END =====================================================
 
 - name: Clone open5gs-k8s repo
   ansible.builtin.git:
