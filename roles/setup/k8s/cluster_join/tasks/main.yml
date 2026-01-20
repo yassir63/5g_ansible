@@ -99,6 +99,15 @@
     mode: '0755'
   become: true
 
+- name: Wait for admin.conf to exist on master
+  ansible.builtin.wait_for:
+    path: /etc/kubernetes/admin.conf
+    state: present
+    timeout: 300   # Wait up to 5 minutes
+    sleep: 5
+  delegate_to: "{{ groups['core_node'][0] }}"
+  run_once: true
+
 - name: Fetch admin.conf from master to control machine
   ansible.builtin.fetch:
     src: /etc/kubernetes/admin.conf
