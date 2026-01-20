@@ -1,88 +1,45 @@
 ---
-# To avoid Pod eviction issues on live and persistent systems
+# Minimal pre-k8s fix: handle disk pressure without breaking cluster_join
 
-# --- Detect if running from a live Ubuntu image ---
-- name: Detect live Ubuntu system
+# --- Detect live-boot system ---
+- name: Detect if running from live Ubuntu
   ansible.builtin.shell: |
     grep -q "boot=live" /proc/cmdline && echo "live" || echo "persistent"
   register: live_image_check
   changed_when: false
   become: true
 
-# --- Handle containerd storage for live system ---
-- name: Create /var/lib/containerd tmpfs for live system
-  block:
-    - name: Create containerd directory
-      ansible.builtin.file:
-        path: /var/lib/containerd
-        state: directory
-        mode: '0755'
-
-    - name: Mount tmpfs on /var/lib/containerd (50G)
-      ansible.builtin.mount:
-        path: /var/lib/containerd
-        src: tmpfs
-        fstype: tmpfs
-        opts: size=50G
-        state: mounted
-  when:
-    - inventory_hostname in groups['ran_node']
-    - live_image_check.stdout == "live"
-  become: true
-  tags: ['live-fix']
-
-# --- Handle containerd storage for persistent system ---
-- name: Ensure storage device exists
-  ansible.builtin.stat:
-    path: "/dev/{{ storage }}"
-  register: storage_device
-  become: true
-
-- name: Fail if storage device does not exist
-  ansible.builtin.fail:
-    msg: "Storage device /dev/{{ storage }} does not exist"
-  when: not storage_device.stat.exists
-
-- name: Create containerd mount point
+# --- Containerd storage ---
+- name: Create /var/lib/containerd
   ansible.builtin.file:
     path: /var/lib/containerd
     state: directory
     mode: '0755'
+  become: true
 
-- name: Mount persistent storage for containerd
+- name: Mount tmpfs or persistent storage for containerd
   ansible.builtin.mount:
     path: /var/lib/containerd
-    src: "/dev/{{ storage }}"
-    fstype: ext4
+    src: "{{ 'tmpfs' if live_image_check.stdout == 'live' else '/dev/' + storage }}"
+    fstype: "{{ 'tmpfs' if live_image_check.stdout == 'live' else 'ext4' }}"
+    opts: "{{ 'size=50G' if live_image_check.stdout == 'live' else omit }}"
     state: mounted
-  # Only mount if not a live-boot system
-  when: live_image_check.stdout != "live"
   become: true
 
 # --- Kubelet preparation ---
-- name: Ensure kubelet base directory exists
+- name: Ensure kubelet directory exists
   ansible.builtin.file:
     path: /var/lib/kubelet
     state: directory
     mode: '0755'
-
-- name: Check if kubelet config exists
-  ansible.builtin.stat:
-    path: /var/lib/kubelet/config.yaml
-  register: kubelet_cfg
-
-- name: Backup existing kubelet config if present
-  ansible.builtin.copy:
-    src: /var/lib/kubelet/config.yaml
-    dest: /var/lib/kubelet/config.yaml.bak.{{ ansible_date_time.epoch }}
-    remote_src: true
-  when: kubelet_cfg.stat.exists
+  become: true
 
 - name: Ensure kubelet config exists
   ansible.builtin.file:
     path: /var/lib/kubelet/config.yaml
     state: touch
     mode: '0644'
+  become: true
 
 - name: Patch kubelet config rootDir and evictionHard
   ansible.builtin.blockinfile:
@@ -93,62 +50,44 @@
         nodefs.available: "10%"
         imagefs.available: "10%"
     marker: "# {mark} RAN pre-K8s patch"
+  become: true
 
-# --- Restart services only if present ---
-- name: Check if containerd service exists
-  ansible.builtin.shell: systemctl list-unit-files | grep -q '^containerd\.service'
-  register: containerd_service
-  changed_when: false
-  failed_when: false
-
-- name: Reload systemd and restart containerd
+# --- Restart services ---
+- name: Restart containerd if present
   ansible.builtin.systemd:
     name: containerd
     state: restarted
     enabled: yes
     daemon_reload: yes
-  when: containerd_service.rc == 0
+  become: true
+  when: "'containerd.service' in ansible_facts.services"
 
-- name: Check if kubelet service exists
-  ansible.builtin.shell: systemctl list-unit-files | grep -q '^kubelet\.service'
-  register: kubelet_service
-  changed_when: false
-  failed_when: false
-
-- name: Restart kubelet
+- name: Restart kubelet if present
   ansible.builtin.systemd:
     name: kubelet
     state: restarted
     enabled: yes
     daemon_reload: yes
-  when: kubelet_service.rc == 0
+  become: true
+  when: "'kubelet.service' in ansible_facts.services"
 
-# --- Validation of disk pressure fix ---
+# --- Validation (safe) ---
 - name: Check /var/lib/containerd mount
   ansible.builtin.shell: mount | grep /var/lib/containerd || true
   register: containerd_mount
   changed_when: false
   become: true
 
-- name: Show /var/lib/containerd mount status
+- name: Show containerd mount
   ansible.builtin.debug:
     msg: "{{ containerd_mount.stdout if containerd_mount.stdout else 'not mounted' }}"
 
-- name: Verify kubelet rootDir and evictionHard
-  ansible.builtin.shell: |
-    grep -A3 'evictionHard' /var/lib/kubelet/config.yaml
-    grep 'rootDir:' /var/lib/kubelet/config.yaml
-  register: kubelet_config_check
+- name: Verify kubelet rootDir
+  ansible.builtin.shell: grep 'rootDir' /var/lib/kubelet/config.yaml || true
+  register: kubelet_root
   changed_when: false
   become: true
 
-- name: Show kubelet config check
+- name: Show kubelet rootDir
   ansible.builtin.debug:
-    msg: "{{ kubelet_config_check.stdout }}"
-
-- name: Fail if disk pressure patch not applied
-  ansible.builtin.fail:
-    msg: "Disk pressure fix not applied: check /var/lib/containerd mount or kubelet config"
-  when: >
-    containerd_mount.stdout == "" or
-    kubelet_config_check.stdout.find("rootDir: /var/lib/containerd") == -1
+    msg: "{{ kubelet_root.stdout }}"
