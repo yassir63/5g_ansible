@@ -1,182 +1,149 @@
 ---
-- hosts: webshell
-  gather_facts: false
-  vars:
-    original_inventory: "{{ inventory_file }}"
-  tasks:
-    - debug:
-        msg: "Used inventory for run_pos playbook : {{ original_inventory }}"
+# To avoid Pod eviction issues on live and persistent systems
 
-    - ansible.builtin.command: >
-        ansible-playbook -i {{ inventory_file }} playbooks/run_pos.yml --extra-vars "node={{ item }}" -c local
-      args:
-        chdir: "{{ playbook_dir | dirname }}"
-      async: 1800
-      poll: 0
-      loop: "{{ groups['sopnodes'] }}"
-      loop_control:
-        label: "{{ item }}"
-      register: prepare_jobs
-
-    - async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: job_result
-      until: job_result.finished
-      retries: 100
-      delay: 10
-      loop: "{{ prepare_jobs.results }}"
-      loop_control:
-        label: "{{ item.item }}"
-
-# Following role requires all nodes ssh-reachable
-# so should be run after previous one
-- hosts: all
-  gather_facts: true
-  tasks:
-    - name: Normalize booleans at playbook start
-      import_tasks: ../tasks/reload_booleans.yml
-
-- name: Common sopnodes setup
-  hosts: sopnodes
-  roles:
-    - role: setup/common
-    - role: setup/netplan
-    - role: setup/containerd
-    - role: setup/pre_k8s
-    - role: setup/k8s/k8s_setup
-    - role: setup/k8s/k8s_env
-    - role: setup/optimization/cpu
-
-- name: PTP setup on ran_node
-  hosts: ran_node
+# Detect if running from a live Ubuntu image
+- name: Detect if running from a live Ubuntu image
+  ansible.builtin.shell: |
+    grep -q "boot=live" /proc/cmdline && echo "live" || echo "persistent"
+  register: live_image_check
+  changed_when: false
   become: true
-  roles:
-    - role: setup/optimization/nic
-      when: fhi72
-    - role: setup/ptp
-      when: fhi72
 
-- name: Create and setup Kubernetes Cluster on Master
-  hosts: core_node
-  roles:
-    - role: setup/ntp
-      when: fhi72
-    - role: setup/k8s/cluster_create
+# --- Handle containerd storage for live system ---
+- name: Create /var/lib/containerd tmpfs for live systems
+  block:
+    - name: Create containerd directory
+      ansible.builtin.file:
+        path: /var/lib/containerd
+        state: directory
+        mode: '0755'
 
-- name: Join Kubernetes Cluster on Workers
-  hosts: k8s_workers
+    - name: Mount tmpfs on /var/lib/containerd
+      ansible.builtin.mount:
+        path: /var/lib/containerd
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=50G
+        state: mounted
+  when: live_image_check.stdout == "live"
   become: true
-  roles:
-    - role: setup/k8s/cluster_join
-  
-- name: Add NoSchedule taint on RAN node (reserved node for RAN pods) 
-  hosts: ran_node
+  tags: ['live-fix']
+
+# --- Handle containerd storage for persistent systems ---
+- name: Ensure storage device exists
+  ansible.builtin.stat:
+    path: "/dev/{{ storage }}"
+  register: storage_device
   become: true
-  roles:
-    - role: setup/k8s/add_taint
-      when: not fhi72
 
-- name: Install Multus / CNAO
-  hosts: core_node
+- name: Fail if storage device does not exist
+  ansible.builtin.fail:
+    msg: "Storage device /dev/{{ storage }} does not exist"
+  when: not storage_device.stat.exists
+
+- name: Create containerd mount point
+  ansible.builtin.file:
+    path: /var/lib/containerd
+    state: directory
+    mode: '0755'
+
+- name: Mount persistent storage for containerd
+  ansible.builtin.mount:
+    path: /var/lib/containerd
+    src: "/dev/{{ storage }}"
+    fstype: ext4
+    state: mounted
+  # Mount only if system is not live-boot to avoid overwriting tmpfs
+  when: live_image_check.stdout != "live"
   become: true
-  roles:
-    - role: setup/cni
-    - role: setup/storage
-      when: core == 'open5gs'
 
-- name: Apply specific tuning on RAN Node
-  hosts: ran_node
-  become: true
-  roles:
-    - role: setup/k8s/aw2s_specific_tuning
-      when: aw2s and f1f2_ran
-    - role: setup/k8s/aw2s_specific_tuning_f3
-      when: aw2s and f3_ran
-    - role: setup/k8s/benetel_specific_tuning_f3
-      when: fhi72 and f3_ran
+# --- Kubelet preparation ---
+- name: Ensure kubelet base directory exists
+  ansible.builtin.file:
+    path: /var/lib/kubelet
+    state: directory
+    mode: '0755'
 
-- name: Deploy 5G-Monarch
-  hosts: monitor_node
-  roles:
-    - role: monarch/deploy
-      when: monitoring_enabled
+- name: Check if kubelet config exists
+  ansible.builtin.stat:
+    path: /var/lib/kubelet/config.yaml
+  register: kubelet_cfg
 
-- name: SRIOV setup
-  hosts: ran_node
-  become: true
-  gather_facts: true
-  roles:
-    - role: setup/sriov_operator
-      when: fhi72 and f3_ran
-    - role: setup/sriov_nnp_create
-      when: fhi72 and f3_ran
+- name: Backup existing kubelet config if present
+  ansible.builtin.copy:
+    src: /var/lib/kubelet/config.yaml
+    dest: /var/lib/kubelet/config.yaml.bak.{{ ansible_date_time.epoch }}
+    remote_src: true
+  when: kubelet_cfg.stat.exists
 
-- name: Configure GRE Tunnel From Core Node to RAN Node
-  hosts: core_node
-  vars:
-    ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
-  roles:
-    - role: setup/gre_tunnel
-      when: core == 'oai' and ran == 'oai' and not fhi72
+- name: Ensure kubelet config exists
+  ansible.builtin.file:
+    path: /var/lib/kubelet/config.yaml
+    state: touch
+    mode: '0644'
 
-- name: Configure GRE Tunnel From RAN Node to Core Node
-  hosts: ran_node
-  vars:
-    ip: "{{ hostvars[groups['core_node'][0]].ip }}"
-  roles:
-    - role: setup/gre_tunnel
-      when: core == 'oai' and ran == 'oai' and not fhi72
+- name: Patch kubelet config rootDir and evictionHard
+  ansible.builtin.blockinfile:
+    path: /var/lib/kubelet/config.yaml
+    block: |
+      rootDir: /var/lib/containerd
+      evictionHard:
+        nodefs.available: "10%"
+        imagefs.available: "10%"
+    marker: "# {mark} RAN pre-K8s patch"
 
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
+# --- Restart services only if present ---
+- name: Check if containerd service exists
+  ansible.builtin.shell: systemctl list-unit-files | grep -q '^containerd\.service'
+  register: containerd_service
+  changed_when: false
+  failed_when: false
 
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: core_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: ran_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-############################################################################
+- name: Reload systemd and restart containerd
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
+  when: containerd_service.rc == 0
 
-- name: Deploy Open5GS CN
-  hosts: core_node
-  pre_tasks:
-    - name: Load 5G profile
-      include_vars:
-        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-  roles:
-    - role: 5g/open5gs/fiveg_profile
-      when: core == 'open5gs'
-    - role: 5g/open5gs/setup
-      when: core == 'open5gs'
+- name: Check if kubelet service exists
+  ansible.builtin.shell: systemctl list-unit-files | grep -q '^kubelet\.service'
+  register: kubelet_service
+  changed_when: false
+  failed_when: false
 
-- name: Deploy OAI CN/RAN
-  hosts: ran_node
-  pre_tasks:
-    - name: Load 5G profile
-      include_vars:
-        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-  roles:
-    - role: 5g/oai/setup
-      when: core == 'oai' or ran == 'oai'
-    - role: 5g/oai/config
-      when: core == 'oai' or ran == 'oai'
-    - role: 5g/oai/core
-      when: core == 'oai'
-    - role: 5g/oai/ran
-      when: ran == 'oai'
+- name: Restart kubelet
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
+  when: kubelet_service.rc == 0
 
-- name: Launch 5G-Monarch monitoring
-  hosts: monitor_node
-  roles:
-    - role: monarch/monitoring
-      when: monitoring_enabled
+# --- Validation of DiskPressure fix ---
+- name: Check /var/lib/containerd mount
+  ansible.builtin.shell: mount | grep /var/lib/containerd || true
+  register: containerd_mount
+  changed_when: false
+
+- name: Show /var/lib/containerd mount status
+  ansible.builtin.debug:
+    msg: "{{ containerd_mount.stdout }}"
+
+- name: Verify kubelet rootDir and evictionHard
+  ansible.builtin.shell: |
+    grep -A 3 evictionHard /var/lib/kubelet/config.yaml
+    grep rootDir /var/lib/kubelet/config.yaml
+  register: kubelet_config_check
+  changed_when: false
+
+- name: Show kubelet config check
+  ansible.builtin.debug:
+    msg: "{{ kubelet_config_check.stdout }}"
+
+- name: Fail if disk pressure patch not applied
+  ansible.builtin.fail:
+    msg: "Disk pressure fix not applied: check /var/lib/containerd mount or kubelet config"
+  when: containerd_mount.stdout == "" or
+        kubelet_config_check.stdout.find("rootDir: /var/lib/containerd") == -1
