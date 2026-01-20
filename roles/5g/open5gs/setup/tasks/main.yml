@@ -411,7 +411,7 @@
     plmn: "{{ fiveg_profile_data.plmn }}"
     slices: "{{ fiveg_profile_data.slices }}"
     ues: "{{ fiveg_profile_data.ues }}"
-    
+
 - name: Patch Open5GS configuration for scenario complet
   kubernetes.core.k8s:
     state: present
@@ -438,7 +438,6 @@
 {% endfor %}
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-
 
 #####
 
