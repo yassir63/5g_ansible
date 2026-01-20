@@ -412,29 +412,17 @@
     slices: "{{ fiveg_profile_data.slices }}"
     ues: "{{ fiveg_profile_data.ues }}"
 
-- name: Patch Open5GS configuration for scenario complet
+- name: Generate Open5GS ConfigMap YAML
+  ansible.builtin.template:
+    src: open5gs-configmap.yaml.j2
+    dest: /tmp/open5gs-configmap.yaml
+  vars:
+    fiveg_profile_data: "{{ fiveg_profile_data }}"
+
+- name: Apply Open5GS ConfigMap
   kubernetes.core.k8s:
     state: present
-    definition:
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: open5gs-config
-        namespace: open5gs
-      data:
-        slices.yaml: |
-{% for s in fiveg_profile_data.slices %}
-          - name: "{{ s.name }}"
-            sst: "{{ s.sst }}"
-            sd: "{{ s.sd | default('') }}"
-            dnn: "{{ s.dnn }}"
-{% endfor %}
-        ues.yaml: |
-{% for ue_name, ue_val in fiveg_profile_data.ues.items() %}
-          {{ ue_name }}:
-            imsi_suffix: "{{ ue_val.imsi_suffix }}"
-            slice: "{{ ue_val.slice }}"
-{% endfor %}
+    src: /tmp/open5gs-configmap.yaml
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
