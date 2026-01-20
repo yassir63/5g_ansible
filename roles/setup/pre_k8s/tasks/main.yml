@@ -147,4 +147,5 @@
     msg: "Disk pressure fix not applied: check /var/lib/containerd mount or kubelet config"
   when: >
     containerd_mount.stdout == "" or
-    "'rootDir: /var/lib/containerd'" not in kubelet_config_check.stdout
+    "rootDir: /var/lib/containerd" not in kubelet_config_check.stdout
+
