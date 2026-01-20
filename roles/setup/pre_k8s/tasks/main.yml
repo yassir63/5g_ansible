@@ -1,8 +1,8 @@
 ---
 # To avoid Pod eviction issues on live and persistent systems
 
-# Check if system is live-boot
-- name: Detect if running from a live Ubuntu image
+# --- Detect if running from a live Ubuntu image ---
+- name: Detect live Ubuntu system
   ansible.builtin.shell: |
     grep -q "boot=live" /proc/cmdline && echo "live" || echo "persistent"
   register: live_image_check
@@ -18,12 +18,12 @@
         state: directory
         mode: '0755'
 
-    - name: Mount tmpfs on /var/lib/containerd
+    - name: Mount tmpfs on /var/lib/containerd (50G)
       ansible.builtin.mount:
         path: /var/lib/containerd
         src: tmpfs
         fstype: tmpfs
-        opts: size=10G
+        opts: size=50G
         state: mounted
   when:
     - inventory_hostname in groups['ran_node']
@@ -55,7 +55,7 @@
     src: "/dev/{{ storage }}"
     fstype: ext4
     state: mounted
-  # Only mount if system is not live-boot to avoid overwriting tmpfs
+  # Only mount if not a live-boot system
   when: live_image_check.stdout != "live"
   become: true
 
@@ -122,3 +122,32 @@
     enabled: yes
     daemon_reload: yes
   when: kubelet_service.rc == 0
+
+# --- Validation of disk pressure fix ---
+- name: Check /var/lib/containerd mount
+  ansible.builtin.shell: mount | grep /var/lib/containerd
+  register: containerd_mount
+  changed_when: false
+
+- name: Show /var/lib/containerd mount status
+  ansible.builtin.debug:
+    msg: "{{ containerd_mount.stdout }}"
+
+- name: Verify kubelet rootDir and evictionHard
+  ansible.builtin.shell: |
+    grep -A3 'evictionHard' /var/lib/kubelet/config.yaml
+    grep 'rootDir' /var/lib/kubelet/config.yaml
+  register: kubelet_config_check
+  changed_when: false
+
+- name: Show kubelet config check
+  ansible.builtin.debug:
+    msg: "{{ kubelet_config_check.stdout }}"
+
+- name: Fail if disk pressure patch not applied
+  ansible.builtin.fail:
+    msg: "Disk pressure fix not applied: check /var/lib/containerd mount or kubelet config"
+  when: >
+    "'/var/lib/containerd' not in containerd_mount.stdout or
+     'rootDir: /var/lib/containerd' not in kubelet_config_check.stdout"
+
