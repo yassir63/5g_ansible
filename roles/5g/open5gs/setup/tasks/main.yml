@@ -303,6 +303,16 @@
     update: yes
     force: yes
 
+- name: Set subscriber variables
+  set_fact:
+    mongo_namespace: "open5gs"
+    mongo_pod: "mongodb-0"
+    mongo_local_port: 27017
+    yaml_file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    mongo_tools_dir: "/root/open5gs-k8s/mongo-tools"
+    python_venv: "/root/open5gs-k8s/venv/bin/python"
+    python_script: "add-subscribers.py"
+
 - name: Ensure {{ open5gs_ns }} namespace exists
   kubernetes.core.k8s:
     api_version: v1
