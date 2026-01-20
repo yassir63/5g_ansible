@@ -1,11 +1,42 @@
 ---
-# To avoid Pod eviction issues...
+# To avoid Pod eviction issues on live and persistent systems
 
-# Persistent storage for containerd
+# Check if system is live-boot
+- name: Detect if running from a live Ubuntu image
+  ansible.builtin.shell: |
+    grep -q "boot=live" /proc/cmdline && echo "live" || echo "persistent"
+  register: live_image_check
+  changed_when: false
+  become: true
+
+# --- Handle containerd storage for live system ---
+- name: Create /var/lib/containerd tmpfs for live system
+  block:
+    - name: Create containerd directory
+      ansible.builtin.file:
+        path: /var/lib/containerd
+        state: directory
+        mode: '0755'
+
+    - name: Mount tmpfs on /var/lib/containerd
+      ansible.builtin.mount:
+        path: /var/lib/containerd
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=10G
+        state: mounted
+  when:
+    - inventory_hostname in groups['ran_node']
+    - live_image_check.stdout == "live"
+  become: true
+  tags: ['live-fix']
+
+# --- Handle containerd storage for persistent system ---
 - name: Ensure storage device exists
   ansible.builtin.stat:
     path: "/dev/{{ storage }}"
   register: storage_device
+  become: true
 
 - name: Fail if storage device does not exist
   ansible.builtin.fail:
@@ -24,8 +55,11 @@
     src: "/dev/{{ storage }}"
     fstype: ext4
     state: mounted
+  # Only mount if system is not live-boot to avoid overwriting tmpfs
+  when: live_image_check.stdout != "live"
+  become: true
 
-# Prepare kubelet configuration (pre-install safe)
+# --- Kubelet preparation ---
 - name: Ensure kubelet base directory exists
   ansible.builtin.file:
     path: /var/lib/kubelet
@@ -60,8 +94,7 @@
         imagefs.available: "10%"
     marker: "# {mark} RAN pre-K8s patch"
 
-# Restart services only if present
-
+# --- Restart services only if present ---
 - name: Check if containerd service exists
   ansible.builtin.shell: systemctl list-unit-files | grep -q '^containerd\.service'
   register: containerd_service

@@ -9,12 +9,20 @@
   command: helm repo update
   become: true
 
+# Run storage pods only on core master node (worker ran_node may be tainted)
 - name: Install OpenEBS using Helm
   kubernetes.core.helm:
     name: openebs
     chart_ref: openebs/openebs
     namespace: openebs
     create_namespace: true
+    values:
+      ndm:
+        nodeSelector:
+          node-role.kubernetes.io/control-plane: ""
+      localprovisioner:
+        nodeSelector:
+          node-role.kubernetes.io/control-plane: ""
   become: true
 
 - name: Patch OpenEBS storage class to be default
