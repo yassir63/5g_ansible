@@ -422,6 +422,15 @@ get_nic() {
   esac
 }
 
+# Function to get fit info from usrp id
+get_fit_info() {
+  case "$1" in
+    b210) echo "fit02 2 b210" ;;
+    b205mini) echo "fit08 8 b205" ;;
+    *) echo "" ;; # n300/n320 -> no direct fit node
+  esac
+}
+
 get_ue_vars() {
   # usage: get_ue_vars <qhat>
   # relies on global $core and $ran already set
@@ -571,15 +580,6 @@ append_fit() {
 }
 
 if [[ "${run_interference_test:-}" == true ]]; then
-  # helper to get fit info from usrp id
-  get_fit_info() {
-    case "$1" in
-      b210) echo "fit02 2 b210" ;;
-      b205mini) echo "fit08 8 b205" ;;
-      *) echo "" ;; # n300/n320 -> no direct fit node
-    esac
-  }
-
   noise_info="$(get_fit_info "$noise_usrp")"
   viz_info="$(get_fit_info "${viz_usrp:-}")"
 
