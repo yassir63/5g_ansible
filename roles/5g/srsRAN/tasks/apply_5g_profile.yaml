@@ -48,5 +48,10 @@
 
 - name: Show final updated values (PLMN, TAC, slicing)
   ansible.builtin.shell: >
-    yq eval -P '.gnbConfig.cell_cfg.plmn, .gnbConfig.cell_cfg.tac, .gnbConfig.cell_cfg.slicing' "{{ values_file }}"
+    yq eval -P '.gnbConfig.cell_cfg.plmn, .gnbConfig.cell_cfg.tac, {{ ".slicing" if rru == "rfsim" else ".gnbConfig.cell_cfg.slicing" }}' "{{ values_file }}"
+  register: final_values
   changed_when: false
+
+- name: Display final YAML values
+  ansible.builtin.debug:
+    var: final_values.stdout
