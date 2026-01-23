@@ -32,11 +32,32 @@
   ansible.builtin.command: >
     yq eval -i '.tac = {{ fiveg.plmn.tac }}' "{{ values_file }}"
 
-- name: Replace slicing configuration
+# --- Patch slicing selon type de RU ---
+- name: Replace slicing configuration (RFSIM)
+  ansible.builtin.command: >
+    yq eval -i '.slicing = {{ fiveg.slices | to_json }}' "{{ values_file }}"
+  when: rru == "rfsim"
+
+- name: Replace slicing configuration (ZMQ)
   ansible.builtin.command: >
     yq eval -i '.gnbConfig.cell_cfg.slicing = {{ fiveg.slices | to_json }}' "{{ values_file }}"
+  when: rru != "rfsim"
+
+- name: Remove sd fields with value "EMPTY" (RFSIM)
+  ansible.builtin.command: >
+    yq eval -i '
+      .slicing |= map(if has("sd") and .sd == "EMPTY" then del(.sd) else . end)
+    ' "{{ values_file }}"
+  when: rru == "rfsim"
+
+- name: Remove sd fields with value "EMPTY" (ZMQ)
+  ansible.builtin.command: >
+    yq eval -i '
+      .gnbConfig.cell_cfg.slicing |= map(if has("sd") and .sd == "EMPTY" then del(.sd) else . end)
+    ' "{{ values_file }}"
+  when: rru != "rfsim"
 
 - name: Show updated slicing section
   ansible.builtin.command: >
-    yq eval '.gnbConfig.cell_cfg.slicing' "{{ values_file }}"
+    yq eval '{{ ".slicing" if rru == "rfsim" else ".gnbConfig.cell_cfg.slicing" }}' "{{ values_file }}"
   changed_when: false
