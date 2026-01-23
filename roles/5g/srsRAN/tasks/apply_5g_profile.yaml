@@ -1,6 +1,4 @@
 ---
-# Apply 5G profile to selected srsRAN values.yaml
-
 - name: Resolve 5G profile file
   set_fact:
     fiveg_profile_file: >-
@@ -32,24 +30,24 @@
   ansible.builtin.command: >
     yq eval -i '.tac = {{ fiveg.plmn.tac }}' "{{ values_file }}"
 
-# --- Patch slicing selon type de RU ---
+- name: Map slices for gNB
+  set_fact:
+    gnb_slices: >-
+      {{
+        fiveg.slices
+        | map({'sst': item.sst, 'sd': (item.sd if item.sd != "EMPTY" else None)})
+        | list
+      }}
+
 - name: Replace slicing configuration (RFSIM)
   ansible.builtin.command: >
-    yq eval -i '.slicing = {{ fiveg.slices | to_json }}' "{{ values_file }}"
+    yq eval -i '.slicing = {{ gnb_slices | to_json }}' "{{ values_file }}"
   when: rru == "rfsim"
 
 - name: Replace slicing configuration (ZMQ)
   ansible.builtin.command: >
-    yq eval -i '.gnbConfig.cell_cfg.slicing = {{ fiveg.slices | to_json }}' "{{ values_file }}"
+    yq eval -i '.gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }}' "{{ values_file }}"
   when: rru != "rfsim"
-
-- name: Remove sd fields with value "EMPTY" (RFSIM)
-  ansible.builtin.command: >
-    yq eval -i '.slicing[] |= (select(.sd == "EMPTY") | del(.sd)) // .' "{{ values_file }}"
-
-- name: Remove sd fields with value "EMPTY" (ZMQ)
-  ansible.builtin.command: >
-    yq eval -i '.gnbConfig.cell_cfg.slicing[] |= (select(.sd == "EMPTY") | del(.sd)) // .' "{{ values_file }}"
 
 - name: Show updated slicing section
   ansible.builtin.command: >
