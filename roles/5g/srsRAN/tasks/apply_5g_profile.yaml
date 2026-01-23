@@ -1,34 +1,6 @@
 ---
 # Apply 5G profile to selected srsRAN values.yaml
 
-- name: Check if yq is already installed
-  ansible.builtin.stat:
-    path: "{{ yq_bin_path }}"
-  register: yq_bin
-
-- name: Download yq binary using curl or wget
-  ansible.builtin.shell: |
-    set -e
-    if command -v curl >/dev/null 2>&1; then
-      curl -L --fail "{{ yq_url }}" -o "{{ yq_bin_path }}"
-    elif command -v wget >/dev/null 2>&1; then
-      wget -O "{{ yq_bin_path }}" "{{ yq_url }}"
-    else
-      echo "Neither curl nor wget found" >&2
-      exit 1
-    fi
-  args:
-    creates: "{{ yq_bin_path }}"
-  when: not yq_bin.stat.exists
-  become: true
-
-- name: Ensure yq is executable
-  ansible.builtin.file:
-    path: "{{ yq_bin_path }}"
-    mode: '0755'
-    state: file
-  become: true
-  
 - name: Resolve 5G profile file
   set_fact:
     fiveg_profile_file: >-
@@ -46,24 +18,26 @@
       - "PLMN: {{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}"
       - "TAC: {{ fiveg.plmn.tac }}"
 
-# Patch PLMN + TAC
-- name: Update PLMN and TAC in values file
-  ansible.builtin.command: >
-    yq eval -i '
-      .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
-      .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac }}
-    ' "{{ values_file }}"
+- name: Uninstall existing srsran-gnb Helm release if present
+  ansible.builtin.shell: >
+    helm -n {{ open5gs_ns }} uninstall srsran-gnb || true
+  changed_when: true
+  ignore_errors: true
 
-# Patch slicing
+- name: Update PLMN in values file
+  ansible.builtin.command: >
+    yq eval -i '.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}"' "{{ values_file }}"
+
+- name: Update TAC in values file
+  ansible.builtin.command: >
+    yq eval -i '.tac = {{ fiveg.plmn.tac }}' "{{ values_file }}"
+
 - name: Replace slicing configuration
   ansible.builtin.command: >
-    yq eval -i '
-      .gnbConfig.cell_cfg.slicing =
-      {{ fiveg.slices | to_json }}
-    ' "{{ values_file }}"
+    yq eval -i '.slicing = {{ fiveg.slices | to_json }}' "{{ values_file }}"
 
-# Optional: sanity dump
+# --- Optional sanity check ---
 - name: Show updated slicing section
   ansible.builtin.command: >
-    yq eval '.gnbConfig.cell_cfg.slicing' "{{ values_file }}"
+    yq eval '.slicing' "{{ values_file }}"
   changed_when: false
