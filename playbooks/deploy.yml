@@ -175,6 +175,21 @@
     - role: 5g/oai/ran
       when: ran == 'oai'
 
+- name: Deploy srsRAN
+  hosts: ran_node
+  become: true
+  vars:
+  fiveg_profile: default   # can be overridden via -e
+  
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+	
+  roles:
+    - role: 5g/srsRAN
+      when: ran == 'srsran'
+
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
   roles:
