@@ -4,7 +4,7 @@
 - name: Resolve 5G profile file
   set_fact:
     fiveg_profile_file: >-
-      {{ playbook_dir }}/group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml
+      {{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml
 
 - name: Load 5G profile
   include_vars:
