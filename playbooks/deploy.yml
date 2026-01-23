@@ -177,10 +177,6 @@
 
 - name: Deploy srsRAN
   hosts: ran_node
-  become: true
-  vars:
-  fiveg_profile: default   # can be overridden via -e
-  
   pre_tasks:
     - name: Load 5G profile
       include_vars:
