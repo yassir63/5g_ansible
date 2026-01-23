@@ -188,7 +188,7 @@
 	
   roles:
     - role: 5g/srsRAN
-      when: ran == 'srsran'
+      when: ran == 'srsRAN'
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
