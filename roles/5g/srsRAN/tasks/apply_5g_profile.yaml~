@@ -18,7 +18,9 @@
       - "PLMN: {{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}"
       - "TAC: {{ fiveg.plmn.tac }}"
 
+# ------------------------------
 # Patch PLMN + TAC
+# ------------------------------
 - name: Update PLMN and TAC in values file
   ansible.builtin.command: >
     yq eval -i '
@@ -26,7 +28,9 @@
       .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac }}
     ' "{{ values_file }}"
 
+# ------------------------------
 # Patch slicing
+# ------------------------------
 - name: Replace slicing configuration
   ansible.builtin.command: >
     yq eval -i '
@@ -34,7 +38,9 @@
       {{ fiveg.slices | to_json }}
     ' "{{ values_file }}"
 
+# ------------------------------
 # Optional: sanity dump
+# ------------------------------
 - name: Show updated slicing section
   ansible.builtin.command: >
     yq eval '.gnbConfig.cell_cfg.slicing' "{{ values_file }}"
