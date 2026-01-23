@@ -32,8 +32,10 @@
 
 - name: Map slices for gNB
   set_fact:
-    gnb_slices: >-
-      {{ fiveg.slices | map('lambda x: {"sst": x.sst, "sd": (x.sd if x.sd != "EMPTY" else None)}') | list }}
+    gnb_slices: "{{ gnb_slices | default([]) + [ {'sst': item.sst, 'sd': (item.sd if item.sd != 'EMPTY' else None) } ] }}"
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: item
 
 - name: Replace slicing configuration (RFSIM)
   ansible.builtin.command: >
