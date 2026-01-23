@@ -85,7 +85,6 @@
 # Apply 5G profile (PLMN, slicing, UE config)
 - name: Apply 5G profile to gNB and UE configs
   include_tasks: apply_5g_profile.yaml
-  when: fiveg_profile is defined
 
 # Deploy with kubernetes.core.helm (use chart_ref + values_files)
 - name: Deploy srsRAN gNB using Helm
