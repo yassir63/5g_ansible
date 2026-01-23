@@ -34,10 +34,9 @@
 
 - name: Replace slicing configuration
   ansible.builtin.command: >
-    yq eval -i '.slicing = {{ fiveg.slices | to_json }}' "{{ values_file }}"
+    yq eval -i '.gnbConfig.cell_cfg.slicing = {{ fiveg.slices | to_json }}' "{{ values_file }}"
 
-# --- Optional sanity check ---
 - name: Show updated slicing section
   ansible.builtin.command: >
-    yq eval '.slicing' "{{ values_file }}"
+    yq eval '.gnbConfig.cell_cfg.slicing' "{{ values_file }}"
   changed_when: false
