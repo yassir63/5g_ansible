@@ -89,9 +89,9 @@
   become: true
   roles:
     - role: setup/k8s/aw2s_specific_tuning
-      when: aw2s and f1f2_ran
+      when: not fhi72 and f1f2_ran
     - role: setup/k8s/aw2s_specific_tuning_f3
-      when: aw2s and f3_ran
+      when: not fhi72 and f3_ran
     - role: setup/k8s/benetel_specific_tuning_f3
       when: fhi72 and f3_ran
 
