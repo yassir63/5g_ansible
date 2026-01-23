@@ -21,7 +21,7 @@
   changed_when: true
   ignore_errors: true
 
-- name: Map slices for gNB
+- name: Map slices minimal pour gNB
   set_fact:
     gnb_slices: "{{ gnb_slices | default([]) + [{'sst': item.sst, 'sd': (item.sd if item.sd != 'EMPTY' else None)}] }}"
   loop: "{{ fiveg.slices }}"
@@ -36,16 +36,9 @@
   ansible.builtin.command: >
     yq eval -i '.gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac }}' "{{ values_file }}"
 
-- name: Write gNB slices to temp file (RFSIM)
-  ansible.builtin.copy:
-    content: "{{ gnb_slices | to_json }}"
-    dest: "/tmp/gnb_slices.json"
-    mode: '0644'
-  when: rru == "rfsim"
-
-- name: Replace slicing configuration (RFSIM) from temp file
+- name: Replace slicing configuration (RFSIM)
   ansible.builtin.shell: >
-    yq eval -i '.slicing = load("/tmp/gnb_slices.json")' "{{ values_file }}"
+    yq eval -i '.slicing = {{ gnb_slices | to_json }}' "{{ values_file }}"
   when: rru == "rfsim"
 
 - name: Replace slicing configuration (ZMQ)
@@ -55,5 +48,5 @@
 
 - name: Show final updated values (PLMN, TAC, slicing)
   ansible.builtin.shell: >
-    yq eval -P '.gnbConfig.cell_cfg.plmn, .gnbConfig.cell_cfg.tac, {{ ".slicing" if rru == "rfsim" else ".gnbConfig.cell_cfg.slicing" }}' "{{ values_file }}"
+    yq eval -P '.gnbConfig.cell_cfg.plmn, .gnbConfig.cell_cfg.tac, .gnbConfig.cell_cfg.slicing' "{{ values_file }}"
   changed_when: false
