@@ -1,18 +1,22 @@
 network:
   version: 2
   ethernets:
-    ens2f0:
+    ptp:
+      match:
+        macaddress: "30:3e:a7:15:7c:e4"
       mtu: 9216
       dhcp4: true
-    ens2f1:
+    rrus:
+      match:
+        macaddress: "30:3e:a7:15:7c:e5"
       mtu: 9216
-      dhcp4: false
+      dhcp4: true
   vlans:
     r2lab_usrp:
       id: 3010
-      link: ens2f1
+      link: rrus
       dhcp4: true
     r2lab_aw2s:
       id: 3011
-      link: ens2f1
+      link: rrus
       dhcp4: true

@@ -1,18 +1,22 @@
 network:
   version: 2
   ethernets:
-    enp59s0f0np0:
+    ptp:
+      match:
+        macaddress: "0c:42:a1:ae:7a:5e"
       mtu: 9216
       dhcp4: true
-    enp59s0f1np1:
+    rrus:
+      match:
+        macaddress: "0c:42:a1:ae:7a:5f"
       mtu: 9216
-      dhcp4: false
+      dhcp4: true
   vlans:
     r2lab_usrp:
       id: 3010
-      link: enp59s0f1np1
+      link: rrus
       dhcp4: true
     r2lab_aw2s:
       id: 3011
-      link: enp59s0f1np1
+      link: rrus
       dhcp4: true
