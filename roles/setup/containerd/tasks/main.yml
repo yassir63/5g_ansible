@@ -18,13 +18,20 @@
         state: directory
         mode: '0755'
 
-    - name: Mount tmpfs on /var/lib/containerd (live system ephemeral fix)
+    - name: Check if /var/lib/containerd is already mounted
+      ansible.builtin.command: mountpoint -q /var/lib/containerd
+      register: containerd_mp
+      ignore_errors: true
+      changed_when: false
+
+    - name: Mount tmpfs on /var/lib/containerd only if not already mounted
       ansible.builtin.mount:
         path: /var/lib/containerd
         src: tmpfs
         fstype: tmpfs
         opts: size=10G
         state: mounted
+      when: containerd_mp.rc != 0
   when:
     - inventory_hostname in groups['ran_node']
     - live_image_check.stdout == "live"
