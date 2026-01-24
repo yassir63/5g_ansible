@@ -1,18 +1,24 @@
 network:
   version: 2
   ethernets:
-    ens15f1np1:
+    ens15f1:
+      match:
+        macaddress: "40:a6:b7:d5:e2:59"
       mtu: 9216
       dhcp4: false
-    ens15f2np2:
+    ens15f2:
+      match:
+        macaddress: "40:a6:b7:d5:e2:5a"
       mtu: 9216
       dhcp4: true
   vlans:
     r2lab_usrp:
       id: 3010
-      link: ens15f1np1
+      match:
+        macaddress: "40:a6:b7:d5:e2:59"
       dhcp4: true
     r2lab_aw2s:
       id: 3011
-      link: ens15f1np1
+      match:
+        macaddress: "40:a6:b7:d5:e2:59"
       dhcp4: true
