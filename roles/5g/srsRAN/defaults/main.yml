@@ -2,7 +2,7 @@
 repo_url: "https://github.com/turletti/srsran-helm.git"
 version: main
 
-ran_ns: {{ core }}
+ran_ns: "{{ core }}"
 
 repo_dest: "~/srsran-helm"
 
