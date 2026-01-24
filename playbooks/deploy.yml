@@ -45,6 +45,8 @@
     - role: setup/pre_k8s
     - role: setup/k8s/k8s_setup
     - role: setup/k8s/k8s_env
+    - role: setup/ovs
+      when: not fhi72
     - role: setup/optimization/cpu
 
 - name: PTP setup on ran_node
@@ -100,6 +102,8 @@
   roles:
     - role: monarch/deploy
       when: monitoring_enabled
+      vars:
+        branch: srsRAN_metrics
 
 - name: SRIOV setup
   hosts: ran_node
@@ -117,7 +121,7 @@
     ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
   roles:
     - role: setup/gre_tunnel
-      when: core == 'oai' and ran == 'oai' and not fhi72
+      when: not fhi72
 
 - name: Configure GRE Tunnel From RAN Node to Core Node
   hosts: ran_node
@@ -125,7 +129,7 @@
     ip: "{{ hostvars[groups['core_node'][0]].ip }}"
   roles:
     - role: setup/gre_tunnel
-      when: core == 'oai' and ran == 'oai' and not fhi72
+      when: not fhi72
 
 - name: Deploy Open5GS CN
   hosts: core_node
@@ -178,6 +182,8 @@
 
 - name: Deploy srsRAN
   hosts: ran_node
+  vars:
+    ue_count: 4
   pre_tasks:
     - name: Load 5G profile
       include_vars:
