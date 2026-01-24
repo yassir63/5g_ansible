@@ -1,13 +1,17 @@
 pos_image: ubuntu-jammy-slices@2025-04-02T01:33:28+00:00
 pos_rt_image: ubuntu-questing-rt@2025-10-29T19:34:30+00:00
-# Boot parameters for ran node on f1 or f2 with USRP N3XX or AW2S RRUs
+# Boot parameters for other nodes than f1/f2/f3 like w3
+boot_parameters: >-
+  biosdevname=0 net.ifnames=0 mitigations=off intel_iommu=on iommu=pt
+  selinux=0 enforcing=0 nosoftlockup intel_pstate=disable idle=poll nosmt
+# Boot parameters for f1/f2 nodes compatible with USRP N3XX or AW2S RRUs
 boot_parameters_f1f2: >-
   biosdevname=0 net.ifnames=0 mitigations=off intel_iommu=on iommu=pt
   selinux=0 enforcing=0 isolcpus=managed_irq,16-63 nohz_full=16-63
   nohz=on rcu_nocbs=16-63 kthread_cpus=0-3 irqaffinity=0-3 rcu_nocb_poll
   nosoftlockup intel_pstate=disable idle=poll skew_tick=1 tsc=nowatchdog
   nmi_watchdog=0 softlockup_panic=0 audit=0 nosmt
-# Boot parameters for ran node on f3 with USRP N3XX or AW2S RRUs
+# Boot parameters forf3 node compatible with USRP N3XX or AW2S RRUs
 boot_parameters_f3: >-
   biosdevname=0 net.ifnames=0 mitigations=off intel_iommu=on iommu=pt
   selinux=0 enforcing=0 isolcpus=managed_irq,16-63,80-127
