@@ -3,7 +3,7 @@
   set_fact:
     is_ran: "{{ node == ran_node_name }}"
     is_f3: "{{ node == 'sopnode-f3' }}"
-    is_f2f3: "{{ node == 'sopnode-f1' or node == 'sopnode-f2' }}"
+    is_f1f2: "{{ node == 'sopnode-f1' or node == 'sopnode-f2' }}"
     rru: "{{ rru }}"
     fhi72: "{{ fhi72 }}"
     ran_boot_mode: "{{ hostvars[node].boot_mode | default('unknown') }}"

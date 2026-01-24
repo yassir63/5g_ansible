@@ -57,7 +57,10 @@
       {{
         gnb_slices | default([]) +
         [
-          dict(sst=item.sst, **({ 'sd': item.sd } if item.sd is defined and item.sd != "EMPTY" else {}))
+          dict(
+            sst=item.sst,
+            **({ 'sd': item.sd } if item.sd is defined and item.sd != "EMPTY" else {})
+          )
         ]
       }}
   loop: "{{ fiveg.slices }}"
