@@ -17,7 +17,7 @@ srs_ue_label_selectors:
 
 ue_count: 3
 
-kubectl_bin: "kubectl"
+kubectl_bin: "/usr/bin/kubectl"
 
 yq_version: "v4.45.1"
 yq_bin_path: "/usr/local/bin/yq"

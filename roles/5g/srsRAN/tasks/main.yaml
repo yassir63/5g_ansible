@@ -160,6 +160,10 @@
     var: gnb_state_probes.results
 
 #Decide if ANY of the 3 samples shows ERROR or CRASHLOOP
+- name: Initialize gnb_need_retry
+  set_fact:
+    gnb_need_retry: false
+    
 - name: Compute retry need based on 3 probes
   ansible.builtin.set_fact:
     gnb_need_retry: >-
