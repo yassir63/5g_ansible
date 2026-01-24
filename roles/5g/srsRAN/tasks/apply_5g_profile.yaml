@@ -1,4 +1,6 @@
 ---
+# Apply 5G profile to srsRAN values.yaml minimal pour gNB
+
 - name: Resolve 5G profile file
   set_fact:
     fiveg_profile_file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
@@ -23,32 +25,28 @@
 
 - name: Map slices minimal pour gNB
   set_fact:
-    gnb_slices: "{{ gnb_slices | default([]) + [{'sst': item.sst, 'sd': (item.sd if item.sd != 'EMPTY' else None)}] }}"
+    gnb_slices: >-
+      {{
+        gnb_slices | default([]) +
+        [
+          dict(sst=item.sst, **({ 'sd': item.sd } if item.sd is defined and item.sd != "EMPTY" else {}))
+        ]
+      }}
   loop: "{{ fiveg.slices }}"
   loop_control:
     loop_var: item
 
-- name: Update PLMN in values file
-  ansible.builtin.command: >
-    yq eval -i '.gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}"' "{{ values_file }}"
-
-- name: Update TAC in values file
-  ansible.builtin.command: >
-    yq eval -i '.gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac }}' "{{ values_file }}"
-
-- name: Replace slicing configuration (RFSIM)
+- name: Update PLMN, TAC and slicing in values file
   ansible.builtin.shell: >
-    yq eval -i '.slicing = {{ gnb_slices | to_json }}' "{{ values_file }}"
-  when: rru == "rfsim"
-
-- name: Replace slicing configuration (ZMQ)
-  ansible.builtin.shell: >
-    yq eval -i '.gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }}' "{{ values_file }}"
-  when: rru != "rfsim"
+    yq eval -i '
+      .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
+      .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac }} |
+      .gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }}
+    ' "{{ values_file }}"
 
 - name: Show final updated values (PLMN, TAC, slicing)
   ansible.builtin.shell: >
-    yq eval -P '.gnbConfig.cell_cfg.plmn, .gnbConfig.cell_cfg.tac, {{ ".slicing" if rru == "rfsim" else ".gnbConfig.cell_cfg.slicing" }}' "{{ values_file }}"
+    yq eval -P '.gnbConfig.cell_cfg.plmn, .gnbConfig.cell_cfg.tac, .gnbConfig.cell_cfg.slicing' "{{ values_file }}"
   register: final_values
   changed_when: false
 

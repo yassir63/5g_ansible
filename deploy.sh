@@ -162,7 +162,7 @@ if [[ -z "$platform_choice" ]]; then
 else
   case "$platform_choice" in
     1) platform="r2lab" ;;
-    2) platform="rfsim" ;;
+    2) platform="rfsim"; fhi72=false ;;
     *) echo "❌ Invalid choice"; exit 1 ;;
   esac
 fi
