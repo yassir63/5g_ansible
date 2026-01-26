@@ -531,6 +531,9 @@ $core_node ansible_user=root nic_interface=$(get_nic "$core_node") ip=172.28.2.$
 
 [ran_node]
 $ran_node ansible_user=root nic_interface=$(get_nic "$ran_node") ip=172.28.2.$(get_ip_suffix "$ran_node") storage=$(get_storage "$ran_node")
+
+[faraday]
+$faraday_opts $faraday_conf
 EOF
 
 if [[ "$monitoring_enabled" == true ]]; then
@@ -543,9 +546,6 @@ fi
 
 if [[ "$platform" == "r2lab" ]]; then
 cat >> ./inventory/hosts.ini <<EOF
-
-[faraday]
-$faraday_opts $faraday_conf
 
 [qhats]
 EOF
