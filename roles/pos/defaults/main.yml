@@ -14,9 +14,9 @@ boot_parameters_f1f2: >-
 # Boot parameters forf3 node compatible with USRP N3XX or AW2S RRUs
 boot_parameters_f3: >-
   biosdevname=0 net.ifnames=0 mitigations=off intel_iommu=on iommu=pt
-  selinux=0 enforcing=0 isolcpus=managed_irq,16-63,80-127
-  nohz_full=16-63,80-127 nohz=on rcu_nocbs=16-63,80-127
-  kthread_cpus=0-15,64-79 irqaffinity=0-15,64-79 rcu_nocb_poll
+  selinux=0 enforcing=0 isolcpus=managed_irq,16-63
+  nohz_full=16-63 nohz=on rcu_nocbs=16-63
+  kthread_cpus=0-15 irqaffinity=0-15 rcu_nocb_poll
   nosoftlockup intel_pstate=disable idle=poll skew_tick=1
   tsc=nowatchdog nmi_watchdog=0 softlockup_panic=0 audit=0 nosmt
 # Boot parameters for ran node on rt ubuntu for Benetel RRUs
