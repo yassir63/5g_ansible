@@ -45,7 +45,12 @@
     state: present
     update_cache: yes
 
-# remove line  "topologyManagerPolicy": "best-effort", # to let aw2s pin cou cores
+# remove following lines in patch when manual core pinning is required on k8s pods like for aw2s:
+#  "topologyManagerPolicy": "best-effort",
+#        "featureGates": {
+#        "CPUManager": True,
+#        "CPUManagerPolicyOptions": True
+#      }
 - name: Merge CPU-only kubelet config safely
   become: true
   ansible.builtin.shell: |
@@ -58,10 +63,6 @@
       "cpuManagerPolicyOptions": {"full-pcpus-only": "true"},
       "reservedSystemCPUs": "0-5",
       "failSwapOn": False,
-      "featureGates": {
-        "CPUManager": True,
-        "CPUManagerPolicyOptions": True
-      }
     }
     if not os.path.exists(cfg): exit(0)
     with open(cfg) as f: data = yaml.safe_load(f) or {}
