@@ -492,25 +492,6 @@ if [[ "${run_interference_test:-}" == true ]]; then
   fi
 fi
 
-# choose faraday conf based on RU
-# choose gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf if jaguar or panther
-# choose gnb.sa.band78.106prb.n310.7ds2u.conf if n300 or n320
-# chooose gnb.sa.band78.106prb.rfsim.conf for rfsim
-faraday_conf=""
-case "$R2LAB_RU" in
-  jaguar | panther)
-      faraday_conf="conf=gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf" ;;
-  benetel1 | benetel2)
-      faraday_conf="conf=gnb.sa.band78.273prb.fhi72.4x4-benetel550-ci-scripts.conf" ;;
-  n300 | n320)
-      faraday_conf="conf=gnb.sa.band78.106prb.n310.7ds2u.conf" ;;
-  rfsim)
-    faraday_conf="conf=gnb.sa.band78.106prb.rfsim.conf" ;;
-  *)
-    echo "❌ Unknown RU for faraday conf: $R2LAB_RU"
-    exit 1 ;;
-esac
-
 cat > "$INVENTORY" <<EOF
 [webshell]
 localhost ansible_connection=local
@@ -798,40 +779,15 @@ fi
 # ========== Deployment ==========
 echo ""
 echo "Starting deployment..."
-# Call appropriate deployment script
-case "$R2LAB_RU" in
-    "benetel1"|"benetel2")
-	script="deploy_oai_oai_fhi72.sh" ;;
-    *)		
-	key="${core,,}-${ran,,}-${platform,,}"
-	script=""
-	case "$key" in
-	    oai-oai-rfsim)
-		script="deploy_oai_rfsim.sh" ;;
-	    oai-oai-r2lab)
-		#script="deploy_oai_r2lab.sh" ;;
-		script="deploy_oai_oai_fhi72.sh" ;;
-	    open5gs-oai-rfsim)
-		script="deploy_open5gs_oai_rfsim.sh" ;;
-	    open5gs-oai-r2lab)
-		script="deploy_open5gs_oai_r2lab.sh" ;;
-	    open5gs-srsran-r2lab)
-		script="deploy_open5gs_srsRAN_r2lab.sh" ;;
-	    open5gs-srsran-rfsim)
-		script="deploy_open5gs_srsRAN_rfsim.sh" ;;
-	    open5gs-ueransim-rfsim)
-		script="deploy_open5gs_ueransim.sh" ;;
-	    *) echo "❌ Unknown deployment key: $key"; exit 1 ;;
-	esac
-esac
-
 echo "Launching script ..."
 ansible-galaxy install -r collections/requirements.yml
 ##temporary disable r2lab playbook
 if [[ "$platform" == "r2lab" ]]; then
-    ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+    echo "ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml"
+    #ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
 fi
-ansible-playbook -i "$INVENTORY" playbooks/deploy.yml 2>&1 | tee logs.txt
+echo "ansible-playbook -i "$INVENTORY" playbooks/deploy.yml"
+#ansible-playbook -i "$INVENTORY" playbooks/deploy.yml 2>&1 | tee logs.txt
 
 echo ""
 echo "=========================================="
