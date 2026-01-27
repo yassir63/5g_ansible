@@ -81,3 +81,34 @@
 - name: Display timedatectl output
   debug:
     msg: "{{ timedatectl_output.stdout_lines }}"
+
+# install dhp service on the node, required later for k8s dhcp cni
+- name: Install systemd service for CNI DHCP daemon
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/cni-dhcp.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=CNI DHCP Daemon
+      After=network.target
+
+      [Service]
+      ExecStart=/opt/cni/bin/dhcp daemon
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+  become: true
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: true
+
+- name: Enable and start CNI DHCP daemon
+  ansible.builtin.systemd:
+    name: cni-dhcp.service
+    enabled: yes
+    state: started
+  become: true
