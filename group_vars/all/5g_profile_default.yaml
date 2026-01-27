@@ -3,6 +3,14 @@ plmn:
   mnc: "01"
   tac: "1"
 
+dnns:
+  - name: streaming
+    pdu_type: IPV4
+  - name: internet
+    pdu_type: IPV4
+  - name: ims
+    pdu_type: IPV4V6
+
 slices:
   - name: slice1
     dnn: internet
