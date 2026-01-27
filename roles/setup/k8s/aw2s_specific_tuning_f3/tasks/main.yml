@@ -45,6 +45,7 @@
     state: present
     update_cache: yes
 
+# remove line  "topologyManagerPolicy": "best-effort", # to let aw2s pin cou cores
 - name: Merge CPU-only kubelet config safely
   become: true
   ansible.builtin.shell: |
@@ -56,7 +57,6 @@
       "cpuManagerPolicy": "static",
       "cpuManagerPolicyOptions": {"full-pcpus-only": "true"},
       "reservedSystemCPUs": "0-5",
-      "topologyManagerPolicy": "best-effort",
       "failSwapOn": False,
       "featureGates": {
         "CPUManager": True,
