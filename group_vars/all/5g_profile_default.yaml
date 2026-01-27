@@ -77,37 +77,12 @@ ues:
     imsi_suffix: "0000000014"
     slice: slice1
   UE18:
-    imsi_suffix: "000001121"  # correspond à RFSIM_IMSI:5
+    imsi_suffix: "000001121"  # used for OAI RFSIM UE
     slice: slice1
   UE19:
-    imsi_suffix: "000001122"  # RFSIM_IMSI_UE2:5
-    slice: slice1
+    imsi_suffix: "000001122"  # used for OAI RFSIM UE2
+    slice: slice2
   UE20:
-    imsi_suffix: "000001123"  # RFSIM_IMSI_UE3:5
+    imsi_suffix: "000001123"  # used for OAI RFSIM UE3
     slice: slice1
 
-# How to use...
-#
-#{% if item.value.imsi is defined %}
-#  {{ item.value.imsi }}
-#{% else %}
-#  {{ plmn.mcc }}{{ plmn.mnc }}{{ item.value.imsi_suffix }}
-#{% endif %}
-
-#{% set ue = ues.UE1 %}
-#{% set slice_info = slices[ue.slice] %}
-#SST: {{ slice_info.sst }}
-#SD: {{ slice_info.sd }}
-
-#- name: Show NSSAI for each UE
-#  debug:
-#    msg: "UE {{ item.key }} NSSAI: SST={{ slices[item.value.slice].sst }} SD={{ slices[item.value.slice].sd }}"
-#  loop: "{{ ues | dict2items }}"
-
-#- name: Show NSSAI for each UE
-#  debug:
-#    msg: >
-#      UE {{ item.key }}
-#      IMSI={{ item.value.imsi | default(plmn.mcc ~ plmn.mnc ~ item.value.imsi_suffix) }}
-#      NSSAI={{ slices[item.value.slice].sst }}.{{ slices[item.value.slice].sd }}
-#  loop: "{{ ues | dict2items }}"
