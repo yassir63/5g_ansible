@@ -783,7 +783,7 @@ echo "Launching script ..."
 ansible-galaxy install -r collections/requirements.yml
 ##temporary disable r2lab playbook
 if [[ "$platform" == "r2lab" ]]; then
-    echo "ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml"
+    echo "ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml &"
     #ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
 fi
 echo "ansible-playbook -i "$INVENTORY" playbooks/deploy.yml"
