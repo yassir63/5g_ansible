@@ -9,6 +9,14 @@ MNC="{{ plmn['mnc'] }}"
 TAC="{{ plmn['tac'] }}"
 
 # =========================
+# DNNs
+# =========================
+{% for dnn in dnns %}
+DNN{{ loop.index0 }}="{{ dnn.name }}"
+DNN{{ loop.index0 }}_PDU_TYPE="{{ dnn.pdu_type }}"
+{% endfor %}
+
+# =========================
 # Slices
 # =========================
 {% for slice in slices %}
