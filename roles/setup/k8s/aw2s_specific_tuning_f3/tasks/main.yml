@@ -66,7 +66,8 @@
     }
     if not os.path.exists(cfg): exit(0)
     with open(cfg) as f: data = yaml.safe_load(f) or {}
-    data.setdefault("featureGates", {}).update(patch["featureGates"])
+    if "featureGates" in patch:
+        data.setdefault("featureGates", {}).update(patch["featureGates"])
     for k,v in patch.items():
         if k != "featureGates": data[k] = v
     with open(cfg+".tmp","w") as f: yaml.safe_dump(data,f,default_flow_style=False,sort_keys=False)
