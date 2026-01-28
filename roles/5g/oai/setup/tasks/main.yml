@@ -146,6 +146,13 @@
     line: "RRU=\"{{ rru }}\""
     backrefs: true
 
+- name: Update RUN_MODE variable
+  ansible.builtin.lineinfile:
+    path: "{{ prepare_demo_script }}"
+    regexp: '^RUN_MODE='
+    line: "RUN_MODE=\"{{ 'full' if core == 'oai' else 'gnb-only' }}\""
+    backrefs: true
+
 - name: Run prepare-demo-oai.sh to pull and configure OAI charts
   ansible.builtin.command: "./prepare-demo-oai.sh -a"
   args:
