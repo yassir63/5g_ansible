@@ -88,6 +88,7 @@
     path: "{{ prepare_demo_script }}"
     regexp: '^HOST_AMF_UPF='
     line: "HOST_AMF_UPF=\"{{ host_amf_upf_value }}\""
+    backrefs: true
 
 - name: Update HOST_GNB variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
