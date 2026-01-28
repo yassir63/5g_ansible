@@ -140,13 +140,13 @@
   hosts: core_node
   roles:
     - role: setup/gre_tunnel
-      when: bridge_enabled and core == 'oai'
+      when: bridge_enabled
 
 - name: Configure GRE Tunnel From RAN Node to Core Node
   hosts: ran_node
   roles:
     - role: setup/gre_tunnel
-      when: bridge_enabled and core == 'oai'
+      when: bridge_enabled
 
 - name: Deploy Open5GS CN
   hosts: core_node
