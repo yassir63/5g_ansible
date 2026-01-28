@@ -86,27 +86,6 @@
     - role: setup/storage
       when: core == 'open5gs'
 
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: core_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: ran_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-############################################################################
-
-
 - name: Apply specific tuning on RAN Node
   hosts: ran_node
   become: true
@@ -163,6 +142,27 @@
       when: core == 'open5gs'
     - role: 5g/open5gs/setup
       when: core == 'open5gs'
+
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+- hosts: core_node
+  gather_facts: false
+  tasks:
+    - import_tasks: ../tasks/reload_booleans.yml
+- hosts: ran_node
+  gather_facts: false
+  tasks:
+    - import_tasks: ../tasks/reload_booleans.yml
+############################################################################
+
+
 
 - name: Deploy OAI CN/RAN
   hosts: ran_node
