@@ -129,7 +129,7 @@
   ansible.builtin.lineinfile:
     path: "{{ prepare_demo_script }}"
     regexp: '^LOCAL_CORE_INTERFACE='
-    line: "LOCAL_CORE_INTERFACE=\"{{ multus_core_if }}\""
+    line: "LOCAL_CORE_INTERFACE=\"{{ multus_ran_if }} if fhi72 else {{ multus_core_if }}\""
     backrefs: true
 
 - name: Update LOCAL_RAN_INTERFACE variable in prepare-demo-oai.sh
