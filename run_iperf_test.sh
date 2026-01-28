@@ -57,7 +57,7 @@ shift $((OPTIND - 1))
 
 # Run selected playbooks
 if $RUN_SETUP; then
-  ansible-playbook -i inventory/hosts.ini "$SETUP_PLAYBOOK"
+  ansible-playbook -i inventory/default/hosts.ini "$SETUP_PLAYBOOK"
 fi
 
-ansible-playbook -i inventory/hosts.ini "$TEST_PLAYBOOK"
+ansible-playbook -i inventory/default/hosts.ini "$TEST_PLAYBOOK"

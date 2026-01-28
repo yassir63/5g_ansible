@@ -154,8 +154,8 @@ fi
 # Make r2lab the default if the user just presses enter
 echo ""
 echo "Which PLATFORM do you want to deploy on? (default: ${DEFAULT_PLATFORM})"
-echo "1) r2lab"
-echo "2) rfsim"
+echo "1) Real radio devices on the R2lab platform"
+echo "2) Fake RAN only (e.g., rfsim)"
 read -rp "Enter choice [1-2]: " platform_choice
 if [[ -z "$platform_choice" ]]; then
   platform=${DEFAULT_PLATFORM}
@@ -515,7 +515,7 @@ if [[ "$platform" == "r2lab" ]]; then
 cat >> "$INVENTORY" <<EOF
 
 [faraday]
-$faraday_opts $faraday_conf
+$faraday_opts
 
 [qhats]
 EOF
@@ -745,7 +745,7 @@ if [[ "$platform" == "r2lab" && "$slices_reserved" == true ]]; then
   echo "Reserving R2Lab testbed..."
   start_time=$(date +"%Y-%m-%dT%H:%M")
   end_time=$(date -d "+$duration_minutes minutes" +"%Y-%m-%dT%H:%M")
-  rhubarbe_output=$(ssh "$R2LAB_USERNAME"@faraday.inria.fr "rhubarbe book '$start_time' '$end_time' -e '$R2LAB_EMAIL' -p '$R2LAB_PASSWORD' -s '$R2LAB_USERNAME' -v; echo EXIT_CODE:\$?" 2>&1)
+  rhubarbe_output=$(ssh "${R2LAB_USERNAME}"@faraday.inria.fr "rhubarbe book '${start_time}' '${end_time}' -e '${R2LAB_EMAIL}' -p '${R2LAB_PASSWORD}' -s '${R2LAB_USERNAME}' -v; echo EXIT_CODE:\$?" 2>&1)
 
   # Extract the exit code from the output
   exit_code=$(echo "$rhubarbe_output" | grep "EXIT_CODE:" | cut -d: -f2)
@@ -783,10 +783,10 @@ echo "Launching script ..."
 ansible-galaxy install -r collections/requirements.yml
 ##temporary disable r2lab playbook
 if [[ "$platform" == "r2lab" ]]; then
-    echo "ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml &"
-    ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+    echo "ansible-playbook -i ${INVENTORY} playbooks/deploy_r2lab.yml &"
+    ##ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
 fi
-echo "ansible-playbook -i "$INVENTORY" playbooks/deploy.yml"
+echo "ansible-playbook -i $INVENTORY playbooks/deploy.yml"
 ansible-playbook -i "$INVENTORY" playbooks/deploy.yml 2>&1 | tee logs.txt
 
 echo ""
