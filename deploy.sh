@@ -671,7 +671,6 @@ fhi72=${fhi72}
 aw2s=$( [[ "${R2LAB_RU}" == "jaguar" || "${R2LAB_RU}" == "panther" ]] && echo true || echo false )
 
 # ---- hosts variants for RAN ----
-f1f2_ran=$( [[ "${ran_node}" == "sopnode-f1" || "${ran_node}" == "sopnode-f2" ]] && echo true || echo false )
 f3_ran=$( [[ "${ran_node}" == "sopnode-f3" ]] && echo true || echo false )
 
 # ---- Other boolean parameters

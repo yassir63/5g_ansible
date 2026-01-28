@@ -3,7 +3,7 @@
   set_fact:
     is_ran: "{{ node == ran_node_name }}"
     is_f3: "{{ node == 'sopnode-f3' }}"
-    is_f1f2: "{{ node == 'sopnode-f1' or node == 'sopnode-f2' }}"
+    is_fx: "{{ node == 'sopnode-f1' or node == 'sopnode-f2' or node == 'sopnode-f3' }}"
     rru: "{{ rru }}"
     fhi72: "{{ fhi72 }}"
     ran_boot_mode: "{{ hostvars[node].boot_mode | default('unknown') }}"
@@ -31,8 +31,7 @@
           echo "pos_rt_image = {{ pos_rt_image }}"
           echo "pos_image = {{ pos_image }}"
           echo "boot_parameters_rt_f3 = {{ boot_parameters_rt_f3 }}"
-          echo "boot_parameters_f3 = {{ boot_parameters_f3 }}"
-          echo "boot_parameters_f1f2 = {{ boot_parameters_f1f2 }}"
+          echo "boot_ran_parameters = {{ boot_ran_parameters }}"
           echo ""
 
           echo "============================================================"
@@ -65,10 +64,8 @@
     boot_params: >-
       {% if is_ran and is_f3 and fhi72 %}
         {{ boot_parameters_rt_f3 }}
-      {% elif is_f3 %}
-        {{ boot_parameters_f3 }}
-      {% elif is_f1f2 %}
-        {{ boot_parameters_f1f2 }}
+      {% elif is_fx %}
+        {{ boot_ran_parameters }}
       {% else %}
         {{ boot_parameters }}
       {% endif %}

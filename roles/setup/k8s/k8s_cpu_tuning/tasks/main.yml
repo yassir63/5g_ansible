@@ -1,5 +1,4 @@
 ---
-# roles/setup/k8s/aw2s_specific_tuning_f3/tasks/main.yml
 
 - name: RESTART_RAN_K8S
   ansible.builtin.meta: noop

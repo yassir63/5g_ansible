@@ -90,10 +90,8 @@
   hosts: ran_node
   become: true
   roles:
-    - role: setup/k8s/aw2s_specific_tuning
-      when: not fhi72 and f1f2_ran
-    - role: setup/k8s/aw2s_specific_tuning_f3
-      when: not fhi72 and f3_ran
+    - role: setup/k8s/k8s_cpu_tuning
+      when: not fhi72
     - role: setup/k8s/benetel_specific_tuning_f3
       when: fhi72 and f3_ran
 

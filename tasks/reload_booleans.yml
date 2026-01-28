@@ -3,7 +3,6 @@
     inventory_booleans:
       - fhi72
       - aw2s
-      - f1f2_ran
       - f3_ran
       - bridge_enabled
       - monitoring_enabled
