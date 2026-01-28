@@ -115,34 +115,7 @@
     - role: setup/sriov_nnp_create
       when: fhi72 and f3_ran
 
-- name: Configure GRE Tunnel From Core Node to RAN Node
-  hosts: core_node
-  vars:
-    ip: "{{ hostvars[groups['ran_node'][0]].ip }}"
-  roles:
-    - role: setup/gre_tunnel
-      when: not fhi72
-
-- name: Configure GRE Tunnel From RAN Node to Core Node
-  hosts: ran_node
-  vars:
-    ip: "{{ hostvars[groups['core_node'][0]].ip }}"
-  roles:
-    - role: setup/gre_tunnel
-      when: not fhi72
-
-- name: Deploy Open5GS CN
-  hosts: core_node
-  pre_tasks:
-    - name: Load 5G profile
-      include_vars:
-        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-  roles:
-    - role: 5g/open5gs/fiveg_profile
-      when: core == 'open5gs'
-    - role: 5g/open5gs/setup
-      when: core == 'open5gs'
-
+############################################################################
 # Move this block where you want to restart with start-at-task=RESTART_HERE"
 #
 - hosts: localhost
@@ -163,6 +136,29 @@
 ############################################################################
 
 
+- name: Configure GRE Tunnel From Core Node to RAN Node
+  hosts: core_node
+  roles:
+    - role: setup/gre_tunnel
+      when: bridge_enabled and core == 'oai'
+
+- name: Configure GRE Tunnel From RAN Node to Core Node
+  hosts: ran_node
+  roles:
+    - role: setup/gre_tunnel
+      when: bridge_enabled and core == 'oai'
+
+- name: Deploy Open5GS CN
+  hosts: core_node
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  roles:
+    - role: 5g/open5gs/fiveg_profile
+      when: core == 'open5gs'
+    - role: 5g/open5gs/setup
+      when: core == 'open5gs'
 
 - name: Deploy OAI CN/RAN
   hosts: ran_node

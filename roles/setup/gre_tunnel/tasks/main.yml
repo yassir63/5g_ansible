@@ -1,11 +1,29 @@
 ---
+
+- name: Define local and remote IPs for n3br GRE tunnel
+  ansible.builtin.set_fact:
+    n3br_local_ip: >-
+      {{ '192.168.3.254/24' if inventory_hostname in groups['core_node'] else '192.168.3.253/24' }}
+    n3br_remote_ip: >-
+      {{ hostvars[groups['ran_node'][0]].ansible_host
+         if inventory_hostname in groups['core_node'] 
+         else hostvars[groups['core_node'][0]].ansible_host }}
+
 - name: Clean up existing GRE tunnel if present
-  shell: ovs-vsctl --if-exists del-port n3br gre0
+  ansible.builtin.shell: ovs-vsctl --if-exists del-port n3br gre0
   ignore_errors: yes
-  
+
 - name: Create GRE Tunnel Between Core and RAN Node
-  shell: ovs-vsctl add-port n3br gre0 -- set interface gre0 type=gre options:remote_ip={{ ip }}
+  ansible.builtin.shell: >
+    ovs-vsctl add-port n3br gre0 -- set interface gre0 type=gre options:remote_ip={{ n3br_remote_ip }}
   ignore_errors: true
+
+- name: Bring n3br bridge up and assign local IP
+  ansible.builtin.shell: |
+    ip addr flush dev n3br || true
+    ip addr add {{ n3br_local_ip }} dev n3br
+    ip link set n3br up
+
 
 #- name: Pause to debug
 #  ansible.builtin.pause:
