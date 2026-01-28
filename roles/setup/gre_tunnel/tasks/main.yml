@@ -5,9 +5,9 @@
     n3br_local_ip: >-
       {{ '192.168.3.254/24' if inventory_hostname in groups['core_node'] else '192.168.3.253/24' }}
     n3br_remote_ip: >-
-      {{ hostvars[groups['ran_node'][0]].ansible_host
+      {{ hostvars[groups['ran_node'][0]].ip
          if inventory_hostname in groups['core_node'] 
-         else hostvars[groups['core_node'][0]].ansible_host }}
+         else hostvars[groups['core_node'][0]].ip }}
 
 - name: Clean up existing GRE tunnel if present
   ansible.builtin.shell: ovs-vsctl --if-exists del-port n3br gre0
