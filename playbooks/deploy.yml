@@ -167,9 +167,9 @@
       include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
   roles:
-    - role: 5g/oai/setup
-      when: core == 'oai' or ran == 'oai'
     - role: 5g/oai/config
+      when: core == 'oai' or ran == 'oai'
+    - role: 5g/oai/setup
       when: core == 'oai' or ran == 'oai'
     - role: 5g/oai/core
       when: core == 'oai'
