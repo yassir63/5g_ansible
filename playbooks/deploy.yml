@@ -194,4 +194,12 @@
   roles:
     - role: monarch/monitoring
       when: monitoring_enabled
- 
+
+- name: Set default Kubernetes namespace on core node
+  hosts: core_node
+  gather_facts: false
+  tasks:
+    - name: Set current kubectl context namespace to core
+      ansible.builtin.command: >
+        kubectl config set-context --current --namespace={{ core }}
+      changed_when: false
