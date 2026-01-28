@@ -64,13 +64,13 @@
   ansible.builtin.set_fact:
     multus_core_if: "{{ hostvars[groups['core_node'][0]].nic_interface }}"
     multus_ran_if: "{{ hostvars[groups['ran_node'][0]].nic_interface }}"
-  when not bridge_enabled
+  when: not bridge_enabled
 
-- name: Retrieve physical interfaces for multus on the core and ran nodes
+- name: Retrieve bridge interfaces for multus on the core and ran nodes
   ansible.builtin.set_fact:
     multus_core_if: "n3br"
     multus_ran_if: "n3br"
-  when bridge_enabled
+  when: bridge_enabled
 
 - name: Update NS variable in prepare-demo-oai.sh
   ansible.builtin.lineinfile:
