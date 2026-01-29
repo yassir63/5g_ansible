@@ -153,6 +153,24 @@
     line: "RUN_MODE=\"{{ 'full' if core == 'oai' else 'gnb-only' }}\""
     backrefs: true
 
+# use extra-var "e.g. with ansible-playbook -e "oai_cn_mode=advance"
+- name: Update CN_MODE variable
+  ansible.builtin.lineinfile:
+    path: "{{ prepare_demo_script }}"
+    regexp: '^CN_MODE='
+    line: 'CN_MODE="{{ oai_cn_mode }}"'
+    backrefs: true
+  when: oai_cn_mode is defined
+
+# use extra-var "e.g. with ansible-playbook -e "oai_gnb_mode=cudu"
+- name: Update GNB_MODE variable
+  ansible.builtin.lineinfile:
+    path: "{{ prepare_demo_script }}"
+    regexp: '^GNB_MODE='
+    line: 'GNB_MODE="{{ oai_gnb_mode }}"'
+    backrefs: true
+  when: oai_gnb_mode is defined
+ 
 - name: Run prepare-demo-oai.sh to pull and configure OAI charts
   ansible.builtin.shell: "./prepare-demo-oai.sh -a 2>&1 | tee /tmp/output-prepare-demo-oai.txt"
   args:
