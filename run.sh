@@ -56,9 +56,8 @@ parse_args() {
         shift
         prof="$1"
         file="group_vars/all/5g_profile_${prof}.yaml"
-        [[ ! -f "$file" ]] && { echo "❌ Profile not found"; exit 1; }
+        [[ ! -f "$file" ]] && { echo "❌ 5G Profile ${prof} not found"; exit 1; }
         PROFILE_5G="$prof"
-        NAME_PROFILE_5G="$prof"
         ;;
 
       --dry_run) DRY_RUN=true ;;
@@ -96,10 +95,10 @@ DEFAULT_PLATFORM="r2lab"
 DEFAULT_RU="jaguar"
 DEFAULT_LIST_UE="qhat01"
 
-PROFILE_5G=${DEFAULT_PROFILE_5G}
-NAME_INVENTORY="${DEFAULT_INVENTORY}"
+PROFILE_5G="${PROFILE_5G:-$DEFAULT_PROFILE_5G}"
 
-INVENTORY="./inventory/${NAME_INVENTORY}/hosts.ini"
+NAME_INVENTORY="${NAME_INVENTORY:-$DEFAULT_INVENTORY}"
+INVENTORY="${INVENTORY:-./inventory/${NAME_INVENTORY}/hosts.ini}"
 
 echo -e "${CYAN}\
     ____  ____ __    _   __ __       ____________   ____             __               ______            __
