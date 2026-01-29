@@ -487,6 +487,8 @@ fi
 
 print_summary() {
 
+[[ "$SKIP_INVENTORY_GEN" == true ]] && return
+
 echo
 echo "========== SUMMARY =========="
 echo "Core:        $core on ${core_node}"
