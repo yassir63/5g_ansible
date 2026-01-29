@@ -10,6 +10,7 @@
 
 - name: DEBUG — Dump all role-relevant variables and hostvars
   tags: pos_debug
+  when: pos_debug_enabled | default(false)
   block:
     - name: Load POS defaults early for debug
       include_vars: "{{ role_path }}/defaults/main.yml"
