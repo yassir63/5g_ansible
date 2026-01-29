@@ -117,6 +117,10 @@ ${RESET}"
 
 collect_user_inputs() {
 
+[[ "$SKIP_INVENTORY_GEN" == true ]] && return
+
+echo "Generating hosts.ini..."
+
 # ========== User Inputs ==========
 
 # Select Core
