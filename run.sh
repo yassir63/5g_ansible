@@ -911,9 +911,11 @@ echo "Launching deployment..."
 run_cmd ansible-galaxy install -r collections/requirements.yml
 
 if [[ "$platform" == "r2lab" ]]; then
-  run_cmd ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml
+    echo "ansible-playbook -i $INVENTORY playbooks/deploy_r2lab.yml"
+    run_cmd ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml
 fi
 
+echo "ansible-playbook -i $INVENTORY -e fiveg_profile=${PROFILE_5G} playbooks/deploy.yml"
 run_cmd ansible-playbook -i "$INVENTORY" \
   -e fiveg_profile="${PROFILE_5G}" \
   playbooks/deploy.yml
