@@ -154,7 +154,7 @@
     backrefs: true
 
 - name: Run prepare-demo-oai.sh to pull and configure OAI charts
-  ansible.builtin.command: "./prepare-demo-oai.sh -a 2>&1 | tee /tmp/output-prepare-demo-oai.txt"
+  ansible.builtin.shell: "./prepare-demo-oai.sh -a 2>&1 | tee /tmp/output-prepare-demo-oai.txt"
   args:
     chdir: "{{ dir_oai }}"
   register: prepare_script
