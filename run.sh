@@ -583,7 +583,7 @@ get_fit_info() {
 
 generate_inventory() {
 
-echo "Generating hosts.ini..."
+echo "Generating ${INVENTORY}..."
 
 # Build faraday line (may include interference params)
 faraday_opts="faraday.inria.fr ansible_user=$R2LAB_USERNAME"
