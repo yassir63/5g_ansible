@@ -13,7 +13,7 @@ SKIP_INVENTORY_GEN=false
 usage() {
   echo "Usage: $0 [options]"
   echo ""
-  echo "-i, --inventory <name>   Use ./inventory/<name>/hosts.ini"
+  echo "-i, --inventory <name>   Create ./inventory/<name>/hosts.ini instead of the default one"
   echo "-p, --profile5g <name>   Use group_vars/all/5g_profile_<name>.yaml specific 5G profile"
   echo "--dry_run                Only print ansible commands"
   echo "--no-reservation         Skip node/R2lab reservations"
@@ -49,7 +49,6 @@ parse_args() {
 
         NAME_INVENTORY="$inv"
         INVENTORY="$inv_file"
-        SKIP_INVENTORY_GEN=true
         ;;
 
       -p|--profile5g)
@@ -116,10 +115,6 @@ ${RESET}"
 ############################
 
 collect_user_inputs() {
-
-[[ "$SKIP_INVENTORY_GEN" == true ]] && return
-
-echo "Generating hosts.ini..."
 
 # ========== User Inputs ==========
 
@@ -487,8 +482,6 @@ fi
 
 print_summary() {
 
-[[ "$SKIP_INVENTORY_GEN" == true ]] && return
-
 echo
 echo "========== SUMMARY =========="
 echo "Core:        $core on ${core_node}"
@@ -589,8 +582,6 @@ get_fit_info() {
 ############################
 
 generate_inventory() {
-
-[[ "$SKIP_INVENTORY_GEN" == true ]] && return
 
 echo "Generating hosts.ini..."
 
