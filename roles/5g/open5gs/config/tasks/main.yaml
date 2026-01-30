@@ -85,3 +85,4 @@
     dest: /root/open5gs_profile_check.txt
     owner: root
     mode: '0644'
+
