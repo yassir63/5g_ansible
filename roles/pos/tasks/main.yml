@@ -15,7 +15,7 @@
     - name: Load POS defaults early for debug
       include_vars: "{{ role_path }}/defaults/main.yml"
 
-    - name: Dump debug information to /tmp/pos_debug_{{ node }}.log
+    - name: Dump debug information to .pos_debug_{{ node }}.log
       ansible.builtin.shell: |
         {
           echo "================ DEBUG FOR NODE: {{ node }} ================"
@@ -36,7 +36,7 @@
           echo ""
 
           echo "============================================================"
-        } > /tmp/pos_debug_{{ node }}.log
+        } > .pos_debug_{{ node }}.log
 
 - name: (POS) Free any existing allocation for {{ node }}
   shell: pos allocations free -k "{{ node }}"
@@ -77,19 +77,20 @@
 - name: Apply POS boot parameters
   shell: pos nodes bootparameter {{ node }} --raw {{ boot_params }}
 
-- name: Log POS configuration pre-reset
+- name: DEBUG Log POS configuration pre-reset
   tags: pos_debug
+  when: pos_debug_enabled | default(false)
   block:
     - ansible.builtin.shell: |
         # First clean up file
-        > /tmp/pos_pre_reset_{{ node }}.log
-        echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "$(date) - {{ node }} (pre-reset):" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "  Image Command : {{ pos_image_cmd }}" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "  RRU Type      : {{ rru }}" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "  Boot Params   : {{ boot_params }}" >> /tmp/pos_pre_reset_{{ node }}.log
-        echo "--------------------------------------------------------" >> /tmp/pos_pre_reset_{{ node }}.log
+        > .pos_pre_reset_{{ node }}.log
+        echo "--------------------------------------------------------" >> .pos_pre_reset_{{ node }}.log
+        echo "$(date) - {{ node }} (pre-reset):" >> ./pos_pre_reset_{{ node }}.log
+        echo "  Image Command : {{ pos_image_cmd }}" >> ./pos_pre_reset_{{ node }}.log
+        echo "" >> ./pos_pre_reset_{{ node }}.log
+        echo "  RRU Type      : {{ rru }}" >> ./pos_pre_reset_{{ node }}.log
+        echo "  Boot Params   : {{ boot_params }}" >> ./pos_pre_reset_{{ node }}.log
+        echo "--------------------------------------------------------" >> ./pos_pre_reset_{{ node }}.log
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"

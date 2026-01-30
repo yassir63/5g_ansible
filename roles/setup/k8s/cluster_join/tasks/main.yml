@@ -174,7 +174,7 @@
 
 - name: Read join command
   ansible.builtin.set_fact:
-    kubeadm_join_command: "{{ lookup('file', '/tmp/kubeadm_join_command.txt') }}"
+    kubeadm_join_command: "{{ lookup('file', '.kubeadm_join_command.txt') }}"
 
 - name: Debug join command
   ansible.builtin.debug:

@@ -350,10 +350,11 @@
   delegate_to: "{{ groups['core_node'][0] }}"
   run_once: true
 
+# dont save file on /tmp/ in localhost since multi-users, use HOME instead
 - name: Save join command locally
   ansible.builtin.copy:
     content: "{{ join_cmd.stdout }}"
-    dest: /tmp/kubeadm_join_command.txt
+    dest: .kubeadm_join_command.txt
     mode: '0644'
   delegate_to: localhost
   run_once: true
