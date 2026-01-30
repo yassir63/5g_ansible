@@ -3,7 +3,7 @@
 open5gs_ns: open5gs
 
 # Open5gs repo directory
-repo_dest: "/root/open5gs-k8s/open5gs"
+repo_dest: "~/open5gs-k8s"
 
 # Deployment option, can be overrided with -e deployment_option
 deployment_option: "msd/overlays/open5gs-metrics"

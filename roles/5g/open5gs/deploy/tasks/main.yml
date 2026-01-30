@@ -60,7 +60,7 @@
 - name: Apply MongoDB manifests
   kubernetes.core.k8s:
     state: present
-    src: "{{ repo_dest }}/open5gs-core/mongodb"
+    src: "{{ repo_dest }}/mongodb"
     namespace: "{{ open5gs_ns }}"
 
 - name: Wait for MongoDB pod to be ready
