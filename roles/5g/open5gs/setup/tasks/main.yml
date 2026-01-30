@@ -627,7 +627,6 @@
             mcc: {{ amf_cfg.amf.guami[0].plmn_id.mcc }}
             mnc: {{ amf_cfg.amf.guami[0].plmn_id.mnc }}
           tac: {{ amf_cfg.amf.tai[0].tac }}
-
       when: amf_cfg is defined
 
     - name: Verify slices applied in SMF
@@ -657,7 +656,14 @@
             qos:
               five_qi: {{ exp.qos.five_qi }}
               priority_level: {{ exp.qos.priority_level }}
-
+              arp:
+                priority_level: {{ exp.qos.arp.priority_level }}
+                preempt_cap: {{ exp.qos.arp.preempt_cap }}
+                preempt_vuln: {{ exp.qos.arp.preempt_vuln }}
+            bandwidth:
+              uplink: {{ exp.bandwidth.uplink }}
+              downlink: {{ exp.bandwidth.downlink }}
+            ip_prefix: {{ exp.ip_prefix }}
           {% endfor %}
       when: smf_cfg is defined
 
