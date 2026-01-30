@@ -56,7 +56,7 @@ data:
       freeDiameter: /open5gs/install/etc/freeDiameter/smf.conf
 
       info:
-{% for slice in fiveg_profile_data.slices if slice.name == smf_slice %}
+{% for slice in fiveg.slices if slice.name == smf_slice %}
         - s_nssai:
           - sst: {{ slice.sst }}
             sd: {% if slice.sd == "EMPTY" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
