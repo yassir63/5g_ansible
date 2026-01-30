@@ -562,7 +562,8 @@
     var: check_out.stdout
 
 # --- Optional block to verify Open5GS core configuration ---
-- name: Optional block to verify Open5GS core configuration (Enhanced)
+# --- Optional block to verify Open5GS core configuration and display 5G profile ---
+- name: Optional block to verify Open5GS core configuration and display 5G profile
   block:
 
     # --- Lire le ConfigMap appliqué dans Kubernetes ---
@@ -573,9 +574,9 @@
         name: open5gs-config
       register: cm_info
 
-    - name: Display applied ConfigMap keys
+    - name: Display applied Open5GS ConfigMap
       debug:
-        msg: "Keys in ConfigMap: {{ cm_info.resources[0].data.keys() | list }}"
+        var: cm_info.resources[0].data
 
     # --- Charger le YAML source utilisé pour le déploiement ---
     - name: Load local 5G profile YAML
@@ -583,13 +584,14 @@
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
         name: fiveg_profile_data
 
+    # --- Afficher les valeurs du profil 5G clairement ---
     - name: Display 5G profile values
       debug:
         msg: |
           --- PLMN ---
           MCC: {{ fiveg_profile_data.plmn.mcc }}
           MNC: {{ fiveg_profile_data.plmn.mnc }}
-          TAC: {{ fiveg_profile_data.tac }}
+          TAC: {{ fiveg_profile_data.plmn.tac }}
 
           --- DNNs ---
           {% for dnn in fiveg_profile_data.dnns %}
@@ -607,6 +609,22 @@
           --- Security ---
           Full Key: {{ fiveg_profile_data.security.full_key }}
           OPC: {{ fiveg_profile_data.security.opc }}
+
+    # --- Comparer ConfigMap vs YAML source ---
+    - name: Compare applied ConfigMap with source YAML
+      ansible.builtin.debug:
+        msg: |
+          {% set diffs = [] %}
+          {% for key, val in fiveg_profile_data.items() %}
+            {% if cm_info.resources[0].data[key] is defined and cm_info.resources[0].data[key] != val|string %}
+              {% set _ = diffs.append(key) %}
+            {% endif %}
+          {% endfor %}
+          {% if diffs|length > 0 %}
+            Differences detected in keys: {{ diffs }}
+          {% else %}
+            Applied ConfigMap matches source YAML
+          {% endif %}
 
     # --- Lister les pods du core ---
     - name: Get Open5GS core pods
@@ -628,8 +646,8 @@
           smf: smf.yaml
           upf: upf.yaml
 
-    # --- Lire les fichiers de config dans chaque pod ---
-    - name: Read configuration files inside core pods
+    # --- Afficher la config à l'intérieur de chaque pod ---
+    - name: Show configuration files inside core pods
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
         pod: "{{ item.metadata.name }}"
@@ -640,37 +658,9 @@
       register: pod_configs
       when: core_pods.resources | length > 0
 
-    # --- Affichage clair et lisible ---
     - name: Display core pod configurations
       debug:
-        msg: |
-          {% for res in pod_configs.results %}
-          ====================================================
-          Pod: {{ res.invocation.module_args.pod }} ({{ res.invocation.module_args.namespace }})
-          ====================================================
-          {{ res.stdout }}
-          {% endfor %}
+        var: pod_configs.results | map(attribute='stdout') | list
 
-    # --- Comparer ConfigMap vs YAML source avec différence ---
-    - name: Compare applied ConfigMap with source YAML
-      vars:
-        diffs: []
-      block:
-        - name: Check for differences
-          set_fact:
-            diffs: >-
-              {{ diffs + [key] if cm_info.resources[0].data[key] is defined and cm_info.resources[0].data[key] != (fiveg_profile_data[key]|string) else diffs }}
-          loop: "{{ fiveg_profile_data.keys() }}"
-          loop_control:
-            loop_var: key
-
-        - name: Display differences
-          debug:
-            msg: >-
-              {% if diffs|length > 0 %}
-              ⚠ Differences detected in keys: {{ diffs }}
-              {% else %}
-              ✅ Applied ConfigMap matches source YAML
-              {% endif %}
-
+  # --- Condition d'exécution avec -e ---
   when: show_open5gs_config | default(false)
