@@ -8,14 +8,19 @@ repo_dest: "~/open5gs-k8s"
 # Deployment option, can be overrided with -e deployment_option
 deployment_option: "msd/overlays/open5gs-metrics"
 
-# List of NFs to wait
 nfs:
   - nrf
   - scp
   - amf
   - udr
   - bsf
-  - smf1
-  - smf2
-  - upf1
-  - upf2
+  - ausf
+  - nssf
+  - pcf
+  - udm
+
+nad_list:
+  - n2network
+  - n3network
+  - n4network
+  
