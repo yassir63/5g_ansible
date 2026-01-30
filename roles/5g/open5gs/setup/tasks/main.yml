@@ -612,9 +612,9 @@
         smf_cfg: "{{ smf_raw.stdout | from_yaml }}"
       when: smf_raw is defined
 
-    - name: Compare AMF PLMN/TAC with profile
-      ansible.builtin.debug:
-        msg: |
+    - name: Build check output for file
+      set_fact:
+        open5gs_check_output: |
           🔹 AMF profile expected
           plmn:
             mcc: {{ fiveg.plmn.mcc }}
@@ -634,11 +634,8 @@
           {% else %}
           🔴 AMF PLMN/TAC KO
           {% endif %}
-      when: amf_cfg is defined
 
-    - name: Compare SMF slices with profile
-      ansible.builtin.debug:
-        msg: |
+
           {% for exp in fiveg.slices %}
           🔹 Expected slice
           slice:
@@ -669,7 +666,7 @@
             {% endfor %}
           {% endfor %}
 
-          🔹 Pod slice values
+          🔹 Pod slice status
           {% if found %}
           🟢 SLICE OK
           {% else %}
@@ -693,6 +690,21 @@
             ip_prefix: {{ exp.ip_prefix }}
 
           {% endfor %}
-      when: smf_cfg is defined
+
+    - name: Write 5G profile check to file
+      copy:
+        content: "{{ open5gs_check_output }}"
+        dest: "{{ ansible_env.HOME }}/open5gs_profile_check.txt"
+        owner: "{{ ansible_user_id }}"
+        mode: '0644'
+
+    - name: Display 5G profile check
+      ansible.builtin.shell: cat {{ ansible_env.HOME }}/open5gs_profile_check.txt
+      register: profile_file
+      changed_when: false
+
+    - name: Show 5G profile check with real line breaks
+      ansible.builtin.debug:
+        msg: "{{ profile_file.stdout }}"
 
   when: show_open5gs_config | default(false)
