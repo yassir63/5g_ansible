@@ -629,7 +629,6 @@
             mcc: {{ amf_cfg.amf.guami[0].plmn_id.mcc }}
             mnc: {{ amf_cfg.amf.guami[0].plmn_id.mnc }}
           TAC: {{ amf_cfg.amf.tai[0].tac }}
-
           {% endif %}
 
           {% if smf_cfg is defined %}
@@ -665,10 +664,10 @@
               uplink: {{ exp.bandwidth.uplink }}
               downlink: {{ exp.bandwidth.downlink }}
             ip_prefix: {{ exp.ip_prefix }}
-
           {% endfor %}
+          {% endif %}
+
           {{ output | join("\n\n") }}
-      when: amf_cfg is defined or smf_cfg is defined
 
     - name: Write 5G profile check to file
       copy:
