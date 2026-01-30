@@ -28,10 +28,9 @@ data:
         server:
           - dev: n4
         client:
-          upf:
 {% for slice in fiveg.slices if slice.name == smf_slice %}
-            - address: 10.10.4.{{ loop.index }}
-              dnn: {{ slice.dnn }}
+          - address: 10.10.4.{{ loop.index }}
+            dnn: {{ slice.dnn }}
 {% endfor %}
       gtpc:
         server:
