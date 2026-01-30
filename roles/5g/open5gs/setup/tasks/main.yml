@@ -698,13 +698,13 @@
         owner: "{{ ansible_user_id }}"
         mode: '0644'
 
-    - name: Display 5G profile check
+    - name: Display 5G profile check with real line breaks
       ansible.builtin.shell: cat {{ ansible_env.HOME }}/open5gs_profile_check.txt
       register: profile_file
       changed_when: false
 
-    - name: Show 5G profile check with real line breaks
-      ansible.builtin.debug:
-        msg: "{{ profile_file.stdout }}"
+    - name: Show 5G profile check
+      ansible.builtin.shell: cat {{ ansible_env.HOME }}/open5gs_profile_check.txt
+      changed_when: false
 
   when: show_open5gs_config | default(false)
