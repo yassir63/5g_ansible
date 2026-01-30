@@ -85,25 +85,25 @@
     owner: root
     mode: '0644'
     content: |
-      PLMN:
-        mcc: {{ fiveg.plmn.mcc }}
-        mnc: {{ fiveg.plmn.mnc }}
-        tac: {{ fiveg.plmn.tac }}
+{% raw %}{% for s in fiveg.slices %}
+PLMN:
+  mcc: {{ fiveg.plmn.mcc }}
+  mnc: {{ fiveg.plmn.mnc }}
+  tac: {{ fiveg.plmn.tac }}
 
-{% for s in fiveg.slices %}
-      SLICE {{ s.name }}:
-        DNN: {{ s.dnn }}
-        SST: {{ s.sst }}
-        SD: {% if s.sd == "EMPTY" %}FFFFFF{% else %}{{ s.sd }}{% endif %}
-        QoS:
-          five_qi: {{ s.qos.five_qi }}
-          priority_level: {{ s.qos.priority_level }}
-          arp:
-            priority_level: {{ s.qos.arp.priority_level }}
-            preempt_cap: {{ s.qos.arp.preempt_cap }}
-            preempt_vuln: {{ s.qos.arp.preempt_vuln }}
-        Bandwidth:
-          uplink: {{ s.bandwidth.uplink }}
-          downlink: {{ s.bandwidth.downlink }}
-        IP Prefix: {{ s.ip_prefix }}
-{% endfor %}
+SLICE {{ s.name }}:
+  DNN: {{ s.dnn }}
+  SST: {{ s.sst }}
+  SD: {% if s.sd == "EMPTY" %}FFFFFF{% else %}{{ s.sd }}{% endif %}
+  QoS:
+    five_qi: {{ s.qos.five_qi }}
+    priority_level: {{ s.qos.priority_level }}
+    arp:
+      priority_level: {{ s.qos.arp.priority_level }}
+      preempt_cap: {{ s.qos.arp.preempt_cap }}
+      preempt_vuln: {{ s.qos.arp.preempt_vuln }}
+  Bandwidth:
+    uplink: {{ s.bandwidth.uplink }}
+    downlink: {{ s.bandwidth.downlink }}
+  IP Prefix: {{ s.ip_prefix }}
+{% endfor %}{% endraw %}
