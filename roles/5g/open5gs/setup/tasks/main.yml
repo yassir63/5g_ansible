@@ -562,9 +562,11 @@
     var: check_out.stdout
 
 # --- Show the whole config ---
+# --- Optional block to verify Open5GS core configuration ---
 - name: Optional block to verify Open5GS core configuration
   block:
 
+    # --- Lire le ConfigMap appliqué dans Kubernetes ---
     - name: Get applied Open5GS ConfigMap
       kubernetes.core.k8s_info:
         kind: ConfigMap
@@ -572,11 +574,17 @@
         name: open5gs-config
       register: cm_info
 
+    - name: Display applied Open5GS ConfigMap
+      debug:
+        var: cm_info.resources[0].data
+
+    # --- Charger le YAML source utilisé pour le déploiement ---
     - name: Load local 5G profile YAML
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
         name: fiveg_profile_data
 
+    # --- Comparer ConfigMap vs YAML source ---
     - name: Compare applied ConfigMap with source YAML
       ansible.builtin.debug:
         msg: |
@@ -592,6 +600,7 @@
             Applied ConfigMap matches source YAML
           {% endif %}
 
+    # --- Lister les pods du core ---
     - name: Get Open5GS core pods
       kubernetes.core.k8s_info:
         kind: Pod
@@ -604,18 +613,28 @@
       debug:
         var: core_pods.resources | map(attribute='metadata.name') | list
 
+    # --- Définir mapping NF → fichier de config ---
+    - set_fact:
+        nf_config_files:
+          amf: amfcfg.yaml
+          smf: smfcfg.yaml
+          upf: upfcfg.yaml
+
+    # --- Afficher la config à l'intérieur de chaque pod ---
     - name: Show configuration files inside core pods
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
         pod: "{{ item.metadata.name }}"
-        command: cat /etc/open5gs/*.yaml
+        command: cat /etc/open5gs/{{ nf_config_files[item.metadata.labels.nf] }}
       loop: "{{ core_pods.resources }}"
       loop_control:
         label: "{{ item.metadata.name }}"
       register: pod_configs
+      when: core_pods.resources | length > 0
 
     - name: Display core pod configurations
       debug:
         var: pod_configs.results | map(attribute='stdout') | list
 
+  # --- Condition d'exécution avec -e ---
   when: show_open5gs_config | default(false)
