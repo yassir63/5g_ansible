@@ -1,0 +1,92 @@
+---
+- name: Ensure Open5GS namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ open5gs_ns }}"
+    state: present
+
+- name: Apply MongoDB manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_dest }}/open5gs-core/mongodb"
+    namespace: "{{ open5gs_ns }}"
+
+- name: Wait for MongoDB pod to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "app.kubernetes.io/name=mongodb"
+  register: mongo_pods
+  until: mongo_pods.resources | length > 0 and
+         (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
+  retries: 40
+  delay: 5
+
+- name: Apply 5G network NADs
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_dest }}/networks5g"
+    namespace: "{{ open5gs_ns }}"
+
+- name: Check required NADs exist
+  vars:
+    required_nads:
+      - n2network
+      - n3network
+      - n4network
+  block:
+    - name: Ensure NAD exists
+      shell: |
+        kubectl get net-attach-def -n {{ open5gs_ns }} | grep -q "{{ item }}"
+      loop: "{{ required_nads }}"
+      loop_control:
+        label: "{{ item }}"
+      register: nad_check
+      failed_when: nad_check.rc != 0
+
+- name: Deploy Open5GS core NFs
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_dest }}/{{ deployment_option }}"
+    namespace: "{{ open5gs_ns }}"
+
+- name: Wait for Open5GS NF pods to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "nf={{ item }}"
+  register: nf_pods
+  until: nf_pods.resources | length > 0 and
+         (nf_pods.resources[0].status.containerStatuses[0].ready | default(false))
+  retries: 40
+  delay: 5
+  loop: "{{ nfs }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Deploy Open5GS Web UI
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_dest }}/open5gs-webui"
+    namespace: "{{ open5gs_ns }}"
+
+- name: Wait for WebUI pod ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "nf=webui"
+  register: webui_pod
+  until: webui_pod.resources | length > 0 and
+         (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
+  retries: 40
+  delay: 5
+
+- name: Setup MongoDB admin account
+  ansible.builtin.command: >
+    {{ repo_dest }}/venv/bin/python3 {{ repo_dest }}/mongo-tools/add-admin-account.py
+  args:
+    chdir: "{{ repo_dest }}"

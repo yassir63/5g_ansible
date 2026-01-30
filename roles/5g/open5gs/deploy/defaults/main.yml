@@ -1,0 +1,21 @@
+---
+# Open5GS namespace
+open5gs_ns: open5gs
+
+# Open5gs repo directory
+repo_dest: "/root/open5gs-k8s/open5gs"
+
+# Deployment option, can be overrided with -e deployment_option
+deployment_option: "msd/overlays/open5gs-metrics"
+
+# List of NFs to wait
+nfs:
+  - nrf
+  - scp
+  - amf
+  - udr
+  - bsf
+  - smf1
+  - smf2
+  - upf1
+  - upf2

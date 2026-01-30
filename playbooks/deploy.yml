@@ -153,9 +153,9 @@
       include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
   roles:
-    - role: 5g/open5gs/fiveg_profile
+    - role: 5g/open5gs/config
       when: core == 'open5gs'
-    - role: 5g/open5gs/setup
+    - role: 5g/open5gs/deploy
       when: core == 'open5gs'
 
 - name: Deploy OAI CN/RAN

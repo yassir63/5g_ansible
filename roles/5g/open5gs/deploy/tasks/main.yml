@@ -1,0 +1,295 @@
+---
+- name: RESTART_OPEN5GS_DEPLOY
+  ansible.builtin.meta: noop
+
+- name: Reload and restart kubelet
+  ansible.builtin.shell: |
+    systemctl daemon-reload
+    systemctl restart kubelet
+  become: true
+  changed_when: false
+
+- name: Restart CoreDNS pods after kubelet restart
+  ansible.builtin.shell: |
+    kubectl -n kube-system delete pod -l k8s-app=kube-dns --ignore-not-found
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false
+
+- name: Wait for CoreDNS to be Ready
+  ansible.builtin.shell: |
+    kubectl wait -n kube-system --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: wait_coredns
+  retries: 3
+  delay: 10
+  until: wait_coredns.rc == 0
+  changed_when: false
+
+# --- Test DNS ---
+- name: Test CoreDNS resolution from core node
+  become: true
+  delegate_to: "{{ groups['core_node'][0] }}"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  ansible.builtin.shell: |
+    set -eux
+    for NODE in {{ groups['core_node'][0] }}; do
+      echo "=== Testing DNS on $NODE ==="
+      kubectl run dns-test-$NODE \
+        --image=busybox:1.36 \
+        --restart=Never \
+        --overrides='{"spec": {"nodeName": "'"${NODE}"'"}}' \
+        --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
+    done
+
+    echo "Cleaning up test pods..."
+    kubectl delete pod dns-test-{{ groups['core_node'][0] }} --ignore-not-found
+  changed_when: false
+  
+- name: Ensure Open5GS namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ open5gs_ns }}"
+    state: present
+
+- name: Apply MongoDB manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_dest }}/open5gs-core/mongodb"
+    namespace: "{{ open5gs_ns }}"
+
+- name: Wait for MongoDB pod to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "app.kubernetes.io/name=mongodb"
+  register: mongo_pods
+  until: mongo_pods.resources | length > 0 and
+         (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
+  retries: 40
+  delay: 5
+
+- name: Apply 5G network NADs
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_dest }}/networks5g"
+    namespace: "{{ open5gs_ns }}"
+
+- name: Check required NADs exist
+  vars:
+    required_nads:
+      - n2network
+      - n3network
+      - n4network
+  block:
+    - name: Ensure NAD exists
+      shell: |
+        kubectl get net-attach-def -n {{ open5gs_ns }} | grep -q "{{ item }}"
+      loop: "{{ required_nads }}"
+      loop_control:
+        label: "{{ item }}"
+      register: nad_check
+      failed_when: nad_check.rc != 0
+
+- name: Deploy Open5GS core NFs
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_dest }}/{{ deployment_option }}"
+    namespace: "{{ open5gs_ns }}"
+
+- name: Wait for Open5GS NF pods to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "nf={{ item }}"
+  register: nf_pods
+  until: nf_pods.resources | length > 0 and
+         (nf_pods.resources[0].status.containerStatuses[0].ready | default(false))
+  retries: 40
+  delay: 5
+  loop: "{{ nfs }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Deploy Open5GS Web UI
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_dest }}/open5gs-webui"
+    namespace: "{{ open5gs_ns }}"
+
+- name: Wait for WebUI pod ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "nf=webui"
+  register: webui_pod
+  until: webui_pod.resources | length > 0 and
+         (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
+  retries: 40
+  delay: 5
+
+- name: Setup MongoDB admin account
+  ansible.builtin.command: >
+    {{ repo_dest }}/venv/bin/python3 {{ repo_dest }}/mongo-tools/add-admin-account.py
+  args:
+    chdir: "{{ repo_dest }}"
+
+# --- Add subscribers ---
+- name: Add subscribers
+  ansible.builtin.shell: |
+    {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
+    {{ repo_dest }}/venv/bin/python mongo-tools/add-subscribers.py
+  args:
+    chdir: "{{ repo_dest }}"
+  register: sub_out
+  changed_when: false
+
+- name: Check added subscribers
+  ansible.builtin.shell: |
+    {{ repo_dest }}/venv/bin/python mongo-tools/check-subscribers.py
+  args:
+    chdir: "{{ repo_dest }}"
+  register: check_out
+  changed_when: false
+
+- name: Show added subscribers
+  debug:
+    var: check_out.stdout
+
+####
+- name: Verify 5G scenario applied in Open5GS
+  block:
+
+    - name: Load 5G scenario profile
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.
+yaml"
+        name: fiveg
+
+    - name: Get AMF pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ open5gs_ns }}"
+        label_selectors:
+          - "nf=amf"
+      register: amf_pods
+
+    - name: Get SMF pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ open5gs_ns }}"
+        label_selectors:
+          - "nf=smf"
+      register: smf_pods
+
+    - name: Read AMF configuration
+      kubernetes.core.k8s_exec:
+        namespace: "{{ open5gs_ns }}"
+        pod: "{{ amf_pods.resources[0].metadata.name }}"
+        command: cat /open5gs/install/etc/open5gs/amf.yaml
+      register: amf_raw
+      when: amf_pods.resources | length > 0
+
+    - name: Read SMF configuration
+      kubernetes.core.k8s_exec:
+        namespace: "{{ open5gs_ns }}"
+        pod: "{{ smf_pods.resources[0].metadata.name }}"
+        command: cat /open5gs/install/etc/open5gs/smf.yaml
+      register: smf_raw
+      when: smf_pods.resources | length > 0
+
+    - name: Parse AMF YAML
+      set_fact:
+        amf_cfg: "{{ amf_raw.stdout | from_yaml }}"
+      when: amf_raw is defined
+
+    - name: Parse SMF YAML
+      set_fact:
+        smf_cfg: "{{ smf_raw.stdout | from_yaml }}"
+      when: smf_raw is defined
+
+    - name: Build 5G profile check output
+      set_fact:
+        open5gs_check_output: |
+          {% set output = [] %}
+
+          {# AMF check #}
+          {% if amf_cfg is defined %}
+          {% set plmn_ok = (amf_cfg.amf.guami[0].plmn_id.mcc == fiveg.plmn.mcc) and
+                             (amf_cfg.amf.guami[0].plmn_id.mnc == fiveg.plmn.mnc) %}
+          {% set tac_ok = (amf_cfg.amf.tai[0].tac | string == fiveg.plmn.tac | string) %}
+          {% if plmn_ok and tac_ok %}
+          {% set _ = output.append("🟢 AMF PLMN/TAC OK") %}
+          {% else %}
+          {% set _ = output.append("🔴 AMF PLMN/TAC KO") %}
+          {% endif %}
+          PLMN:
+            mcc: {{ amf_cfg.amf.guami[0].plmn_id.mcc }}
+            mnc: {{ amf_cfg.amf.guami[0].plmn_id.mnc }}
+          TAC: {{ amf_cfg.amf.tai[0].tac }}
+          {% endif %}
+
+          {# SMF slices check #}
+          {% if smf_cfg is defined %}
+          {% for exp in fiveg.slices %}
+          {% set found = false %}
+          {% for s in smf_cfg.smf.plmn_support | default([]) %}
+            {% for snssai in s.s_nssai | default([]) %}
+              {% if snssai.sst | string == exp.sst | string %}
+                {% if (exp.sd == "EMPTY" and (snssai.sd is not defined or snssai.sd == '')) or (snssai.sd | default('') == exp.sd) %}
+                  {% set found = true %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+          {% endfor %}
+          {% if found %}
+          {% set _ = output.append("🟢 SLICE OK") %}
+          {% else %}
+          {% set _ = output.append("🔴 SLICE KO") %}
+          {% endif %}
+          slice:
+            name: {{ exp.name }}
+            dnn: {{ exp.dnn }}
+            sst: {{ exp.sst }}
+            sd: {{ exp.sd }}
+            qos:
+              five_qi: {{ exp.qos.five_qi }}
+              priority_level: {{ exp.qos.priority_level }}
+              arp:
+                priority_level: {{ exp.qos.arp.priority_level }}
+                preempt_cap: {{ exp.qos.arp.preempt_cap }}
+                preempt_vuln: {{ exp.qos.arp.preempt_vuln }}
+            bandwidth:
+              uplink: {{ exp.bandwidth.uplink }}
+              downlink: {{ exp.bandwidth.downlink }}
+            ip_prefix: {{ exp.ip_prefix }}
+          {% endfor %}
+          {% endif %}
+
+          {{ output | join("\n\n") }}
+
+    - name: Write 5G profile check to file
+      ansible.builtin.copy:
+        content: "{{ open5gs_check_output }}"
+        dest: "{{ ansible_env.HOME }}/open5gs_profile_check.txt"
+        owner: "{{ ansible_user_id }}"
+        mode: '0644'
+
+    - name: Display 5G profile check directly from file
+      ansible.builtin.shell: cat {{ ansible_env.HOME }}/open5gs_profile_check.txt
+      register: profile_output
+      changed_when: false
+
+    - name: Show 5G profile check
+      ansible.builtin.debug:
+        msg: "{{ profile_output.stdout }}"
+
+  when: show_open5gs_config | default(false)
