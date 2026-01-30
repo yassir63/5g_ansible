@@ -49,11 +49,15 @@
   ansible.builtin.template:
     src: smf-configmap.yaml.j2
     dest: "{{ open5gs_root }}/slices/slice1/smf1/smf-configmap.yaml"
+  vars:
+    smf_name: smf1
 
 - name: Update SMF2 ConfigMap on disk
   ansible.builtin.template:
     src: smf-configmap.yaml.j2
     dest: "{{ open5gs_root }}/slices/slice2/smf2/smf-configmap.yaml"
+  vars:
+    smf_name: smf2
 
 - name: Update UPF1 ConfigMap on disk
   ansible.builtin.template:
