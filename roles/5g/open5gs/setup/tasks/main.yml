@@ -561,15 +561,16 @@
   debug:
     var: check_out.stdout
 
-# --- Optional block: Verify 5G scenario in Open5GS (AMF & SMF) ---
 - name: Verify 5G scenario applied in Open5GS
   block:
 
+    # --- Charger le profil 5G ---
     - name: Load 5G scenario profile
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
         name: fiveg
 
+    # --- Récupérer les pods ---
     - name: Get AMF pods
       kubernetes.core.k8s_info:
         kind: Pod
@@ -586,6 +587,7 @@
           - "nf=smf"
       register: smf_pods
 
+    # --- Lire les fichiers de configuration depuis les pods ---
     - name: Read AMF configuration
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
@@ -602,6 +604,7 @@
       register: smf_raw
       when: smf_pods.resources | length > 0
 
+    # --- Parser le YAML ---
     - name: Parse AMF YAML
       set_fact:
         amf_cfg: "{{ amf_raw.stdout | from_yaml }}"
@@ -612,6 +615,7 @@
         smf_cfg: "{{ smf_raw.stdout | from_yaml }}"
       when: smf_raw is defined
 
+    # --- Vérifier PLMN/TAC AMF ---
     - name: Verify AMF PLMN/TAC
       ansible.builtin.debug:
         msg: |
@@ -629,42 +633,35 @@
           tac: {{ amf_cfg.amf.tai[0].tac }}
       when: amf_cfg is defined
 
+    # --- Vérifier les slices SMF ---
     - name: Verify slices applied in SMF
-      ansible.builtin.debug:
-        msg: |
-          {% for exp in fiveg.slices %}
-          {% set found = false %}
-          {% for s in smf_cfg.smf.plmn_support | default([]) %}
-            {% for snssai in s.s_nssai | default([]) %}
-              {% if snssai.sst | string == exp.sst | string %}
-                {% if (exp.sd == "EMPTY" and snssai.sd is not defined) or (snssai.sd | default('') == exp.sd) %}
-                  {% set found = true %}
+      block:
+        - name: Check each slice
+          ansible.builtin.set_fact:
+            slice_msgs: >-
+              {% set msgs = [] %}
+              {% for exp in fiveg.slices %}
+                {% set found = false %}
+                {% for s in smf_cfg.smf.plmn_support | default([]) %}
+                  {% for snssai in s.s_nssai | default([]) %}
+                    {% if snssai.sst | string == exp.sst | string %}
+                      {% if (exp.sd == "EMPTY" and snssai.sd is not defined) or (snssai.sd | default('') == exp.sd) %}
+                        {% set found = true %}
+                      {% endif %}
+                    {% endif %}
+                  {% endfor %}
+                {% endfor %}
+                {% if found %}
+                  {% set _ = msgs.append("🟢 SLICE OK\nslice:\n  name: " ~ exp.name ~ "\n  dnn: " ~ exp.dnn ~ "\n  sst: " ~ exp.sst ~ "\n  sd: " ~ exp.sd ~ "\n  qos:\n    five_qi: " ~ exp.qos.five_qi ~ "\n    priority_level: " ~ exp.qos.priority_level ~ "\n    arp:\n      priority_level: " ~ exp.qos.arp.priority_level ~ "\n      preempt_cap: " ~ exp.qos.arp.preempt_cap ~ "\n      preempt_vuln: " ~ exp.qos.arp.preempt_vuln ~ "\n  bandwidth:\n    uplink: " ~ exp.bandwidth.uplink ~ "\n    downlink: " ~ exp.bandwidth.downlink ~ "\n  ip_prefix: " ~ exp.ip_prefix) %}
+                {% else %}
+                  {% set _ = msgs.append("🔴 SLICE KO\nslice:\n  name: " ~ exp.name ~ "\n  dnn: " ~ exp.dnn ~ "\n  sst: " ~ exp.sst ~ "\n  sd: " ~ exp.sd ~ "\n  qos:\n    five_qi: " ~ exp.qos.five_qi ~ "\n    priority_level: " ~ exp.qos.priority_level ~ "\n    arp:\n      priority_level: " ~ exp.qos.arp.priority_level ~ "\n      preempt_cap: " ~ exp.qos.arp.preempt_cap ~ "\n      preempt_vuln: " ~ exp.qos.arp.preempt_vuln ~ "\n  bandwidth:\n    uplink: " ~ exp.bandwidth.uplink ~ "\n    downlink: " ~ exp.bandwidth.downlink ~ "\n  ip_prefix: " ~ exp.ip_prefix) %}
                 {% endif %}
-              {% endif %}
-            {% endfor %}
-          {% endfor %}
-          {% if found %}
-          🟢 SLICE OK
-          {% else %}
-          🔴 SLICE KO
-          {% endif %}
-          slice:
-            name: {{ exp.name }}
-            dnn: {{ exp.dnn }}
-            sst: {{ exp.sst }}
-            sd: {{ exp.sd }}
-            qos:
-              five_qi: {{ exp.qos.five_qi }}
-              priority_level: {{ exp.qos.priority_level }}
-              arp:
-                priority_level: {{ exp.qos.arp.priority_level }}
-                preempt_cap: {{ exp.qos.arp.preempt_cap }}
-                preempt_vuln: {{ exp.qos.arp.preempt_vuln }}
-            bandwidth:
-              uplink: {{ exp.bandwidth.uplink }}
-              downlink: {{ exp.bandwidth.downlink }}
-            ip_prefix: {{ exp.ip_prefix }}
-          {% endfor %}
+              {% endfor %}
+              {{ msgs | join('\n\n') }}
+
+        - name: Display slices
+          ansible.builtin.debug:
+            msg: "{{ slice_msgs }}"
       when: smf_cfg is defined
 
   when: show_open5gs_config | default(false)
