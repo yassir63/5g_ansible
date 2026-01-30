@@ -49,6 +49,7 @@
 
 - name: Compute POS image command
   set_fact:
+  not no_boot | default(false)
     pos_image_cmd: >-
       {% if is_ran and is_f3 and fhi72 %}
         {% if ran_boot_mode == 'disk' %}
@@ -62,6 +63,7 @@
 
 - name: Select POS boot parameters
   set_fact:
+  not no_boot | default(false)
     boot_params: >-
       {% if is_ran and is_f3 and fhi72 %}
         {{ boot_parameters_rt_f3 }}
@@ -73,13 +75,15 @@
 
 - name: Flash POS image
   shell: "{{ pos_image_cmd }}"
+  when: not no_boot | default(false)
 
 - name: Apply POS boot parameters
   shell: pos nodes bootparameter {{ node }} --raw {{ boot_params }}
+  when: not no_boot | default(false)
 
 - name: DEBUG Log POS configuration pre-reset
   tags: pos_debug
-  when: pos_debug_enabled | default(false)
+  when: (not (no_boot | default(false))) and (pos_debug_enabled | default(false))
   block:
     - ansible.builtin.shell: |
         # First clean up file
@@ -94,13 +98,15 @@
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
+  when: not no_boot | default(false)
 
 - name: (POS) Wait for SSH to be available on {{ node }}
   wait_for:
     host: "{{ node }}"
     port: 22
     timeout: 300
+  when: not no_boot | default(false)
 
 - name: Bootstrap {{ node }} if boot on disk
   shell: pos node bootstrap {{ node }}
-  when: is_ran and ran_boot_mode == 'disk'
+  when: (not (no_boot | default(false))) and (is_ran and ran_boot_mode == 'disk')

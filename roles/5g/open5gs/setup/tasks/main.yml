@@ -560,3 +560,62 @@
 - name: Show added subscribers
   debug:
     var: check_out.stdout
+
+# --- Show the whole config ---
+- name: Optional block to verify Open5GS core configuration
+  block:
+
+    - name: Get applied Open5GS ConfigMap
+      kubernetes.core.k8s_info:
+        kind: ConfigMap
+        namespace: "{{ open5gs_ns }}"
+        name: open5gs-config
+      register: cm_info
+
+    - name: Load local 5G profile YAML
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+        name: fiveg_profile_data
+
+    - name: Compare applied ConfigMap with source YAML
+      ansible.builtin.debug:
+        msg: |
+          {% set diffs = [] %}
+          {% for key, val in fiveg_profile_data.items() %}
+            {% if cm_info.resources[0].data[key] is defined and cm_info.resources[0].data[key] != val|string %}
+              {% set _ = diffs.append(key) %}
+            {% endif %}
+          {% endfor %}
+          {% if diffs|length > 0 %}
+            Differences detected in keys: {{ diffs }}
+          {% else %}
+            Applied ConfigMap matches source YAML
+          {% endif %}
+
+    - name: Get Open5GS core pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ open5gs_ns }}"
+        label_selectors:
+          - "nf in (amf, smf, upf)"
+      register: core_pods
+
+    - name: Show core pod names
+      debug:
+        var: core_pods.resources | map(attribute='metadata.name') | list
+
+    - name: Show configuration files inside core pods
+      kubernetes.core.k8s_exec:
+        namespace: "{{ open5gs_ns }}"
+        pod: "{{ item.metadata.name }}"
+        command: cat /etc/open5gs/*.yaml
+      loop: "{{ core_pods.resources }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      register: pod_configs
+
+    - name: Display core pod configurations
+      debug:
+        var: pod_configs.results | map(attribute='stdout') | list
+
+  when: show_open5gs_config | default(false)

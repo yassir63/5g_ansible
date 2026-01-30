@@ -125,18 +125,6 @@
     - role: setup/gre_tunnel
       when: bridge_enabled
 
-- name: Deploy Open5GS CN
-  hosts: core_node
-  pre_tasks:
-    - name: Load 5G profile
-      include_vars:
-        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-  roles:
-    - role: 5g/open5gs/fiveg_profile
-      when: core == 'open5gs'
-    - role: 5g/open5gs/setup
-      when: core == 'open5gs'
-
 ############################################################################
 # Move this block where you want to restart with start-at-task=RESTART_HERE"
 #
@@ -157,6 +145,18 @@
     - import_tasks: ../tasks/reload_booleans.yml
 ############################################################################
 
+
+- name: Deploy Open5GS CN
+  hosts: core_node
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  roles:
+    - role: 5g/open5gs/fiveg_profile
+      when: core == 'open5gs'
+    - role: 5g/open5gs/setup
+      when: core == 'open5gs'
 
 - name: Deploy OAI CN/RAN
   hosts: ran_node
