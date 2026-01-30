@@ -84,8 +84,8 @@
     dest: /root/open5gs_profile_check.txt
     owner: root
     mode: '0644'
-    content: |
-{% raw %}{% for s in fiveg.slices %}
+    content: |-
+{% for s in fiveg.slices %}
 PLMN:
   mcc: {{ fiveg.plmn.mcc }}
   mnc: {{ fiveg.plmn.mnc }}
@@ -106,4 +106,5 @@ SLICE {{ s.name }}:
     uplink: {{ s.bandwidth.uplink }}
     downlink: {{ s.bandwidth.downlink }}
   IP Prefix: {{ s.ip_prefix }}
-{% endfor %}{% endraw %}
+
+{% endfor %}
