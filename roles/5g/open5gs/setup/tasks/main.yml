@@ -561,115 +561,63 @@
   debug:
     var: check_out.stdout
 
-# --- Optional block to verify and display Open5GS 5G profile clearly ---
-- name: Optional block to verify and display Open5GS 5G profile
+# --- Optional block: Verify applied 5G slices in Open5GS (SMF) ---
+- name: Optional block to verify applied 5G slices in Open5GS
   block:
 
-    # --- Load local 5G profile YAML ---
-    - name: Load local 5G profile YAML
+    - name: Load 5G scenario profile
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-        name: fiveg_profile_data
+        name: fiveg
 
-    # --- Get applied Open5GS ConfigMap from Kubernetes ---
-    - name: Get applied Open5GS ConfigMap
-      kubernetes.core.k8s_info:
-        kind: ConfigMap
-        namespace: "{{ open5gs_ns }}"
-        name: open5gs-config
-      register: cm_info
-
-    # --- Display the applied ConfigMap keys for reference ---
-    - name: Show applied Open5GS ConfigMap data
-      debug:
-        var: cm_info.resources[0].data
-
-    # --- Show PLMN from profile ---
-    - name: Display PLMN values
-      debug:
-        msg: |
-          --- PLMN ---
-          MCC: {{ fiveg_profile_data.plmn.mcc }}
-          MNC: {{ fiveg_profile_data.plmn.mnc }}
-          TAC: {{ fiveg_profile_data.plmn.tac }}
-
-    # --- Show DNNs from profile ---
-    - name: Display DNNs
-      debug:
-        msg: |
-          --- DNNs ---
-          {% for dnn in fiveg_profile_data.dnns %}
-          Name: {{ dnn.name }}
-          PDU Type: {{ dnn.pdu_type }}
-          {% endfor %}
-
-    # --- Show Network Slices from profile ---
-    - name: Display Slices
-      debug:
-        msg: |
-          --- Slices ---
-          {% for slice in fiveg_profile_data.slices %}
-          Slice Name: {{ slice.name }}
-            DNN: {{ slice.dnn }}
-            SST: {{ slice.sst }}
-            SD: {{ slice.sd }}
-            QoS:
-              5QI: {{ slice.qos.five_qi }}
-              ARP:
-                Priority Level: {{ slice.qos.arp.priority_level }}
-                Preemption Capability: {{ slice.qos.arp.preempt_cap }}
-                Preemption Vulnerability: {{ slice.qos.arp.preempt_vuln }}
-              Priority Level: {{ slice.qos.priority_level }}
-            Bandwidth:
-              Uplink: {{ slice.bandwidth.uplink }}
-              Downlink: {{ slice.bandwidth.downlink }}
-            IP Prefix: {{ slice.ip_prefix }}
-          {% endfor %}
-
-    # --- Show Security keys from profile ---
-    - name: Display Security
-      debug:
-        msg: |
-          --- Security ---
-          Full Key: {{ fiveg_profile_data.security.full_key }}
-          OPC: {{ fiveg_profile_data.security.opc }}
-
-    # --- Get Open5GS core pods ---
-    - name: Get Open5GS core pods
+    - name: Get SMF pod
       kubernetes.core.k8s_info:
         kind: Pod
         namespace: "{{ open5gs_ns }}"
         label_selectors:
-          - "nf in (amf, smf, upf)"
-      register: core_pods
+          - "nf=smf"
+      register: smf_pods
 
-    - name: Show core pod names
-      debug:
-        var: core_pods.resources | map(attribute='metadata.name') | list
+    - name: Select first SMF pod
+      set_fact:
+        smf_pod: "{{ smf_pods.resources[0].metadata.name }}"
 
-    # --- Define mapping NF → config file ---
-    - set_fact:
-        nf_config_files:
-          amf: amf.yaml
-          smf: smf.yaml
-          upf: upf.yaml
-
-    # --- Display config inside each pod ---
-    - name: Show configuration files inside core pods
+    - name: Read SMF configuration
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
-        pod: "{{ item.metadata.name }}"
-        command: cat /open5gs/install/etc/open5gs/{{ nf_config_files[item.metadata.labels.nf] }}
-      loop: "{{ core_pods.resources }}"
-      loop_control:
-        label: "{{ item.metadata.name }}"
-      register: pod_configs
-      when: core_pods.resources | length > 0
+        pod: "{{ smf_pod }}"
+        command: cat /open5gs/install/etc/open5gs/smf.yaml
+      register: smf_raw
 
-    - name: Display core pod configurations clearly
+    - name: Parse SMF YAML
+      set_fact:
+        smf_cfg: "{{ smf_raw.stdout | from_yaml }}"
+
+    - name: Display slice verification (GREEN / RED)
       debug:
         msg: |
-          --- Config for pod {{ item.item.metadata.name }} ---
-          {{ item.stdout }}
-      loop: "{{ pod_configs.results }}"
+          {% for exp in fiveg.slices %}
+          {% set match = (
+               smf_cfg.smf.slice
+               | selectattr('sst', 'equalto', exp.sst | int)
+               | selectattr('sd', 'equalto', (exp.sd if exp.sd != 'EMPTY' else omit))
+               | selectattr('dnn', 'equalto', exp.dnn)
+               | list
+          ) %}
+          {% if match | length > 0 %}
+          ✅ SLICE OK
+          {% else %}
+          ❌ SLICE KO
+          {% endif %}
+          slice:
+            name: {{ exp.name }}
+            sst: {{ exp.sst }}
+            sd: {{ exp.sd }}
+            dnn: {{ exp.dnn }}
+            qos:
+              five_qi: {{ exp.qos.five_qi }}
+              priority_level: {{ exp.qos.priority_level }}
 
+          {% endfor %}
+
+  when: mtnt_show_open5gs_config | default(false)
