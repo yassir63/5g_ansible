@@ -586,7 +586,7 @@
           - "nf=smf"
       register: smf_pods
 
-    - name: Read AMF configuration from pod
+    - name: Read AMF configuration
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
         pod: "{{ amf_pods.resources[0].metadata.name }}"
@@ -594,7 +594,7 @@
       register: amf_raw
       when: amf_pods.resources | length > 0
 
-    - name: Read SMF configuration from pod
+    - name: Read SMF configuration
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
         pod: "{{ smf_pods.resources[0].metadata.name }}"
@@ -612,49 +612,28 @@
         smf_cfg: "{{ smf_raw.stdout | from_yaml }}"
       when: smf_raw is defined
 
-    - name: Build check output for file
+    - name: Build 5G profile check output
       set_fact:
         open5gs_check_output: |
-          🔹 AMF profile expected
-          plmn:
-            mcc: {{ fiveg.plmn.mcc }}
-            mnc: {{ fiveg.plmn.mnc }}
-          tac: {{ fiveg.plmn.tac }}
+          {% set output = [] %}
 
-          🔹 AMF pod values
-          plmn:
+          {% if amf_cfg is defined %}
+          {% set plmn_ok = (amf_cfg.amf.guami[0].plmn_id.mcc == fiveg.plmn.mcc) and (amf_cfg.amf.guami[0].plmn_id.mnc == fiveg.plmn.mnc) %}
+          {% set tac_ok = (amf_cfg.amf.tai[0].tac | string == fiveg.plmn.tac | string) %}
+          {% if plmn_ok and tac_ok %}
+          {% set _ = output.append("🟢 AMF PLMN/TAC OK") %}
+          {% else %}
+          {% set _ = output.append("🔴 AMF PLMN/TAC KO") %}
+          {% endif %}
+          PLMN:
             mcc: {{ amf_cfg.amf.guami[0].plmn_id.mcc }}
             mnc: {{ amf_cfg.amf.guami[0].plmn_id.mnc }}
-          tac: {{ amf_cfg.amf.tai[0].tac }}
+          TAC: {{ amf_cfg.amf.tai[0].tac }}
 
-          {% if (amf_cfg.amf.guami[0].plmn_id.mcc == fiveg.plmn.mcc)
-                and (amf_cfg.amf.guami[0].plmn_id.mnc == fiveg.plmn.mnc)
-                and (amf_cfg.amf.tai[0].tac | string == fiveg.plmn.tac | string) %}
-          🟢 AMF PLMN/TAC OK
-          {% else %}
-          🔴 AMF PLMN/TAC KO
           {% endif %}
 
-
+          {% if smf_cfg is defined %}
           {% for exp in fiveg.slices %}
-          🔹 Expected slice
-          slice:
-            name: {{ exp.name }}
-            dnn: {{ exp.dnn }}
-            sst: {{ exp.sst }}
-            sd: {{ exp.sd }}
-            qos:
-              five_qi: {{ exp.qos.five_qi }}
-              priority_level: {{ exp.qos.priority_level }}
-              arp:
-                priority_level: {{ exp.qos.arp.priority_level }}
-                preempt_cap: {{ exp.qos.arp.preempt_cap }}
-                preempt_vuln: {{ exp.qos.arp.preempt_vuln }}
-            bandwidth:
-              uplink: {{ exp.bandwidth.uplink }}
-              downlink: {{ exp.bandwidth.downlink }}
-            ip_prefix: {{ exp.ip_prefix }}
-
           {% set found = false %}
           {% for s in smf_cfg.smf.plmn_support | default([]) %}
             {% for snssai in s.s_nssai | default([]) %}
@@ -665,12 +644,10 @@
               {% endif %}
             {% endfor %}
           {% endfor %}
-
-          🔹 Pod slice status
           {% if found %}
-          🟢 SLICE OK
+          {% set _ = output.append("🟢 SLICE OK") %}
           {% else %}
-          🔴 SLICE KO
+          {% set _ = output.append("🔴 SLICE KO") %}
           {% endif %}
           slice:
             name: {{ exp.name }}
@@ -690,6 +667,8 @@
             ip_prefix: {{ exp.ip_prefix }}
 
           {% endfor %}
+          {{ output | join("\n\n") }}
+      when: amf_cfg is defined or smf_cfg is defined
 
     - name: Write 5G profile check to file
       copy:
@@ -698,13 +677,11 @@
         owner: "{{ ansible_user_id }}"
         mode: '0644'
 
-    - name: Display 5G profile check with real line breaks
+    - name: Display 5G profile check directly from file
       ansible.builtin.shell: cat {{ ansible_env.HOME }}/open5gs_profile_check.txt
-      register: profile_file
+      args:
+        executable: /bin/bash
       changed_when: false
-
-    - name: Show 5G profile check
-      ansible.builtin.shell: cat {{ ansible_env.HOME }}/open5gs_profile_check.txt
-      changed_when: false
+      register: _dummy
 
   when: show_open5gs_config | default(false)
