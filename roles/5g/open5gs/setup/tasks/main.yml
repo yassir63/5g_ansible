@@ -570,7 +570,7 @@
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
         name: fiveg
 
-    - name: Get SMF pod
+    - name: Get SMF pods
       kubernetes.core.k8s_info:
         kind: Pod
         namespace: "{{ open5gs_ns }}"
@@ -578,46 +578,59 @@
           - "nf=smf"
       register: smf_pods
 
-    - name: Select first SMF pod
+    - name: Select running SMF pod
       set_fact:
-        smf_pod: "{{ smf_pods.resources[0].metadata.name }}"
+        smf_pod: >-
+          {{
+            smf_pods.resources
+            | selectattr('status.phase', 'equalto', 'Running')
+            | map(attribute='metadata.name')
+            | first
+          }}
+      when: smf_pods.resources | length > 0
 
-    - name: Read SMF configuration
+    - name: Read SMF configuration file
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
         pod: "{{ smf_pod }}"
         command: cat /open5gs/install/etc/open5gs/smf.yaml
       register: smf_raw
+      when: smf_pod is defined
 
     - name: Parse SMF YAML
       set_fact:
         smf_cfg: "{{ smf_raw.stdout | from_yaml }}"
+      when: smf_raw is defined
 
-    - name: Display slice verification (GREEN / RED)
-      debug:
+    - name: Verify slices applied in SMF (GREEN / RED)
+      ansible.builtin.debug:
         msg: |
           {% for exp in fiveg.slices %}
-          {% set match = (
-               smf_cfg.smf.slice
-               | selectattr('sst', 'equalto', exp.sst | int)
-               | selectattr('sd', 'equalto', (exp.sd if exp.sd != 'EMPTY' else omit))
-               | selectattr('dnn', 'equalto', exp.dnn)
-               | list
-          ) %}
-          {% if match | length > 0 %}
-          ✅ SLICE OK
+          {% set found = false %}
+          {% for s in smf_cfg.smf.slice | default([]) %}
+          {% if
+               (s.sst | string == exp.sst | string)
+               and ((exp.sd == 'EMPTY' and s.sd is not defined) or (s.sd | default('') == exp.sd))
+               and (s.dnn == exp.dnn)
+          %}
+          {% set found = true %}
+          {% endif %}
+          {% endfor %}
+          {% if found %}
+          🟢 SLICE OK
           {% else %}
-          ❌ SLICE KO
+          🔴 SLICE KO
           {% endif %}
           slice:
             name: {{ exp.name }}
+            dnn: {{ exp.dnn }}
             sst: {{ exp.sst }}
             sd: {{ exp.sd }}
-            dnn: {{ exp.dnn }}
             qos:
               five_qi: {{ exp.qos.five_qi }}
               priority_level: {{ exp.qos.priority_level }}
 
           {% endfor %}
+      when: smf_cfg is defined
 
   when: mtnt_show_open5gs_config | default(false)
