@@ -617,6 +617,7 @@
         open5gs_check_output: |
           {% set output = [] %}
 
+          {# AMF check #}
           {% if amf_cfg is defined %}
           {% set plmn_ok = (amf_cfg.amf.guami[0].plmn_id.mcc == fiveg.plmn.mcc) and
                              (amf_cfg.amf.guami[0].plmn_id.mnc == fiveg.plmn.mnc) %}
@@ -630,9 +631,9 @@
             mcc: {{ amf_cfg.amf.guami[0].plmn_id.mcc }}
             mnc: {{ amf_cfg.amf.guami[0].plmn_id.mnc }}
           TAC: {{ amf_cfg.amf.tai[0].tac }}
-
           {% endif %}
 
+          {# SMF slices check #}
           {% if smf_cfg is defined %}
           {% for exp in fiveg.slices %}
           {% set found = false %}
@@ -666,8 +667,9 @@
               uplink: {{ exp.bandwidth.uplink }}
               downlink: {{ exp.bandwidth.downlink }}
             ip_prefix: {{ exp.ip_prefix }}
-
           {% endfor %}
+          {% endif %}
+
           {{ output | join("\n\n") }}
 
     - name: Write 5G profile check to file
