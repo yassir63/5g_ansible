@@ -57,92 +57,164 @@
     name: "{{ open5gs_ns }}"
     state: present
 
-- name: Apply MongoDB manifests
-  kubernetes.core.k8s:
-    state: present
-    src: "{{ repo_dest }}/mongodb"
-    namespace: "{{ open5gs_ns }}"
 
-- name: Wait for MongoDB pod to be ready
+- name: Apply MongoDB with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ open5gs_ns }}
+
+- name: Wait for MongoDB pod to be Ready
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ open5gs_ns }}"
     label_selectors:
-      - "app.kubernetes.io/name=mongodb"
+      - app.kubernetes.io/name=mongodb
   register: mongo_pods
-  until: mongo_pods.resources | length > 0 and
-         (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
+  until: >
+    mongo_pods.resources | length > 0 and
+    (mongo_pods.resources[0].status.containerStatuses is defined) and
+    (mongo_pods.resources[0].status.containerStatuses | length > 0) and
+    (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
 
-- name: Apply 5G network NADs
-  kubernetes.core.k8s:
+# === NETWORK ATTACHMENT DEFINITIONS (NADs) ===
+- name: Apply NADs with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
+
+- name: Wait for kube-apiserver to be responsive
+  shell: kubectl get --raw='/healthz'
+  register: api_health
+  retries: 30
+  delay: 5
+  until: api_health.rc == 0
+  changed_when: false
+
+- name: Wait for CRDs registration to be ready
+  shell: kubectl get crds
+  register: crd_list
+  retries: 20
+  delay: 5
+  until: "'network-attachment-definitions.k8s.cni.cncf.io' in crd_list.stdout"
+  changed_when: false
+
+- name: Install jq (required for NAD patching)
+  ansible.builtin.apt:
+    name: jq
     state: present
-    src: "{{ repo_dest }}/networks5g"
+    update_cache: yes
+  become: yes
+
+- name: Wait for Multus CRD to be registered
+  ansible.builtin.shell: kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
+  register: multus_crd_check
+  retries: 60
+  delay: 5
+  until: multus_crd_check.rc == 0
+  changed_when: false
+  failed_when: false
+
+- name: Patch NADs to use unique interface names (net1/net2/net3)
+  shell: |
+    set -euo pipefail
+    for nad in n2network n3network n4network; do
+      case "$nad" in
+        n2network) ifname=net1 ;;
+        n3network) ifname=net2 ;;
+        n4network) ifname=net3 ;;
+        *) continue ;;
+      esac
+      if ! kubectl get networkattachmentdefinition "$nad" -n open5gs &>/dev/null; then
+        echo "Skipping $nad (not yet created)"
+        continue
+      fi
+      config=$(kubectl get networkattachmentdefinition "$nad" -n open5gs -o jsonpath='{.spec.config}')
+      newconfig=$(echo "$config" | jq --arg n "$ifname" '.ifname = $n')
+      kubectl patch networkattachmentdefinition "$nad" -n open5gs --type=merge -p "{\"spec\":{\"config\":$newconfig}}"
+    done
+  register: patch_nad
+  failed_when: false
+  changed_when: "'Skipping' not in patch_nad.stdout"
+
+- name: Verify required NADs exist
+  kubernetes.core.k8s_info:
+    kind: NetworkAttachmentDefinition
     namespace: "{{ open5gs_ns }}"
+  register: nad_info
 
-- name: Check required NADs exist
-  vars:
-    required_nads:
-      - n2network
-      - n3network
-      - n4network
-  block:
-    - name: Ensure NAD exists
-      shell: |
-        kubectl get net-attach-def -n {{ open5gs_ns }} | grep -q "{{ item }}"
-      loop: "{{ required_nads }}"
-      loop_control:
-        label: "{{ item }}"
-      register: nad_check
-      failed_when: nad_check.rc != 0
+- name: Fail if a required NAD is missing
+  ansible.builtin.fail:
+    msg: "NAD {{ item }} is missing in {{ open5gs_ns }}"
+  when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
+  loop: "{{ nad_list }}"
 
-- name: Deploy Open5GS core NFs
-  kubernetes.core.k8s:
-    state: present
-    src: "{{ repo_dest }}/{{ deployment_option }}"
-    namespace: "{{ open5gs_ns }}"
+- name: Apply Open5GS NFs with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
 
-- name: Wait for Open5GS NF pods to be ready
+- name: Wait for Open5GS Core NFs pods Ready
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ open5gs_ns }}"
     label_selectors:
       - "nf={{ item }}"
-  register: nf_pods
-  until: nf_pods.resources | length > 0 and
-         (nf_pods.resources[0].status.containerStatuses[0].ready | default(false))
+  register: nf_pod
+  until: >
+    nf_pod.resources | length > 0 and
+    (nf_pod.resources[0].status.containerStatuses is defined) and
+    (nf_pod.resources[0].status.containerStatuses | length > 0) and
+    (nf_pod.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
   loop: "{{ nfs }}"
   loop_control:
     label: "{{ item }}"
-
-- name: Deploy Open5GS Web UI
-  kubernetes.core.k8s:
+- name: Install python3-venv (required for venv)
+  ansible.builtin.apt:
+    name: python3-venv
     state: present
-    src: "{{ repo_dest }}/open5gs-webui"
-    namespace: "{{ open5gs_ns }}"
+  become: yes
 
-- name: Wait for WebUI pod ready
+- name: Create Python virtual environment for Open5GS admin scripts
+  ansible.builtin.command:
+    cmd: python3 -m venv "{{ repo_dest }}/venv"
+    creates: "{{ repo_dest }}/venv/bin/activate"
+  become: yes
+
+- name: Upgrade pip in virtualenv
+  ansible.builtin.pip:
+    name: pip
+    state: latest
+    executable: "{{ repo_dest }}/venv/bin/pip"
+  become: yes
+
+- name: Install Python requirements for admin script
+  ansible.builtin.pip:
+    requirements: "{{ repo_dest }}/requirements.txt"
+    executable: "{{ repo_dest }}/venv/bin/pip"
+  become: yes
+
+- name: Deploy Open5GS Web UI with Kustomize
+  ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/open5gs-webui" -n {{ open5gs_ns }}
+
+- name: Wait for WebUI pod Ready
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ open5gs_ns }}"
     label_selectors:
       - "nf=webui"
   register: webui_pod
-  until: webui_pod.resources | length > 0 and
-         (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
+  until: >
+    webui_pod.resources | length > 0 and
+    (webui_pod.resources[0].status.containerStatuses is defined) and
+    (webui_pod.resources[0].status.containerStatuses | length > 0) and
+    (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
 
-- name: Setup MongoDB admin account
+- name: Run add-admin-account.py
   ansible.builtin.command: >
-    {{ repo_dest }}/venv/bin/python3 {{ repo_dest }}/mongo-tools/add-admin-account.py
+    {{ repo_dest }}/venv/bin/python mongo-tools/add-admin-account.py
   args:
     chdir: "{{ repo_dest }}"
 
-# --- Add subscribers ---
 - name: Add subscribers
   ansible.builtin.shell: |
     {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
@@ -160,7 +232,7 @@
   register: check_out
   changed_when: false
 
-- name: Show added subscribers
+- name: Show Added subscribers
   debug:
     var: check_out.stdout
 
