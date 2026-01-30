@@ -73,13 +73,16 @@
 
 - name: Generate profile check file
   ansible.builtin.copy:
+    dest: /root/open5gs_profile_check.txt
+    owner: root
+    mode: '0644'
     content: |
       PLMN:
         mcc: {{ fiveg.plmn.mcc }}
         mnc: {{ fiveg.plmn.mnc }}
         tac: {{ fiveg.plmn.tac }}
 
-{% for s in fiveg.slices %}
+      {% for s in fiveg.slices %}
       SLICE {{ s.name }}:
         DNN: {{ s.dnn }}
         SST: {{ s.sst }}
@@ -95,8 +98,4 @@
           uplink: {{ s.bandwidth.uplink }}
           downlink: {{ s.bandwidth.downlink }}
         IP Prefix: {{ s.ip_prefix }}
-{% endfor %}
-    dest: /root/open5gs_profile_check.txt
-    owner: root
-    mode: '0644'
-
+      {% endfor %}
