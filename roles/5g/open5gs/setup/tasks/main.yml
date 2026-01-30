@@ -561,14 +561,22 @@
   debug:
     var: check_out.stdout
 
-# --- Optional block: Verify applied 5G slices in Open5GS (SMF) ---
-- name: Optional block to verify applied 5G slices in Open5GS
+# --- Optional block: Verify 5G scenario in Open5GS (AMF & SMF) ---
+- name: Verify 5G scenario applied in Open5GS
   block:
 
     - name: Load 5G scenario profile
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
         name: fiveg
+
+    - name: Get AMF pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ open5gs_ns }}"
+        label_selectors:
+          - "nf=amf"
+      register: amf_pods
 
     - name: Get SMF pods
       kubernetes.core.k8s_info:
@@ -578,43 +586,63 @@
           - "nf=smf"
       register: smf_pods
 
-    - name: Select running SMF pod
-      set_fact:
-        smf_pod: >-
-          {{
-            smf_pods.resources
-            | selectattr('status.phase', 'equalto', 'Running')
-            | map(attribute='metadata.name')
-            | first
-          }}
-      when: smf_pods.resources | length > 0
-
-    - name: Read SMF configuration file
+    - name: Read AMF configuration
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
-        pod: "{{ smf_pod }}"
+        pod: "{{ amf_pods.resources[0].metadata.name }}"
+        command: cat /open5gs/install/etc/open5gs/amf.yaml
+      register: amf_raw
+      when: amf_pods.resources | length > 0
+
+    - name: Read SMF configuration
+      kubernetes.core.k8s_exec:
+        namespace: "{{ open5gs_ns }}"
+        pod: "{{ smf_pods.resources[0].metadata.name }}"
         command: cat /open5gs/install/etc/open5gs/smf.yaml
       register: smf_raw
-      when: smf_pod is defined
+      when: smf_pods.resources | length > 0
+
+    - name: Parse AMF YAML
+      set_fact:
+        amf_cfg: "{{ amf_raw.stdout | from_yaml }}"
+      when: amf_raw is defined
 
     - name: Parse SMF YAML
       set_fact:
         smf_cfg: "{{ smf_raw.stdout | from_yaml }}"
       when: smf_raw is defined
 
-    - name: Verify slices applied in SMF (GREEN / RED)
+    - name: Verify AMF PLMN/TAC
+      ansible.builtin.debug:
+        msg: |
+          {% set plmn_ok = (amf_cfg.amf.guami[0].plmn_id.mcc == fiveg.plmn.mcc) and
+                             (amf_cfg.amf.guami[0].plmn_id.mnc == fiveg.plmn.mnc) %}
+          {% set tac_ok = (amf_cfg.amf.tai[0].tac | string == fiveg.plmn.tac | string) %}
+          {% if plmn_ok and tac_ok %}
+          🟢 AMF PLMN/TAC OK
+          {% else %}
+          🔴 AMF PLMN/TAC KO
+          {% endif %}
+          plmn:
+            mcc: {{ amf_cfg.amf.guami[0].plmn_id.mcc }}
+            mnc: {{ amf_cfg.amf.guami[0].plmn_id.mnc }}
+          tac: {{ amf_cfg.amf.tai[0].tac }}
+
+      when: amf_cfg is defined
+
+    - name: Verify slices applied in SMF
       ansible.builtin.debug:
         msg: |
           {% for exp in fiveg.slices %}
           {% set found = false %}
-          {% for s in smf_cfg.smf.slice | default([]) %}
-          {% if
-               (s.sst | string == exp.sst | string)
-               and ((exp.sd == 'EMPTY' and s.sd is not defined) or (s.sd | default('') == exp.sd))
-               and (s.dnn == exp.dnn)
-          %}
-          {% set found = true %}
-          {% endif %}
+          {% for s in smf_cfg.smf.plmn_support | default([]) %}
+            {% for snssai in s.s_nssai | default([]) %}
+              {% if snssai.sst | string == exp.sst | string %}
+                {% if (exp.sd == "EMPTY" and snssai.sd is not defined) or (snssai.sd | default('') == exp.sd) %}
+                  {% set found = true %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
           {% endfor %}
           {% if found %}
           🟢 SLICE OK
@@ -633,4 +661,4 @@
           {% endfor %}
       when: smf_cfg is defined
 
-  when: show_open5gs_config | default(false)
+  when: mtnt_show_open5gs_config | default(false)
