@@ -562,9 +562,10 @@
     var: check_out.stdout
 
 # --- Optional block to verify Open5GS core configuration ---
-- name: Optional block to verify Open5GS core configuration
+- name: Optional block to verify Open5GS core configuration (Enhanced)
   block:
 
+    # --- Lire le ConfigMap appliqué dans Kubernetes ---
     - name: Get applied Open5GS ConfigMap
       kubernetes.core.k8s_info:
         kind: ConfigMap
@@ -572,30 +573,42 @@
         name: open5gs-config
       register: cm_info
 
-    - name: Display applied Open5GS ConfigMap
+    - name: Display applied ConfigMap keys
       debug:
-        var: cm_info.resources[0].data
+        msg: "Keys in ConfigMap: {{ cm_info.resources[0].data.keys() | list }}"
 
+    # --- Charger le YAML source utilisé pour le déploiement ---
     - name: Load local 5G profile YAML
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
         name: fiveg_profile_data
 
-    - name: Compare applied ConfigMap with source YAML
-      ansible.builtin.debug:
+    - name: Display 5G profile values
+      debug:
         msg: |
-          {% set diffs = [] %}
-          {% for key, val in fiveg_profile_data.items() %}
-            {% if cm_info.resources[0].data[key] is defined and cm_info.resources[0].data[key] != val|string %}
-              {% set _ = diffs.append(key) %}
-            {% endif %}
-          {% endfor %}
-          {% if diffs|length > 0 %}
-            Differences detected in keys: {{ diffs }}
-          {% else %}
-            Applied ConfigMap matches source YAML
-          {% endif %}
+          --- PLMN ---
+          MCC: {{ fiveg_profile_data.plmn.mcc }}
+          MNC: {{ fiveg_profile_data.plmn.mnc }}
+          TAC: {{ fiveg_profile_data.tac }}
 
+          --- DNNs ---
+          {% for dnn in fiveg_profile_data.dnns %}
+          - {{ dnn.name }} ({{ dnn.pdu_type }})
+          {% endfor %}
+
+          --- Slices ---
+          {% for slice in fiveg_profile_data.slices %}
+          - {{ slice.name }}: DNN={{ slice.dnn }}, SST={{ slice.sst }}, SD={{ slice.sd }}
+            QoS: 5QI={{ slice.qos.five_qi }}, ARP={{ slice.qos.arp | to_nice_json }}
+            Bandwidth: UL={{ slice.bandwidth.uplink }}, DL={{ slice.bandwidth.downlink }}
+            IP Prefix: {{ slice.ip_prefix }}
+          {% endfor %}
+
+          --- Security ---
+          Full Key: {{ fiveg_profile_data.security.full_key }}
+          OPC: {{ fiveg_profile_data.security.opc }}
+
+    # --- Lister les pods du core ---
     - name: Get Open5GS core pods
       kubernetes.core.k8s_info:
         kind: Pod
@@ -608,13 +621,15 @@
       debug:
         var: core_pods.resources | map(attribute='metadata.name') | list
 
+    # --- Définir mapping NF → fichier de config ---
     - set_fact:
         nf_config_files:
           amf: amf.yaml
           smf: smf.yaml
           upf: upf.yaml
 
-    - name: Show configuration files inside core pods
+    # --- Lire les fichiers de config dans chaque pod ---
+    - name: Read configuration files inside core pods
       kubernetes.core.k8s_exec:
         namespace: "{{ open5gs_ns }}"
         pod: "{{ item.metadata.name }}"
@@ -625,9 +640,37 @@
       register: pod_configs
       when: core_pods.resources | length > 0
 
+    # --- Affichage clair et lisible ---
     - name: Display core pod configurations
       debug:
-        var: pod_configs.results | map(attribute='stdout') | list
+        msg: |
+          {% for res in pod_configs.results %}
+          ====================================================
+          Pod: {{ res.invocation.module_args.pod }} ({{ res.invocation.module_args.namespace }})
+          ====================================================
+          {{ res.stdout }}
+          {% endfor %}
 
-  # --- Enable the block with -e ansible option ---
+    # --- Comparer ConfigMap vs YAML source avec différence ---
+    - name: Compare applied ConfigMap with source YAML
+      vars:
+        diffs: []
+      block:
+        - name: Check for differences
+          set_fact:
+            diffs: >-
+              {{ diffs + [key] if cm_info.resources[0].data[key] is defined and cm_info.resources[0].data[key] != (fiveg_profile_data[key]|string) else diffs }}
+          loop: "{{ fiveg_profile_data.keys() }}"
+          loop_control:
+            loop_var: key
+
+        - name: Display differences
+          debug:
+            msg: >-
+              {% if diffs|length > 0 %}
+              ⚠ Differences detected in keys: {{ diffs }}
+              {% else %}
+              ✅ Applied ConfigMap matches source YAML
+              {% endif %}
+
   when: show_open5gs_config | default(false)
