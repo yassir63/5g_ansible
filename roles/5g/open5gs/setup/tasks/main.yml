@@ -633,4 +633,4 @@
           {% endfor %}
       when: smf_cfg is defined
 
-  when: mtnt_show_open5gs_config | default(false)
+  when: show_open5gs_config | default(false)
