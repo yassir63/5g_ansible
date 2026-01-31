@@ -113,18 +113,6 @@
     - role: setup/sriov_nnp_create
       when: fhi72 and f3_ran
 
-- name: Configure GRE Tunnel From Core Node to RAN Node
-  hosts: core_node
-  roles:
-    - role: setup/gre_tunnel
-      when: bridge_enabled
-
-- name: Configure GRE Tunnel From RAN Node to Core Node
-  hosts: ran_node
-  roles:
-    - role: setup/gre_tunnel
-      when: bridge_enabled
-
 ############################################################################
 # Move this block where you want to restart with start-at-task=RESTART_HERE"
 #
@@ -145,6 +133,17 @@
     - import_tasks: ../tasks/reload_booleans.yml
 ############################################################################
 
+- name: Configure GRE Tunnel From Core Node to RAN Node
+  hosts: core_node
+  roles:
+    - role: setup/gre_tunnel
+      when: bridge_enabled
+
+- name: Configure GRE Tunnel From RAN Node to Core Node
+  hosts: ran_node
+  roles:
+    - role: setup/gre_tunnel
+      when: bridge_enabled
 
 - name: Deploy Open5GS CN
   hosts: core_node
