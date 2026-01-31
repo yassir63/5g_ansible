@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: "{{ smf_name }}-configmap"
+  name: {{ smf_name }}-configmap
   labels:
     app: open5gs
     nf: smf
-    name: "{{ smf_name }}"
+    name: {{ smf_name }}
 data:
   smfcfg.yaml: |
     logger:
@@ -19,7 +19,7 @@ data:
       sbi:
         server:
           - dev: eth0
-            advertise: "{{ smf_name }}-nsmf"
+            advertise: {{ smf_name }}-nsmf
             port: 80
         client:
           - scp:
@@ -28,9 +28,10 @@ data:
         server:
           - dev: n4
         client:
+          upf:
 {% for slice in fiveg.slices if slice.name == smf_slice %}
-          - address: 10.10.4.{{ loop.index }}
-            dnn: {{ slice.dnn }}
+            - address: 10.10.4.{{ loop.index }}
+              dnn: {{ slice.dnn }}
 {% endfor %}
       gtpc:
         server:
@@ -57,15 +58,8 @@ data:
       info:
 {% for slice in fiveg.slices if slice.name == smf_slice %}
         - s_nssai:
-            - sst: {{ slice.sst }}
-              sd: {% if slice.sd == "EMPTY" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
+          - sst: {{ slice.sst }}
+            sd: {% if slice.sd == "EMPTY" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
           dnn:
             - {{ slice.dnn }}
-          qos:
-            five_qi: {{ slice.qos.five_qi }}
-            priority_level: {{ slice.qos.priority_level }}
-            arp:
-              priority_level: {{ slice.qos.arp.priority_level }}
-              preempt_cap: {{ slice.qos.arp.preempt_cap }}
-              preempt_vuln: {{ slice.qos.arp.preempt_vuln }}
 {% endfor %}
