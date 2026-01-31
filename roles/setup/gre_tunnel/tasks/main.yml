@@ -1,29 +1,43 @@
 ---
-
-- name: Define local and remote IPs for n3br GRE tunnel
+- name: Define GRE bridges configuration
   ansible.builtin.set_fact:
-    n3br_local_ip: >-
-      {{ '192.168.3.254/24' if inventory_hostname in groups['core_node'] else '192.168.3.253/24' }}
-    n3br_remote_ip: >-
+    gre_bridges:
+      - name: n3br
+        local_ip_core: 192.168.3.254/24
+        local_ip_ran:  192.168.3.253/24
+      - name: n4br
+        local_ip_core: 192.168.4.254/24
+        local_ip_ran:  192.168.4.253/24
+
+- name: Configure GRE tunnels for N3 and N4
+  vars:
+    local_ip: >-
+      {{ item.local_ip_core
+         if inventory_hostname in groups['core_node']
+         else item.local_ip_ran }}
+    remote_ip: >-
       {{ hostvars[groups['ran_node'][0]].ip
-         if inventory_hostname in groups['core_node'] 
+         if inventory_hostname in groups['core_node']
          else hostvars[groups['core_node'][0]].ip }}
+  loop: "{{ gre_bridges }}"
+  block:
 
-- name: Clean up existing GRE tunnel if present
-  ansible.builtin.shell: ovs-vsctl --if-exists del-port n3br gre0
-  ignore_errors: yes
+    - name: Remove existing GRE tunnel if present ({{ item.name }})
+      ansible.builtin.shell: >
+        ovs-vsctl --if-exists del-port {{ item.name }} gre0
+      ignore_errors: yes
 
-- name: Create GRE Tunnel Between Core and RAN Node
-  ansible.builtin.shell: >
-    ovs-vsctl add-port n3br gre0 -- set interface gre0 type=gre options:remote_ip={{ n3br_remote_ip }}
-  ignore_errors: true
+    - name: Create GRE tunnel on {{ item.name }}
+      ansible.builtin.shell: >
+        ovs-vsctl add-port {{ item.name }} gre0
+        -- set interface gre0 type=gre options:remote_ip={{ remote_ip }}
+      ignore_errors: yes
 
-- name: Bring n3br bridge up and assign local IP
-  ansible.builtin.shell: |
-    ip addr flush dev n3br || true
-    ip addr add {{ n3br_local_ip }} dev n3br
-    ip link set n3br up
-
+    - name: Configure bridge {{ item.name }}
+      ansible.builtin.shell: |
+        ip addr flush dev {{ item.name }} || true
+        ip addr add {{ local_ip }} dev {{ item.name }}
+        ip link set {{ item.name }} up
 
 #- name: Pause to debug
 #  ansible.builtin.pause:
