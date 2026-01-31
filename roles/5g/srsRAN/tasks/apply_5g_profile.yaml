@@ -51,20 +51,26 @@
   changed_when: true
   ignore_errors: true
 
-- name: Map slices minimal pour gNB
+- name: Initialize gnb_slices
   set_fact:
-    gnb_slices: >-
-      {{
-        gnb_slices | default([]) +
-        [
-          (
-            {'sst': item.sst} | combine({'sd': item.sd} if item.sd is defined and item.sd != 'EMPTY' else {})
-          )
-        ]
-      }}
+    gnb_slices: []
+
+- name: Map slices minimal pour gNB (srsRAN format)
+  set_fact:
+    gnb_slices: "{{ gnb_slices + [ slice_entry ] }}"
   loop: "{{ fiveg.slices }}"
   loop_control:
     loop_var: item
+  vars:
+    slice_entry: >-
+      {{
+        {'sst': (item.sst | int)}
+        | combine(
+            {'sd': item.sd}
+            if (item.sd is defined and item.sd != 'EMPTY')
+            else {}
+          )
+      }}
 
 - name: Update PLMN, TAC and slicing in values file
   ansible.builtin.shell: >
