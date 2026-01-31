@@ -49,7 +49,6 @@
 
 - name: Compute POS image command
   set_fact:
-  not no_boot | default(false)
     pos_image_cmd: >-
       {% if is_ran and is_f3 and fhi72 %}
         {% if ran_boot_mode == 'disk' %}
@@ -60,10 +59,10 @@
       {% else %}
         pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
+  when: not no_boot | default(false)
 
 - name: Select POS boot parameters
   set_fact:
-  not no_boot | default(false)
     boot_params: >-
       {% if is_ran and is_f3 and fhi72 %}
         {{ boot_parameters_rt_f3 }}
@@ -72,6 +71,7 @@
       {% else %}
         {{ boot_parameters }}
       {% endif %}
+  when: not no_boot | default(false)
 
 - name: Flash POS image
   shell: "{{ pos_image_cmd }}"
@@ -83,7 +83,6 @@
 
 - name: DEBUG Log POS configuration pre-reset
   tags: pos_debug
-  when: (not (no_boot | default(false))) and (pos_debug_enabled | default(false))
   block:
     - ansible.builtin.shell: |
         # First clean up file
@@ -95,6 +94,7 @@
         echo "  RRU Type      : {{ rru }}" >> ./pos_pre_reset_{{ node }}.log
         echo "  Boot Params   : {{ boot_params }}" >> ./pos_pre_reset_{{ node }}.log
         echo "--------------------------------------------------------" >> ./pos_pre_reset_{{ node }}.log
+  when: (not (no_boot | default(false))) and (pos_debug_enabled | default(false))
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
