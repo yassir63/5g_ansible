@@ -79,7 +79,8 @@
         amf_slices | default([]) +
         [
           (
-            {'sst': item.sst} | combine({'sd': item.sd} if item.sd is defined and item.sd != 'EMPTY' else {})
+            {'sst': item.sst | int}
+            | combine({'sd': item.sd} if item.sd is defined and item.sd != 'EMPTY' else {})
           )
         ]
       }}
