@@ -26,12 +26,19 @@
   debug:
     var: k9s_check.stdout
 
-# define k kubectl alias
-- name: Ensure kubectl alias exists for all
-  lineinfile:
-    path: /etc/bash.bashrc
+- name: Ensure kubectl alias k exists for root
+  ansible.builtin.lineinfile:
+    path: /root/.bashrc
     regexp: '^alias k='
     line: "alias k=kubectl"
+    state: present
+  become: true
+
+- name: Ensure kubectl namespace alias kns exists for root
+  ansible.builtin.lineinfile:
+    path: /root/.bashrc
+    regexp: '^alias kns='
+    line: "alias kns='kubectl config set-context --current --namespace='"
     state: present
   become: true
 
