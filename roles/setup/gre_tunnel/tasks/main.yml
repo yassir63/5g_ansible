@@ -10,34 +10,10 @@
         local_ip_ran:  192.168.4.253/24
 
 - name: Configure GRE tunnels for N3 and N4
-  vars:
-    local_ip: >-
-      {{ item.local_ip_core
-         if inventory_hostname in groups['core_node']
-         else item.local_ip_ran }}
-    remote_ip: >-
-      {{ hostvars[groups['ran_node'][0]].ip
-         if inventory_hostname in groups['core_node']
-         else hostvars[groups['core_node'][0]].ip }}
+  ansible.builtin.include_tasks: gre_loop.yml
   loop: "{{ gre_bridges }}"
-  block:
-
-    - name: Remove existing GRE tunnel if present ({{ item.name }})
-      ansible.builtin.shell: >
-        ovs-vsctl --if-exists del-port {{ item.name }} gre0
-      ignore_errors: yes
-
-    - name: Create GRE tunnel on {{ item.name }}
-      ansible.builtin.shell: >
-        ovs-vsctl add-port {{ item.name }} gre0
-        -- set interface gre0 type=gre options:remote_ip={{ remote_ip }}
-      ignore_errors: yes
-
-    - name: Configure bridge {{ item.name }}
-      ansible.builtin.shell: |
-        ip addr flush dev {{ item.name }} || true
-        ip addr add {{ local_ip }} dev {{ item.name }}
-        ip link set {{ item.name }} up
+  loop_control:
+    loop_var: item
 
 #- name: Pause to debug
 #  ansible.builtin.pause:

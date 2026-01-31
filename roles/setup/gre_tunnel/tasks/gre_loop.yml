@@ -1,0 +1,27 @@
+- name: Set local and remote IPs for {{ item.name }}
+  ansible.builtin.set_fact:
+    local_ip: >-
+      {{ item.local_ip_core
+         if inventory_hostname in groups['core_node']
+         else item.local_ip_ran }}
+    remote_ip: >-
+      {{ hostvars[groups['ran_node'][0]].ip
+         if inventory_hostname in groups['core_node']
+         else hostvars[groups['core_node'][0]].ip }}
+
+- name: Remove existing GRE tunnel if present ({{ item.name }})
+  ansible.builtin.shell: >
+    ovs-vsctl --if-exists del-port {{ item.name }} gre0
+  ignore_errors: yes
+
+- name: Create GRE tunnel on {{ item.name }}
+  ansible.builtin.shell: >
+    ovs-vsctl add-port {{ item.name }} gre0
+    -- set interface gre0 type=gre options:remote_ip={{ remote_ip }}
+  ignore_errors: yes
+
+- name: Configure bridge {{ item.name }}
+  ansible.builtin.shell: |
+    ip addr flush dev {{ item.name }} || true
+    ip addr add {{ local_ip }} dev {{ item.name }}
+    ip link set {{ item.name }} up
