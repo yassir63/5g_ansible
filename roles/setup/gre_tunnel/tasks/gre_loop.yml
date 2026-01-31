@@ -11,13 +11,13 @@
 
 - name: Remove existing GRE tunnel if present ({{ item.name }})
   ansible.builtin.shell: >
-    ovs-vsctl --if-exists del-port {{ item.name }} gre0
+    ovs-vsctl --if-exists del-port {{ item.name }} gre-{{ item.name }}
   ignore_errors: yes
 
 - name: Create GRE tunnel on {{ item.name }}
   ansible.builtin.shell: >
-    ovs-vsctl add-port {{ item.name }} gre0
-    -- set interface gre0 type=gre options:remote_ip={{ remote_ip }}
+    ovs-vsctl add-port {{ item.name }} gre-{{ item.name }} \
+      -- set interface gre-{{ item.name }} type=gre options:remote_ip={{ remote_ip }}
   ignore_errors: yes
 
 - name: Configure bridge {{ item.name }}
