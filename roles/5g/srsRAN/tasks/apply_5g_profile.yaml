@@ -72,6 +72,38 @@
           )
       }}
 
+- name: Map slices pour AMF (TAI slice support list)
+  set_fact:
+    amf_slices: >-
+      {{
+        amf_slices | default([]) +
+        [
+          (
+            {'sst': item.sst} | combine({'sd': item.sd} if item.sd is defined and item.sd != 'EMPTY' else {})
+          )
+        ]
+      }}
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: item
+
+- name: Update AMF supported_tracking_areas from 5G profile
+  ansible.builtin.shell: >
+    yq eval -i '
+      .gnbConfig.cu_cp.amf.supported_tracking_areas = [
+        {
+          "tac": {{ fiveg.plmn.tac }},
+          "plmn_list": [
+            {
+              "plmn": "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}",
+              "tai_slice_support_list": {{ amf_slices | to_json }}
+            }
+          ]
+        }
+      ]
+    ' "{{ values_file }}"
+
+
 - name: Update PLMN, TAC and slicing in values file
   ansible.builtin.shell: >
     yq eval -i '
