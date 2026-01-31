@@ -47,7 +47,7 @@
 
 - name: Uninstall existing srsran-gnb Helm release if present
   ansible.builtin.shell: >
-    helm -n {{ open5gs_ns }} uninstall srsran-gnb || true
+    helm -n {{ ran_ns }} uninstall srsran-gnb || true
   changed_when: true
   ignore_errors: true
 
@@ -71,9 +71,7 @@
     yq eval -i '
       .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
       .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac }} |
-      .gnbConfig.cell_cfg.slicing = (
-        {{ gnb_slices | to_yaml | indent(8) }}
-      )
+      .gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }}
     ' "{{ values_file }}"
 
 - name: Show final updated values (PLMN, TAC, slicing)
