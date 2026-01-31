@@ -61,6 +61,6 @@ data:
           - sst: {{ slice.sst }}
             sd: {% if slice.sd == "EMPTY" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
 
-          dnn:
-            - {{ slice.dnn }}
+            dnn:
+              - {{ slice.dnn }}
 {% endfor %}
