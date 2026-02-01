@@ -16,7 +16,7 @@ usage() {
   echo "-i, --inventory <name>   Create ./inventory/<name>/hosts.ini instead of the default one"
   echo "-p, --profile5g <name>   Use group_vars/all/5g_profile_<name>.yaml specific 5G profile"
   echo "-e <vars>                Extra ansible vars, e.g.:"
-  echo "     -e \"oai_gnb_mode=cudu\" -e \"show_open5gs_config=true\""
+  echo "     -e \"oai_gnb_mode=cudu\" -e \"no_boot=true\""
   echo "--dry_run                Only print ansible commands"
   echo "--no-reservation         Skip node/R2lab reservations"
   echo "-h, --help               Show help"
