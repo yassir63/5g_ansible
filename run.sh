@@ -8,13 +8,15 @@ set -euo pipefail
 
 DRY_RUN=false
 NO_RESERVATION=false
-SKIP_INVENTORY_GEN=false
+EXTRA_VARS=""
 
 usage() {
   echo "Usage: $0 [options]"
   echo ""
   echo "-i, --inventory <name>   Create ./inventory/<name>/hosts.ini instead of the default one"
   echo "-p, --profile5g <name>   Use group_vars/all/5g_profile_<name>.yaml specific 5G profile"
+  echo "-e <vars>                Extra ansible vars (ex: -e \"a=b,c=d\")"
+  echo "     -e \"fiveg_profile=scenario1,oai_gnb_mode=cudu,show_open5gs_config=true\""
   echo "--dry_run                Only print ansible commands"
   echo "--no-reservation         Skip node/R2lab reservations"
   echo "-h, --help               Show help"
@@ -59,6 +61,11 @@ parse_args() {
         PROFILE_5G="$prof"
         ;;
 
+      -e)
+        shift
+        EXTRA_VARS="$1"
+        ;;
+      
       --dry_run) DRY_RUN=true ;;
       --no-reservation) NO_RESERVATION=true ;;
       -h|--help) usage; exit 0 ;;
@@ -903,6 +910,14 @@ fi
 
 deploy() {
 
+ANSIBLE_EXTRA_ARGS=()
+
+ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
+
+if [[ -n "$EXTRA_VARS" ]]; then
+  ANSIBLE_EXTRA_ARGS+=(-e "$EXTRA_VARS")
+fi
+
 echo "Launching deployment..."
 
 run_cmd ansible-galaxy install -r collections/requirements.yml
@@ -912,9 +927,10 @@ if [[ "$platform" == "r2lab" ]]; then
     run_cmd ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
 fi
 
-echo "ansible-playbook -i $INVENTORY -e fiveg_profile=${PROFILE_5G} playbooks/deploy.yml"
+echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml"
+
 run_cmd ansible-playbook -i "$INVENTORY" \
-  -e fiveg_profile="${PROFILE_5G}" \
+  "${ANSIBLE_EXTRA_ARGS[@]}" \
   playbooks/deploy.yml 2>&1 | tee logs.txt
 
 echo ""
