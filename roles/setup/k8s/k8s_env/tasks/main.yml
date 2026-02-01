@@ -37,8 +37,8 @@
 - name: Ensure kubectl namespace alias kns exists for root
   ansible.builtin.lineinfile:
     path: /root/.bashrc
-    regexp: '^alias kns='
-    line: "alias kns='kubectl config set-context --current --namespace='"
+    regexp: '^kns\(\)'
+    line: 'kns() { kubectl config set-context --current --namespace="$1"; }'
     state: present
   become: true
 
