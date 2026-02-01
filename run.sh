@@ -61,10 +61,14 @@ parse_args() {
         PROFILE_5G="$prof"
         ;;
 
-      -e)
-        shift
-        EXTRA_VARS="$1"
-        ;;
+      -e|--extra-vars)
+	  shift
+	  if [[ -z "${EXTRA_VARS:-}" ]]; then
+	      EXTRA_VARS="$1"
+	  else
+	      EXTRA_VARS="${EXTRA_VARS},$1"
+	  fi
+	  ;;
       
       --dry_run) DRY_RUN=true ;;
       --no-reservation) NO_RESERVATION=true ;;
@@ -910,35 +914,36 @@ fi
 
 deploy() {
 
-ANSIBLE_EXTRA_ARGS=()
+  ANSIBLE_EXTRA_ARGS=()
 
-ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
+  ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
 
-if [[ -n "$EXTRA_VARS" ]]; then
-  ANSIBLE_EXTRA_ARGS+=(-e "${EXTRA_VARS}")
-fi
+  if [[ -n "${EXTRA_VARS:-}" ]]; then
+    ANSIBLE_EXTRA_ARGS+=(-e "${EXTRA_VARS}")
+  fi
 
-echo "Launching deployment..."
+  echo "Launching deployment..."
 
-run_cmd ansible-galaxy install -r collections/requirements.yml
+  run_cmd ansible-galaxy install -r collections/requirements.yml
 
-if [[ "$platform" == "r2lab" ]]; then
-    echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]}  playbooks/deploy_r2lab.yml &"
-    run_cmd ansible-playbook -i "$INVENTORY" "${ANSIBLE_EXTRA_ARGS[*]}"  playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
-fi
+  if [[ "$platform" == "r2lab" ]]; then
+      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy_r2lab.yml &"
+      run_cmd ansible-playbook -i "$INVENTORY" \
+        "${ANSIBLE_EXTRA_ARGS[@]}" \
+        playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+  fi
 
-echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml"
+  echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml"
 
-run_cmd ansible-playbook -i "$INVENTORY" \
-  "${ANSIBLE_EXTRA_ARGS[@]}" \
-  playbooks/deploy.yml 2>&1 | tee logs.txt
+  run_cmd ansible-playbook -i "$INVENTORY" \
+    "${ANSIBLE_EXTRA_ARGS[@]}" \
+    playbooks/deploy.yml 2>&1 | tee logs.txt
 
-echo ""
-echo "=========================================="
-echo "========== Deployment Completed =========="
-echo "=========================================="
-echo ""
-
+  echo ""
+  echo "=========================================="
+  echo "========== Deployment Completed =========="
+  echo "=========================================="
+  echo ""
 }
 
 ############################
