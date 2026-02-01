@@ -16,7 +16,7 @@ usage() {
   echo "-i, --inventory <name>   Create ./inventory/<name>/hosts.ini instead of the default one"
   echo "-p, --profile5g <name>   Use group_vars/all/5g_profile_<name>.yaml specific 5G profile"
   echo "-e <vars>                Extra ansible vars (ex: -e \"a=b,c=d\")"
-  echo "     -e \"fiveg_profile=scenario1,oai_gnb_mode=cudu,show_open5gs_config=true\""
+  echo "     -e \"oai_gnb_mode=cudu,show_open5gs_config=true\""
   echo "--dry_run                Only print ansible commands"
   echo "--no-reservation         Skip node/R2lab reservations"
   echo "-h, --help               Show help"
@@ -913,18 +913,19 @@ deploy() {
 ANSIBLE_EXTRA_ARGS=()
 
 ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
-
+echo "1: ANSIBLE_EXTRA_ARGS ${ANSIBLE_EXTRA_ARGS[*]}"
 if [[ -n "$EXTRA_VARS" ]]; then
-  ANSIBLE_EXTRA_ARGS+=(-e "$EXTRA_VARS")
+  ANSIBLE_EXTRA_ARGS+=(-e "${EXTRA_VARS}")
 fi
 
+echo "2: ANSIBLE_EXTRA_ARGS ${ANSIBLE_EXTRA_ARGS[*]}"
 echo "Launching deployment..."
 
 run_cmd ansible-galaxy install -r collections/requirements.yml
 
 if [[ "$platform" == "r2lab" ]]; then
-    echo "ansible-playbook -i $INVENTORY playbooks/deploy_r2lab.yml &"
-    run_cmd ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+    echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]}  playbooks/deploy_r2lab.yml &"
+    run_cmd ansible-playbook -i "$INVENTORY" "${ANSIBLE_EXTRA_ARGS[*]}"  playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
 fi
 
 echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml"
