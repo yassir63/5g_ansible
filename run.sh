@@ -8,7 +8,7 @@ set -euo pipefail
 
 DRY_RUN=false
 NO_RESERVATION=false
-EXTRA_VARS=""
+EXTRA_VARS_ARRAY=()
 
 usage() {
   echo "Usage: $0 [options]"
@@ -62,18 +62,25 @@ parse_args() {
         ;;
 
       -e|--extra-vars)
-	  shift
-	  if [[ -z "${EXTRA_VARS:-}" ]]; then
-	      EXTRA_VARS="$1"
-	  else
-	      EXTRA_VARS="${EXTRA_VARS},$1"
-	  fi
-	  ;;
+	shift
+	EXTRA_VARS_ARRAY+=("$1")
+	;;
       
-      --dry_run) DRY_RUN=true ;;
-      --no-reservation) NO_RESERVATION=true ;;
-      -h|--help) usage; exit 0 ;;
-      *) echo "Unknown option $1"; usage; exit 1 ;;
+      --dry_run)
+	DRY_RUN=true
+	;;
+      
+      --no-reservation)
+	NO_RESERVATION=true
+	;;
+      
+      -h|--help)
+	usage; exit 0
+	;;
+      
+      *)
+	echo "Unknown option $1"; usage; exit 1
+	;;
     esac
     shift
   done
@@ -915,25 +922,24 @@ fi
 deploy() {
 
   ANSIBLE_EXTRA_ARGS=()
-
   ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
 
-  if [[ -n "${EXTRA_VARS:-}" ]]; then
-    ANSIBLE_EXTRA_ARGS+=(-e "${EXTRA_VARS}")
-  fi
-
+  for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
+    ANSIBLE_EXTRA_ARGS+=(-e "$ev")
+  done
+  
   echo "Launching deployment..."
 
   run_cmd ansible-galaxy install -r collections/requirements.yml
 
   if [[ "$platform" == "r2lab" ]]; then
-      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy_r2lab.yml &"
+      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy_r2lab.yml &"
       run_cmd ansible-playbook -i "$INVENTORY" \
         "${ANSIBLE_EXTRA_ARGS[@]}" \
         playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
   fi
 
-  echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml"
+  echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy.yml"
 
   run_cmd ansible-playbook -i "$INVENTORY" \
     "${ANSIBLE_EXTRA_ARGS[@]}" \
