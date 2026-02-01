@@ -1,9 +1,96 @@
 #!/usr/bin/env bash
-#set -euo pipefail
+set -euo pipefail
 
-# ============================
-#   DIANA 5G Deploy Tool
-# ============================
+
+############################
+# CLI OPTIONS
+############################
+
+DRY_RUN=false
+NO_RESERVATION=false
+EXTRA_VARS_ARRAY=()
+
+usage() {
+  echo "Usage: $0 [options]"
+  echo ""
+  echo "-i, --inventory <name>   Create ./inventory/<name>/hosts.ini instead of the default one"
+  echo "-p, --profile5g <name>   Use group_vars/all/5g_profile_<name>.yaml specific 5G profile"
+  echo "-e <vars>                Extra ansible vars (ex: -e \"a=b,c=d\")"
+  echo "     -e \"oai_gnb_mode=cudu,show_open5gs_config=true\""
+  echo "--dry_run                Only print ansible commands"
+  echo "--no-reservation         Skip node/R2lab reservations"
+  echo "-h, --help               Show help"
+}
+
+run_cmd() {
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY-RUN] $*"
+  else
+    "$@"
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -i|--inventory)
+        shift
+        inv="$1"
+        inv_dir="./inventory/${inv}"
+        inv_file="${inv_dir}/hosts.ini"
+
+        if [[ ! -f "$inv_file" ]]; then
+          read -rp "Inventory $inv_file does not exist. Create it? [y/N]: " c
+          if [[ "$c" =~ ^[Yy]$ ]]; then
+            mkdir -p "$inv_dir"
+            : > "$inv_file"
+          else
+            exit 1
+          fi
+        fi
+
+        NAME_INVENTORY="$inv"
+        INVENTORY="$inv_file"
+        ;;
+
+      -p|--profile5g)
+        shift
+        prof="$1"
+        file="group_vars/all/5g_profile_${prof}.yaml"
+        [[ ! -f "$file" ]] && { echo "❌ 5G Profile ${prof} not found"; exit 1; }
+        PROFILE_5G="$prof"
+        ;;
+
+      -e|--extra-vars)
+	shift
+	EXTRA_VARS_ARRAY+=("$1")
+	;;
+      
+      --dry_run)
+	DRY_RUN=true
+	;;
+      
+      --no-reservation)
+	NO_RESERVATION=true
+	;;
+      
+      -h|--help)
+	usage; exit 0
+	;;
+      
+      *)
+	echo "Unknown option $1"; usage; exit 1
+	;;
+    esac
+    shift
+  done
+}
+
+############################
+# FUNCTIONS
+############################
+
+init_defaults_and_banner() {
 
 RED="\033[0;31m"
 GREEN="\033[0;32m"
@@ -11,14 +98,13 @@ YELLOW="\033[1;33m"
 CYAN="\033[1;36m"
 RESET="\033[0m"
 
-# Default parameters
 DEFAULT_DURATION="120"
 DEFAULT_CORE_NODE="sopnode-f2"
 DEFAULT_RAN_NODE="sopnode-f3"
 DEFAULT_MONITOR_NODE="sopnode-f1"
 
-DIR_INVENTORY="./inventory/default"
-INVENTORY="${DIR_INVENTORY}/hosts.ini"
+DEFAULT_PROFILE_5G="default"
+DEFAULT_INVENTORY="default"
 
 DEFAULT_CORE="open5gs"
 DEFAULT_RAN="oai"
@@ -26,6 +112,10 @@ DEFAULT_PLATFORM="r2lab"
 DEFAULT_RU="jaguar"
 DEFAULT_LIST_UE="qhat01"
 
+PROFILE_5G="${PROFILE_5G:-$DEFAULT_PROFILE_5G}"
+
+NAME_INVENTORY="${NAME_INVENTORY:-$DEFAULT_INVENTORY}"
+INVENTORY="${INVENTORY:-./inventory/${NAME_INVENTORY}/hosts.ini}"
 
 echo -e "${CYAN}\
     ____  ____ __    _   __ __       ____________   ____             __               ______            __
@@ -35,6 +125,14 @@ echo -e "${CYAN}\
 /_____/___/_/  |_/_/ |_/_/  |_|  /_____/\____/  /_____/\___/ .___/_/\____/\__, /    /_/  \____/\____/_/      
                                                           /_/            /____/                              
 ${RESET}"
+
+}
+
+############################
+# USER INPUTS (UNCHANGED)
+############################
+
+collect_user_inputs() {
 
 # ========== User Inputs ==========
 
@@ -246,7 +344,13 @@ R2LAB_PASSWORD="$R2LAB_PASSWORD"
 EOF
   chmod 600 "$R2LAB_CONFIG"
 fi
+}
 
+############################
+# OPTIONAL SCENARIOS
+############################
+
+optional_scenarios() {
 
 # ========== Optional Scenarios ==========
 # Available scenarios:
@@ -301,7 +405,13 @@ run_iperf_test=false
 if [[ "$run_scenario" == true && ( "$scenario" == "Default Iperf Test (without interference)" || "$scenario" == "Parallel Iperf Test (without interference)" || "$scenario" == "RFSIM Iperf Test" ) ]]; then
   run_iperf_test=true
 fi
+}
 
+############################
+# INTERFERENCE SETUP
+############################
+
+interference_setup() {
 
 # ========== Interference Test Setup ==========
 run_interference_test=false
@@ -381,7 +491,14 @@ if [[ "$run_scenario" == true && "$scenario" == "Interference Test" ]]; then
     export FREQ_UL FREQ_DL GAIN NOISE_BANDWIDTH
   fi
 fi
+}
 
+
+############################
+# PRINT SUMMARY
+############################
+
+print_summary() {
 
 echo
 echo "========== SUMMARY =========="
@@ -422,6 +539,11 @@ fi
 
 echo "============================="
 echo  
+}
+
+############################
+# HELPER FUNCTIONS
+############################
 
 # ========== Helper Functions ==========
 # Function to determine IP suffix based on node
@@ -471,8 +593,15 @@ get_fit_info() {
   esac
 }
 
-# ========== Generate hosts.ini ==========
-echo "Generating hosts.ini..."
+
+
+############################
+# INVENTORY GENERATION
+############################
+
+generate_inventory() {
+
+echo "Generating ${INVENTORY}..."
 
 # Build faraday line (may include interference params)
 faraday_opts="faraday.inria.fr ansible_user=$R2LAB_USERNAME"
@@ -521,10 +650,11 @@ $faraday_opts
 EOF
 fi
 
-for ue in "${R2LAB_UES[@]}"; do
-  echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim" \
-    >> "$INVENTORY"
-done
+if [[ "$platform" == "r2lab" ]]; then
+    for ue in "${R2LAB_UES[@]}"; do
+	echo "$ue ansible_host=$ue ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' mode=mbim" >> "$INVENTORY"
+    done
+fi
 
 # Build fit_nodes section.
 # Rules:
@@ -679,12 +809,14 @@ bridge_enabled=$( [[ "${fhi72}" == "false" ]] && echo true || echo false )
 monitoring_enabled=${monitoring_enabled}
 EOF
 
-# to cleanup?
-#export RRU="$R2LAB_RU"
-#export monitoring_enabled="$monitoring_enabled"
-#export CORE="$core"
-#export RAN="$ran"
+}
 
+############################
+# RESERVATIONS
+############################
+
+reserve_nodes() {
+[[ "$NO_RESERVATION" == true ]] && return
 
 # ========== Reserve Nodes on SLICES ==========
 # Create a calendar entry for the required nodes with the command: 
@@ -736,6 +868,11 @@ else
   slices_reserved=true
 fi
 
+}
+
+reserve_r2lab() {
+[[ "$NO_RESERVATION" == true ]] && return
+
 ## ========== Reserve R2Lab if needed ==========
 # If R2Lab platform is selected, reserve the testbed with the command:
 # rhubarbe book <start(HH:MM)> <end(HH:MM)> -e <email> -p <password> -s <slice name> -v
@@ -775,25 +912,53 @@ if [[ "$platform" == "r2lab" && "$slices_reserved" == true ]]; then
   fi
 fi
 
-# ========== Deployment ==========
-echo ""
-echo "Starting deployment..."
-echo "Launching script ..."
-ansible-galaxy install -r collections/requirements.yml
-##temporary disable r2lab playbook
-if [[ "$platform" == "r2lab" ]]; then
-    echo "ansible-playbook -i ${INVENTORY} playbooks/deploy_r2lab.yml &"
-    ansible-playbook -i "$INVENTORY" playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
-fi
-echo "ansible-playbook -i $INVENTORY playbooks/deploy.yml"
-ansible-playbook -i "$INVENTORY" playbooks/deploy.yml 2>&1 | tee logs.txt
 
-echo ""
-echo "=========================================="
-echo "========== Deployment Completed =========="
-echo "=========================================="
-echo ""
+}
 
+############################
+# DEPLOYMENT
+############################
+
+deploy() {
+
+  ANSIBLE_EXTRA_ARGS=()
+  ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
+
+  for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
+    ANSIBLE_EXTRA_ARGS+=(-e "$ev")
+  done
+  
+  echo "Launching deployment..."
+
+  run_cmd ansible-galaxy install -r collections/requirements.yml
+
+  if [[ "$platform" == "r2lab" ]]; then
+      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy_r2lab.yml &"
+      run_cmd ansible-playbook -i "$INVENTORY" \
+        "${ANSIBLE_EXTRA_ARGS[@]}" \
+        playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+  fi
+
+  echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy.yml"
+
+  run_cmd ansible-playbook -i "$INVENTORY" \
+    "${ANSIBLE_EXTRA_ARGS[@]}" \
+    playbooks/deploy.yml 2>&1 | tee logs.txt
+
+  echo ""
+  echo "=========================================="
+  echo "========== Deployment Completed =========="
+  echo "=========================================="
+  echo ""
+}
+
+############################
+# SCENARIOS
+############################
+
+run_scenarios() {
+
+# <<< YOUR ORIGINAL SCENARIO BLOCK UNCHANGED >>>
 # ========== Run Optional Scenario ==========
 # Use the run_iperf_test.sh for all scenarios, using the right flag, since it can also handle the interference.
 # echo "  -s           Use OAI rfsim iperf test playbook"
@@ -826,8 +991,14 @@ if [[ "$run_scenario" == true ]]; then
   echo "=========================================="
   echo ""
 fi
-echo ""
-echo "✅ All done!"
+
+}
+
+############################
+# ACCESS INFO
+############################
+
+show_access_info() {
 
 # ========== End of Script ==========
 # Note: The user is responsible for deleting the reservations after use if needed.
@@ -851,7 +1022,7 @@ if [[ "$monitoring_enabled" == true ]]; then
   echo ""
 fi
 
-# Also show the commands to connecto to the visualization USRP if interference test with visualization is enabled. (VNC viewer)
+# Also show the commands to connect to the visualization USRP if interference test with visualization is enabled. (VNC viewer)
 if [[ "$run_interference_test" == true && -n "${viz_usrp:-}" ]]; then
   echo ""
   echo ""
@@ -877,3 +1048,24 @@ if [[ "$run_interference_test" == true && -n "${viz_usrp:-}" ]]; then
   echo ""
 fi
 
+}
+
+############################
+# MAIN
+############################
+
+parse_args "$@"
+
+init_defaults_and_banner
+collect_user_inputs
+optional_scenarios
+interference_setup
+print_summary
+generate_inventory
+reserve_nodes
+reserve_r2lab
+deploy
+run_scenarios
+show_access_info
+
+echo "✅ All done!"
