@@ -164,12 +164,12 @@ else
 fi
 
 # Select RAN
-if [[ "$core" == "oai" ]]; then
-  # If OAI core is selected, only OAI RAN is supported
-  echo ""
-  echo "ℹ️ Only OAI RAN is supported with OAI Core"
-  ran="oai"
-else
+#if [[ "$core" == "oai" ]]; then
+#  # If OAI core is selected, only OAI RAN is supported
+#  echo ""
+#  echo "ℹ️ Only OAI RAN is supported with OAI Core"
+#  ran="oai"
+#else
   # Make OAI RAN the default if the user just presses enter
   echo ""
   echo "Which RAN do you want to deploy? (default: ${DEFAULT_RAN})"
@@ -187,7 +187,7 @@ else
       *) echo "❌ Invalid choice"; exit 1 ;;
     esac
   fi
-fi
+#fi
 
 # Select RAN Node
 # Make sopnode-f3 the default if the user just presses enter
@@ -913,12 +913,11 @@ deploy() {
 ANSIBLE_EXTRA_ARGS=()
 
 ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
-echo "1: ANSIBLE_EXTRA_ARGS ${ANSIBLE_EXTRA_ARGS[*]}"
+
 if [[ -n "$EXTRA_VARS" ]]; then
-  ANSIBLE_EXTRA_ARGS+=(",${EXTRA_VARS}")
+  ANSIBLE_EXTRA_ARGS+=(-e "${EXTRA_VARS}")
 fi
 
-echo "2: ANSIBLE_EXTRA_ARGS ${ANSIBLE_EXTRA_ARGS[*]}"
 echo "Launching deployment..."
 
 run_cmd ansible-galaxy install -r collections/requirements.yml
