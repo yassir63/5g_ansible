@@ -2,13 +2,13 @@
 
 ![setup](images/setup.png)
 
-This repository provides a fully automated [Ansible](https://www.ansible.com/) framework for deploying and monitoring a sliced 5G network using Kubernetes. It is intended to be run from the [SLICES platform Webshell](https://post-5g-web.slices-ri.eu/), assuming you have:
+This repository provides a fully automated [Ansible](https://www.ansible.com/) framework for deploying and monitoring a sliced 5G network using Kubernetes. It is intended to be run from the [SLICES platform Webshell](https://post-5g-web.slices-ri.eu/), assuming you can obtain:
 
 - A valid [SLICES account](https://doc.slices-ri.eu/).
 - A valid reservation for the machines `sopnode-f1`, `sopnode-f2`, and `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
 - A valid [R2Lab account and reservation](https://r2lab.inria.fr/tuto-010-registration.md).
 
-> This work was developed as part of my internship at [Inria Sophia Antipolis](https://www.inria.fr/en/inria-centre-universite-cote-azur), under the supervision of: Thierry Turletti, Chadi Barakat, and Walid Dabbous.
+> First version of this script was developed by Ziyad Mabrouk as part of his internship at [Inria Sophia Antipolis](https://www.inria.fr/en/inria-centre-universite-cote-azur), under the supervision of: Thierry Turletti, Chadi Barakat, and Walid Dabbous.
 
 ---
 
@@ -17,7 +17,7 @@ This repository provides a fully automated [Ansible](https://www.ansible.com/) f
 From the SLICES Webshell:
 
 ```bash
-git clone https://github.com/Ziyad-Mabrouk/5g_ansible.git
+git clone https://github.com/sopnode/5g_ansible.git
 cd 5g_ansible
 ./deploy.sh
 ```
@@ -29,7 +29,7 @@ This will:
 - Deploy the **Open5GS Core** (with slice support via [Ziyad-Mabrouk/open5gs-k8s](https://github.com/Ziyad-Mabrouk/open5gs-k8s)).
 - Deploy the **Monarch monitoring framework** ([Ziyad-Mabrouk/5g-monarch](https://github.com/Ziyad-Mabrouk/5g-monarch), forked from [niloysh/5g-monarch](https://github.com/niloysh/5g-monarch)).
 - Clean up and configure R2Lab resources: RRU, UEs, Fit Nodes.
-- Deploy the **OAI RAN stack** with **FlexRIC and gNB** ([Ziyad-Mabrouk/oai5g-rru](https://github.com/Ziyad-Mabrouk/oai5g-rru/tree/gen-cn2)).
+- Deploy the **OAI RAN stack** ([sopnode/oai5g-rru](https://github.com/sopnode/oai5g-rru)).
 
 > **Note:** This will only prepare the UEs, but will not connect them. That is done via one of the test scenarios below. However, you can uncomment the last section of the `playbooks/deploy.yml` file so that all the UEs in the `[qhats]` group of the `inventory/hosts.ini` will be connected to the 5G network.
 
