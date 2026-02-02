@@ -880,8 +880,6 @@ reserve_nodes() {
     echo "✅ Reservation successful. Reservation ID: $reservation_id. Reserved for $duration_minutes minutes."
     slices_reserved=true
   fi
-
-  echo "DEBUG:: at the end of reserve_nodes()"
 }
 
 
