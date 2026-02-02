@@ -27,6 +27,14 @@ run_cmd() {
     echo "[DRY-RUN] $*"
   else
     "$@"
+    echo "🔹 Running: $*"
+    "$@"
+    local status=$?
+    if [[ $status -ne 0 ]]; then
+      echo "❌ Command failed with exit code $status: $*"
+      # Optionnel : exit $status
+    fi
+    return $status
   fi
 }
 
