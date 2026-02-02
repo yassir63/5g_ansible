@@ -888,9 +888,7 @@ reserve_nodes() {
 
 reserve_r2lab() {
 [[ "$NO_RESERVATION" == true ]] && return
-turletti@duckburg:~/xp/post5g-beta/5g_ansible$ reservation_output=$(pos calendar create -d 120 -s "now" "sopnode-w3 sopnode-f3" 2>&1); reservation_exit_code=$?; echo "*********** reservation_output: $reservation_output, exit code: $reservation_exit_code"
-*********** reservation_output: 2026-02-02 11:57:59,777 ERROR pos Not found for POST url: "http://172.24.0.1:5000/web/calendar_create".
-Resource sopnode-w3 sopnode-f3 not found for endpoint nodes: /web/calendar_create?nodes=sopnode-w3+sopnode-f3, exit code: 5
+
 ## ========== Reserve R2Lab if needed ==========
 # If R2Lab platform is selected, reserve the testbed with the command:
 # rhubarbe book <start(HH:MM)> <end(HH:MM)> -e <email> -p <password> -s <slice name> -v
