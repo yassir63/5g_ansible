@@ -824,65 +824,73 @@ EOF
 ############################
 
 reserve_nodes() {
-[[ "$NO_RESERVATION" == true ]] && return
+  [[ "$NO_RESERVATION" == true ]] && return
 
-# ========== Reserve Nodes on SLICES ==========
-# Create a calendar entry for the required nodes with the command: 
-# pos calendar create -d <duration in minutes> -s "now" <node/nodes separated by space>
-# Keep the outputed reservation ID to delete it later if needed.
-# Try to reserve for 2 hours (120 minutes) by default, if it fails, try with 1 hour (60 minutes)
-# If it still fails, ask the user if they want to ignore and continue (not recommended) or exit the script.
-echo ""
-echo "Reserving nodes on SLICES..."
-nodes_to_reserve=("${core_node}" "${ran_node}")
-if [[ "$monitoring_enabled" == true ]]; then
-  nodes_to_reserve+=("${monitor_node}")
-fi
-# Remove duplicates
-nodes_to_reserve=($(printf "%s\n" "${nodes_to_reserve[@]}" | sort -u))
-reservation_id=""
-slices_reserved=false
-duration_minutes="${DEFAULT_DURATION}"
-# Try to reserve 
-echo "Trying to reserve nodes: ${nodes_to_reserve[*]} for $duration_minutes minutes..."
-reservation_output=$(pos calendar create -d "${duration_minutes}" -s "now" "${nodes_to_reserve[@]}" 2>&1)
-reservation_exit_code=$?
-echo "DEBUG:: just after pos calendar create, before if"
-if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "${reservation_output}" ]]; then
-  # If it fails, try with 60 minutes
-  echo "❌ Reservation for ${duration_minutes} minutes failed. Trying to reserve for 60 minutes..."
-  duration_minutes=60
-  reservation_output=$(pos calendar create -d "$duration_minutes" -s "now" "${nodes_to_reserve[@]}" 2>&1)
+  # ========== Reserve Nodes on SLICES ==========
+  # Create a calendar entry for the required nodes with the command: 
+  # pos calendar create -d <duration in minutes> -s "now" <node/nodes separated by space>
+  # Keep the outputed reservation ID to delete it later if needed.
+  # Try to reserve for 2 hours (120 minutes) by default, if it fails, try with 1 hour (60 minutes)
+  # If it still fails, ask the user if they want to ignore and continue (not recommended) or exit the script.
+  echo ""
+  echo "Reserving nodes on SLICES..."
+  nodes_to_reserve=("${core_node}" "${ran_node}")
+  if [[ "$monitoring_enabled" == true ]]; then
+    nodes_to_reserve+=("${monitor_node}")
+  fi
+  # Remove duplicates
+  nodes_to_reserve=($(printf "%s\n" "${nodes_to_reserve[@]}" | sort -u))
+  reservation_id=""
+  slices_reserved=false
+  duration_minutes="${DEFAULT_DURATION}"
+
+  # Try to reserve 
+  echo "Trying to reserve nodes: ${nodes_to_reserve[*]} for $duration_minutes minutes..."
+  reservation_output=$(pos calendar create -d "${duration_minutes}" -s "now" "${nodes_to_reserve[@]}" 2>&1)
   reservation_exit_code=$?
-  if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "$reservation_output" ]]; then
-    echo "❌ Reservation for 60 minutes failed too."
-    echo "Error details: $reservation_output"
-    read -rp "Do you want to ignore the reservation failure and continue? [y/N]: " ignore_choice
-    if [[ ! "$ignore_choice" =~ ^[Yy]$ ]]; then
-      echo "Exiting script."
-      exit 1
+
+  echo "DEBUG:: just after pos calendar create, before if"
+  if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "${reservation_output}" ]]; then
+    # If it fails, try with 60 minutes
+    echo "❌ Reservation for ${duration_minutes} minutes failed. Trying to reserve for 60 minutes..."
+    duration_minutes=60
+    reservation_output=$(pos calendar create -d "$duration_minutes" -s "now" "${nodes_to_reserve[@]}" 2>&1)
+    reservation_exit_code=$?
+
+    if [[ $reservation_exit_code -ne 0 || "$reservation_output" == "-1" || -z "${reservation_output}" ]]; then
+      echo "❌ Reservation for 60 minutes failed too."
+      echo "Error details: $reservation_output"
+      read -rp "Do you want to ignore the reservation failure and continue? [y/N]: " ignore_choice
+      if [[ ! "$ignore_choice" =~ ^[Yy]$ ]]; then
+        echo "Exiting script."
+        exit 1
+      else
+        echo "⚠️ Ignoring reservation failure and continuing..."
+        slices_reserved=false
+      fi
     else
-      echo "Ignoring reservation failure and continuing..."
+      # The output is the reservation ID
+      reservation_id="$reservation_output"
+      echo "✅ Reservation successful. Reservation ID: $reservation_id. Reserved for $duration_minutes minutes."
+      slices_reserved=true
     fi
   else
-    # The ouput is the reservation ID
+    # The output is the reservation ID
     reservation_id="$reservation_output"
     echo "✅ Reservation successful. Reservation ID: $reservation_id. Reserved for $duration_minutes minutes."
     slices_reserved=true
   fi
-else
-  # The ouput is the reservation ID
-  reservation_id="$reservation_output"
-  echo "✅ Reservation successful. Reservation ID: $reservation_id. Reserved for $duration_minutes minutes."
-  slices_reserved=true
-fi
-echo "DEBUG:: at the end of reserve()"
 
+  echo "DEBUG:: at the end of reserve_nodes()"
 }
+
+
 
 reserve_r2lab() {
 [[ "$NO_RESERVATION" == true ]] && return
-
+turletti@duckburg:~/xp/post5g-beta/5g_ansible$ reservation_output=$(pos calendar create -d 120 -s "now" "sopnode-w3 sopnode-f3" 2>&1); reservation_exit_code=$?; echo "*********** reservation_output: $reservation_output, exit code: $reservation_exit_code"
+*********** reservation_output: 2026-02-02 11:57:59,777 ERROR pos Not found for POST url: "http://172.24.0.1:5000/web/calendar_create".
+Resource sopnode-w3 sopnode-f3 not found for endpoint nodes: /web/calendar_create?nodes=sopnode-w3+sopnode-f3, exit code: 5
 ## ========== Reserve R2Lab if needed ==========
 # If R2Lab platform is selected, reserve the testbed with the command:
 # rhubarbe book <start(HH:MM)> <end(HH:MM)> -e <email> -p <password> -s <slice name> -v
