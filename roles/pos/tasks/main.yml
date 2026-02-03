@@ -1,4 +1,9 @@
 ---
+- name: Normalize execution flags
+  set_fact:
+    should_boot: "{{ not no_boot | default(false) | bool }}"
+    is_debug_on: "{{ pos_debug_enabled | default(false) | bool }}"
+
 - name: Compute normalized POS facts
   set_fact:
     is_ran: "{{ node == ran_node_name }}"
@@ -10,7 +15,7 @@
 
 - name: DEBUG — Dump all role-relevant variables and hostvars
   tags: pos_debug
-  when: pos_debug_enabled | default(false)
+  when: is_debug_on
   block:
     - name: Load POS defaults early for debug
       include_vars: "{{ role_path }}/defaults/main.yml"
@@ -20,21 +25,9 @@
         {
           echo "================ DEBUG FOR NODE: {{ node }} ================"
           echo "Date: $(date)"
-          echo ""
-
-          echo "ran_node_name = {{ ran_node_name | default([]) }}"
-          echo "rru = {{ rru | default([]) }}"
-          echo "is_ran = {{ is_ran | default([]) }}"
-          echo "is_f3 = {{ is_f3 | default([]) }}"
-          echo "ran_boot_mode = {{ ran_boot_mode | default([]) }}"
-
-          echo "--- Variables loaded from defaults ---"
-          echo "pos_rt_image = {{ pos_rt_image }}"
-          echo "pos_image = {{ pos_image }}"
-          echo "boot_parameters_rt_f3 = {{ boot_parameters_rt_f3 }}"
-          echo "boot_ran_parameters = {{ boot_ran_parameters }}"
-          echo ""
-
+          echo "ran_node_name = {{ ran_node_name | default('undefined') }}"
+          echo "is_ran        = {{ is_ran }}"
+          echo "should_boot   = {{ should_boot }}"
           echo "============================================================"
         } > .pos_debug_{{ node }}.log
 
@@ -59,7 +52,7 @@
       {% else %}
         pos nodes image --staging {{ node }} {{ pos_image }}
       {% endif %}
-  when: not no_boot | default(false)
+  when: should_boot
 
 - name: Select POS boot parameters
   set_fact:
@@ -71,42 +64,38 @@
       {% else %}
         {{ boot_parameters }}
       {% endif %}
-  when: not no_boot | default(false)
+  when: should_boot
 
 - name: Flash POS image
   shell: "{{ pos_image_cmd }}"
-  when: not no_boot | default(false)
+  when: should_boot
 
 - name: Apply POS boot parameters
   shell: pos nodes bootparameter {{ node }} --raw {{ boot_params }}
-  when: not no_boot | default(false)
+  when: should_boot
 
 - name: DEBUG Log POS configuration pre-reset
   tags: pos_debug
-  block:
-    - ansible.builtin.shell: |
-        # First clean up file
-        > .pos_pre_reset_{{ node }}.log
-        echo "--------------------------------------------------------" >> .pos_pre_reset_{{ node }}.log
-        echo "$(date) - {{ node }} (pre-reset):" >> ./pos_pre_reset_{{ node }}.log
-        echo "  Image Command : {{ pos_image_cmd }}" >> ./pos_pre_reset_{{ node }}.log
-        echo "" >> ./pos_pre_reset_{{ node }}.log
-        echo "  RRU Type      : {{ rru }}" >> ./pos_pre_reset_{{ node }}.log
-        echo "  Boot Params   : {{ boot_params }}" >> ./pos_pre_reset_{{ node }}.log
-        echo "--------------------------------------------------------" >> ./pos_pre_reset_{{ node }}.log
-  when: (not (no_boot | default(false))) and (pos_debug_enabled | default(false))
+  ansible.builtin.shell: |
+    > .pos_pre_reset_{{ node }}.log
+    echo "--------------------------------------------------------" >> .pos_pre_reset_{{ node }}.log
+    echo "$(date) - {{ node }} (pre-reset):" >> ./pos_pre_reset_{{ node }}.log
+    echo "  Image Command : {{ pos_image_cmd | default('SKIPPED') }}" >> ./pos_pre_reset_{{ node }}.log
+    echo "  Boot Params   : {{ boot_params | default('SKIPPED') }}" >> ./pos_pre_reset_{{ node }}.log
+    echo "--------------------------------------------------------" >> ./pos_pre_reset_{{ node }}.log
+  when: should_boot and is_debug_on
 
 - name: (POS) Reset {{ node }}
   shell: pos nodes reset "{{ node }}"
-  when: not no_boot | default(false)
+  when: should_boot
 
 - name: (POS) Wait for SSH to be available on {{ node }}
   wait_for:
     host: "{{ node }}"
     port: 22
     timeout: 300
-  when: not no_boot | default(false)
+  when: should_boot
 
 - name: Bootstrap {{ node }} if boot on disk
   shell: pos node bootstrap {{ node }}
-  when: (not (no_boot | default(false))) and (is_ran and ran_boot_mode == 'disk')
+  when: should_boot and is_ran and ran_boot_mode == 'disk'
