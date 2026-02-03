@@ -756,8 +756,8 @@ else
   # not running interference test: keep original default fit02 entry (as in previous script)
   cat >> "$INVENTORY" <<EOF
 
-[fit_nodes]
-fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
+#[fit_nodes]
+#fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=$R2LAB_USERNAME@faraday.inria.fr' fit_number=2 fit_usrp=b210
 EOF
 fi
 
