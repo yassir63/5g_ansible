@@ -25,9 +25,20 @@
         {
           echo "================ DEBUG FOR NODE: {{ node }} ================"
           echo "Date: $(date)"
-          echo "ran_node_name = {{ ran_node_name | default('undefined') }}"
-          echo "is_ran        = {{ is_ran }}"
+          echo ""
           echo "should_boot   = {{ should_boot }}"
+          echo "ran_node_name = {{ ran_node_name | default([]) }}"
+          echo "rru           = {{ rru | default([]) }}"
+          echo "is_ran        = {{ is_ran }}"
+          echo "is_f3         = {{ is_f3 }}"
+          echo "ran_boot_mode = {{ ran_boot_mode }}"
+
+          echo "--- Variables loaded from defaults ---"
+          echo "pos_rt_image           = {{ pos_rt_image | default('N/A') }}"
+          echo "pos_image              = {{ pos_image | default('N/A') }}"
+          echo "boot_parameters_rt_f3  = {{ boot_parameters_rt_f3 | default('N/A') }}"
+          echo "boot_ran_parameters    = {{ boot_ran_parameters | default('N/A') }}"
+          echo ""
           echo "============================================================"
         } > .pos_debug_{{ node }}.log
 
@@ -77,10 +88,13 @@
 - name: DEBUG Log POS configuration pre-reset
   tags: pos_debug
   ansible.builtin.shell: |
+    # First clean up file
     > .pos_pre_reset_{{ node }}.log
     echo "--------------------------------------------------------" >> .pos_pre_reset_{{ node }}.log
     echo "$(date) - {{ node }} (pre-reset):" >> ./pos_pre_reset_{{ node }}.log
     echo "  Image Command : {{ pos_image_cmd | default('SKIPPED') }}" >> ./pos_pre_reset_{{ node }}.log
+    echo "" >> ./pos_pre_reset_{{ node }}.log
+    echo "  RRU Type      : {{ rru | default('N/A') }}" >> ./pos_pre_reset_{{ node }}.log
     echo "  Boot Params   : {{ boot_params | default('SKIPPED') }}" >> ./pos_pre_reset_{{ node }}.log
     echo "--------------------------------------------------------" >> ./pos_pre_reset_{{ node }}.log
   when: should_boot and is_debug_on
