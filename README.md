@@ -26,7 +26,7 @@ This will:
 - Allocate and reset the reserved machines using `pos`.
 - Install all required packages.
 - Set up a Kubernetes cluster across the nodes.
-- Deploy the **Open5GS Core** (with slice support via [Ziyad-Mabrouk/open5gs-k8s](https://github.com/Ziyad-Mabrouk/open5gs-k8s)).
+- Deploy the **Open5GS Core** (with slice support via [sopnode/open5gs-k8s](https://github.com/sopnode/open5gs-k8s)).
 - Deploy the **Monarch monitoring framework** ([Ziyad-Mabrouk/5g-monarch](https://github.com/Ziyad-Mabrouk/5g-monarch), forked from [niloysh/5g-monarch](https://github.com/niloysh/5g-monarch)).
 - Clean up and configure R2Lab resources: RRU, UEs, Fit Nodes.
 - Deploy the **OAI RAN stack** ([sopnode/oai5g-rru](https://github.com/sopnode/oai5g-rru)).

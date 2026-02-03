@@ -3,6 +3,7 @@
   hosts: faraday
   roles:
     - role: r2lab/cleanup
+  when: not no_r2lab_cleanup | default(false)
 
 - name: Power ON RRU on R2Lab
   hosts: faraday
