@@ -983,16 +983,16 @@ if [[ "$run_scenario" == true ]]; then
   echo "Running $scenario"
   case "$scenario" in
     "Default Iperf Test (without interference)")
-      ./scenarios/run_iperf_test.sh -d
+      ./run_iperf_test.sh -d
       ;;
     "Parallel Iperf Test (without interference)")
-      ./scenarios/run_iperf_test.sh -p
+      ./run_iperf_test.sh -p
       ;;
     "RFSIM Iperf Test")
-      ./scenarios/run_iperf_test.sh -s
+      ./run_iperf_test.sh -s
       ;;
     "Interference Test")
-      ./scenarios/run_iperf_test.sh -i
+      ./run_iperf_test.sh -i
       ;;
     *)
       echo "❌ Unknown iperf test scenario: $scenario"
@@ -1058,7 +1058,7 @@ if [[ "$run_interference_test" == true && -n "${viz_usrp:-}" ]]; then
   echo "Note: to rerun this interference scenario, do: "
   echo ""
   echo "export MODE=${MODE}"
-  echo "./scenarios/run_iperf_test.sh -i --no-setup"
+  echo "./run_iperf_test.sh -i --no-setup"
   echo ""
 fi
 
