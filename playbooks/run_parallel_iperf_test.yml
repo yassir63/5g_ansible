@@ -1,5 +1,96 @@
 ---
 - name: Load active 5G profile
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Include 5G profile variables
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+        name: fiveg
+
+- name: Run iperf3 tests sequentially on first 4 UEs
+  hosts: faraday
+  gather_facts: false
+  serial: 1
+  vars:
+    ue_list: "{{ groups['qhats'][0:4] }}"
+  tasks:
+
+    # Validate UE exists
+    - name: Validate UE exists in 5G profile
+      fail:
+        msg: "UE {{ item }} not found in 5G profile"
+      loop: "{{ ue_list }}"
+      loop_control:
+        loop_var: item
+      when: item not in fiveg.ues
+
+    # Validate slice exists
+    - name: Validate slice exists for UE
+      fail:
+        msg: "Slice {{ fiveg.ues[item].slice }} not found in fiveg.slices"
+      loop: "{{ ue_list }}"
+      loop_control:
+        loop_var: item
+      when: (fiveg.slices | selectattr('name','equalto', fiveg.ues[item].slice) | length) == 0
+
+    # Compute slice and UPF IP per UE
+    - name: Compute slice and UPF IP
+      set_fact:
+        ue_slice: "{{ fiveg.ues[item].slice }}"
+        ue_ip_prefix: >-
+          {{
+            (fiveg.slices
+             | selectattr('name','equalto', ue_slice)
+             | first).ip_prefix
+          }}
+        ue_upf_ip: "{{ ue_ip_prefix }}.1"
+      loop: "{{ ue_list }}"
+      loop_control:
+        loop_var: item
+
+    # Debug info per UE
+    - name: Debug UE and UPF info
+      debug:
+        msg: "UE {{ item }} → slice={{ fiveg.ues[item].slice }} → UPF IP={{ ue_upf_ip }}"
+      loop: "{{ ue_list }}"
+      loop_control:
+        loop_var: item
+
+    # Run iperf3 per UE
+    - name: Start iperf3 in background on UE
+      shell: >
+        ssh root@{{ item }}
+        'iperf3 -c {{ ue_upf_ip }} --bidir -t 400 -J log_iperf_test.json'
+      async: 1800
+      poll: 0
+      loop: "{{ ue_list }}"
+      loop_control:
+        loop_var: item
+      register: prepare_jobs
+
+    # Wait 100s between UEs
+    - name: Wait 100 seconds before next UE
+      wait_for:
+        timeout: 100
+
+- name: Wait for the last iperf job to finish
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Wait for iperf job
+      async_status:
+        jid: "{{ prepare_jobs.results[-1].ansible_job_id }}"
+      register: result
+      until: result.finished
+      retries: 100
+      delay: 10
+
+
+
+
+---
+- name: Load active 5G profile
   hosts: localhost
   gather_facts: false
   tasks:

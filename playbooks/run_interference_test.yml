@@ -2,7 +2,7 @@
 # This test runs iperf between the first UE on the list and its UPF
 
 - name: Prepare UE info
-  hosts: localhost
+  hosts: faraday
   gather_facts: false
   vars:
     fiveg_profile: default
