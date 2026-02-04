@@ -1,8 +1,8 @@
 ---
 - name: Normalize execution flags
   set_fact:
-    should_boot: "{{ not no_boot | default(false) | bool }}"
-    is_debug_on: "{{ pos_debug_enabled | default(false) | bool }}"
+    should_boot: "{{ not (no_boot | default(false) | bool) }}"
+    is_debug_on: "{{ pos_debug_enabled | default(false) | bool }}"  
 
 - name: Compute normalized POS facts
   set_fact:
