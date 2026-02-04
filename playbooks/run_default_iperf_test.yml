@@ -1,6 +1,6 @@
 ---
 - name: Load active 5G profile
-  hosts: localhost
+  hosts: all
   gather_facts: false
   tasks:
     - name: Include 5G profile variables
