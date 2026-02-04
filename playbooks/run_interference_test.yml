@@ -38,6 +38,9 @@
              | selectattr('name', 'equalto', ue_slice)
              | first).ip_prefix
           }}
+
+    - name: Derive UPF IP from UE IP prefix
+      set_fact:
         ue_upf_ip: "{{ ue_ip_prefix }}.1"
 
 - name: Run iperf test
