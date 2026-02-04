@@ -8,74 +8,82 @@
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
         name: fiveg
 
+# ----------------- Downlink Test -----------------
 - name: Iperf3 Downlink Test (200s) for each UE
   hosts: faraday
   gather_facts: false
   tasks:
-    - name: Run iperf3 reverse client for each UE
-      block:
-        - name: Validate UE exists in 5G profile
-          fail:
-            msg: "UE {{ ue }} not found in 5G profile"
-          when: ue not in fiveg.ues
 
-        - name: Get slice name for UE
-          set_fact:
-            ue_slice: "{{ fiveg.ues[ue].slice }}"
-
-        - name: Validate slice exists
-          fail:
-            msg: "Slice {{ ue_slice }} not found in fiveg.slices"
-          when: fiveg.slices | selectattr('name', 'equalto', ue_slice) | length == 0
-
-        - name: Get UPF IP for UE
-          set_fact:
-            ue_ip_prefix: >-
-              {{
-                (fiveg.slices
-                 | selectattr('name', 'equalto', ue_slice)
-                 | first).ip_prefix
-              }}
-            ue_upf_ip: "{{ ue_ip_prefix }}.1"
-
-        - name: Run iperf3 reverse client
-          shell: ssh root@{{ ue }} "iperf3 -c {{ ue_upf_ip }} -t 200 -R -J log_dl_test.json"
+    # Validate UEs exist
+    - name: Validate UEs exist in 5G profile
+      fail:
+        msg: "UE {{ item }} not found in 5G profile"
       loop: "{{ groups['qhats'] }}"
       loop_control:
-        loop_var: ue
+        loop_var: item
+      when: item not in fiveg.ues
 
+    # Validate slice exists for each UE
+    - name: Validate slice exists for each UE
+      fail:
+        msg: "Slice {{ fiveg.ues[item].slice }} not found in fiveg.slices"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
+      when: (fiveg.slices | selectattr('name','equalto', fiveg.ues[item].slice) | length) == 0
+
+    # Run iperf3 reverse client (Downlink) per UE
+    - name: Run iperf3 reverse client
+      vars:
+        ue_slice: "{{ fiveg.ues[item].slice }}"
+        ue_ip_prefix: >-
+          {{
+            (fiveg.slices
+             | selectattr('name','equalto', ue_slice)
+             | first).ip_prefix
+          }}
+        ue_upf_ip: "{{ ue_ip_prefix }}.1"
+      shell: ssh root@{{ item }} "iperf3 -c {{ ue_upf_ip }} -t 200 -R -J log_dl_test.json"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
+
+# ----------------- Uplink Test -----------------
 - name: Iperf3 Uplink Test (200s) for each UE
   hosts: faraday
   gather_facts: false
   tasks:
-    - name: Run iperf3 client for each UE
-      block:
-        - name: Validate UE exists in 5G profile
-          fail:
-            msg: "UE {{ ue }} not found in 5G profile"
-          when: ue not in fiveg.ues
 
-        - name: Get slice name for UE
-          set_fact:
-            ue_slice: "{{ fiveg.ues[ue].slice }}"
-
-        - name: Validate slice exists
-          fail:
-            msg: "Slice {{ ue_slice }} not found in fiveg.slices"
-          when: fiveg.slices | selectattr('name', 'equalto', ue_slice) | length == 0
-
-        - name: Get UPF IP for UE
-          set_fact:
-            ue_ip_prefix: >-
-              {{
-                (fiveg.slices
-                 | selectattr('name', 'equalto', ue_slice)
-                 | first).ip_prefix
-              }}
-            ue_upf_ip: "{{ ue_ip_prefix }}.1"
-
-        - name: Run iperf3 client
-          shell: ssh root@{{ ue }} "iperf3 -c {{ ue_upf_ip }} -t 200 -J log_ul_test.json"
+    # Validate UEs exist
+    - name: Validate UEs exist in 5G profile
+      fail:
+        msg: "UE {{ item }} not found in 5G profile"
       loop: "{{ groups['qhats'] }}"
       loop_control:
-        loop_var: ue
+        loop_var: item
+      when: item not in fiveg.ues
+
+    # Validate slice exists for each UE
+    - name: Validate slice exists for each UE
+      fail:
+        msg: "Slice {{ fiveg.ues[item].slice }} not found in fiveg.slices"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
+      when: (fiveg.slices | selectattr('name','equalto', fiveg.ues[item].slice) | length) == 0
+
+    # Run iperf3 client (Uplink) per UE
+    - name: Run iperf3 client
+      vars:
+        ue_slice: "{{ fiveg.ues[item].slice }}"
+        ue_ip_prefix: >-
+          {{
+            (fiveg.slices
+             | selectattr('name','equalto', ue_slice)
+             | first).ip_prefix
+          }}
+        ue_upf_ip: "{{ ue_ip_prefix }}.1"
+      shell: ssh root@{{ item }} "iperf3 -c {{ ue_upf_ip }} -t 200 -J log_ul_test.json"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
