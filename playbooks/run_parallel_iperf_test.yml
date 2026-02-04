@@ -1,8 +1,13 @@
 ---
 - name: Load active 5G profile
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-    name: fiveg
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include 5G profile variables
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+        name: fiveg
+
 
 - name: Run iperf3 tests sequentially on first 4 UEs
   hosts: faraday
