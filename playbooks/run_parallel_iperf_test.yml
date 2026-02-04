@@ -1,56 +1,64 @@
 ---
+- name: Load active 5G profile
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg
+
 - name: Run iperf3 tests sequentially on first 4 UEs
   hosts: faraday
   gather_facts: false
+  serial: 1
   vars:
-    ue1: "{{ groups['qhats'][0] }}"
-    ue2: "{{ groups['qhats'][1] }}"
-    ue3: "{{ groups['qhats'][2] }}"
-    ue4: "{{ groups['qhats'][3] }}"
+    ue_list: "{{ groups['qhats'][0:4] }}"
+
   tasks:
-    - name: Start iperf3 on {{ ue1 }} in background
-      shell: >
-        ssh root@{{ ue1 }}
-        'iperf3 -c {{ hostvars[ue1].upf_ip }} --bidir -t 400 -J log_iperf_test.json'
-      async: 1800
-      poll: 0
-      register: ue1_job
 
-    - name: Wait 100 seconds before next UE
-      wait_for:
-        timeout: 100
+    - name: Process UE and start iperf3 sequentially
+      block:
 
-    - name: Start iperf3 on {{ ue2 }} in background
-      shell: >
-        ssh root@{{ ue2 }}
-        'iperf3 -c {{ hostvars[ue2].upf_ip }} --bidir -t 400 -J log_iperf_test.json'
-      async: 1800
-      poll: 0
-      register: ue2_job
+        - name: Validate if UE exists in 5G profile
+          fail:
+            msg: "UE {{ ue }} not found in 5G profile"
+          when: ue not in fiveg.ues
 
-    - name: Wait 100 seconds before next UE
-      wait_for:
-        timeout: 100
+        - name: Get slice name associated with UE
+          set_fact:
+            ue_slice: "{{ fiveg.ues[ue].slice }}"
 
-    - name: Start iperf3 on {{ ue3 }} in background
-      shell: >
-        ssh root@{{ ue3 }}
-        'iperf3 -c {{ hostvars[ue3].upf_ip }} --bidir -p 5202 -t 400 -J log_iperf_test.json'
-      async: 1800
-      poll: 0
-      register: ue3_job
+        - name: Validate slice exists
+          fail:
+            msg: "Slice {{ ue_slice }} not found in fiveg.slices"
+          when: fiveg.slices | selectattr('name', 'equalto', ue_slice) | length == 0
 
-    - name: Wait 100 seconds before next UE
-      wait_for:
-        timeout: 100
+        - name: Get IP prefix of UE slice to derive UPF IP
+          set_fact:
+            ue_ip_prefix: >-
+              {{
+                (fiveg.slices
+                 | selectattr('name', 'equalto', ue_slice)
+                 | first).ip_prefix
+              }}
+            ue_upf_ip: "{{ ue_ip_prefix }}.1"
 
-    - name: Start iperf3 on {{ ue4 }} in background
-      shell: >
-        ssh root@{{ ue4 }}
-        'iperf3 -c {{ hostvars[ue4].upf_ip }} --bidir -p 5202 -t 400 -J log_iperf_test.json'
-      async: 1800
-      poll: 0
-      register: ue4_job
+        - name: Debug UE and UPF info
+          debug:
+            msg: "UE {{ ue }} → slice={{ ue_slice }} → UPF IP={{ ue_upf_ip }}"
+
+        - name: Start iperf3 in background on UE
+          shell: >
+            ssh root@{{ ue }}
+            'iperf3 -c {{ ue_upf_ip }} --bidir -t 400 -J log_iperf_test.json'
+          async: 1800
+          poll: 0
+          register: "{{ ue }}_job"
+
+        - name: Wait 100 seconds before next UE
+          wait_for:
+            timeout: 100
+
+      loop: "{{ ue_list }}"
+      loop_control:
+        loop_var: ue
 
 - name: Wait for the last iperf job to finish
   hosts: faraday
@@ -58,7 +66,7 @@
   tasks:
     - name: Wait for iperf job
       async_status:
-        jid: "{{ ue4_job.ansible_job_id }}"
+        jid: "{{ hostvars[ue_list[-1]][ue_list[-1] + '_job'].ansible_job_id }}"
       register: result
       until: result.finished
       retries: 100

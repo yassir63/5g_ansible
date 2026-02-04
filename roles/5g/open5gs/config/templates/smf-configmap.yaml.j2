@@ -47,7 +47,7 @@ data:
             port: 9090
       session:
 {% for slice in fiveg.slices if slice.name == smf_slice %}
-        - subnet: {{ slice.ip_prefix }}.0/16
+        - subnet: {{ slice.ip_prefix }}.1/16
 {% endfor %}
       dns:
         - 8.8.8.8

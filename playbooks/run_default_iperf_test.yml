@@ -1,22 +1,77 @@
 ---
-- name: Iperf3 reverse client test for 200 seconds on each UE via Faraday (Downlink Test)
-  hosts: faraday
-  gather_facts: false
-  tasks:
-    - name: Run iperf3 reverse client on each UE for 200s
-      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -t 200 -R -J log_dl_test.json'
-      loop: "{{ groups['qhats'] }}"
-      loop_control:
-        loop_var: ue
-      delegate_to: faraday.inria.fr
+- name: Load active 5G profile
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg
 
-- name: Iperf3 client test for 200 seconds on each UE via Faraday (Uplink Test)
+- name: Iperf3 Downlink Test (200s) for each UE
   hosts: faraday
   gather_facts: false
   tasks:
-    - name: Run iperf3 client on each UE for 200s
-      shell: ssh root@{{ ue }} 'iperf3 -c {{ hostvars[ue].upf_ip }} -t 200 -J log_ul_test.json'
+    - name: Run iperf3 reverse client for each UE
+      block:
+        - name: Validate UE exists in 5G profile
+          fail:
+            msg: "UE {{ ue }} not found in 5G profile"
+          when: ue not in fiveg.ues
+
+        - name: Get slice name for UE
+          set_fact:
+            ue_slice: "{{ fiveg.ues[ue].slice }}"
+
+        - name: Validate slice exists
+          fail:
+            msg: "Slice {{ ue_slice }} not found in fiveg.slices"
+          when: fiveg.slices | selectattr('name', 'equalto', ue_slice) | length == 0
+
+        - name: Get UPF IP for UE
+          set_fact:
+            ue_ip_prefix: >-
+              {{
+                (fiveg.slices
+                 | selectattr('name', 'equalto', ue_slice)
+                 | first).ip_prefix
+              }}
+            ue_upf_ip: "{{ ue_ip_prefix }}.1"
+
+        - name: Run iperf3 reverse client
+          shell: ssh root@{{ ue }} "iperf3 -c {{ ue_upf_ip }} -t 200 -R -J log_dl_test.json"
       loop: "{{ groups['qhats'] }}"
       loop_control:
         loop_var: ue
-      delegate_to: faraday.inria.fr
+
+- name: Iperf3 Uplink Test (200s) for each UE
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Run iperf3 client for each UE
+      block:
+        - name: Validate UE exists in 5G profile
+          fail:
+            msg: "UE {{ ue }} not found in 5G profile"
+          when: ue not in fiveg.ues
+
+        - name: Get slice name for UE
+          set_fact:
+            ue_slice: "{{ fiveg.ues[ue].slice }}"
+
+        - name: Validate slice exists
+          fail:
+            msg: "Slice {{ ue_slice }} not found in fiveg.slices"
+          when: fiveg.slices | selectattr('name', 'equalto', ue_slice) | length == 0
+
+        - name: Get UPF IP for UE
+          set_fact:
+            ue_ip_prefix: >-
+              {{
+                (fiveg.slices
+                 | selectattr('name', 'equalto', ue_slice)
+                 | first).ip_prefix
+              }}
+            ue_upf_ip: "{{ ue_ip_prefix }}.1"
+
+        - name: Run iperf3 client
+          shell: ssh root@{{ ue }} "iperf3 -c {{ ue_upf_ip }} -t 200 -J log_ul_test.json"
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: ue

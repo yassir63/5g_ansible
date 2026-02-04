@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Default inventory
+DEFAULT_PROFILE_5G="default"
+DEFAULT_INVENTORY="default"
+PROFILE_5G="${PROFILE_5G:-$DEFAULT_PROFILE_5G}"
+INVENTORY="${INVENTORY:-./inventory/${DEFAULT_INVENTORY}/hosts.ini}"
+
 # Install required Ansible collections
 ansible-galaxy install -r collections/requirements.yml
 
@@ -7,57 +13,37 @@ ansible-galaxy install -r collections/requirements.yml
 SETUP_PLAYBOOK="playbooks/default_iperf_test_setup.yml"
 TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
 
-# By default, run setup
 RUN_SETUP=true
 
-# First handle long options
+# Parse arguments
 for arg in "$@"; do
   case "$arg" in
     --no-setup)
       RUN_SETUP=false
-      # Remove this arg from $@ so getopts doesn't see it
-      set -- "${@/--no-setup/}"
       ;;
-    --*)
-      echo "Unknown option: $arg"
-      echo "Usage: $0 [-d] [-p] [-i] [--no-setup]"
-      exit 1
+    --inventory=*)
+      INVENTORY="./inventory/${arg#*=}/hosts.ini"
       ;;
-  esac
-done
-
-# Now parse short options
-while getopts ":dpi" opt; do
-  case ${opt} in
-    d )
+    -d)
       SETUP_PLAYBOOK="playbooks/default_iperf_test_setup.yml"
       TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
       ;;
-    p )
+    -p)
       SETUP_PLAYBOOK="playbooks/parallel_iperf_test_setup.yml"
       TEST_PLAYBOOK="playbooks/run_parallel_iperf_test.yml"
       ;;
-    i )
+    -i)
       SETUP_PLAYBOOK="playbooks/interference_test_setup.yml"
       TEST_PLAYBOOK="playbooks/run_interference_test.yml"
       ;;
-    \? )
-      echo "Usage: $0 [-d] [-p] [-i] [--no-setup]"
-      echo "  -d           Use default iperf test playbook"
-      echo "  -p           Use parallel iperf test playbook"
-      echo "  -i           Use interference iperf test playbook"
-      echo "  --no-setup   Skip the setup playbook (useful if setup was already run)"
+    *)
+      echo "Unknown option: $arg"
+      echo "Usage: $0 [-d|-p|-i] [--no-setup] [--inventory=name]"
       exit 1
       ;;
   esac
 done
 
-# Shift past processed short options
-shift $((OPTIND - 1))
-
-# Run selected playbooks
-if $RUN_SETUP; then
-  ansible-playbook -i inventory/default/hosts.ini "$SETUP_PLAYBOOK"
-fi
-
-ansible-playbook -i inventory/default/hosts.ini "$TEST_PLAYBOOK"
+# Run playbooks
+[ "$RUN_SETUP" = true ] && ansible-playbook -i "$INVENTORY" "$SETUP_PLAYBOOK"
+ansible-playbook -i "$INVENTORY" "$TEST_PLAYBOOK"
