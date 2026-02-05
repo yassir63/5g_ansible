@@ -10,7 +10,7 @@
   set_fact:
     upf1_ip: >-
       {{
-        (slices
+        (fiveg.slices
         | selectattr('name', 'equalto', 'slice1')
         | map(attribute='ip_prefix')
         | first) ~ '.1'
