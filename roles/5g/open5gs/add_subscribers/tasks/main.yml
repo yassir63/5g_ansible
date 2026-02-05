@@ -39,22 +39,14 @@
       - "app.kubernetes.io/name=mongodb"
   register: mongo_pods
 
-- name: Wait for MongoDB pod to be ready
-  ansible.builtin.wait_for:
-    path: /tmp   # dummy path
-    timeout: 1
-  retries: 1
-  until: mongo_pods.resources | length > 0 and
-         (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
-
-- name: Wait for MongoDB to accept connections
+- name: Wait for MongoDB to be ready
   shell: |
     kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
-      bash -c "until nc -z localhost 27017; do sleep 1; done"
+      bash -c "until mongo --disableImplicitSessions --eval 'db.hello().isWritablePrimary || db.hello().secondary' | grep -q 'true'; do sleep 1; done"
+  register: mongo_ready
   retries: 60
   delay: 5
-  register: mongo_ping
-  until: mongo_ping.rc == 0
+  until: mongo_ready.rc == 0
   changed_when: false
 
 - name: Check if subscriber exists
