@@ -217,8 +217,8 @@
 
 - name: Add subscribers
   ansible.builtin.include_role:
-    name: 5g.open5gs.add_subscribers
+    name: 5g/open5gs/add_subscribers
 
 - name: Check Open5GS deployment
   ansible.builtin.include_role:
-    name: 5g.open5gs.check_all
+    name: 5g/open5gs/check_all
