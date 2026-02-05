@@ -24,6 +24,10 @@ for arg in "$@"; do
     --inventory=*)
       INVENTORY="./inventory/${arg#*=}/hosts.ini"
       ;;
+    -s)
+      RUN_SETUP=false
+      TEST_PLAYBOOK="playbooks/run_rfsim_iperf_test.yml"
+      ;;
     -d)
       SETUP_PLAYBOOK="playbooks/default_iperf_test_setup.yml"
       TEST_PLAYBOOK="playbooks/run_default_iperf_test.yml"
