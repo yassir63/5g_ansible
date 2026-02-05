@@ -219,6 +219,6 @@
   ansible.builtin.include_role:
     name: add_subscribers
 
-- name: Fully check Open5GS deployment
-  ansible.builtin..include_role:
+- name: Check Open5GS deployment
+  ansible.builtin.include_role:
     name: check-all
