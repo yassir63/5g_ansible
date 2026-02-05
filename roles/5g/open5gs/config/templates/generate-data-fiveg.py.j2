@@ -22,52 +22,55 @@ DEFAULT_ARP = {"priority_level": 8,
 
 FIVEG_PROFILE = {
     "plmn": {"mcc": "{{ profile.plmn.mcc }}", "mnc": "{{ profile.plmn.mnc }}"},
-    "slices": [
+    "slices": {
     {% for s in profile.slices %}
-        {"name": "{{ s.name }}",
-         "sst": {{ s.sst | int }},
-         "sd": "{{ '0xFFFFFF' if s.sd == 'EMPTY' else ('0x' + s.sd) }}",
-         "dnn": "{{ s.dnn }}",
-         "ambr": {"uplink": {"value": {{ s.bandwidth.uplink | regex_replace('Mbps','') | int }}, "unit": Open5GS.Unit.Mbps},
-                  "downlink": {"value": {{ s.bandwidth.downlink | regex_replace('Mbps','') | int }}, "unit": Open5GS.Unit.Mbps}},
-         "qos_index": {{ s.qos.five_qi | int }} }{% if not loop.last %},{% endif %}
+        "{{ s.name }}": {
+            "sst": {{ s.sst | int }},
+            "sd": "{{ '0xFFFFFF' if s.sd == 'EMPTY' else s.sd }}",
+            "default_indicator": True,
+            "session": [{
+                "name": "{{ s.dnn }}",
+                "type": Open5GS.Type.IPv4,
+                "pcc_rule": [],
+                "ambr": {
+                    "uplink": {"value": {{ s.bandwidth.uplink | regex_replace('Mbps','') | int }}, "unit": Open5GS.Unit.Mbps},
+                    "downlink": {"value": {{ s.bandwidth.downlink | regex_replace('Mbps','') | int }}, "unit": Open5GS.Unit.Mbps}
+                },
+                "qos": {"index": {{ s.qos.five_qi | int }}, "arp": DEFAULT_ARP}
+            }]
+        }{% if not loop.last %},{% endif %}
     {% endfor %}
-    ],
-    "ues": [
+    },
+    "ues": {
     {% for ue_name, ue in profile.ues.items() %}
-        {"name": "{{ ue_name }}",
-         "imsi_suffix": "{{ ue.imsi_suffix }}",
-         "key": "{{ profile.security.full_key }}",
-         "opc": "{{ profile.security.opc }}",
-         "slices": ["{{ ue.slice }}"] }{% if not loop.last %},{% endif %}
+        "{{ ue_name }}": {
+            "imsi_suffix": "{{ ue.imsi_suffix }}",
+            "key": "{{ profile.security.full_key }}",
+            "opc": "{{ profile.security.opc }}",
+            "slices": ["{{ ue.slice }}"]
+        }{% if not loop.last %},{% endif %}
     {% endfor %}
-    ]
+    }
 }
 
 
 def generate_slices(profile):
     slices = {}
-    for s in profile["slices"]:
-        slices[s["name"]] = {
+    for s_name, s in profile["slices"].items():
+        slices[s_name] = {
             "sst": s["sst"],
             "sd": s["sd"],
             "default_indicator": True,
-            "session": [{
-                "name": s["dnn"],
-                "type": Open5GS.Type.IPv4,
-                "pcc_rule": [],
-                "ambr": {"uplink": s["ambr"]["uplink"], "downlink": s["ambr"]["downlink"]},
-                "qos": {"index": s["qos_index"], "arp": DEFAULT_ARP},
-            }],
+            "session": s["session"]
         }
     return slices
 
 def generate_subscribers(profile, slices):
     subscribers = {}
-    for ue in profile["ues"]:
+    for ue_name, ue in profile["ues"].items():
         imsi = f'{profile["plmn"]["mcc"]}{profile["plmn"]["mnc"]}{ue["imsi_suffix"]}'
         assigned_slices = [slices[s] for s in ue["slices"] if s in slices]
-        subscribers[ue["name"]] = {
+        subscribers[ue_name] = {
             "_id": "",
             "imsi": imsi,
             "subscribed_rau_tau_timer": 12,
