@@ -221,4 +221,4 @@
 
 - name: Check Open5GS deployment
   ansible.builtin.include_role:
-    name: check-all
+    name: check_all
