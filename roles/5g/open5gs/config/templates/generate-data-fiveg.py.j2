@@ -26,7 +26,7 @@ FIVEG_PROFILE = {
     {% for s in profile.slices %}
         {"name": "{{ s.name }}",
          "sst": {{ s.sst | int }},
-         "sd": {{ "0xFFFFFF" if s.sd == "EMPTY" else ("0x" + s.sd) }},
+         "sd": "{{ '0xFFFFFF' if s.sd == 'EMPTY' else ('0x' + s.sd) }}",
          "dnn": "{{ s.dnn }}",
          "ambr": {"uplink": {"value": {{ s.bandwidth.uplink | regex_replace('Mbps','') | int }}, "unit": Open5GS.Unit.Mbps},
                   "downlink": {"value": {{ s.bandwidth.downlink | regex_replace('Mbps','') | int }}, "unit": Open5GS.Unit.Mbps}},
