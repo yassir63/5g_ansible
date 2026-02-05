@@ -34,8 +34,8 @@ FIVEG_PROFILE = {
     {% endfor %}
     ],
     "ues": [
-    {% for ue in profile.ues %}
-        {"name": "{{ ue.key if ue.key is defined else ue.key | default(ue.name) }}",
+    {% for ue_name, ue in profile.ues.items() %}
+        {"name": "{{ ue_name }}",
          "imsi_suffix": "{{ ue.imsi_suffix }}",
          "key": "{{ profile.security.full_key }}",
          "opc": "{{ profile.security.opc }}",
