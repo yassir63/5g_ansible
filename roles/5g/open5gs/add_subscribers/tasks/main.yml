@@ -31,19 +31,35 @@
       }}
   loop: "{{ fiveg.ues | dict2items }}"
 
+- name: Get MongoDB pod name
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "app.kubernetes.io/name=mongodb"
+  register: mongo_pods
+
+- name: Wait for MongoDB pod to be ready
+  ansible.builtin.wait_for:
+    path: /tmp   # dummy path
+    timeout: 1
+  retries: 1
+  until: mongo_pods.resources | length > 0 and
+         (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
+
 - name: Wait for MongoDB to accept connections
-  ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+  shell: |
+    kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
       mongosh --eval "db.adminCommand('ping')"
   register: mongo_ping
-  retries: 20
-  delay: 3
+  retries: 30
+  delay: 5
   until: mongo_ping.rc == 0
   changed_when: false
 
 - name: Check if subscriber exists
   ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+    kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
       mongo open5gs --quiet --eval 'db.subscribers.findOne({imsi:"{{ item.imsi }}"})'
   register: subscriber_check
   changed_when: false
@@ -51,7 +67,7 @@
 
 - name: Add subscriber
   ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+    kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
       open5gs-dbctl add {{ item.item.imsi }} {{ item.item.key }} {{ item.item.opc }}
   when: item.stdout == "null"
   loop: "{{ subscriber_check.results }}"
@@ -60,7 +76,7 @@
   vars:
     slice_objects: "{{ fiveg.slices }}"
   ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+    kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
       open5gs-dbctl update {{ ue.imsi }} \
       --slice {{ slice.sst }}{% if slice.sd != "EMPTY" %}:{{ slice.sd }}{% endif %} \
       --dnn {{ slice.dnn }} \
