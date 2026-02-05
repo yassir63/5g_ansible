@@ -179,7 +179,7 @@
 - name: Deploy Open5GS DBCTL pod
   kubernetes.core.k8s:
     state: present
-    definition: "{{ lookup('file', k8s_dir + '/open5gs-dbctl-deployment.yaml') }}"
+    definition: "{{ lookup('file', playbook_dir + '/../roles/5g/open5gs/deploy/k8s/open5gs-dbctl-deployment.yaml') }}"
 
 - name: Get DBCTL pod name
   kubernetes.core.k8s_info:
