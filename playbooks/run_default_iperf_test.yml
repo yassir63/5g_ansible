@@ -14,7 +14,6 @@
   gather_facts: false
   tasks:
 
-    # Validate UEs exist
     - name: Validate UEs exist in 5G profile
       fail:
         msg: "UE {{ item }} not found in 5G profile"
@@ -23,7 +22,6 @@
         loop_var: item
       when: item not in fiveg.ues
 
-    # Validate slice exists for each UE
     - name: Validate slice exists for each UE
       fail:
         msg: "Slice {{ fiveg.ues[item].slice }} not found in fiveg.slices"
@@ -32,8 +30,7 @@
         loop_var: item
       when: (fiveg.slices | selectattr('name','equalto', fiveg.ues[item].slice) | length) == 0
 
-    # Run iperf3 reverse client (Downlink) per UE
-    - name: Run iperf3 reverse client
+    - name: Run iperf3 reverse client (Downlink) per UE
       vars:
         ue_slice: "{{ fiveg.ues[item].slice }}"
         ue_ip_prefix: >-
@@ -48,13 +45,35 @@
       loop_control:
         loop_var: item
 
+    - name: Fetch iperf3 downlink JSON results
+      fetch:
+        src: log_dl_test.json
+        dest: "{{ playbook_dir }}/results/{{ item }}_log_dl_test.json"
+        flat: yes
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
+
+    - name: Display Downlink average throughput per UE
+      local_action: command jq '.end.sum_received.bits_per_second' "{{ playbook_dir }}/results/{{ item }}_log_dl_test.json"
+      register: dl_results
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
+
+    - name: Print Downlink Mbps results
+      debug:
+        msg: "UE {{ item.item }} Downlink Average Throughput: {{ (item.stdout | float / 1000000) | round(2) }} Mbps"
+      loop: "{{ dl_results.results }}"
+      loop_control:
+        loop_var: item
+
 # ----------------- Uplink Test -----------------
 - name: Iperf3 Uplink Test (200s) for each UE
   hosts: faraday
   gather_facts: false
   tasks:
 
-    # Validate UEs exist
     - name: Validate UEs exist in 5G profile
       fail:
         msg: "UE {{ item }} not found in 5G profile"
@@ -63,7 +82,6 @@
         loop_var: item
       when: item not in fiveg.ues
 
-    # Validate slice exists for each UE
     - name: Validate slice exists for each UE
       fail:
         msg: "Slice {{ fiveg.ues[item].slice }} not found in fiveg.slices"
@@ -72,8 +90,7 @@
         loop_var: item
       when: (fiveg.slices | selectattr('name','equalto', fiveg.ues[item].slice) | length) == 0
 
-    # Run iperf3 client (Uplink) per UE
-    - name: Run iperf3 client
+    - name: Run iperf3 client (Uplink) per UE
       vars:
         ue_slice: "{{ fiveg.ues[item].slice }}"
         ue_ip_prefix: >-
@@ -85,5 +102,28 @@
         ue_upf_ip: "{{ ue_ip_prefix }}.1"
       shell: ssh root@{{ item }} "iperf3 -c {{ ue_upf_ip }} -t 200 -J log_ul_test.json"
       loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
+
+    - name: Fetch iperf3 uplink JSON results
+      fetch:
+        src: log_ul_test.json
+        dest: "{{ playbook_dir }}/results/{{ item }}_log_ul_test.json"
+        flat: yes
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
+
+    - name: Display Uplink average throughput per UE
+      local_action: command jq '.end.sum_sent.bits_per_second' "{{ playbook_dir }}/results/{{ item }}_log_ul_test.json"
+      register: ul_results
+      loop: "{{ groups['qhats'] }}"
+      loop_control:
+        loop_var: item
+
+    - name: Print Uplink Mbps results
+      debug:
+        msg: "UE {{ item.item }} Uplink Average Throughput: {{ (item.stdout | float / 1000000) | round(2) }} Mbps"
+      loop: "{{ ul_results.results }}"
       loop_control:
         loop_var: item

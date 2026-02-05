@@ -26,7 +26,7 @@ FIVEG_PROFILE = {
     {% for s in profile.slices %}
         "{{ s.name }}": {
             "sst": {{ s.sst | int }},
-            "sd": "{{ '0xFFFFFF' if s.sd == 'EMPTY' else s.sd.zfill(6) }}"
+            "sd": "{{ 'FFFFFF' if s.sd == 'EMPTY' else s.sd.zfill(6) }}"
             "default_indicator": True,
             "session": [{
                 "name": "{{ s.dnn }}",
