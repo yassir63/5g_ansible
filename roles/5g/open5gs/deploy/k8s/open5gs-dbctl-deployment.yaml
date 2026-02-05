@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open5gs-dbctl
+  namespace: open5gs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open5gs-dbctl
+  template:
+    metadata:
+      labels:
+        app: open5gs-dbctl
+    spec:
+      containers:
+        - name: dbctl
+          image: open5gs/open5gs:latest
+          command: ["sleep", "infinity"]
+          imagePullPolicy: IfNotPresent

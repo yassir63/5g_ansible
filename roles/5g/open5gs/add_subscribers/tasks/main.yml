@@ -41,7 +41,7 @@
 
 - name: Wait for MongoDB to be ready
   shell: |
-    kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
+    kubectl exec -n {{ open5gs_ns }} {{ open5gs_dbctl_pod }} -- \
       bash -c "until mongo --disableImplicitSessions --eval 'db.hello().isWritablePrimary || db.hello().secondary' | grep -q 'true'; do sleep 1; done"
   register: mongo_ready
   retries: 60
@@ -51,7 +51,7 @@
 
 - name: Check if subscriber exists
   ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
+    kubectl exec -n {{ open5gs_ns }} {{ open5gs_dbctl_pod }} -- \
       mongo open5gs --quiet --eval 'db.subscribers.findOne({imsi:"{{ item.imsi }}"})'
   register: subscriber_check
   changed_when: false
@@ -59,7 +59,7 @@
 
 - name: Add subscriber
   ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
+    kubectl exec -n {{ open5gs_ns }} {{ open5gs_dbctl_pod }} -- \
       open5gs-dbctl add {{ item.item.imsi }} {{ item.item.key }} {{ item.item.opc }}
   when: item.stdout == "null"
   loop: "{{ subscriber_check.results }}"
@@ -68,7 +68,7 @@
   vars:
     slice_objects: "{{ fiveg.slices }}"
   ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
+    kubectl exec -n {{ open5gs_ns }} {{ open5gs_dbctl_pod }} -- \
       open5gs-dbctl update {{ ue.imsi }} \
       --slice {{ slice.sst }}{% if slice.sd != "EMPTY" %}:{{ slice.sd }}{% endif %} \
       --dnn {{ slice.dnn }} \

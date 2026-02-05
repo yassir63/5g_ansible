@@ -2,6 +2,10 @@
 - name: RESTART_OPEN5GS_DEPLOY
   ansible.builtin.meta: noop
 
+- name: Set k8s manifests directory
+  set_fact:
+    k8s_dir: "{{ repo_dest }}/deploy/k8s"
+
 - name: Reload and restart kubelet
   ansible.builtin.shell: |
     systemctl daemon-reload
@@ -172,6 +176,20 @@
     state: present
   become: yes
 
+- name: Deploy Open5GS DBCTL pod
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('file', k8s_dir + '/open5gs-dbctl-deployment.yaml') }}"
+
+- name: Get DBCTL pod name
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ open5gs_ns }}"
+    label_selectors:
+      - "app=open5gs-dbctl"
+  register: dbctl_pod
+
+
 - name: Create Python virtual environment for Open5GS admin scripts
   ansible.builtin.command:
     cmd: python3 -m venv "{{ repo_dest }}/venv"
@@ -218,6 +236,8 @@
 - name: Add subscribers
   ansible.builtin.include_role:
     name: 5g/open5gs/add_subscribers
+  vars:
+    open5gs_dbctl_pod: "{{ dbctl_pod.resources[0].metadata.name }}"
 
 - name: Check Open5GS deployment
   ansible.builtin.include_role:
