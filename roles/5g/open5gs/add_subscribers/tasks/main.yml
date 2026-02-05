@@ -50,10 +50,10 @@
 - name: Wait for MongoDB to accept connections
   shell: |
     kubectl exec -n {{ open5gs_ns }} {{ mongo_pods.resources[0].metadata.name }} -- \
-      mongosh --eval "db.adminCommand('ping')"
-  register: mongo_ping
-  retries: 30
+      bash -c "until nc -z localhost 27017; do sleep 1; done"
+  retries: 60
   delay: 5
+  register: mongo_ping
   until: mongo_ping.rc == 0
   changed_when: false
 
