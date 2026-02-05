@@ -1,0 +1,77 @@
+---
+- name: Include 5G profile variables
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg
+
+- name: Validate IMSI length
+  ansible.builtin.assert:
+    that:
+      - "(fiveg.plmn.mcc | length) == 3"
+      - "(fiveg.plmn.mnc | length) in [2,3]"
+      - "(fiveg.plmn.mcc | length) + (fiveg.plmn.mnc | length) + (item.value.imsi_suffix | length) == 15"
+    fail_msg: "Invalid IMSI for UE {{ item.key }}"
+  loop: "{{ fiveg.ues | dict2items }}"
+
+- name: Build enriched UE list
+  set_fact:
+    open5gs_ues: >-
+      {{
+        open5gs_ues | default([]) + [{
+          'name': item.key,
+          'imsi': fiveg.plmn.mcc ~ fiveg.plmn.mnc ~ item.value.imsi_suffix,
+          'key': fiveg.security.full_key,
+          'opc': fiveg.security.opc,
+          'slices': (
+            item.value.slices
+            if item.value.slices is defined
+            else [ item.value.slice ]
+          )
+        }]
+      }}
+  loop: "{{ fiveg.ues | dict2items }}"
+
+- name: Wait for MongoDB to accept connections
+  shell: |
+    kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+      mongosh --eval "db.adminCommand('ping')"
+  register: mongo_ping
+  retries: 20
+  delay: 3
+  until: mongo_ping.rc == 0
+  changed_when: false
+
+- name: Check if subscriber exists
+  shell: |
+    kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+      mongo open5gs --quiet --eval 'db.subscribers.findOne({imsi:"{{ item.imsi }}"})'
+  register: subscriber_check
+  changed_when: false
+  loop: "{{ open5gs_ues }}"
+
+- name: Add subscriber
+  shell: |
+    kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+      open5gs-dbctl add {{ item.item.imsi }} {{ item.item.key }} {{ item.item.opc }}
+  when: item.stdout == "null"
+  loop: "{{ subscriber_check.results }}"
+
+
+- name: Configure slices, DNN and AMBR
+  vars:
+    slice_objects: "{{ fiveg.slices }}"
+  loop: "{{ open5gs_ues }}"
+  loop_control:
+    loop_var: ue
+  block:
+
+    - name: Apply each slice for UE
+      shell: |
+        kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+          open5gs-dbctl update {{ ue.imsi }} \
+          --slice {{ slice.sst }}{% if slice.sd != "EMPTY" %}:{{ slice.sd }}{% endif %} \
+          --dnn {{ slice.dnn }} \
+          --ambr {{ slice.bandwidth.uplink }} {{ slice.bandwidth.downlink }}
+      vars:
+        slice: "{{ slice_objects | selectattr('name','equalto', item) | first }}"
+      loop: "{{ ue.slices }}"

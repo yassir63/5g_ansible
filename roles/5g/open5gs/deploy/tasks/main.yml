@@ -216,13 +216,8 @@
     chdir: "{{ repo_dest }}"
 
 - name: Add subscribers
-  ansible.builtin.shell: |
-    {{ repo_dest }}/venv/bin/python mongo-tools/generate-data.py && \
-    {{ repo_dest }}/venv/bin/python mongo-tools/add-subscribers.py
-  args:
-    chdir: "{{ repo_dest }}"
-  register: sub_out
-  changed_when: false
+  ansible.builtin.include_role:
+    name: open5gs_subscribers
 
 - name: Check added subscribers
   ansible.builtin.shell: |
