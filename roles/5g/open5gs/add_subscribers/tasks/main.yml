@@ -4,79 +4,99 @@
     file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
     name: fiveg
 
-- name: Validate IMSI length
-  ansible.builtin.assert:
-    that:
-      - "(fiveg.plmn.mcc | length) == 3"
-      - "(fiveg.plmn.mnc | length) in [2,3]"
-      - "(fiveg.plmn.mcc | length) + (fiveg.plmn.mnc | length) + (item.value.imsi_suffix | length) == 15"
-    fail_msg: "Invalid IMSI for UE {{ item.key }}"
-  loop: "{{ fiveg.ues | dict2items }}"
+- name: Ensure data directory exists
+  ansible.builtin.file:
+    path: "{{ repo_dest }}/data"
+    state: directory
+    mode: "0755"
 
-- name: Build enriched UE list
-  set_fact:
-    open5gs_ues: >-
-      {{
-        open5gs_ues | default([]) + [{
-          'name': item.key,
-          'imsi': fiveg.plmn.mcc ~ fiveg.plmn.mnc ~ item.value.imsi_suffix,
-          'key': fiveg.security.full_key,
-          'opc': fiveg.security.opc,
-          'slices': (
-            item.value.slices
-            if item.value.slices is defined
-            else [ item.value.slice ]
-          )
-        }]
-      }}
-  loop: "{{ fiveg.ues | dict2items }}"
+- name: Write generate-data-fiveg.py script on the server
+  ansible.builtin.copy:
+    dest: "{{ repo_dest }}/mongo-tools/generate-data-fiveg.py"
+    content: |
+      #!/usr/bin/env python3
+      """
+      Generate Open5GS subscribers from a 5G profile YAML.
+      Supports multi-slices per UE.
+      Writes subscribers.yaml in data/ for add-subscribers.py.
+      """
+      import yaml
+      import os
+      import argparse
 
-- name: Get MongoDB pod name
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ open5gs_ns }}"
-    label_selectors:
-      - "app.kubernetes.io/name=mongodb"
-  register: mongo_pods
+      REPO_DIR = os.path.dirname(os.path.abspath(__file__)) + "/.."
+      DATA_DIR = os.path.join(REPO_DIR, "data")
+      os.makedirs(DATA_DIR, exist_ok=True)
+      DEFAULT_PROFILE = os.path.join(REPO_DIR, "group_vars/all/5g_profile_default.yaml")
+      OUTPUT_FILE = os.path.join(DATA_DIR, "subscribers.yaml")
 
-- name: Wait for MongoDB to be ready
-  shell: |
-    kubectl exec -n {{ open5gs_ns }} {{ open5gs_dbctl_pod }} -- \
-      bash -c "until mongo --disableImplicitSessions --eval 'db.hello().isWritablePrimary || db.hello().secondary' | grep -q 'true'; do sleep 1; done"
-  register: mongo_ready
-  retries: 60
-  delay: 5
-  until: mongo_ready.rc == 0
-  changed_when: false
+      def load_profile(path):
+          with open(path, "r") as f:
+              return yaml.safe_load(f)
 
-- name: Check if subscriber exists
-  ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} {{ open5gs_dbctl_pod }} -- \
-      mongo open5gs --quiet --eval 'db.subscribers.findOne({imsi:"{{ item.imsi }}"})'
-  register: subscriber_check
-  changed_when: false
-  loop: "{{ open5gs_ues }}"
+      def generate_subscribers(profile):
+          subscribers = {}
+          plmn = profile["plmn"]
+          slices = {s["name"]: s for s in profile["slices"]}
+          security = profile["security"]
 
-- name: Add subscriber
-  ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} {{ open5gs_dbctl_pod }} -- \
-      open5gs-dbctl add {{ item.item.imsi }} {{ item.item.key }} {{ item.item.opc }}
-  when: item.stdout == "null"
-  loop: "{{ subscriber_check.results }}"
+          for ue_name, ue in profile["ues"].items():
+              ue_slices = ue.get("slices", [ue.get("slice")])
+              ue_entry = {
+                  "imsi": f"{plmn['mcc']}{plmn['mnc']}{ue['imsi_suffix']}",
+                  "key": security["full_key"],
+                  "opc": security["opc"],
+                  "slices": []
+              }
 
-- name: Configure slices, DNN and AMBR for all UEs and slices
-  vars:
-    slice_objects: "{{ fiveg.slices }}"
-  ansible.builtin.shell: |
-    kubectl exec -n {{ open5gs_ns }} {{ open5gs_dbctl_pod }} -- \
-      open5gs-dbctl update {{ ue.imsi }} \
-      --slice {{ slice.sst }}{% if slice.sd != "EMPTY" %}:{{ slice.sd }}{% endif %} \
-      --dnn {{ slice.dnn }} \
-      --ambr {{ slice.bandwidth.uplink }} {{ slice.bandwidth.downlink }}
-  loop: "{{ open5gs_ues | subelements('slices') }}"
-  loop_control:
-    loop_var: ue_slice_pair
-  vars:
-    ue: "{{ ue_slice_pair.0 }}"
-    slice_name: "{{ ue_slice_pair.1 }}"
-    slice: "{{ slice_objects | selectattr('name','equalto', slice_name) | first }}"
+              for s_name in ue_slices:
+                  s = slices[s_name]
+                  slice_entry = {
+                      "name": s["name"],
+                      "sst": s["sst"],
+                      "sd": None if s["sd"] == "EMPTY" else s["sd"],
+                      "dnn": s["dnn"],
+                      "ambr": s["bandwidth"]
+                  }
+                  ue_entry["slices"].append(slice_entry)
+
+              subscribers[ue_name] = ue_entry
+
+          return subscribers
+
+      def main():
+          parser = argparse.ArgumentParser(description="Generate Open5GS subscribers from 5G profile")
+          parser.add_argument("--profile", default=DEFAULT_PROFILE, help="Path to 5G profile YAML")
+          args = parser.parse_args()
+
+          profile = load_profile(args.profile)
+          subscribers = generate_subscribers(profile)
+
+          with open(OUTPUT_FILE, "w") as f:
+              yaml.dump(subscribers, f, sort_keys=False)
+
+          print(f"Generated {len(subscribers)} subscribers in {OUTPUT_FILE}")
+
+      if __name__ == "__main__":
+          main()
+    mode: '0755'
+
+- name: Generate subscribers YAML from 5G profile
+  ansible.builtin.command:
+    cmd: python3 mongo-tools/generate-data-fiveg.py
+    chdir: "{{ repo_dest }}"
+  register: generate_result
+
+- name: Show generated subscribers info
+  ansible.builtin.debug:
+    msg: "{{ generate_result.stdout }}"
+
+- name: Add subscribers into MongoDB
+  ansible.builtin.command:
+    cmd: python3 mongo-tools/add-subscribers.py
+    chdir: "{{ repo_dest }}"
+  register: add_result
+
+- name: Show add subscribers output
+  ansible.builtin.debug:
+    msg: "{{ add_result.stdout }}"

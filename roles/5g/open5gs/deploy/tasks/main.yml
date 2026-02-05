@@ -2,10 +2,6 @@
 - name: RESTART_OPEN5GS_DEPLOY
   ansible.builtin.meta: noop
 
-- name: Set k8s manifests directory
-  set_fact:
-    k8s_dir: "{{ repo_dest }}/deploy/k8s"
-
 - name: Reload and restart kubelet
   ansible.builtin.shell: |
     systemctl daemon-reload
@@ -33,7 +29,6 @@
   until: wait_coredns.rc == 0
   changed_when: false
 
-# --- Test DNS ---
 - name: Test CoreDNS resolution from core node
   become: true
   delegate_to: "{{ groups['core_node'][0] }}"
@@ -42,25 +37,18 @@
   ansible.builtin.shell: |
     set -eux
     for NODE in {{ groups['core_node'][0] }}; do
-      echo "=== Testing DNS on $NODE ==="
-      kubectl run dns-test-$NODE \
-        --image=busybox:1.36 \
-        --restart=Never \
-        --overrides='{"spec": {"nodeName": "'"${NODE}"'"}}' \
-        --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
+      kubectl run dns-test-$NODE --image=busybox:1.36 --restart=Never \
+        --overrides='{"spec": {"nodeName": "'"${NODE}"'"}}' --command -- sh -c 'nslookup kubernetes.default.svc.cluster.local' || true
     done
-
-    echo "Cleaning up test pods..."
     kubectl delete pod dns-test-{{ groups['core_node'][0] }} --ignore-not-found
   changed_when: false
-  
+
 - name: Ensure Open5GS namespace exists
   kubernetes.core.k8s:
     api_version: v1
     kind: Namespace
     name: "{{ open5gs_ns }}"
     state: present
-
 
 - name: Apply MongoDB with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/mongodb" -n {{ open5gs_ns }}
@@ -75,12 +63,10 @@
   until: >
     mongo_pods.resources | length > 0 and
     (mongo_pods.resources[0].status.containerStatuses is defined) and
-    (mongo_pods.resources[0].status.containerStatuses | length > 0) and
     (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
 
-# === NETWORK ATTACHMENT DEFINITIONS (NADs) ===
 - name: Apply NADs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
 
@@ -100,14 +86,14 @@
   until: "'network-attachment-definitions.k8s.cni.cncf.io' in crd_list.stdout"
   changed_when: false
 
-- name: Install jq (required for NAD patching)
+- name: Install jq
   ansible.builtin.apt:
     name: jq
     state: present
     update_cache: yes
   become: yes
 
-- name: Wait for Multus CRD to be registered
+- name: Wait for Multus CRD
   ansible.builtin.shell: kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
   register: multus_crd_check
   retries: 60
@@ -116,7 +102,7 @@
   changed_when: false
   failed_when: false
 
-- name: Patch NADs to use unique interface names (net1/net2/net3)
+- name: Patch NADs to use unique interface names
   shell: |
     set -euo pipefail
     for nad in n2network n3network n4network; do
@@ -124,10 +110,8 @@
         n2network) ifname=net1 ;;
         n3network) ifname=net2 ;;
         n4network) ifname=net3 ;;
-        *) continue ;;
       esac
       if ! kubectl get networkattachmentdefinition "$nad" -n open5gs &>/dev/null; then
-        echo "Skipping $nad (not yet created)"
         continue
       fi
       config=$(kubectl get networkattachmentdefinition "$nad" -n open5gs -o jsonpath='{.spec.config}')
@@ -163,34 +147,20 @@
   until: >
     nf_pod.resources | length > 0 and
     (nf_pod.resources[0].status.containerStatuses is defined) and
-    (nf_pod.resources[0].status.containerStatuses | length > 0) and
     (nf_pod.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
   loop: "{{ nfs }}"
   loop_control:
     label: "{{ item }}"
-- name: Install python3-venv (required for venv)
+
+- name: Install python3-venv
   ansible.builtin.apt:
     name: python3-venv
     state: present
   become: yes
 
-- name: Deploy Open5GS DBCTL pod
-  kubernetes.core.k8s:
-    state: present
-    definition: "{{ lookup('file', playbook_dir + '/../roles/5g/open5gs/deploy/k8s/open5gs-dbctl-deployment.yaml') }}"
-
-- name: Get DBCTL pod name
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ open5gs_ns }}"
-    label_selectors:
-      - "app=open5gs-dbctl"
-  register: dbctl_pod
-
-
-- name: Create Python virtual environment for Open5GS admin scripts
+- name: Create Python virtual environment
   ansible.builtin.command:
     cmd: python3 -m venv "{{ repo_dest }}/venv"
     creates: "{{ repo_dest }}/venv/bin/activate"
@@ -203,13 +173,13 @@
     executable: "{{ repo_dest }}/venv/bin/pip"
   become: yes
 
-- name: Install Python requirements for admin script
+- name: Install Python requirements
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
     executable: "{{ repo_dest }}/venv/bin/pip"
   become: yes
 
-- name: Deploy Open5GS Web UI with Kustomize
+- name: Deploy Open5GS Web UI
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/open5gs-webui" -n {{ open5gs_ns }}
 
 - name: Wait for WebUI pod Ready
@@ -221,23 +191,28 @@
   register: webui_pod
   until: >
     webui_pod.resources | length > 0 and
-    (webui_pod.resources[0].status.containerStatuses is defined) and
-    (webui_pod.resources[0].status.containerStatuses | length > 0) and
     (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
   delay: 5
+
+- name: Copy generate-data-fiveg.py to server
+  ansible.builtin.copy:
+    src: generate-data-fiveg.py
+    dest: "{{ repo_dest }}/mongo-tools/generate-data-fiveg.py"
+    mode: '0755'
+
+- name: Run Python scripts to generate and add subscribers
+  ansible.builtin.shell: |
+    {{ repo_dest }}/venv/bin/python {{ repo_dest }}/mongo-tools/generate-data-fiveg.py
+    {{ repo_dest }}/venv/bin/python {{ repo_dest }}/mongo-tools/add-subscribers.py
+  args:
+    chdir: "{{ repo_dest }}"
 
 - name: Run add-admin-account.py
   ansible.builtin.command: >
     {{ repo_dest }}/venv/bin/python mongo-tools/add-admin-account.py
   args:
     chdir: "{{ repo_dest }}"
-
-- name: Add subscribers
-  ansible.builtin.include_role:
-    name: 5g/open5gs/add_subscribers
-  vars:
-    open5gs_dbctl_pod: "{{ dbctl_pod.resources[0].metadata.name }}"
 
 - name: Check Open5GS deployment
   ansible.builtin.include_role:
