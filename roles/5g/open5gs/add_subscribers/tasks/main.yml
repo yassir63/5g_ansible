@@ -32,7 +32,7 @@
   loop: "{{ fiveg.ues | dict2items }}"
 
 - name: Wait for MongoDB to accept connections
-  shell: |
+  ansible.builtin.shell: |
     kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
       mongosh --eval "db.adminCommand('ping')"
   register: mongo_ping
@@ -42,7 +42,7 @@
   changed_when: false
 
 - name: Check if subscriber exists
-  shell: |
+  ansible.builtin.shell: |
     kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
       mongo open5gs --quiet --eval 'db.subscribers.findOne({imsi:"{{ item.imsi }}"})'
   register: subscriber_check
@@ -50,28 +50,25 @@
   loop: "{{ open5gs_ues }}"
 
 - name: Add subscriber
-  shell: |
+  ansible.builtin.shell: |
     kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
       open5gs-dbctl add {{ item.item.imsi }} {{ item.item.key }} {{ item.item.opc }}
   when: item.stdout == "null"
   loop: "{{ subscriber_check.results }}"
 
-
-- name: Configure slices, DNN and AMBR
+- name: Configure slices, DNN and AMBR for all UEs and slices
   vars:
     slice_objects: "{{ fiveg.slices }}"
-  loop: "{{ open5gs_ues }}"
+  ansible.builtin.shell: |
+    kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
+      open5gs-dbctl update {{ ue.imsi }} \
+      --slice {{ slice.sst }}{% if slice.sd != "EMPTY" %}:{{ slice.sd }}{% endif %} \
+      --dnn {{ slice.dnn }} \
+      --ambr {{ slice.bandwidth.uplink }} {{ slice.bandwidth.downlink }}
+  loop: "{{ open5gs_ues | subelements('slices') }}"
   loop_control:
-    loop_var: ue
-  block:
-
-    - name: Apply each slice for UE
-      shell: |
-        kubectl exec -n {{ open5gs_ns }} deploy/open5gs-mongodb -- \
-          open5gs-dbctl update {{ ue.imsi }} \
-          --slice {{ slice.sst }}{% if slice.sd != "EMPTY" %}:{{ slice.sd }}{% endif %} \
-          --dnn {{ slice.dnn }} \
-          --ambr {{ slice.bandwidth.uplink }} {{ slice.bandwidth.downlink }}
-      vars:
-        slice: "{{ slice_objects | selectattr('name','equalto', item) | first }}"
-      loop: "{{ ue.slices }}"
+    loop_var: ue_slice_pair
+  vars:
+    ue: "{{ ue_slice_pair.0 }}"
+    slice_name: "{{ ue_slice_pair.1 }}"
+    slice: "{{ slice_objects | selectattr('name','equalto', slice_name) | first }}"
