@@ -2,10 +2,22 @@
 - name: RESTART_OAI_RAN
   ansible.builtin.meta: noop
 
-- name: Run demo-oai.sh start-gnb to launch OAI gnb pod
+- name: Launch OAI gNB pod
   ansible.builtin.command: "{{ demo_oai_script }} start-gnb"
   args:
     chdir: "{{ repo_dest }}"
   register: gnb_script
   changed_when: "'When you finish' in gnb_script.stdout"
+
+- name: Launch OAI NR-UE pods (conditional)
+  ansible.builtin.command: "{{ demo_oai_script }} {{ item }}"
+  args:
+    chdir: "{{ repo_dest }}"
+  loop:
+    - start-nr-ue
+    - start-nr-ue2
+    - start-nr-ue3
+  register: nr_ue_scripts
+  changed_when: "'condition met' in nr_ue_scripts.stdout"
+  when: rru == "rfsim"
 

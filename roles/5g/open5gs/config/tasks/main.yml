@@ -79,6 +79,14 @@
     upf_slice: slice2
     upf_slice_data: "{{ fiveg.slices | selectattr('name','equalto', 'slice2') | first }}"
 
+- name: Generate generate-data-fiveg.py for UEs on disk
+  ansible.builtin.template:
+    src: generate-data-fiveg.py.j2
+    dest: "{{ repo_dest }}/mongo-tools/generate-data-fiveg.py"
+    mode: "0755"
+  vars:
+    profile: "{{ fiveg }}"
+
 - name: Generate 5G profile check file
   ansible.builtin.template:
     src: profile-check.j2

@@ -195,12 +195,6 @@
   retries: 40
   delay: 5
 
-- name: Copy generate-data-fiveg.py to server
-  ansible.builtin.copy:
-    src: generate-data-fiveg.py
-    dest: "{{ repo_dest }}/mongo-tools/generate-data-fiveg.py"
-    mode: '0755'
-
 - name: Run Python scripts to generate and add subscribers
   ansible.builtin.shell: |
     {{ repo_dest }}/venv/bin/python {{ repo_dest }}/mongo-tools/generate-data-fiveg.py
