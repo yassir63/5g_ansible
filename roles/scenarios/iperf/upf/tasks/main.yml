@@ -1,4 +1,28 @@
 ---
+# This role only works for Open5gs core...
+
+- name: Include 5G profile variables
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg
+
+- name: Retrieve UPF1/UPF2 IPs from slices prefix
+  set_fact:
+    upf1_ip: >-
+      {{
+        (slices
+        | selectattr('name', 'equalto', 'slice1')
+        | map(attribute='ip_prefix')
+        | first) ~ '.1'
+      }}
+    upf2_ip: >-
+      {{
+        (fiveg.slices
+        | selectattr('name', 'equalto', 'slice2')
+        | map(attribute='ip_prefix')
+        | first) ~ '.1'
+      }}
+	
 - name: Get list of UPF pods
   kubernetes.core.k8s_info:
     kind: Pod
@@ -74,16 +98,16 @@
 
 - name: Start first iperf3 server on UPF1 (background)
   shell: |
-    kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'iperf3 -s -B 10.41.0.1 -D'
+    kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'iperf3 -s -B {{ upf1_ip }} -D'
 
 - name: Start second iperf3 server on UPF1 (background)
   shell: |
-    kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'iperf3 -s -B 10.41.0.1 -p 5202 -D'
+    kubectl -n open5gs exec {{ upf1_pod }} -- bash -c 'iperf3 -s -B {{ upf1_ip }} -p 5202 -D'
 
 - name: Start first iperf3 server on UPF2 (background)
   shell: |
-    kubectl -n open5gs exec {{ upf2_pod }} -- bash -c 'iperf3 -s -B 10.42.0.1 -D'
+    kubectl -n open5gs exec {{ upf2_pod }} -- bash -c 'iperf3 -s -B {{ upf1_ip }} -D'
 
 - name: Start second iperf3 server on UPF2 (background)
   shell: |
-    kubectl -n open5gs exec {{ upf2_pod }} -- bash -c 'iperf3 -s -B 10.42.0.1 -p 5202 -D'
+    kubectl -n open5gs exec {{ upf2_pod }} -- bash -c 'iperf3 -s -B {{ upf2_ip }} -p 5202 -D'

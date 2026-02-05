@@ -1,4 +1,26 @@
 ---
+- name: Include 5G profile variables
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg
+
+- name: Retrieve UPF1/UPF2 IPs from slices prefix
+  set_fact:
+    upf1_ip: >-
+      {{
+        (slices
+        | selectattr('name', 'equalto', 'slice1')
+        | map(attribute='ip_prefix')
+        | first) ~ '.1'
+      }}
+    upf2_ip: >-
+      {{
+        (fiveg.slices
+        | selectattr('name', 'equalto', 'slice2')
+        | map(attribute='ip_prefix')
+        | first) ~ '.1'
+      }}
+      
 - name: Get list of NR-UE pods
   kubernetes.core.k8s_info:
     kind: Pod
@@ -62,7 +84,7 @@
 
 - name: Run iperf3 client on NR-UE for 200s (Uplink Test on Slice 1)
   shell: |
-    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -t 200'
+    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c {{ upf1_ip }} -t 200'
 
 - name: Wait 10 seconds before running next test
   pause:
@@ -70,7 +92,7 @@
 
 - name: Run iperf3 client on NR-UE2 for 200s (Uplink Test on Slice 2)
   shell: |
-    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -t 200'
+    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c {{ upf2_ip }} -t 200'
 
 - name: Wait 10 seconds before running next test
   pause:
@@ -78,7 +100,7 @@
 
 - name: Run reverse iperf3 client on NR-UE for 200s (Downlink Test on Slice 1)
   shell: |
-    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c 10.41.0.1 -t 200 -R'
+    kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -c {{ upf1_ip }} -t 200 -R'
 
 - name: Wait 10 seconds before running next test
   pause:
@@ -86,4 +108,4 @@
 
 - name: Run reverse iperf3 client on NR-UE2 for 200s (Downlink Test on Slice 2)
   shell: |
-    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c 10.42.0.1 -t 200 -R'
+    kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -c {{ upf2_ip }} -t 200 -R'
