@@ -14,8 +14,6 @@
 
   roles:
     - role: scenarios/iperf_server
-      vars:
-        nb_ues: "{{ nb_ues }}"
 
   tasks:
     - name: Include NR-UE to core_node iperf role if rru is rfsim
