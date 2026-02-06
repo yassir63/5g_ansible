@@ -1,19 +1,17 @@
 ---
 - name: Start iperf test scenario
-  hosts: core_node
+  hosts: faraday
   become: true
   vars:
     duration: 12
     sleep: 5
     ignore_errors: yes
-
-  tasks:
-    - name: Set nb_ues according to scenario 
-      set_fact:
-        nb_ues: "{{ 3 if rru == 'rfsim' else groups['qhats'] | length }}"
+    nb_ues: "{{ 3 if rru == 'rfsim' else groups['qhats'] | length }}"
 
   roles:
     - role: scenarios/iperf_server
+      vars:
+        nb_ues: "{{ nb_ues }}"
 
   tasks:
     - name: Include NR-UE to core_node iperf role if rru is rfsim

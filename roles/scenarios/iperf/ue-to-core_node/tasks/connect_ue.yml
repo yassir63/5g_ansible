@@ -1,43 +1,32 @@
 ---
-- name: Connect and test each UE sequentially
-  block:
+- name: Connect UE to 5G network
+  include_role:
+    name: r2lab/ue/connect
+  vars:
+    ue: "{{ ue }}"
+  ignore_errors: "{{ ignore_errors }}"
 
-    - name: Connect UE to 5G network
-      include_role:
-        name: r2lab/ue/connect
-      vars:
-        ue: "{{ ue }}"
-      delegate_to: faraday.inria.fr
-      ignore_errors: "{{ ignore_errors }}"
+- name: Retrieve wwan0 IP for UE
+  shell: ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1
+  register: ue_ip_cmd
+  changed_when: false
+  ignore_errors: "{{ ignore_errors }}"
 
-    - name: Retrieve wwan0 IP for UE
-      shell: ssh root@{{ ue }} "ip -4 addr show wwan0 | awk '/inet / {print \$2}' | cut -d/ -f1"
-      register: ue_ip_cmd
-      delegate_to: faraday.inria.fr
-      changed_when: false
-      ignore_errors: "{{ ignore_errors }}"
+- name: Build dict ue_ips
+  set_fact:
+    ue_ips: "{{ ue_ips | default({}) | combine({ ue: ue_ip_cmd.stdout }) }}"
+  when: ue_ip_cmd.stdout != ""
 
-    - name: Build dict ue_ips
-      set_fact:
-        ue_ips: "{{ ue_ips | default({}) | combine({ ue: ue_ip_cmd.stdout }) }}"
-      when: ue_ip_cmd.stdout != ""
+- name: Run uplink iperf
+  shell: iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json
+  ignore_errors: "{{ ignore_errors }}"
 
-    - name: Run uplink iperf
-      shell: ssh root@{{ ue }} "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json"
-      delegate_to: faraday.inria.fr
-      ignore_errors: "{{ ignore_errors }}"
+- pause:
+    seconds: "{{ sleep }}"
 
-    - pause:
-        seconds: "{{ sleep }}"
+- name: Run downlink iperf
+  shell: iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json
+  ignore_errors: "{{ ignore_errors }}"
 
-    - name: Run downlink iperf
-      shell: ssh root@{{ ue }} "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json"
-      delegate_to: faraday.inria.fr
-      ignore_errors: "{{ ignore_errors }}"
-
-    - pause:
-        seconds: "{{ sleep }}"
-
-  loop: "{{ ue_list }}"
-  loop_control:
-    loop_var: ue
+- pause:
+    seconds: "{{ sleep }}"
