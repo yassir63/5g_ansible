@@ -1,6 +1,6 @@
 ---
-- name: Start iperf servers on core_ran
-  hosts: core_ran
+- name: Start iperf servers on core_node
+  hosts: core_node
   become: true
   roles:
     - scenarios/iperf_server
