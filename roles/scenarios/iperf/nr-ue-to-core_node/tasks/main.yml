@@ -1,0 +1,53 @@
+---
+- name: Get list of NR-UE pods
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: open5gs
+  register: ue_pods
+  no_log: false  # mettre true seulement si les pods contiennent des données sensibles
+
+- name: Set basic facts
+  set_fact:
+    duration: 10
+    sleep: 5
+    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+
+- name: Install iperf3 and get oaitun_ue1 IP for NR-UEs
+  shell: |
+    kubectl -n open5gs exec {{ item.metadata.name }} -- bash -c '
+      set -euo pipefail
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        yum update -y -qq &&
+        yum install -y -qq iperf3
+      fi
+      ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}"'
+  loop: "{{ ue_pods.resources }}"
+  register: ue_setup
+  changed_when: false
+
+- name: Set facts for NR-UE pods and their oaitun_ue1 IPs
+  set_fact:
+    nr_ue:
+      {% for i in range(ue_pods.resources|length) %}
+      ue{{ i+1 }}:
+        pod: "{{ ue_pods.resources[i].metadata.name }}"
+        ip: "{{ ue_setup.results[i].stdout }}"
+      {% endfor %}
+
+- name: Run iperf3 tests (uplink and downlink) for all NR-UEs
+  vars:
+    tests: >-
+      {%- set t=[] -%}
+      {%- for ue_key, ue_data in nr_ue.items() -%}
+        {%- set _ = t.append({'pod': ue_data.pod, 'ip': ue_data.ip, 'reverse': false}) -%}
+        {%- set _ = t.append({'pod': ue_data.pod, 'ip': ue_data.ip, 'reverse': true}) -%}
+      {%- endfor -%}
+      {{ t }}
+  loop: "{{ tests }}"
+  loop_control:
+    label: "{{ item.pod }} {{ 'downlink' if item.reverse else 'uplink' }}"
+  shell: |
+    kubectl -n open5gs exec {{ item.pod }} -- bash -c '
+      iperf3 -B {{ item.ip }} -c {{ core_ip }} -t {{ duration }} {% if item.reverse %}-R{% endif %}'
+    sleep {{ sleep }}
+  changed_when: false
