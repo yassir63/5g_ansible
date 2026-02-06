@@ -4,10 +4,8 @@
     kind: Pod
     namespace: open5gs
   register: ue_pods
-  no_log: false  # mettre true seulement si les pods contiennent des données sensibles
 
-- name: Set basic facts
-  set_fact:
+- set_fact:
     duration: 10
     sleep: 5
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
@@ -17,42 +15,50 @@
     kubectl -n open5gs exec {{ item.metadata.name }} -- bash -c '
       set -euo pipefail
       if ! command -v iperf3 >/dev/null 2>&1; then
-        yum update -y -qq &&
-        yum install -y -qq iperf3
+        yum update -y -qq && yum install -y -qq iperf3
       fi
       ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}"'
   loop: "{{ ue_pods.resources }}"
   register: ue_setup
   changed_when: false
 
-- name: Set facts for NR-UE pods and their oaitun_ue1 IPs
+- name: Set facts for NR-UE pods and IPs
   set_fact:
-    nr_ue:
-      {% for i in range(ue_pods.resources|length) %}
-      ue{{ i+1 }}:
-        pod: "{{ ue_pods.resources[i].metadata.name }}"
-        ip: "{{ ue_setup.results[i].stdout }}"
-      {% endfor %}
+    ue1_pod: "{{ ue_pods.resources[0].metadata.name }}"
+    ue2_pod: "{{ ue_pods.resources[1].metadata.name }}"
+    ue3_pod: "{{ ue_pods.resources[2].metadata.name }}"
+    ue1_ip: "{{ ue_setup.results[0].stdout }}"
+    ue2_ip: "{{ ue_setup.results[1].stdout }}"
+    ue3_ip: "{{ ue_setup.results[2].stdout }}"
 
+- name: Run iperf3 uplink on NR-UE1
+  shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }}'
+  register: ue1_uplink
+  changed_when: false
 
-- name: Run iperf3 tests (uplink and downlink) for NR-UEs
-  vars:
-    tests:
-      - { pod: "{{ ue1_pod }}", ip: "{{ ue1_ip }}", reverse: false }
-      - { pod: "{{ ue2_pod }}", ip: "{{ ue2_ip }}", reverse: false }
-      - { pod: "{{ ue1_pod }}", ip: "{{ ue1_ip }}", reverse: true }
-      - { pod: "{{ ue2_pod }}", ip: "{{ ue2_ip }}", reverse: true }
-  loop: "{{ tests }}"
-  loop_control:
-    label: "{{ item.pod }} {{ 'downlink' if item.reverse else 'uplink' }}"
-  block:
-    - name: Run iperf3 client
-      shell: >
-        kubectl -n open5gs exec {{ item.pod }} -- bash -c
-        'iperf3 -B {{ item.ip }} -c {{ core_ip }} -t {{ duration }} {% if item.reverse %}-R{% endif %}'
-      register: iperf_result
-      changed_when: false
+- name: Wait before next test
+  pause:
+    seconds: "{{ sleep }}"
 
-    - name: Wait before next test
-      pause:
-        seconds: "{{ sleep }}"
+- name: Run iperf3 uplink on NR-UE2
+  shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }}'
+  register: ue2_uplink
+  changed_when: false
+
+- name: Wait before next test
+  pause:
+    seconds: "{{ sleep }}"
+
+- name: Run iperf3 downlink on NR-UE1
+  shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }} -R'
+  register: ue1_downlink
+  changed_when: false
+
+- name: Wait before next test
+  pause:
+    seconds: "{{ sleep }}"
+
+- name: Run iperf3 downlink on NR-UE2
+  shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }} -R'
+  register: ue2_downlink
+  changed_when: false
