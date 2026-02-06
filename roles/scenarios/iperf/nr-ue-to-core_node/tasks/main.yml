@@ -1,3 +1,4 @@
+---
 - name: Set defaults
   set_fact:
     duration: "{{ duration | default(10) }}"
@@ -35,20 +36,19 @@
     valid_ues: []
     invalid_ues: []
 
-- name: Classify UEs
+- name: Classify valid UEs
   set_fact:
     valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout} ] }}"
-    invalid_ues: "{{ invalid_ues + [ item.item.metadata.name ] }}"
   loop: "{{ ue_ip_results.results }}"
   when: item.stdout != ""
 
-- name: Warn for UEs with no IP
-  debug:
-    msg: "UE {{ item.item.metadata.name }} has no IP"
+- name: Classify invalid UEs
+  set_fact:
+    invalid_ues: "{{ invalid_ues + [ item.item.metadata.name ] }}"
   loop: "{{ ue_ip_results.results }}"
   when: item.stdout == ""
 
-- name: Pause
+- name: Pause before tests
   pause:
     seconds: "{{ sleep }}"
 
@@ -61,10 +61,6 @@
     index_var: idx
   ignore_errors: yes
 
-- name: Pause after uplink
-  pause:
-    seconds: "{{ sleep }}"
-
 - name: Run iperf downlink with unique ports
   shell: >
     kubectl exec -n open5gs {{ item.pod }} -- 
@@ -74,6 +70,3 @@
     index_var: idx
   ignore_errors: yes
 
-- name: Pause after downlink
-  pause:
-    seconds: "{{ sleep }}"
