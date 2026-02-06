@@ -28,36 +28,30 @@
     ue_list: "{{ ue_pods.resources | map(attribute='metadata.name') | list }}"
     ue_ips: "{{ ue_setup.results | map(attribute='stdout') | list }}"
 
+# ----------------- Uplink tests -----------------
 - name: Run iperf3 uplink tests on all NR-UEs
-  loop: "{{ ue_list | zip(ue_ips) | list }}"
-  loop_control:
-    loop_var: ue
   vars:
-    pod_name: "{{ ue[0] }}"
-    pod_ip: "{{ ue[1] }}"
-  block:
-    - name: Uplink test
-      shell: kubectl -n open5gs exec {{ pod_name }} -- bash -c 'iperf3 -B {{ pod_ip }} -c {{ core_ip }} -t {{ duration }}'
-      register: uplink_result
-      ignore_errors: yes
+    pod_name: "{{ item.0 }}"
+    pod_ip: "{{ item.1 }}"
+  shell: kubectl -n open5gs exec {{ pod_name }} -- bash -c 'iperf3 -B {{ pod_ip }} -c {{ core_ip }} -t {{ duration }}'
+  register: uplink_result
+  ignore_errors: yes
+  loop: "{{ ue_list | zip(ue_ips) | list }}"
 
-    - name: Wait between tests
-      pause:
-        seconds: "{{ sleep }}"
+- name: Pause between uplink tests
+  pause:
+    seconds: "{{ sleep }}"
 
+# ----------------- Downlink tests -----------------
 - name: Run iperf3 downlink tests on all NR-UEs
-  loop: "{{ ue_list | zip(ue_ips) | list }}"
-  loop_control:
-    loop_var: ue
   vars:
-    pod_name: "{{ ue[0] }}"
-    pod_ip: "{{ ue[1] }}"
-  block:
-    - name: Downlink test
-      shell: kubectl -n open5gs exec {{ pod_name }} -- bash -c 'iperf3 -B {{ pod_ip }} -c {{ core_ip }} -t {{ duration }} -R'
-      register: downlink_result
-      ignore_errors: yes
+    pod_name: "{{ item.0 }}"
+    pod_ip: "{{ item.1 }}"
+  shell: kubectl -n open5gs exec {{ pod_name }} -- bash -c 'iperf3 -B {{ pod_ip }} -c {{ core_ip }} -t {{ duration }} -R'
+  register: downlink_result
+  ignore_errors: yes
+  loop: "{{ ue_list | zip(ue_ips) | list }}"
 
-    - name: Wait between tests
-      pause:
-        seconds: "{{ sleep }}"
+- name: Pause between downlink tests
+  pause:
+    seconds: "{{ sleep }}"
