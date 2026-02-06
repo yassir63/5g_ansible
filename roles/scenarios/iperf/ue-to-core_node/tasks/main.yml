@@ -12,8 +12,8 @@
   loop: "{{ groups['qhats'] }}"
   loop_control:
     label: "{{ item }}"
-  delegate_to: faraday.inria.fr
-  ignore_errors: "{{ ignore_errors | default(true) }}"
+  # Délégué à l'intérieur du rôle, plus ici
+  # delegate_to: faraday.inria.fr <-- supprimé ici
 
 - name: Retrieve wwan0 IP for each qhat UE
   shell: ssh root@{{ item }} "ip -4 addr show wwan0 | awk '/inet / {print \$2}' | cut -d/ -f1"
@@ -33,13 +33,13 @@
   loop: "{{ groups['qhats'] }}"
   loop_control:
     loop_var: ue
-  delegate_to: faraday.inria.fr
   block:
 
     - name: uplink iperf
       shell: >
         ssh root@{{ ue }}
         "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json"
+      delegate_to: faraday.inria.fr
       ignore_errors: "{{ ignore_errors | default(true) }}"
 
     - pause:
@@ -49,6 +49,7 @@
       shell: >
         ssh root@{{ ue }}
         "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json"
+      delegate_to: faraday.inria.fr
       ignore_errors: "{{ ignore_errors | default(true) }}"
 
     - pause:
