@@ -1,0 +1,64 @@
+---
+#
+# Run 2 iperfs per slice in server mode 
+#
+- name: Ensure iperf3 is installed
+  package:
+    name: iperf3
+    state: present
+
+- name: Create base directory
+  file:
+    path: /root/IPERF
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create slice directories
+  file:
+    path: "/root/IPERF/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - SLICE1
+    - SLICE2
+
+- name: Get timestamp for log files
+  command: date +"%Y%m%d_%H%M%S"
+  register: iperf_timestamp
+  changed_when: false
+
+# ---- SLICE1 SERVERS
+
+- name: Start iperf3 SLICE1 port 5201
+  shell: >
+    nohup iperf3 -s -p 5201 -D
+    --logfile /root/IPERF/SLICE1/iperf_5201_{{ iperf_timestamp.stdout }}.log
+  args:
+    executable: /bin/bash
+
+- name: Start iperf3 SLICE1 port 5202
+  shell: >
+    nohup iperf3 -s -p 5202 -D
+    --logfile /root/IPERF/SLICE1/iperf_5202_{{ iperf_timestamp.stdout }}.log
+  args:
+    executable: /bin/bash
+
+# ---- SLICE2 SERVERS
+
+- name: Start iperf3 SLICE2 port 5211
+  shell: >
+    nohup iperf3 -s -p 5211 -D
+    --logfile /root/IPERF/SLICE2/iperf_5211_{{ iperf_timestamp.stdout }}.log
+  args:
+    executable: /bin/bash
+
+- name: Start iperf3 SLICE2 port 5212
+  shell: >
+    nohup iperf3 -s -p 5212 -D
+    --logfile /root/IPERF/SLICE2/iperf_5212_{{ iperf_timestamp.stdout }}.log
+  args:
+    executable: /bin/bash

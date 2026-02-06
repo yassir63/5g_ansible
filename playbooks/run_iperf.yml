@@ -1,0 +1,6 @@
+---
+- name: Start iperf servers on core_ran
+  hosts: core_ran
+  become: true
+  roles:
+    - iperf_server
