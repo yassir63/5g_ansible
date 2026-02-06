@@ -5,13 +5,14 @@
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
 
 - name: Connect all qhat UEs to 5G network
-  include_role:
-    name: r2lab/ue/connect
-  vars:
-    ue: "{{ item }}"
   loop: "{{ groups['qhats'] }}"
   loop_control:
     label: "{{ item }}"
+  block:
+    - include_role:
+        name: r2lab/ue/connect
+      vars:
+        ue: "{{ item }}"
   delegate_to: faraday.inria.fr
   ignore_errors: "{{ ignore_errors | default(true) }}"
 
