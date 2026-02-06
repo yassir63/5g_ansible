@@ -1,3 +1,4 @@
+---
 - name: Set defaults
   set_fact:
     duration: "{{ duration | default(10) }}"
@@ -12,50 +13,62 @@
       - "app=oai-nr-ue"
   register: ue_pods
 
-# -------------------------------------------------------
-# Récupération des IPs réelles dans les pods
-# -------------------------------------------------------
-
-- name: Get UE tunnel IPs
+- name: Install iperf3 and get oaitun_ue1 IP
   shell: |
-    kubectl -n open5gs exec {{ item.metadata.name }} -- \
-    ip -4 addr show oaitun_ue1 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1
+    kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c '
+      if ! command -v iperf3 >/dev/null 2>&1; then
+        if command -v apt-get >/dev/null 2>&1; then
+          apt-get update -qq && apt-get install -y -qq iperf3 iproute2
+        elif command -v yum >/dev/null 2>&1; then
+          yum install -y -q iperf3 iproute
+        fi
+      fi
+      ip -4 addr show oaitun_ue1 2>/dev/null \
+        | grep -oP "(?<=inet\s)\d+(\.\d+){3}" \
+        | head -n1 || echo ""
+    '
   loop: "{{ ue_pods.resources }}"
-  register: ue_ips
+  register: ue_ip_results
   changed_when: false
 
-# -------------------------------------------------------
-# Boucle simple, fiable
-# -------------------------------------------------------
+- name: Init UE lists
+  set_fact:
+    valid_ues: []
+    invalid_ues: []
 
-- name: Run iperf uplink if IP exists
-  shell: |
-    kubectl -n open5gs exec {{ item.item.metadata.name }} -- \
-    iperf3 -B {{ item.stdout }} -c {{ core_ip }} -t {{ duration }}
-  loop: "{{ ue_ips.results }}"
+- name: Classify UEs
+  set_fact:
+    valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout} ] }}"
+    invalid_ues: "{{ invalid_ues + [ item.item.metadata.name ] }}"
+  loop: "{{ ue_ip_results.results }}"
   when: item.stdout != ""
-  ignore_errors: true
-
-- name: Warn if UE has no IP
+  
+- name: Warn for UEs with no IP
   debug:
-    msg: "UE {{ loop.index }} ({{ item.item.metadata.name }}) has NO tun IP"
-  loop: "{{ ue_ips.results }}"
+    msg: "UE {{ item }} has no IP"
+  loop: "{{ ue_ip_results.results }}"
   when: item.stdout == ""
 
-- pause:
+- name: Pause
+  pause:
     seconds: "{{ sleep }}"
 
-# -------------------------------------------------------
-# DOWNLINK
-# -------------------------------------------------------
+- name: Run iperf uplink
+  shell: >
+    kubectl exec -n open5gs {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ core_ip }} -t {{ duration }}
+  loop: "{{ valid_ues }}"
+  ignore_errors: yes
 
-- name: Run iperf downlink if IP exists
-  shell: |
-    kubectl -n open5gs exec {{ item.item.metadata.name }} -- \
-    iperf3 -B {{ item.stdout }} -c {{ core_ip }} -t {{ duration }} -R
-  loop: "{{ ue_ips.results }}"
-  when: item.stdout != ""
-  ignore_errors: true
+- name: Pause
+  pause:
+    seconds: "{{ sleep }}"
 
-- pause:
+- name: Run iperf downlink
+  shell: >
+    kubectl exec -n open5gs {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ core_ip }} -t {{ duration }} -R
+  loop: "{{ valid_ues }}"
+  ignore_errors: yes
+
+- name: Pause
+  pause:
     seconds: "{{ sleep }}"
