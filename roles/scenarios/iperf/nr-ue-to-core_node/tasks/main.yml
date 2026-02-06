@@ -1,11 +1,10 @@
----
-- name: Set default vars
+- name: Set defaults
   set_fact:
     duration: "{{ duration | default(10) }}"
     sleep: "{{ sleep | default(5) }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
 
-- name: Get list of NR-UE pods
+- name: Get NR-UE pods
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: open5gs
@@ -13,51 +12,50 @@
       - "app=oai-nr-ue"
   register: ue_pods
 
-- name: Install iperf3 and get oaitun_ue1 IPs on NR-UEs
+# -------------------------------------------------------
+# Récupération des IPs réelles dans les pods
+# -------------------------------------------------------
+
+- name: Get UE tunnel IPs
   shell: |
-    #!/bin/bash
-    if ! command -v iperf3 >/dev/null 2>&1; then
-      if command -v apt-get >/dev/null 2>&1; then
-        apt-get update -qq && apt-get install -y -qq iperf3 iproute2
-      elif command -v yum >/dev/null 2>&1; then
-        yum install -y -q iperf3 iproute
-      fi
-    fi
-    ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1 || echo ""
+    kubectl -n open5gs exec {{ item.metadata.name }} -- \
+    ip -4 addr show oaitun_ue1 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1
   loop: "{{ ue_pods.resources }}"
-  args:
-    executable: /bin/bash
-  register: ue_setup
+  register: ue_ips
   changed_when: false
 
-- name: Build filtered UE lists
-  set_fact:
-    ue_valid: "{{ ue_pods.resources | zip(ue_setup.results) | selectattr('1.stdout','!=','') | list }}"
-    ue_invalid: "{{ ue_pods.resources | zip(ue_setup.results) | selectattr('1.stdout','==','') | list }}"
+# -------------------------------------------------------
+# Boucle simple, fiable
+# -------------------------------------------------------
 
-- name: Warn for UEs without IP
+- name: Run iperf uplink if IP exists
+  shell: |
+    kubectl -n open5gs exec {{ item.item.metadata.name }} -- \
+    iperf3 -B {{ item.stdout }} -c {{ core_ip }} -t {{ duration }}
+  loop: "{{ ue_ips.results }}"
+  when: item.stdout != ""
+  ignore_errors: true
+
+- name: Warn if UE has no IP
   debug:
-    msg: "UE number {{ idx + 1 }} (pod {{ item.0.metadata.name }}) has no oaitun_ue1 IP, skipping"
-  loop: "{{ ue_invalid }}"
-  loop_control:
-    index_var: idx
+    msg: "UE {{ loop.index }} ({{ item.item.metadata.name }}) has NO tun IP"
+  loop: "{{ ue_ips.results }}"
+  when: item.stdout == ""
 
-# ----------------- Uplink tests -----------------
-- name: Run iperf3 uplink tests on valid NR-UEs
-  shell: kubectl -n open5gs exec {{ item.0.metadata.name }} -- bash -c "iperf3 -B {{ item.1.stdout }} -c {{ core_ip }} -t {{ duration }}"
-  loop: "{{ ue_valid }}"
-  ignore_errors: yes
-
-- name: Pause between uplink tests
-  pause:
+- pause:
     seconds: "{{ sleep }}"
 
-# ----------------- Downlink tests -----------------
-- name: Run iperf3 downlink tests on valid NR-UEs
-  shell: kubectl -n open5gs exec {{ item.0.metadata.name }} -- bash -c "iperf3 -B {{ item.1.stdout }} -c {{ core_ip }} -t {{ duration }} -R"
-  loop: "{{ ue_valid }}"
-  ignore_errors: yes
+# -------------------------------------------------------
+# DOWNLINK
+# -------------------------------------------------------
 
-- name: Pause between downlink tests
-  pause:
+- name: Run iperf downlink if IP exists
+  shell: |
+    kubectl -n open5gs exec {{ item.item.metadata.name }} -- \
+    iperf3 -B {{ item.stdout }} -c {{ core_ip }} -t {{ duration }} -R
+  loop: "{{ ue_ips.results }}"
+  when: item.stdout != ""
+  ignore_errors: true
+
+- pause:
     seconds: "{{ sleep }}"
