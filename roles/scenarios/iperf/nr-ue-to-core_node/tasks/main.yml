@@ -23,7 +23,7 @@
         yum install -y -q iperf3 iproute
       fi
     fi
-    ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1 || echo ""
+    ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1 || echo ""
   loop: "{{ ue_pods.resources }}"
   args:
     executable: /bin/bash
@@ -32,19 +32,35 @@
 
 - name: Build filtered UE lists and identify UEs without IP
   set_fact:
-    ue_list: "{{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','!=','') | map('first') | list }}"
-    ue_ips: "{{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','!=','') | map('last') | list }}"
-    ue_missing_ip: "{{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','==','') | map('first') | list }}"
-  vars:
-    ue_list_raw: "{{ ue_pods.resources | map(attribute='metadata.name') | list }}"
-    ue_ips_raw: "{{ ue_setup.results | map(attribute='stdout') | list }}"
+    ue_list_valid: >-
+      {{
+        ue_setup.results
+        | zip(ue_pods.resources)
+        | selectattr('0.stdout','!=','')
+        | map('last')
+        | map(attribute='metadata.name')
+        | list
+      }}
+    ue_ips_valid: >-
+      {{
+        ue_setup.results
+        | map(attribute='stdout')
+        | select('!=','')
+        | list
+      }}
+    ue_list_invalid: >-
+      {{
+        ue_setup.results
+        | zip(ue_pods.resources)
+        | selectattr('0.stdout','==','')
+        | map('last')
+        | list
+      }}
 
 - name: Warn for UEs without IP
   debug:
-    msg: "UE {{ item }} has no oaitun_ue1 IP and will be skipped"
-  loop: "{{ ue_missing_ip }}"
-  when: ue_missing_ip | length > 0
-
+    msg: "UE number {{ item.0 + 1 }} (pod {{ item.1.metadata.name }}) has no oaitun_ue1 IP and will be skipped"
+  loop: "{{ ue_list_invalid | enumerate | list }}"
 
 # ----------------- Uplink tests -----------------
 - name: Run iperf3 uplink tests on all NR-UEs
@@ -54,7 +70,7 @@
   shell: kubectl -n open5gs exec {{ pod_name }} -- bash -c 'iperf3 -B {{ pod_ip }} -c {{ core_ip }} -t {{ duration }}'
   register: uplink_result
   ignore_errors: yes
-  loop: "{{ ue_list | zip(ue_ips) | list }}"
+  loop: "{{ ue_list_valid | zip(ue_ips_valid) | list }}"
 
 - name: Pause between uplink tests
   pause:
@@ -68,7 +84,7 @@
   shell: kubectl -n open5gs exec {{ pod_name }} -- bash -c 'iperf3 -B {{ pod_ip }} -c {{ core_ip }} -t {{ duration }} -R'
   register: downlink_result
   ignore_errors: yes
-  loop: "{{ ue_list | zip(ue_ips) | list }}"
+  loop: "{{ ue_list_valid | zip(ue_ips_valid) | list }}"
 
 - name: Pause between downlink tests
   pause:
