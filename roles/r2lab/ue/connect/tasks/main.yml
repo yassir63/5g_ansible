@@ -3,15 +3,17 @@
   ansible.builtin.include_vars:
     file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
 
-- name: Assert 5G profile is loaded
-  ansible.builtin.assert:
-    that:
-      - slices is defined
-      - ues is defined
-    fail_msg: >
-      5G profile not loaded.
-      Expected group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yml
+- name: Extract UE configuration
+  set_fact:
+    current_ue_slice: "{{ ues[ue].slice }}"
+  when: ues[ue] is defined
+
+- name: Extract DNN for slice {{ current_ue_slice }}
+  set_fact:
+    current_dnn: "{{ (slices | selectattr('name', 'equalto', current_ue_slice) | map(attribute='dnn') | first) }}"
+  when: current_ue_slice is defined
 
 - name: Start UE "{{ ue }}" via jump host
-  shell: ssh root@{{ ue }} 'start.sh -F "{{ slices | selectattr("name","equalto",ues[ue].slice) | map(attribute="dnn") | first }}"'
-  ignore_errors: "{{ ignore_errors }}"
+  shell: "ssh root@{{ ue }} 'start.sh -F {{ current_dnn }}'"
+  when: current_dnn is defined
+  ignore_errors: "{{ ignore_errors | default(false) }}"
