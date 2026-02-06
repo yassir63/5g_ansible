@@ -38,4 +38,4 @@
         sleep: "{{ sleep }}"
         core_ip: "{{ core_ip }}"
         ignore_errors: "{{ ignore_errors }}"
-  when: rru != "rfsim"
+      when: rru != "rfsim"
