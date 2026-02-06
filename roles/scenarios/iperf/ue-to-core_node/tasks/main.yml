@@ -3,7 +3,7 @@
   include_tasks: connect_ue.yml
   loop: "{{ groups['qhats'] }}"
   loop_control:
-    loop_var: ue
+    loop_var: ue_item
   vars:
     duration: "{{ duration | default(10) }}"
     sleep: "{{ sleep | default(5) }}"

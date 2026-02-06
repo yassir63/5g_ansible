@@ -5,15 +5,15 @@
 
 - name: Extract UE configuration
   set_fact:
-    current_ue_slice: "{{ ues[ue].slice }}"
-  when: ues[ue] is defined
+    current_ue_slice: "{{ ues[ue_item].slice }}"
+  when: ues[ue_item] is defined
 
-- name: Extract DNN for slice {{ current_ue_slice }}
+- name: Extract DNN for slice
   set_fact:
     current_dnn: "{{ (slices | selectattr('name', 'equalto', current_ue_slice) | map(attribute='dnn') | first) }}"
   when: current_ue_slice is defined
 
-- name: Start UE "{{ ue }}" via jump host
-  shell: "ssh root@{{ ue }} 'start.sh -F {{ current_dnn }}'"
+- name: Start UE via jump host
+  shell: "ssh root@{{ ue_item }} 'start.sh -F {{ current_dnn }}'"
   when: current_dnn is defined
   ignore_errors: "{{ ignore_errors | default(false) }}"
