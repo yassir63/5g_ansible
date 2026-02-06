@@ -5,23 +5,16 @@
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
 
 - name: Connect all qhat UEs to 5G network
-  include_role:
-    name: r2lab/ue/connect
-  vars:
-    ue: "{{ item }}"
+  include_tasks: connect_ue.yml
   loop: "{{ groups['qhats'] }}"
   loop_control:
-    label: "{{ item }}"
-  delegate_to: faraday.inria.fr
-  ignore_errors: "{{ ignore_errors | default(true) }}"
+    loop_var: ue
 
 - name: Retrieve wwan0 IP for each qhat UE
   shell: ssh root@{{ item }} "ip -4 addr show wwan0 | awk '/inet / {print \$2}' | cut -d/ -f1"
   register: ue_ip_cmd
   delegate_to: faraday.inria.fr
   loop: "{{ groups['qhats'] }}"
-  loop_control:
-    label: "{{ item }}"
   changed_when: false
   ignore_errors: "{{ ignore_errors | default(true) }}"
 
@@ -31,27 +24,28 @@
   loop: "{{ ue_ip_cmd.results }}"
   when: item.stdout != ""
 
-- name: Run iperf3 uplink tests per UE
-  shell: ssh root@{{ ue }} "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json"
-  delegate_to: faraday.inria.fr
+- name: Run iperf3 tests sequentially per UE
   loop: "{{ groups['qhats'] }}"
   loop_control:
     loop_var: ue
-  ignore_errors: "{{ ignore_errors | default(true) }}"
+  block:
 
-- name: Pause after uplink
-  pause:
-    seconds: "{{ sleep }}"
+    - name: uplink iperf
+      shell: >
+        ssh root@{{ ue }}
+        "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json"
+      delegate_to: faraday.inria.fr
+      ignore_errors: "{{ ignore_errors | default(true) }}"
 
-- name: Run iperf3 downlink tests per UE
-  shell: ssh root@{{ ue }} "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json"
-  delegate_to: faraday.inria.fr
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    loop_var: ue
-  ignore_errors: "{{ ignore_errors | default(true) }}"
+    - pause:
+        seconds: "{{ sleep }}"
 
-- name: Pause after downlink
-  pause:
-    seconds: "{{ sleep }}"
+    - name: downlink iperf
+      shell: >
+        ssh root@{{ ue }}
+        "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json"
+      delegate_to: faraday.inria.fr
+      ignore_errors: "{{ ignore_errors | default(true) }}"
 
+    - pause:
+        seconds: "{{ sleep }}"
