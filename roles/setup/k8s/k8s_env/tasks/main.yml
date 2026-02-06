@@ -45,7 +45,7 @@
 # install logs.sh OAI5G script
 - name: Install custom script to /usr/local/bin
   copy:
-    src: "{{ playbook_dir }}/../ran-scripts/logs.sh"
+    src: "{{ playbook_dir }}/../debug-scripts/logs.sh"
     dest: /usr/local/bin/logs.sh
     mode: '0755'
   become: true
