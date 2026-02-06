@@ -14,19 +14,17 @@
   register: ue_pods
 
 - name: Install iperf3 and get oaitun_ue1 IPs on NR-UEs
-  shell: >
-    kubectl -n open5gs exec {{ item.metadata.name }} -- bash -c '
-      set -euo pipefail
+  shell: |
+    set -euo pipefail
+    if ! command -v iperf3 >/dev/null 2>&1; then
       if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq && apt-get install -y -qq iperf3 iproute2
       elif command -v yum >/dev/null 2>&1; then
         yum install -y -q iperf3 iproute
       fi
-      ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}"
-    '
+    fi
+    ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1
   loop: "{{ ue_pods.resources }}"
-  loop_control:
-    loop_var: item
   register: ue_setup
   changed_when: false
 
