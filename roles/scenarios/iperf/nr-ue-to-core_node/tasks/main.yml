@@ -16,7 +16,6 @@
 - name: Install iperf3 and get oaitun_ue1 IPs on NR-UEs
   shell: |
     #!/bin/bash
-    set -euo pipefail
     if ! command -v iperf3 >/dev/null 2>&1; then
       if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq && apt-get install -y -qq iperf3 iproute2
@@ -24,17 +23,30 @@
         yum install -y -q iperf3 iproute
       fi
     fi
-    ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1
+    ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1 || echo ""
   loop: "{{ ue_pods.resources }}"
   args:
     executable: /bin/bash
   register: ue_setup
   changed_when: false
 
-- name: Build UE facts
+- name: Filter out UEs without oaitun_ue1 IP
   set_fact:
-    ue_list: "{{ ue_pods.resources | map(attribute='metadata.name') | list }}"
-    ue_ips: "{{ ue_setup.results | map(attribute='stdout') | list }}"
+    ue_list: "{{ ue_list_filtered }}"
+    ue_ips: "{{ ue_ips_filtered }}"
+  vars:
+    ue_list_raw: "{{ ue_pods.resources | map(attribute='metadata.name') | list }}"
+    ue_ips_raw: "{{ ue_setup.results | map(attribute='stdout') | list }}"
+    ue_list_filtered: >-
+      {{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','!=','') | map('first') | list }}
+    ue_ips_filtered: >-
+      {{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','!=','') | map('last') | list }}
+
+- name: Warn for UEs without IP
+  debug:
+    msg: "UE {{ item.0 }} has no oaitun_ue1 IP and will be skipped"
+  loop: "{{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','==','') | list }}"
+  when: ue_list_raw | zip(ue_ips_raw) | selectattr('1','==','') | list | length > 0
 
 # ----------------- Uplink tests -----------------
 - name: Run iperf3 uplink tests on all NR-UEs
