@@ -52,20 +52,13 @@
   pause:
     seconds: "{{ sleep }}"
 
-- name: Assign unique ports to each valid UE
-  set_fact:
-    valid_ues: >-
-      {{
-        valid_ues
-        | zip(range(5201, 5201 + (valid_ues|length)))
-        | map('combine', {'pod': item.0.pod, 'ip': item.0.ip, 'port': item.1})
-        | list
-      }}
-
 - name: Run iperf uplink with unique ports
   shell: >
-    kubectl exec -n open5gs {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ item.port }} -t {{ duration }}
+    kubectl exec -n open5gs {{ item.pod }} -- 
+    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ 5201 + idx }} -t {{ duration }}
   loop: "{{ valid_ues }}"
+  loop_control:
+    index_var: idx
   ignore_errors: yes
 
 - name: Pause after uplink
@@ -74,8 +67,11 @@
 
 - name: Run iperf downlink with unique ports
   shell: >
-    kubectl exec -n open5gs {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ item.port }} -t {{ duration }} -R
+    kubectl exec -n open5gs {{ item.pod }} -- 
+    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ 5201 + idx }} -t {{ duration }} -R
   loop: "{{ valid_ues }}"
+  loop_control:
+    index_var: idx
   ignore_errors: yes
 
 - name: Pause after downlink
