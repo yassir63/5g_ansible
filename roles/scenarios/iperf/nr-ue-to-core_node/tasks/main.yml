@@ -15,6 +15,7 @@
 
 - name: Install iperf3 and get oaitun_ue1 IPs on NR-UEs
   shell: |
+    #!/bin/bash
     set -euo pipefail
     if ! command -v iperf3 >/dev/null 2>&1; then
       if command -v apt-get >/dev/null 2>&1; then
@@ -25,6 +26,8 @@
     fi
     ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1
   loop: "{{ ue_pods.resources }}"
+  args:
+    executable: /bin/bash
   register: ue_setup
   changed_when: false
 
