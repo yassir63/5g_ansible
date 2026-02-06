@@ -30,23 +30,21 @@
   register: ue_setup
   changed_when: false
 
-- name: Filter out UEs without oaitun_ue1 IP
+- name: Build filtered UE lists and identify UEs without IP
   set_fact:
-    ue_list: "{{ ue_list_filtered }}"
-    ue_ips: "{{ ue_ips_filtered }}"
+    ue_list: "{{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','!=','') | map('first') | list }}"
+    ue_ips: "{{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','!=','') | map('last') | list }}"
+    ue_missing_ip: "{{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','==','') | map('first') | list }}"
   vars:
     ue_list_raw: "{{ ue_pods.resources | map(attribute='metadata.name') | list }}"
     ue_ips_raw: "{{ ue_setup.results | map(attribute='stdout') | list }}"
-    ue_list_filtered: >-
-      {{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','!=','') | map('first') | list }}
-    ue_ips_filtered: >-
-      {{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','!=','') | map('last') | list }}
 
 - name: Warn for UEs without IP
   debug:
-    msg: "UE {{ item.0 }} has no oaitun_ue1 IP and will be skipped"
-  loop: "{{ ue_list_raw | zip(ue_ips_raw) | selectattr('1','==','') | list }}"
-  when: ue_list_raw | zip(ue_ips_raw) | selectattr('1','==','') | list | length > 0
+    msg: "UE {{ item }} has no oaitun_ue1 IP and will be skipped"
+  loop: "{{ ue_missing_ip }}"
+  when: ue_missing_ip | length > 0
+
 
 # ----------------- Uplink tests -----------------
 - name: Run iperf3 uplink tests on all NR-UEs
