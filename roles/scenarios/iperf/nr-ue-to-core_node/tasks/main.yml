@@ -9,17 +9,24 @@
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: open5gs
+    label_selectors:
+      - "app=oai-nr-ue"  # filtre uniquement les pods NR-UE
   register: ue_pods
 
-- name: Install iperf3 and get oaitun_ue1 IPs
+- name: Install iperf3 and get oaitun_ue1 IPs on NR-UEs
   shell: |
-    kubectl -n open5gs exec {{ item.metadata.name }} -- bash -c '
-      set -euo pipefail
-      if ! command -v iperf3 >/dev/null 2>&1; then
-        yum update -y -qq && yum install -y -qq iperf3
-      fi
-      ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}"'
+    set -euo pipefail
+    # détecte le package manager
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y -qq iperf3 iproute2
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y -q iperf3 iproute
+    fi
+    # récupère l'IP IPv4 de oaitun_ue1
+    ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}"
   loop: "{{ ue_pods.resources }}"
+  loop_control:
+    loop_var: item
   register: ue_setup
   changed_when: false
 
