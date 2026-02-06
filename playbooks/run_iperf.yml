@@ -3,4 +3,4 @@
   hosts: core_ran
   become: true
   roles:
-    - iperf_server
+    - scenarios/iperf_server
