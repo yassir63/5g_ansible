@@ -15,6 +15,7 @@
 
 - name: Install iperf3 and get oaitun_ue1 IPs on NR-UEs
   shell: |
+    #!/bin/bash
     if ! command -v iperf3 >/dev/null 2>&1; then
       if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq && apt-get install -y -qq iperf3 iproute2
@@ -29,48 +30,34 @@
   register: ue_setup
   changed_when: false
 
-- name: Build UE lists
+- name: Build filtered UE lists
   set_fact:
-    ue_list_valid: >-
-      {{ ue_setup.results
-         | zip(ue_pods.resources)
-         | selectattr('0.stdout','!=','')
-         | map('last')
-         | map(attribute='metadata.name')
-         | list }}
-    ue_ips_valid: >-
-      {{ ue_setup.results
-         | map(attribute='stdout')
-         | reject('equalto','')
-         | list }}
-    ue_list_invalid: >-
-      {{ ue_setup.results
-         | zip(ue_pods.resources)
-         | selectattr('0.stdout','equalto','')
-         | map('last')
-         | list }}
+    ue_valid: "{{ ue_pods.resources | zip(ue_setup.results) | selectattr('1.stdout','!=','') | list }}"
+    ue_invalid: "{{ ue_pods.resources | zip(ue_setup.results) | selectattr('1.stdout','==','') | list }}"
 
 - name: Warn for UEs without IP
   debug:
-    msg: "UE number {{ idx + 1 }} (pod {{ item.metadata.name }}) has no oaitun_ue1 IP and will be skipped"
-  loop: "{{ ue_list_invalid }}"
+    msg: "UE number {{ idx + 1 }} (pod {{ item.0.metadata.name }}) has no oaitun_ue1 IP, skipping"
+  loop: "{{ ue_invalid }}"
   loop_control:
     index_var: idx
 
+# ----------------- Uplink tests -----------------
 - name: Run iperf3 uplink tests on valid NR-UEs
-  shell: kubectl -n open5gs exec {{ item.0 }} -- bash -c 'iperf3 -B {{ item.1 }} -c {{ hostvars[groups["core_node"][0]].ip }} -t {{ duration | default(10) }}'
-  loop: "{{ ue_list_valid | zip(ue_ips_valid) | list }}"
+  shell: kubectl -n open5gs exec {{ item.0.metadata.name }} -- bash -c "iperf3 -B {{ item.1.stdout }} -c {{ core_ip }} -t {{ duration }}"
+  loop: "{{ ue_valid }}"
   ignore_errors: yes
 
 - name: Pause between uplink tests
   pause:
-    seconds: "{{ sleep | default(5) }}"
+    seconds: "{{ sleep }}"
 
+# ----------------- Downlink tests -----------------
 - name: Run iperf3 downlink tests on valid NR-UEs
-  shell: kubectl -n open5gs exec {{ item.0 }} -- bash -c 'iperf3 -B {{ item.1 }} -c {{ hostvars[groups["core_node"][0]].ip }} -t {{ duration | default(10) }} -R'
-  loop: "{{ ue_list_valid | zip(ue_ips_valid) | list }}"
+  shell: kubectl -n open5gs exec {{ item.0.metadata.name }} -- bash -c "iperf3 -B {{ item.1.stdout }} -c {{ core_ip }} -t {{ duration }} -R"
+  loop: "{{ ue_valid }}"
   ignore_errors: yes
 
 - name: Pause between downlink tests
   pause:
-    seconds: "{{ sleep | default(5) }}"
+    seconds: "{{ sleep }}"
