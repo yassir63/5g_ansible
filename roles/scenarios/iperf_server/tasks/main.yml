@@ -1,11 +1,11 @@
 ---
 #
-# Deploy one iperf per UE in the core_node server  
+# Deploy one iperf per UE in the core_node server
 #
 - name: Set defaults
   set_fact:
-    nb_ues: "{{ nb_ues | default(3) | int }}"
-    base_port: 5201                    
+    nb_ues: "{{ (nb_ues | default(3)) | int }}"  # Force nb_ues en entier
+    base_port: 5201
 
 - name: Ensure iperf3 is installed
   package:
@@ -31,4 +31,4 @@
     --logfile /root/IPERF/iperf_{{ base_port + item }}_{{ iperf_timestamp.stdout }}.log
   args:
     executable: /bin/bash
-  loop: "{{ range(0, nb_ues) | list }}"
+  loop: "{{ range(0, nb_ues | int) | list }}"
