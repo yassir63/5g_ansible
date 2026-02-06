@@ -1,6 +1,6 @@
 ---
 
-- name: Start iperf servers on core_node and optionally NR-UE tests
+- name: Run iperf servers on Core node and optionally run NR-UE tests
   hosts: core_node
   become: true
   vars:
@@ -12,13 +12,7 @@
 
   roles:
     - role: scenarios/iperf_server
-      vars:
-        nb_ues: "{{ nb_ues }}"
-
-  tasks:
-    - name: Include NR-UE to core_node iperf role if rru is rfsim
-      include_role:
-        name: scenarios/iperf/nr-ue-to-core_node
+    - role: scenarios/iperf/nr-ue-to-core_node
       when: rru == "rfsim"
 
 - name: Run UE-to-core iperf tests from Faraday
@@ -32,10 +26,4 @@
 
   roles:
     - role: scenarios/iperf/ue-to-core_node
-      vars:
-        ue_list: "{{ groups['qhats'] }}"
-        duration: "{{ duration }}"
-        sleep: "{{ sleep }}"
-        core_ip: "{{ core_ip }}"
-        ignore_errors: "{{ ignore_errors }}"
       when: rru != "rfsim"
