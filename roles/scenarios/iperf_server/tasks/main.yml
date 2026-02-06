@@ -4,7 +4,7 @@
 #
 - name: Set defaults
   set_fact:
-    nb_ues: "{{ nb_ues | default(3) }}"
+    nb_ues: "{{ nb_ues | default(3) | int }}"
     base_port: 5201                    
 
 - name: Ensure iperf3 is installed
