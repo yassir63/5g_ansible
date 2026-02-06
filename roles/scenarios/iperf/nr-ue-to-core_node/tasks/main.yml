@@ -13,7 +13,7 @@
       - "app=oai-nr-ue"
   register: ue_pods
 
-- name: Install iperf3 and get oaitun_ue1 IP
+- name: Install iperf3 if missing
   shell: |
     kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c '
       if ! command -v iperf3 >/dev/null 2>&1; then
@@ -23,9 +23,16 @@
           yum install -y -q iperf3 iproute
         fi
       fi
+    '
+  loop: "{{ ue_pods.resources }}"
+  changed_when: false
+
+- name: Get oaitun_ue1 IP
+  shell: |
+    kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c '
       ip -4 addr show oaitun_ue1 2>/dev/null \
-        | grep -oP "(?<=inet\s)\d+(\.\d+){3}" \
-        | head -n1 || echo ""
+      | grep -oP "(?<=inet\s)\d+(\.\d+){3}" \
+      | head -n1 || echo ""
     '
   loop: "{{ ue_pods.resources }}"
   register: ue_ip_results
