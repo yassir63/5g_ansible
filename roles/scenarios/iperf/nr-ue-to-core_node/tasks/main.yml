@@ -36,7 +36,7 @@
       {{
         ue_setup.results
         | zip(ue_pods.resources)
-        | selectattr('0.stdout','!=','')
+        | rejectattr('0.stdout','equalto','')
         | map('last')
         | map(attribute='metadata.name')
         | list
@@ -45,14 +45,14 @@
       {{
         ue_setup.results
         | map(attribute='stdout')
-        | select('!=','')
+        | reject('equalto','')
         | list
       }}
     ue_list_invalid: >-
       {{
         ue_setup.results
         | zip(ue_pods.resources)
-        | selectattr('0.stdout','==','')
+        | selectattr('0.stdout','equalto','')
         | map('last')
         | list
       }}
