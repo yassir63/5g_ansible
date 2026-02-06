@@ -65,7 +65,7 @@
     (mongo_pods.resources[0].status.containerStatuses is defined) and
     (mongo_pods.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 40
-  delay: 5
+  delay: 10
 
 - name: Apply NADs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/networks5g" -n {{ open5gs_ns }}
@@ -74,7 +74,7 @@
   shell: kubectl get --raw='/healthz'
   register: api_health
   retries: 30
-  delay: 5
+  delay: 10
   until: api_health.rc == 0
   changed_when: false
 
