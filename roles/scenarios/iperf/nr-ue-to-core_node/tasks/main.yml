@@ -58,9 +58,13 @@
       }}
 
 - name: Warn for UEs without IP
+  vars:
+    ue_index: "{{ idx + 1 }}"
   debug:
-    msg: "UE number {{ item.0 + 1 }} (pod {{ item.1.metadata.name }}) has no oaitun_ue1 IP and will be skipped"
-  loop: "{{ ue_list_invalid | enumerate | list }}"
+    msg: "UE number {{ ue_index }} (pod {{ item.metadata.name }}) has no oaitun_ue1 IP and will be skipped"
+  loop: "{{ ue_list_invalid }}"
+  loop_control:
+    index_var: idx
 
 # ----------------- Uplink tests -----------------
 - name: Run iperf3 uplink tests on all NR-UEs
