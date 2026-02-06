@@ -981,22 +981,26 @@ run_scenarios() {
 if [[ "$run_scenario" == true ]]; then
   echo "Running $scenario"
   case "$scenario" in
-    "Default Iperf Test (without interference)")
-      ./run_iperf_test.sh -d
-      ;;
-    "Parallel Iperf Test (without interference)")
-      ./run_iperf_test.sh -p
-      ;;
-    "RFSIM Iperf Test")
-      ./run_iperf_test.sh -s
-      ;;
-    "Interference Test")
-      ./run_iperf_test.sh -i
-      ;;
-    *)
-      echo "❌ Unknown iperf test scenario: $scenario"
-      exit 1
-      ;;
+      "Default Iperf Test (without interference)")
+	  run_cmd ansible-playbook -i "$INVENTORY" \
+		  "${ANSIBLE_EXTRA_ARGS[@]}" \
+		  playbooks/run_iperf.yml 2>&1 | tee logs-iperf.txt
+	  ;;
+      "Parallel Iperf Test (without interference)")
+	  ./run_iperf_test.sh -p
+	  ;;
+      "RFSIM Iperf Test")
+	  run_cmd ansible-playbook -i "$INVENTORY" \
+		  "${ANSIBLE_EXTRA_ARGS[@]}" \
+		  playbooks/run_iperf.yml 2>&1 | tee logs-iperf.txt
+	  ;;
+      "Interference Test")
+	  ./run_iperf_test.sh -i
+	  ;;
+      *)
+	  echo "❌ Unknown iperf test scenario: $scenario"
+	  exit 1
+	  ;;
   esac
   echo ""
   echo "=========================================="
