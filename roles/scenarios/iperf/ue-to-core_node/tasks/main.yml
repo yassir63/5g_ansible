@@ -3,10 +3,13 @@
     duration: "{{ duration | default(10) }}"
     sleep: "{{ sleep | default(5) }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+    ignore_errors: "{{ ignore_errors | default(true) }}"
 
 - name: Connect all qhat UEs sequentially
-  include_role:
-    name: scenarios/iperf/ue-to-core_node/connect_ue
+  include_tasks: connect_ue.yml
   vars:
     ue_list: "{{ groups['qhats'] }}"
-    ignore_errors: "{{ ignore_errors | default(true) }}"
+    core_ip: "{{ core_ip }}"
+    duration: "{{ duration }}"
+    sleep: "{{ sleep }}"
+    ignore_errors: "{{ ignore_errors }}"
