@@ -5,7 +5,5 @@
   loop_control:
     loop_var: ue_item
   vars:
-    duration: "{{ duration | default(10) }}"
-    sleep: "{{ sleep | default(5) }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
-    ignore_errors: "{{ ignore_errors | default(true) }}"
+
