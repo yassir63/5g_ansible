@@ -6,8 +6,17 @@
     duration: 12
     sleep: 5
     ignore_errors: yes
+
+  tasks:
+    - name: Set nb_ues if rru != rfsim
+      set_fact:
+        nb_ues: "{{ groups['qhats'] | length }}"
+      when: rru != "rfsim"
+
   roles:
-    - scenarios/iperf_server
+    - role: scenarios/iperf_server
+      vars:
+        nb_ues: "{{ nb_ues | default(3) }}"
 
   tasks:
     - name: Include NR-UE to core_node iperf role if rru is rfsim
