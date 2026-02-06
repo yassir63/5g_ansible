@@ -32,33 +32,34 @@
     ue3_ip: "{{ ue_setup.results[2].stdout }}"
 
 - name: Run iperf3 uplink on NR-UE1
-  shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }}'
-  register: ue1_uplink
-  changed_when: false
-
-- name: Wait before next test
-  pause:
-    seconds: "{{ sleep }}"
+  block:
+    - shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }}'
+      register: ue1_uplink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
 
 - name: Run iperf3 uplink on NR-UE2
-  shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }}'
-  register: ue2_uplink
-  changed_when: false
-
-- name: Wait before next test
-  pause:
-    seconds: "{{ sleep }}"
+  block:
+    - shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }}'
+      register: ue2_uplink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
 
 - name: Run iperf3 downlink on NR-UE1
-  shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }} -R'
-  register: ue1_downlink
-  changed_when: false
-
-- name: Wait before next test
-  pause:
-    seconds: "{{ sleep }}"
+  block:
+    - shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }} -R'
+      register: ue1_downlink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
 
 - name: Run iperf3 downlink on NR-UE2
-  shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }} -R'
-  register: ue2_downlink
-  changed_when: false
+  block:
+    - shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }} -R'
+      register: ue2_downlink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
+
