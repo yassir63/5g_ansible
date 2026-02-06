@@ -10,20 +10,20 @@
     kind: Pod
     namespace: open5gs
     label_selectors:
-      - "app=oai-nr-ue"  # filtre uniquement les pods NR-UE
+      - "app=oai-nr-ue"
   register: ue_pods
 
 - name: Install iperf3 and get oaitun_ue1 IPs on NR-UEs
-  shell: |
-    set -euo pipefail
-    # détecte le package manager
-    if command -v apt-get >/dev/null 2>&1; then
+  shell: >
+    kubectl -n open5gs exec {{ item.metadata.name }} -- bash -c '
+      set -euo pipefail
+      if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq && apt-get install -y -qq iperf3 iproute2
-    elif command -v yum >/dev/null 2>&1; then
+      elif command -v yum >/dev/null 2>&1; then
         yum install -y -q iperf3 iproute
-    fi
-    # récupère l'IP IPv4 de oaitun_ue1
-    ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}"
+      fi
+      ip -4 addr show oaitun_ue1 | grep -oP "(?<=inet\s)\d+(\.\d+){3}"
+    '
   loop: "{{ ue_pods.resources }}"
   loop_control:
     loop_var: item
