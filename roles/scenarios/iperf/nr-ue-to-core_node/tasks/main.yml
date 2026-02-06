@@ -34,20 +34,25 @@
         ip: "{{ ue_setup.results[i].stdout }}"
       {% endfor %}
 
-- name: Run iperf3 tests (uplink and downlink) for all NR-UEs
+
+- name: Run iperf3 tests (uplink and downlink) for NR-UEs
   vars:
-    tests: >-
-      {%- set t=[] -%}
-      {%- for ue_key, ue_data in nr_ue.items() -%}
-        {%- set _ = t.append({'pod': ue_data.pod, 'ip': ue_data.ip, 'reverse': false}) -%}
-        {%- set _ = t.append({'pod': ue_data.pod, 'ip': ue_data.ip, 'reverse': true}) -%}
-      {%- endfor -%}
-      {{ t }}
+    tests:
+      - { pod: "{{ ue1_pod }}", ip: "{{ ue1_ip }}", reverse: false }
+      - { pod: "{{ ue2_pod }}", ip: "{{ ue2_ip }}", reverse: false }
+      - { pod: "{{ ue1_pod }}", ip: "{{ ue1_ip }}", reverse: true }
+      - { pod: "{{ ue2_pod }}", ip: "{{ ue2_ip }}", reverse: true }
   loop: "{{ tests }}"
   loop_control:
     label: "{{ item.pod }} {{ 'downlink' if item.reverse else 'uplink' }}"
-  shell: |
-    kubectl -n open5gs exec {{ item.pod }} -- bash -c '
-      iperf3 -B {{ item.ip }} -c {{ core_ip }} -t {{ duration }} {% if item.reverse %}-R{% endif %}'
-    sleep {{ sleep }}
-  changed_when: false
+  block:
+    - name: Run iperf3 client
+      shell: >
+        kubectl -n open5gs exec {{ item.pod }} -- bash -c
+        'iperf3 -B {{ item.ip }} -c {{ core_ip }} -t {{ duration }} {% if item.reverse %}-R{% endif %}'
+      register: iperf_result
+      changed_when: false
+
+    - name: Wait before next test
+      pause:
+        seconds: "{{ sleep }}"
