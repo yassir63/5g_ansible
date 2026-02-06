@@ -1,12 +1,14 @@
 ---
-- name: Start iperf test scenario
-  hosts: faraday
+
+- name: Start iperf servers on core_node and optionally NR-UE tests
+  hosts: core_node
   become: true
   vars:
     duration: 12
     sleep: 5
     ignore_errors: yes
     nb_ues: "{{ 3 if rru == 'rfsim' else groups['qhats'] | length }}"
+    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
 
   roles:
     - role: scenarios/iperf_server
@@ -19,7 +21,21 @@
         name: scenarios/iperf/nr-ue-to-core_node
       when: rru == "rfsim"
 
-    - name: Include UE to core_node iperf role if rru is not rfsim
-      include_role:
-        name: scenarios/iperf/ue-to-core_node
-      when: rru != "rfsim"
+- name: Run UE-to-core iperf tests from Faraday
+  hosts: faraday
+  vars:
+    duration: 12
+    sleep: 5
+    ignore_errors: yes
+    nb_ues: "{{ groups['qhats'] | length }}"
+    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+
+  roles:
+    - role: scenarios/iperf/ue-to-core_node
+      vars:
+        ue_list: "{{ groups['qhats'] }}"
+        duration: "{{ duration }}"
+        sleep: "{{ sleep }}"
+        core_ip: "{{ core_ip }}"
+        ignore_errors: "{{ ignore_errors }}"
+  when: rru != "rfsim"

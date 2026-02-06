@@ -982,17 +982,17 @@ if [[ "$run_scenario" == true ]]; then
   echo "Running $scenario"
   case "$scenario" in
       "Default Iperf Test (without interference)")
-	  run_cmd ansible-playbook -i "$INVENTORY" \
-		  "${ANSIBLE_EXTRA_ARGS[@]}" \
-		  playbooks/run_iperf.yml 2>&1 | tee logs-iperf.txt
+	  ansible-playbook -i "$INVENTORY" \
+			   "${ANSIBLE_EXTRA_ARGS[@]}" \
+			   playbooks/run_iperf.yml 2>&1 | tee logs-iperf.txt
 	  ;;
       "Parallel Iperf Test (without interference)")
 	  ./run_iperf_test.sh -p
 	  ;;
       "RFSIM Iperf Test")
-	  run_cmd ansible-playbook -i "$INVENTORY" \
-		  "${ANSIBLE_EXTRA_ARGS[@]}" \
-		  playbooks/run_iperf.yml 2>&1 | tee logs-iperf.txt
+	  ansible-playbook -i "$INVENTORY" \
+			   "${ANSIBLE_EXTRA_ARGS[@]}" \
+			   playbooks/run_iperf.yml 2>&1 | tee logs-iperf.txt
 	  ;;
       "Interference Test")
 	  ./run_iperf_test.sh -i
