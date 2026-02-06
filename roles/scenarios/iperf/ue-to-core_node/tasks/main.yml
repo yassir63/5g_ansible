@@ -31,29 +31,27 @@
   loop: "{{ ue_ip_cmd.results }}"
   when: item.stdout != ""
 
-- name: Run iperf3 uplink and downlink tests sequentially per UE
+- name: Run iperf3 uplink tests per UE
+  shell: ssh root@{{ ue }} "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json"
+  delegate_to: faraday.inria.fr
   loop: "{{ groups['qhats'] }}"
   loop_control:
     loop_var: ue
+  ignore_errors: "{{ ignore_errors | default(true) }}"
 
-  tasks:
+- name: Pause after uplink
+  pause:
+    seconds: "{{ sleep }}"
 
-    - name: uplink iperf
-      shell: >
-        ssh root@{{ ue }}
-        "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json"
-      delegate_to: faraday.inria.fr
-      ignore_errors: "{{ ignore_errors | default(true) }}"
+- name: Run iperf3 downlink tests per UE
+  shell: ssh root@{{ ue }} "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json"
+  delegate_to: faraday.inria.fr
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    loop_var: ue
+  ignore_errors: "{{ ignore_errors | default(true) }}"
 
-    - pause:
-        seconds: "{{ sleep }}"
+- name: Pause after downlink
+  pause:
+    seconds: "{{ sleep }}"
 
-    - name: downlink iperf
-      shell: >
-        ssh root@{{ ue }}
-        "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json"
-      delegate_to: faraday.inria.fr
-      ignore_errors: "{{ ignore_errors | default(true) }}"
-
-    - pause:
-        seconds: "{{ sleep }}"
