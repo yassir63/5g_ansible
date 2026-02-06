@@ -10,21 +10,3 @@
   vars:
     ue_list: "{{ groups['qhats'] }}"
     ignore_errors: "{{ ignore_errors | default(true) }}"
-
-
----
-- Name: Set defaults
-  set_fact:
-    duration: "{{ duration | default(10) }}"
-    sleep: "{{ sleep | default(5) }}"
-    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
-
-# --- Connect UEs sequentially ---
-- name: Connect all qhat UEs to 5G network
-  include_tasks: connect_ue.yml
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    loop_var: ue
-  delegate_to: faraday.inria.fr
-  vars:
-    ignore_errors: "{{ ignore_errors | default(true) }}"
