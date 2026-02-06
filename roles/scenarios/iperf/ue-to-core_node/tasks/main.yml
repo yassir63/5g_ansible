@@ -1,5 +1,19 @@
 ---
-- name: Set defaults
+- set_fact:
+    duration: "{{ duration | default(10) }}"
+    sleep: "{{ sleep | default(5) }}"
+    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+
+- name: Connect all qhat UEs sequentially
+  include_role:
+    name: scenarios/iperf/ue-to-core_node/connect_single_ue
+  vars:
+    ue_list: "{{ groups['qhats'] }}"
+    ignore_errors: "{{ ignore_errors | default(true) }}"
+
+
+---
+- Name: Set defaults
   set_fact:
     duration: "{{ duration | default(10) }}"
     sleep: "{{ sleep | default(5) }}"
