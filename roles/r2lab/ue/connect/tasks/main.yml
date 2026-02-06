@@ -14,4 +14,4 @@
 
 - name: Start UE "{{ ue }}" via jump host
   shell: ssh root@{{ ue }} 'start.sh -F "{{ slices | selectattr("name","equalto",ues[ue].slice) | map(attribute="dnn") | first }}"'
-  ignore_errors: {{ ignore_errors }}
+  ignore_errors: "{{ ignore_errors }}"
