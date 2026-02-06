@@ -1,0 +1,55 @@
+---
+- set_fact:
+    duration: "{{ duration | default(10) }}"
+    sleep: "{{ sleep | default(5) }}"
+    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+
+- name: Connect all qhat UEs to 5G network
+  include_role:
+    name: r2lab/ue/connect
+  vars:
+    ue: "{{ item }}"
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    label: "{{ item }}"
+  delegate_to: faraday.inria.fr
+  ignore_errors: "{{ ignore_errors | default(true) }}"
+
+- name: Retrieve wwan0 IP for each qhat UE
+  shell: ssh root@{{ item }} "ip -4 addr show wwan0 | awk '/inet / {print \$2}' | cut -d/ -f1"
+  register: ue_ip_cmd
+  delegate_to: faraday.inria.fr
+  loop: "{{ groups['qhats'] }}"
+  changed_when: false
+  ignore_errors: "{{ ignore_errors | default(true) }}"
+
+- name: Build dict ue_ips for wwan0 IP
+  set_fact:
+    ue_ips: "{{ ue_ips | default({}) | combine({ item.item: item.stdout }) }}"
+  loop: "{{ ue_ip_cmd.results }}"
+  when: item.stdout != ""
+
+- name: Run iperf3 tests sequentially per UE
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    loop_var: ue
+  delegate_to: faraday.inria.fr
+  block:
+
+    - name: uplink iperf
+      shell: >
+        ssh root@{{ ue }}
+        "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json"
+      ignore_errors: "{{ ignore_errors | default(true) }}"
+
+    - pause:
+        seconds: "{{ sleep }}"
+
+    - name: downlink iperf
+      shell: >
+        ssh root@{{ ue }}
+        "iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json"
+      ignore_errors: "{{ ignore_errors | default(true) }}"
+
+    - pause:
+        seconds: "{{ sleep }}"

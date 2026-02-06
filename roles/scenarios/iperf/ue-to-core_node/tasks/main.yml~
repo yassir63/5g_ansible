@@ -1,0 +1,82 @@
+---
+
+- set_fact:
+    duration: 10
+    sleep: 5
+    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+
+- name: Connect all qhat UEs to 5G network
+  include_role:
+    name: r2lab/ue/connect
+  vars:
+    ue: "{{ item }}"
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    label: "{{ item }}"
+  delegate_to: faraday.inria.fr
+  ignore_errors: "{{ ignore_errors | default(true) }}"
+
+- name: Retrieve wwan0 IP for each qhat UE
+  set_fact:
+    ue1_ip: "{{ ue_setup.results[0].stdout }}"
+    ue2_ip: "{{ ue_setup.results[1].stdout }}"
+    ue3_ip: "{{ ue_setup.results[2].stdout }}"
+    
+
+
+check iperf3 installed (with apt)
+retrieve local wwan0 ip
+run 'iperf3 -B {{ wwan0_ip }} -c {{ core_ip }} -t {{ duration }} [-R]'
+
+- name: Run iperf3 uplink on ue
+  block:
+    - shell:  ssh root@{{ ue }} iperf3 -B {{ wwan0_ip }} -c {{ core_ip }} -t {{ duration }}
+      register: ue_uplink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
+    - shell: ssh root@{{ ue }} iperf3 -B {{ wwan0_ip }} -c {{ core_ip }} -t {{ duration }} -R
+      register: ue_downlink
+      ignore_errors: yes
+
+- name: Set facts for NR-UE pods and IPs
+  set_fact:
+    ue1_pod: "{{ ue_pods.resources[0].metadata.name }}"
+    ue2_pod: "{{ ue_pods.resources[1].metadata.name }}"
+    ue3_pod: "{{ ue_pods.resources[2].metadata.name }}"
+    ue1_ip: "{{ ue_setup.results[0].stdout }}"
+    ue2_ip: "{{ ue_setup.results[1].stdout }}"
+    ue3_ip: "{{ ue_setup.results[2].stdout }}"
+
+- name: Run iperf3 uplink on NR-UE1
+  block:
+    - shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }}'
+      register: ue1_uplink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
+
+- name: Run iperf3 uplink on NR-UE2
+  block:
+    - shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }}'
+      register: ue2_uplink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
+
+- name: Run iperf3 downlink on NR-UE1
+  block:
+    - shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }} -R'
+      register: ue1_downlink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
+
+- name: Run iperf3 downlink on NR-UE2
+  block:
+    - shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }} -R'
+      register: ue2_downlink
+      ignore_errors: yes
+    - pause:
+        seconds: {{ sleep }}
+

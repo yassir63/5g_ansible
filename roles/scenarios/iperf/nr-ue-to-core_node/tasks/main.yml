@@ -1,16 +1,17 @@
 ---
+- name: Set default vars
+  set_fact:
+    duration: "{{ duration | default(10) }}"
+    sleep: "{{ sleep | default(5) }}"
+    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+
 - name: Get list of NR-UE pods
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: open5gs
   register: ue_pods
 
-- set_fact:
-    duration: 10
-    sleep: 5
-    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
-
-- name: Install iperf3 and get oaitun_ue1 IP for NR-UEs
+- name: Install iperf3 and get oaitun_ue1 IPs
   shell: |
     kubectl -n open5gs exec {{ item.metadata.name }} -- bash -c '
       set -euo pipefail
@@ -22,44 +23,41 @@
   register: ue_setup
   changed_when: false
 
-- name: Set facts for NR-UE pods and IPs
+- name: Build UE facts
   set_fact:
-    ue1_pod: "{{ ue_pods.resources[0].metadata.name }}"
-    ue2_pod: "{{ ue_pods.resources[1].metadata.name }}"
-    ue3_pod: "{{ ue_pods.resources[2].metadata.name }}"
-    ue1_ip: "{{ ue_setup.results[0].stdout }}"
-    ue2_ip: "{{ ue_setup.results[1].stdout }}"
-    ue3_ip: "{{ ue_setup.results[2].stdout }}"
+    ue_list: "{{ ue_pods.resources | map(attribute='metadata.name') | list }}"
+    ue_ips: "{{ ue_setup.results | map(attribute='stdout') | list }}"
 
-- name: Run iperf3 uplink on NR-UE1
+- name: Run iperf3 uplink tests on all NR-UEs
+  loop: "{{ ue_list | zip(ue_ips) | list }}"
+  loop_control:
+    loop_var: ue
+  vars:
+    pod_name: "{{ ue[0] }}"
+    pod_ip: "{{ ue[1] }}"
   block:
-    - shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }}'
-      register: ue1_uplink
+    - name: Uplink test
+      shell: kubectl -n open5gs exec {{ pod_name }} -- bash -c 'iperf3 -B {{ pod_ip }} -c {{ core_ip }} -t {{ duration }}'
+      register: uplink_result
       ignore_errors: yes
-    - pause:
-        seconds: {{ sleep }}
 
-- name: Run iperf3 uplink on NR-UE2
+    - name: Wait between tests
+      pause:
+        seconds: "{{ sleep }}"
+
+- name: Run iperf3 downlink tests on all NR-UEs
+  loop: "{{ ue_list | zip(ue_ips) | list }}"
+  loop_control:
+    loop_var: ue
+  vars:
+    pod_name: "{{ ue[0] }}"
+    pod_ip: "{{ ue[1] }}"
   block:
-    - shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }}'
-      register: ue2_uplink
+    - name: Downlink test
+      shell: kubectl -n open5gs exec {{ pod_name }} -- bash -c 'iperf3 -B {{ pod_ip }} -c {{ core_ip }} -t {{ duration }} -R'
+      register: downlink_result
       ignore_errors: yes
-    - pause:
-        seconds: {{ sleep }}
 
-- name: Run iperf3 downlink on NR-UE1
-  block:
-    - shell: kubectl -n open5gs exec {{ ue1_pod }} -- bash -c 'iperf3 -B {{ ue1_ip }} -c {{ core_ip }} -t {{ duration }} -R'
-      register: ue1_downlink
-      ignore_errors: yes
-    - pause:
-        seconds: {{ sleep }}
-
-- name: Run iperf3 downlink on NR-UE2
-  block:
-    - shell: kubectl -n open5gs exec {{ ue2_pod }} -- bash -c 'iperf3 -B {{ ue2_ip }} -c {{ core_ip }} -t {{ duration }} -R'
-      register: ue2_downlink
-      ignore_errors: yes
-    - pause:
-        seconds: {{ sleep }}
-
+    - name: Wait between tests
+      pause:
+        seconds: "{{ sleep }}"

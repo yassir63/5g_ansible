@@ -1,6 +1,21 @@
 ---
-- name: Start iperf servers on core_node
+- name: Start iperf test scenario
   hosts: core_node
   become: true
+  vars:
+    duration: 12
+    sleep: 5
+    ignore_errors: yes
   roles:
     - scenarios/iperf_server
+
+  tasks:
+    - name: Include NR-UE to core_node iperf role if rru is rfsim
+      include_role:
+        name: scenarios/iperf/nr-ue-to-core_node
+      when: rru == "rfsim"
+
+    - name: Include UE to core_node iperf role if rru is not rfsim
+      include_role:
+        name: scenarios/iperf/ue-to-core_node
+      when: rru != "rfsim"
