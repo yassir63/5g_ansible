@@ -1,12 +1,12 @@
 ---
 # 1. Check if the UE already has an IP assigned to wwan0
 - name: Check if {{ current_ue }} already has a wwan0 IP
-  shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1"
+  shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
   register: check_ip_ready
   changed_when: false
   ignore_errors: true
 
-# 2. Only run the connection role if wwan0 is empty
+# 2. Only run the connection role if wwan0 IP is missing
 - name: Connect UE {{ current_ue }} to 5G network (if not connected)
   include_role:
     name: r2lab/ue/connect
@@ -15,7 +15,7 @@
   when: check_ip_ready.stdout == ""
   ignore_errors: "{{ ignore_errors }}"
 
-# 3. Retrieve the IP (either from a new connection or an existing one)
+# 3. Retrieve the final IP (ensuring prefix/inet is stripped)
 - name: Retrieve wwan0 IP for {{ current_ue }}
   shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
   register: ue_ip_cmd
@@ -25,13 +25,26 @@
   changed_when: false
   ignore_errors: "{{ ignore_errors }}"
 
-# 4. Update the UE IPs dictionary
+# 4. Check if a route to core_ip exists via wwan0
+- name: Check route to {{ core_ip }} on {{ current_ue }}
+  shell: ssh root@{{ current_ue }} "ip route get {{ core_ip }}"
+  register: route_check
+  changed_when: false
+  ignore_errors: true
+
+# 5. Add route to core_ip via wwan0 if not already set
+- name: Add route to {{ core_ip }} via wwan0
+  shell: ssh root@{{ current_ue }} "ip route add {{ core_ip }} dev wwan0"
+  when: '"dev wwan0" not in route_check.stdout'
+  ignore_errors: true
+
+# 6. Update the UE IPs dictionary
 - name: Build dict ue_ips
   set_fact:
     ue_ips: "{{ ue_ips | default({}) | combine({ current_ue: ue_ip_cmd.stdout }) }}"
   when: ue_ip_cmd.stdout != ""
 
-# 5. Display iPerf parameters before launching the test
+# 7. Display iPerf parameters before launching the test
 - name: "Display iPerf parameters for {{ current_ue }}"
   debug:
     msg: 
@@ -42,7 +55,7 @@
       - "Duration: {{ duration }}s"
       - "Command: iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }}"
 
-# 6. Run Uplink test
+# 8. Run Uplink test
 - name: Run uplink iperf from {{ current_ue }}
   shell: ssh root@{{ current_ue }} "iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json"
   ignore_errors: "{{ ignore_errors }}"
@@ -51,13 +64,13 @@
 - pause:
     seconds: "{{ sleep }}"
 
-# 7. Run Downlink test
+# 9. Run Downlink test
 - name: Run downlink iperf from {{ current_ue }}
   shell: ssh root@{{ current_ue }} "iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json"
   ignore_errors: "{{ ignore_errors }}"
   when: ue_ip_cmd.stdout != ""
 
-# 8. Wait between different UEs
+# 10. Wait between different UEs
 - name: Pause between UEs
   pause:
     seconds: "{{ sleep }}"
