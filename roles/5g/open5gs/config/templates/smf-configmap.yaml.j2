@@ -65,7 +65,8 @@ data:
         - s_nssai:
             sst: {{ slice.sst }}
             sd: {% if slice.sd == "EMPTY" or slice.sd == "" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
-
-          dnn: {{ slice.dnn }}
+          dnn:
+            - {{ slice.dnn }}
 {% endif %}
 {% endfor %}
+
