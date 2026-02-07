@@ -31,7 +31,7 @@ slices:
   - name: slice2
     dnn: streaming
     sst: "1"
-    sd: "000001"
+    sd: "100000"
     qos:
       five_qi: "5"
       arp:
@@ -40,8 +40,8 @@ slices:
         preempt_vuln: "PREEMPTABLE"
       priority_level: "1"
     bandwidth:
-      uplink: "100Mbps"
-      downlink: "200Mbps"
+      uplink: "30Mbps"
+      downlink: "50Mbps"
     ip_prefix: "14.1.1"
 
 security:
