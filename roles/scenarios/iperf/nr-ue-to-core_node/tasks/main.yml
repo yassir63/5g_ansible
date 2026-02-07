@@ -14,9 +14,9 @@
   register: ue_pods
 
 - name: Install iperf3 and get oaitun_ue1 IP
-  shell: |
-    kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c '
-      # On installe en silence total en redirigeant TOUT vers /dev/null
+  shell:
+    cmd: |
+      kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
       if ! command -v iperf3 >/dev/null 2>&1; then
         if command -v apt-get >/dev/null 2>&1; then
           apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq iperf3 iproute2 >/dev/null 2>&1
@@ -24,31 +24,32 @@
           yum install -y -q iperf3 iproute >/dev/null 2>&1
         fi
       fi
-      # On récupère l'IP et on s'assure de ne renvoyer que la dernière ligne (l'IP seule)
-      IP=$(ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1)
-      echo "$IP" | tr -d "[:space:]"
-    '
+      # On utilise grep pour extraire uniquement l'IP et on supprime les retours a la ligne
+      ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '
+      "
   loop: "{{ ue_pods.resources }}"
   register: ue_ip_results
   changed_when: false
 
+- name: Init UE lists
+  set_fact:
+    valid_ues: []
+    invalid_ues: []
+
 - name: Classify valid UEs
   set_fact:
-    # Utilisation de .stdout.split() ou trim pour être certain de n'avoir que l'IP
     valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
   loop: "{{ ue_ip_results.results }}"
-  # On vérifie que le résultat contient bien quelque chose qui ressemble à une IP
-  when: item.stdout is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
+  when: 
+    - item.stdout is defined
+    - item.stdout | trim != ""
+    - item.stdout is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
 
 - name: Classify invalid UEs
   set_fact:
     invalid_ues: "{{ invalid_ues + [ item.item.metadata.name ] }}"
   loop: "{{ ue_ip_results.results }}"
-  when: item.stdout == ""
-
-- name: Pause before tests
-  pause:
-    seconds: "{{ sleep }}"
+  when: item.stdout | trim == ""
 
 - name: Run iperf uplink with unique ports
   shell: >
