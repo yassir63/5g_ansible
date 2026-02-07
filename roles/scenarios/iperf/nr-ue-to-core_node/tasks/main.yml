@@ -1,8 +1,4 @@
 ---
-#
-# Deploy iperf servers on core_node with session-based reporting
-#
-
 - name: Set defaults
   set_fact:
     duration: "{{ duration | default(10) }}"
@@ -19,18 +15,23 @@
   set_fact:
     ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^oai-nr-ue') | list }}"
 
-- name: Force Install iperf3 (Checking for existing installation first)
+- name: Force Install iperf3 (Try APT then YUM)
   shell: |
     kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
     if ! command -v iperf3 &> /dev/null; then
-      apt-get update -qq && apt-get install -y -qq iperf3 iproute2
+      if command -v apt-get &> /dev/null; then
+        apt-get update -qq && apt-get install -y -qq iperf3 iproute2
+      elif command -v yum &> /dev/null; then
+        yum install -y -q iperf3 iproute
+      else
+        echo 'No package manager (apt/yum) found' && exit 1
+      fi
     fi
-    which iperf3"
+    command -v iperf3"
   loop: "{{ ue_resources }}"
   loop_control:
-    label: "Checking/Installing iperf3 on {{ item.metadata.name }}"
+    label: "Installing iperf3 on {{ item.metadata.name }}"
   register: install_check
-  # On arrête tout si iperf3 ne peut vraiment pas être installé
   failed_when: install_check.rc != 0 
 
 - name: Get oaitun_ue1 IP
@@ -70,7 +71,7 @@
 
 - name: Wait for sockets to clear
   pause:
-    seconds: 2
+    seconds: "{{ sleep }}"
 
 - name: Run iperf downlink
   shell: >
