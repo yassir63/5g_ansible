@@ -1,7 +1,10 @@
 ---
 # 1. Check if the UE already has a valid IPv4 on wwan0
+# Added -o ConnectTimeout and -o BatchMode to prevent hanging
 - name: Check if {{ current_ue }} already has a wwan0 IP
-  shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
+  shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ current_ue }} \
+    "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
   register: check_ip_ready
   changed_when: false
   ignore_errors: true
@@ -12,12 +15,14 @@
     name: r2lab/ue/connect
   vars:
     ue_item: "{{ current_ue }}"
-  when: check_ip_ready.stdout == ""
+  when: check_ip_ready.stdout == "" or check_ip_ready.rc != 0
   ignore_errors: "{{ ignore_errors }}"
 
-# 3. Retrieve the final clean IP (ensuring no 'inet' prefix or mask)
+# 3. Retrieve the final clean IP
 - name: Retrieve wwan0 IP for {{ current_ue }}
-  shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
+  shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes root@{{ current_ue }} \
+    "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
   register: ue_ip_cmd
   until: ue_ip_cmd.stdout != ""
   retries: 5
@@ -27,15 +32,15 @@
 
 # 4. Check if a specific route to core_ip exists via wwan0
 - name: Check route to {{ core_ip }} on {{ current_ue }}
-  shell: ssh root@{{ current_ue }} "ip route get {{ core_ip }}"
+  shell: ssh -o BatchMode=yes root@{{ current_ue }} "ip route get {{ core_ip }}"
   register: route_check
   changed_when: false
   ignore_errors: true
 
-# 5. Add route to core_ip via wwan0 if it's missing or using wrong interface
+# 5. Add route to core_ip via wwan0 if it's missing
 - name: Add route to {{ core_ip }} via wwan0
-  shell: ssh root@{{ current_ue }} "ip route add {{ core_ip }} dev wwan0"
-  when: '"dev wwan0" not in route_check.stdout'
+  shell: ssh -o BatchMode=yes root@{{ current_ue }} "ip route add {{ core_ip }} dev wwan0"
+  when: route_check.stdout is defined and "dev wwan0" not in route_check.stdout
   ignore_errors: true
 
 # 6. Update the UE IPs dictionary for tracking
@@ -56,26 +61,29 @@
       - "--- IPERF3 CONFIGURATION ---"
       - "UE Host: {{ current_ue }}"
       - "Port: {{ iperf_port }}"
-      - "Binding to Local IP: {{ ue_ip_cmd.stdout }}"
+      - "Binding to Local IP: {{ ue_ip_cmd.stdout | default('NOT FOUND') }}"
       - "Connecting to Core IP: {{ core_ip }}"
-      - "Duration: {{ duration }}s"
 
 # 9. Run Uplink test
 - name: Run uplink iperf from {{ current_ue }}
-  shell: ssh root@{{ current_ue }} "iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json"
+  shell: |
+    ssh -o BatchMode=yes root@{{ current_ue }} \
+    "iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json"
   ignore_errors: "{{ ignore_errors }}"
-  when: ue_ip_cmd.stdout != ""
+  when: ue_ip_cmd.stdout is defined and ue_ip_cmd.stdout != ""
 
 - pause:
     seconds: "{{ sleep }}"
 
 # 10. Run Downlink test (Reverse mode)
 - name: Run downlink iperf from {{ current_ue }}
-  shell: ssh root@{{ current_ue }} "iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json"
+  shell: |
+    ssh -o BatchMode=yes root@{{ current_ue }} \
+    "iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json"
   ignore_errors: "{{ ignore_errors }}"
-  when: ue_ip_cmd.stdout != ""
+  when: ue_ip_cmd.stdout is defined and ue_ip_cmd.stdout != ""
 
-# 11. Stop the dedicated iperf3 server to free the port
+# 11. Stop the dedicated iperf3 server
 - name: Stop iperf3 server on port {{ iperf_port }}
   shell: "pkill -f 'iperf3 -s -p {{ iperf_port }}'"
   delegate_to: "{{ groups['core_node'][0] }}"
