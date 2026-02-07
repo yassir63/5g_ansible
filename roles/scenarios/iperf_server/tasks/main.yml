@@ -2,10 +2,12 @@
 #
 # Deploy iperf servers on core_node
 #
+
 - name: Set defaults
   set_fact:
     base_port: 5201
-    actual_nb_ues: "{{ nb_ues | default(3) | int }}"
+    # On garde la variable, mais on se méfie de son type
+    actual_nb_ues: "{{ nb_ues | default(3) }}"
 
 - name: Kill ANY existing iperf3 process
   shell: pkill iperf3 || true
@@ -25,15 +27,17 @@
 
 - name: Start iperf3 servers on incremental ports
   shell: >
-    iperf3 -s -p {{ base_port + item }} -D 
-    --logfile /root/IPERF/iperf_{{ base_port + item }}_{{ iperf_timestamp.stdout }}.log
-  loop: "{{ range(0, actual_nb_ues) | list }}"
+    iperf3 -s -p {{ base_port + item | int }} -D 
+    --logfile /root/IPERF/iperf_{{ base_port + item | int }}_{{ iperf_timestamp.stdout }}.log
+  # Le secret est ici : on force le cast en INT au moment précis de la création de la liste
+  loop: "{{ range(0, actual_nb_ues | int) | list }}"
   become: true
 
 - name: Verify servers are listening
   shell: netstat -tulpn | grep iperf3
   register: iperf_status
   changed_when: false
+  failed_when: false
 
 - name: Debug server status
   debug:
