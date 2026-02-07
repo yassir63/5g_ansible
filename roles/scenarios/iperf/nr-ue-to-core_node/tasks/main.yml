@@ -2,7 +2,6 @@
 #
 # Deploy iperf servers on core_node with session-based reporting
 #
----
 - name: Set defaults
   set_fact:
     duration: "{{ duration | default(10) }}"
