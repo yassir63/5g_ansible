@@ -2,7 +2,6 @@
 #
 # Deploy iperf servers on core_node
 #
----
 - name: Set defaults
   set_fact:
     base_port: 5201
