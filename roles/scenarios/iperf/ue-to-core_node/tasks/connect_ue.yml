@@ -1,26 +1,48 @@
 ---
-- name: Connect UE {{ current_ue }} to 5G network
+# 1. Check if the UE already has an IP assigned to wwan0
+- name: Check if {{ current_ue }} already has a wwan0 IP
+  shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1"
+  register: check_ip_ready
+  changed_when: false
+  ignore_errors: true
+
+# 2. Only run the connection role if wwan0 is empty
+- name: Connect UE {{ current_ue }} to 5G network (if not connected)
   include_role:
     name: r2lab/ue/connect
   vars:
-    # On donne au rôle la variable exacte qu'il attend (ue_item)
     ue_item: "{{ current_ue }}"
+  when: check_ip_ready.stdout == ""
   ignore_errors: "{{ ignore_errors }}"
 
+# 3. Retrieve the IP (either from a new connection or an existing one)
 - name: Retrieve wwan0 IP for {{ current_ue }}
   shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1"
   register: ue_ip_cmd
   until: ue_ip_cmd.stdout != ""
-  retries: 15
+  retries: 5
   delay: 2
   changed_when: false
   ignore_errors: "{{ ignore_errors }}"
 
+# 4. Update the UE IPs dictionary
 - name: Build dict ue_ips
   set_fact:
     ue_ips: "{{ ue_ips | default({}) | combine({ current_ue: ue_ip_cmd.stdout }) }}"
   when: ue_ip_cmd.stdout != ""
 
+# 5. Display iPerf parameters before launching the test
+- name: "Display iPerf parameters for {{ current_ue }}"
+  debug:
+    msg: 
+      - "--- IPERF3 CONFIGURATION ---"
+      - "UE Host: {{ current_ue }}"
+      - "Binding to Local IP: {{ ue_ip_cmd.stdout }}"
+      - "Connecting to Core IP: {{ core_ip }}"
+      - "Duration: {{ duration }}s"
+      - "Command: iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }}"
+
+# 6. Run Uplink test
 - name: Run uplink iperf from {{ current_ue }}
   shell: ssh root@{{ current_ue }} "iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json"
   ignore_errors: "{{ ignore_errors }}"
@@ -29,11 +51,13 @@
 - pause:
     seconds: "{{ sleep }}"
 
+# 7. Run Downlink test
 - name: Run downlink iperf from {{ current_ue }}
   shell: ssh root@{{ current_ue }} "iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json"
   ignore_errors: "{{ ignore_errors }}"
   when: ue_ip_cmd.stdout != ""
 
+# 8. Wait between different UEs
 - name: Pause between UEs
   pause:
     seconds: "{{ sleep }}"
