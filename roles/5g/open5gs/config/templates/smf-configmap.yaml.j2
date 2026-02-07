@@ -48,6 +48,10 @@ data:
       session:
 {% for slice in fiveg.slices if slice.name == smf_slice %}
         - subnet: {{ slice.ip_prefix }}.1/16
+          dnn: {{ slice.dnn }}
+          s_nssai:
+            sst: {{ slice.sst }}
+            sd: {% if slice.sd == "EMPTY" or slice.sd == "" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
 {% endfor %}
       dns:
         - 8.8.8.8
@@ -60,9 +64,8 @@ data:
       info:
 {% for slice in fiveg.slices if slice.name == smf_slice %}
         - s_nssai:
-          - sst: {{ slice.sst }}
-            sd: {% if slice.sd == "EMPTY" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
-
-            dnn:
-              - {{ slice.dnn }}
+            sst: {{ slice.sst }}
+            sd: {% if slice.sd == "EMPTY" or slice.sd == "" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
+          dnn:
+            - {{ slice.dnn }}
 {% endfor %}
