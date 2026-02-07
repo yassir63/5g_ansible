@@ -1,87 +1,74 @@
 ---
+#
+# Deploy iperf servers on core_node with session-based reporting
+#
+
 - name: Set defaults
   set_fact:
-    duration: "{{ duration | default(10) }}"
-    sleep: "{{ sleep | default(5) }}"
-    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+    base_port: 5201
+    actual_nb_ues: "{{ nb_ues | default(3) | int }}"
 
-- name: Get all pods in namespace
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: open5gs
-  register: all_pods
-
-- name: Filter UE pods by name
-  set_fact:
-    ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^oai-nr-ue') | list }}"
-
-- name: Debug - Number of UEs found
-  debug:
-    msg: "Found {{ ue_resources | length }} UE pods matching the pattern"
-
-- name: Clean up existing iperf3 clients in pods
-  shell: "kubectl exec -n open5gs {{ item.metadata.name }} -- pkill iperf3 || true"
-  loop: "{{ ue_resources }}"
-  ignore_errors: yes
-
-- name: Install iperf3 and get oaitun_ue1 IP
-  shell:
-    cmd: |
-      kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
-      if ! command -v iperf3 >/dev/null 2>&1; then
-        if command -v apt-get >/dev/null 2>&1; then
-          apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq iperf3 iproute2 >/dev/null 2>&1
-        elif command -v yum >/dev/null 2>&1; then
-          yum install -y -q iperf3 iproute >/dev/null 2>&1
-        fi
-      fi
-      ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '
-      "
-  loop: "{{ ue_resources }}"
-  register: ue_ip_results
+- name: Kill ANY existing iperf3 process
+  shell: pkill iperf3 || true
+  become: true
   changed_when: false
 
-- name: Init UE lists
-  set_fact:
-    valid_ues: []
+- name: Create base directory for iperf logs
+  file:
+    path: /root/IPERF
+    state: directory
+    mode: "0755"
 
-- name: Classify valid UEs
-  set_fact:
-    valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
-  loop: "{{ ue_ip_results.results }}"
-  when:
-    - item.stdout is defined
-    - item.stdout | trim is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
+- name: Get session timestamp
+  command: date +"%Y%m%d_%H%M%S"
+  register: iperf_timestamp
+  changed_when: false
 
-- name: Pause before tests
-  pause:
-    seconds: "{{ sleep }}"
-
-- name: Run iperf uplink with unique ports
+- name: Start iperf3 servers on incremental ports
   shell: >
-    kubectl exec -n open5gs {{ item.pod }} --
-    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration }}
-  loop: "{{ valid_ues }}"
+    iperf3 -s -p {{ base_port + item | int }} -D 
+    --logfile /root/IPERF/iperf_{{ base_port + item | int }}_{{ iperf_timestamp.stdout }}.log
+  loop: "{{ range(0, actual_nb_ues | int) | list }}"
+  become: true
   loop_control:
-    index_var: idx
-  register: uplink_results
-  ignore_errors: yes
+    label: "Port {{ base_port + item | int }}"
 
-- name: Debug Uplink Ports
+- name: Wait for tests to complete
+  pause:
+    seconds: "{{ duration | default(10) | int + 5 }}"
+  comment: "On attend la fin des tests clients avant de lire les logs"
+
+- name: Get CURRENT session log files
+  find:
+    paths: /root/IPERF
+    patterns: "iperf_*_{{ iperf_timestamp.stdout }}.log"
+  register: iperf_files
+
+- name: Read session logs
+  command: "cat {{ item.path }}"
+  loop: "{{ iperf_files.files | sort(attribute='path') }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  register: log_contents
+  changed_when: false
+
+- name: "📊 RECAPITULATIF DES TESTS IPERF (Session: {{ iperf_timestamp.stdout }})"
   debug:
-    msg: "Pod {{ item.item.pod }} is connecting to {{ core_ip }} on port {{ 5201 + item.ansible_loop_var_index | int }}"
-  loop: "{{ uplink_results.results }}"
-  when: uplink_results.results is defined
+    msg: |
+      {% for log in log_contents.results %}
+      ======================================================================
+      FILE: {{ log.item.path | basename }}
+      ======================================================================
+      {{ log.stdout }}
 
-- name: Wait for sockets to clear
-  pause:
-    seconds: 2
+      {% endfor %}
 
-- name: Run iperf downlink with unique ports
-  shell: >
-    kubectl exec -n open5gs {{ item.pod }} --
-    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration }} -R
-  loop: "{{ valid_ues }}"
-  loop_control:
-    index_var: idx
-  ignore_errors: yes
+- name: Verify servers are listening
+  shell: netstat -tulpn | grep iperf3
+  register: iperf_status
+  changed_when: false
+  failed_when: false
+
+- name: Debug server status
+  debug:
+    var: iperf_status.stdout_lines
