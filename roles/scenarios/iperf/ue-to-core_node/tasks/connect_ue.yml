@@ -1,14 +1,16 @@
 ---
-- name: Connect UE {{ ue_target }} to 5G network
+- name: Connect UE to 5G network
   include_role:
     name: r2lab/ue/connect
   vars:
-    ue: "{{ ue_target }}"
+    # On passe ue_item au rôle car c'est ce qu'il cherche dans son conditional check
+    ue_item: "{{ ue_item }}" 
   ignore_errors: "{{ ignore_errors }}"
 
-- name: Wait for wwan0 IP on {{ ue_target }}
+- name: Retrieve wwan0 IP for UE
+  # On délègue bien l'exécution à l'UE réel (le qhat)
   shell: ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1
-  delegate_to: "{{ ue_target }}"
+  delegate_to: "{{ ue_item }}"
   register: ue_ip_cmd
   until: ue_ip_cmd.stdout != ""
   retries: 10
@@ -18,7 +20,7 @@
 
 - name: Build dict ue_ips
   set_fact:
-    ue_ips: "{{ ue_ips | combine({ ue_target: ue_ip_cmd.stdout }) }}"
+    ue_ips: "{{ ue_ips | default({}) | combine({ ue_item: ue_ip_cmd.stdout }) }}"
   when: ue_ip_cmd.stdout != ""
 
 - name: Run uplink iperf from {{ ue_target }}
