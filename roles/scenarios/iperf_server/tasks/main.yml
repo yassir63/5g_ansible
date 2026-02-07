@@ -2,11 +2,18 @@
 #
 # Deploy iperf servers on core_node
 #
+---
 - name: Set defaults
   set_fact:
     base_port: 5201
-    # On s'assure de nettoyer la liste des ports pour ne pas avoir de restes
-    nb_ues: "{{ (nb_ues | default(3)) | int }}"
+    # On force la conversion ici au cas où
+    actual_nb_ues: "{{ nb_ues | default(3) | int }}"
+
+- name: Kill ANY existing iperf3 process
+  shell: pkill iperf3 || true
+  become: true
+  changed_when: false
+
 
 - name: Create base directory for iperf logs
   file:
@@ -14,10 +21,18 @@
     state: directory
     mode: "0755"
 
-- name: Kill ANY existing iperf3 process
-  shell: pkill iperf3 || true
+- name: Start iperf3 servers on incremental ports
+  shell: >
+    iperf3 -s -p {{ base_port + item }} -D 
+    --logfile /root/IPERF/iperf_{{ base_port + item }}_{{ iperf_timestamp.stdout }}.log
+  loop: "{{ range(0, actual_nb_ues | int) | list }}"
   become: true
-  changed_when: false
+
+- name: Create base directory for iperf logs
+  file:
+    path: /root/IPERF
+    state: directory
+    mode: "0755"
 
 - name: Get timestamp
   command: date +"%Y%m%d_%H%M%S"
