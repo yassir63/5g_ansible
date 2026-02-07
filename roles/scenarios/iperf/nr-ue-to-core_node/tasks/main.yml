@@ -2,6 +2,7 @@
 #
 # Deploy iperf servers on core_node with session-based reporting
 #
+
 - name: Set defaults
   set_fact:
     duration: "{{ duration | default(10) }}"
@@ -56,26 +57,18 @@
 
 - name: Pause before tests
   pause:
-    seconds: "{{ sleep }}"
+    seconds: "{{ sleep | int }}"
 
 - name: Run iperf uplink
   shell: >
     kubectl exec -n open5gs {{ item.pod }} --
-    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration }}
+    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }}
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
     label: "{{ item.pod }} (Port: {{ 5201 + idx | int }})"
   register: uplink_results
   ignore_errors: yes
-
-- name: Debug Uplink Results (Summary)
-  debug:
-    msg: "Pod {{ item.item.pod }} tested on port {{ 5201 + item.idx | int }}"
-  loop: "{{ uplink_results.results }}"
-  loop_control:
-    label: "{{ item.item.pod }}"
-  when: uplink_results.results is defined
 
 - name: Wait for sockets to clear
   pause:
@@ -84,22 +77,23 @@
 - name: Run iperf downlink
   shell: >
     kubectl exec -n open5gs {{ item.pod }} --
-    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration }} -R
+    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }} -R
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
     label: "{{ item.pod }} (Port: {{ 5201 + idx | int }})"
   ignore_errors: yes
+
 - name: Wait for tests to complete
   pause:
-    seconds: "{{ duration | default(10) | int + 5 }}"
-  comment: "On attend la fin des tests clients avant de lire les logs"
+    seconds: 2
 
 - name: Get CURRENT session log files
   find:
     paths: /root/IPERF
     patterns: "iperf_*_{{ iperf_timestamp.stdout }}.log"
   register: iperf_files
+  delegate_to: "{{ groups['core_node'][0] }}"
 
 - name: Read session logs
   command: "cat {{ item.path }}"
@@ -107,9 +101,10 @@
   loop_control:
     label: "{{ item.path | basename }}"
   register: log_contents
+  delegate_to: "{{ groups['core_node'][0] }}"
   changed_when: false
 
-- name: "📊 RECAPITULATIF DES TESTS IPERF (Session: {{ iperf_timestamp.stdout }})"
+- name: "📊 IPERF Tests summary (Session: {{ iperf_timestamp.stdout }})"
   debug:
     msg: |
       {% for log in log_contents.results %}
@@ -119,13 +114,3 @@
       {{ log.stdout }}
 
       {% endfor %}
-
-- name: Verify servers are listening
-  shell: netstat -tulpn | grep iperf3
-  register: iperf_status
-  changed_when: false
-  failed_when: false
-
-- name: Debug server status
-  debug:
-    var: iperf_status.stdout_lines
