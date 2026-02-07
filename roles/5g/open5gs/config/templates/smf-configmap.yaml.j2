@@ -29,12 +29,12 @@ data:
           - dev: n4
         client:
           upf:
-{%- for slice in fiveg.slices %}
-{%- if slice.name == smf_slice %}
+{% for slice in fiveg.slices %}
+{% if slice.name == smf_slice %}
             - address: 10.10.4.{{ loop.index }}
               dnn: {{ slice.dnn }}
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
       gtpc:
         server:
           - dev: eth0
@@ -46,9 +46,9 @@ data:
           - address: 0.0.0.0
             port: 9090
       session:
-{%- for slice in fiveg.slices if slice.name == smf_slice %}
+{% for slice in fiveg.slices if slice.name == smf_slice %}
         - subnet: {{ slice.ip_prefix }}.1/16
-{%- endfor %}
+{% endfor %}
       dns:
         - 8.8.8.8
         - 8.8.4.4
@@ -58,9 +58,9 @@ data:
       freeDiameter: /open5gs/install/etc/freeDiameter/smf.conf
 
       info:
-{%- for slice in fiveg.slices if slice.name == smf_slice %}
+{% for slice in fiveg.slices if slice.name == smf_slice %}
         - s_nssai:
             sst: {{ slice.sst }}
             sd: {% if slice.sd == "EMPTY" or slice.sd == "" %}FFFFFF{% else %}{{ slice.sd }}{% endif %}
           dnn: {{ slice.dnn }}
-{%- endfor %}
+{% endfor %}
