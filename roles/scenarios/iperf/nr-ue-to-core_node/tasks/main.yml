@@ -3,6 +3,7 @@
   set_fact:
     duration: "{{ duration | default(10) }}"
     sleep: "{{ sleep | default(5) }}"
+    core_node_host: "{{ groups['core_node'][0] }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
 
 - name: Get all pods in namespace
@@ -15,16 +16,16 @@
   set_fact:
     ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^oai-nr-ue') | list }}"
 
-- name: Force Install iperf3 (Try APT then YUM)
+- name: Force Install iperf3 (YUM then APT)
   shell: |
     kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
     if ! command -v iperf3 &> /dev/null; then
-      if command -v apt-get &> /dev/null; then
-        apt-get update -qq && apt-get install -y -qq iperf3 iproute2
-      elif command -v yum &> /dev/null; then
+      if command -v yum &> /dev/null; then
         yum install -y -q iperf3 iproute
+      elif command -v apt-get &> /dev/null; then
+        apt-get update -qq && apt-get install -y -qq iperf3 iproute2
       else
-        echo 'No package manager (apt/yum) found' && exit 1
+        echo 'No package manager found' && exit 1
       fi
     fi
     command -v iperf3"
@@ -44,19 +45,15 @@
   register: ue_ip_results
   changed_when: false
 
-- name: Init UE lists
+- name: Init and Classify valid UEs
   set_fact:
-    valid_ues: []
-
-- name: Classify valid UEs
-  set_fact:
-    valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
+    valid_ues: "{{ valid_ues | default([]) + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
   loop: "{{ ue_ip_results.results }}"
   loop_control:
     label: "{{ item.item.metadata.name }} -> {{ item.stdout | trim }}"
   when:
     - item.stdout is defined
-    - item.stdout | trim is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
+    - item.stdout | trim is search('^[0-9.]+$')
 
 - name: Run iperf uplink
   shell: >
@@ -65,8 +62,7 @@
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
-    label: "{{ item.pod }} (Port: {{ 5201 + idx | int }})"
-  register: uplink_results
+    label: "Uplink: {{ item.pod }} (Port: {{ 5201 + idx | int }})"
   ignore_errors: yes
 
 - name: Wait for sockets to clear
@@ -80,32 +76,35 @@
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
-    label: "{{ item.pod }} (Port: {{ 5201 + idx | int }})"
+    label: "Downlink: {{ item.pod }} (Port: {{ 5201 + idx | int }})"
   ignore_errors: yes
 
-# --- SUMMARY DISPLAY ---
+# --- FIX: RECOVERY OF LOG FILES ---
+
+- name: Find iperf log files on Core Node
+  find:
+    paths: "/root/IPERF" # Ajuste le chemin si les logs sont ailleurs
+    patterns: "iperf_*.log"
+  delegate_to: "{{ core_node_host }}"
+  register: iperf_files
 
 - name: Read session logs from Core Node
   command: "cat {{ item.path }}"
-  loop: "{{ iperf_files.files | default([]) | sort(attribute='path') }}"
+  loop: "{{ iperf_files.files | sort(attribute='path') }}"
   loop_control:
-    label: "{{ item.path | basename }}"
+    label: "Reading {{ item.path | basename }}"
   register: log_contents
-  delegate_to: "{{ groups['core_node'][0] }}"
-  when: iperf_files.files is defined
+  delegate_to: "{{ core_node_host }}"
+  when: iperf_files.matched > 0
   changed_when: false
 
 - name: "📊 FINAL SUMMARY"
   debug:
-    msg: "{{ report_lines }}"
-  vars:
-    report_lines: |
-      {% set reports = [] %}
-      {% for log in log_contents.results | default([]) %}
-      {% if log.stdout is defined %}
+    msg: |
+      {% for log in log_contents.results %}
       {{ '========================================' }}
       {{ 'FILE: ' ~ log.item.path | basename }}
       {{ '========================================' }}
-      {{ log.stdout }}
-      {% endif %}
+      {{ log.stdout | default('No content') }}
       {% endfor %}
+  when: log_contents.results is defined
