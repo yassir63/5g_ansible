@@ -9,6 +9,48 @@
   register: gnb_script
   changed_when: "'When you finish' in gnb_script.stdout"
 
+# --- USRP LOG CHECK LOGIC ---
+- name: Monitor gNB logs for sync
+  block:
+    - name: Wait for gNB synchronization string
+      shell: |
+        GNB_POD_NAME=$(kubectl get pods --namespace open5gs -l "app.kubernetes.io/name=oai-gnb,app.kubernetes.io/instance=oai-gnb" -o jsonpath="{.items[0].metadata.name}")
+        kubectl logs --namespace open5gs $GNB_POD_NAME | grep '\[NR_MAC\] I Frame.Slot'
+      register: gnb_log_check
+      until: gnb_log_check.rc == 0
+      retries: 6
+      delay: 10
+      ignore_errors: true
+
+    - name: Handle Sync Failure
+      block:
+        - name: Stop gNB after failed sync
+          ansible.builtin.command: "{{ demo_oai_script }} stop-gnb"
+          args:
+            chdir: "{{ repo_dest }}"
+
+        - name: Swap USRP IP address
+          include_role:
+            name: 5g/oai/ran/n3xx_ip_swap
+
+        - name: Restart OAI gNB pod
+          ansible.builtin.command: "{{ demo_oai_script }} start-gnb"
+          args:
+            chdir: "{{ repo_dest }}"
+
+        - name: Re-check gNB logs for sync
+          shell: |
+            GNB_POD_NAME=$(kubectl get pods --namespace open5gs -l "app.kubernetes.io/name=oai-gnb,app.kubernetes.io/instance=oai-gnb" -o jsonpath="{.items[0].metadata.name}")
+            kubectl logs --namespace open5gs $GNB_POD_NAME | grep '\[NR_MAC\] I Frame.Slot'
+          register: gnb_log_check_retry
+          until: gnb_log_check_retry.rc == 0
+          retries: 6
+          delay: 10
+          failed_when: gnb_log_check_retry.rc != 0
+      when: gnb_log_check.rc != 0
+
+  when: rru == "n300" or rru == "n320"
+
 - name: Launch OAI NR-UE pods (conditional)
   ansible.builtin.command: "{{ demo_oai_script }} {{ item }}"
   args:

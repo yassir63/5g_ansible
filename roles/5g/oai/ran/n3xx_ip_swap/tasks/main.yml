@@ -1,0 +1,39 @@
+---
+# Swap IP addresses of USRP N3XX devices in the OAI charts to cope with the fact
+# that the real management IP addresses of N3XX are not routable from sopnode servers...
+#
+
+- name: Set target configuration files
+  set_fact:
+    target_files:
+      - "{{ dir_oai }}/charts/oai-5g-ran/oai-gnb/values.yaml"
+      - "{{ dir_oai }}/charts/oai-5g-ran/oai-du/values.yaml"
+
+# Extract the current IP from the file to decide the swap
+- name: Detect current USRP IP
+  shell: "grep 'sdr_addrs:' {{ dir_oai }}/charts/oai-5g-ran/oai-gnb/values.yaml | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+' | head -n 1"
+  register: current_ip_cmd
+  changed_when: false
+
+- name: Determine new IP based on swap logic
+  set_fact:
+    new_usrp_ip: >-
+      {% if current_ip_cmd.stdout == '192.168.235.105' %}192.168.235.106
+      {% elif current_ip_cmd.stdout == '192.168.235.106' %}192.168.235.105
+      {% elif current_ip_cmd.stdout == '192.168.235.103' %}192.168.235.104
+      {% elif current_ip_cmd.stdout == '192.168.235.104' %}192.168.235.105
+      {% else %}{{ current_ip_cmd.stdout }}{% endif %}
+
+- name: "Debug: Swapping USRP IP from {{ current_ip_cmd.stdout }} to {{ new_usrp_ip }}"
+  debug:
+    msg: "New IP detected: {{ new_usrp_ip }}"
+
+# Apply the change in both files while preserving indentation (backrefs)
+- name: Update USRP address line in values.yaml files
+  lineinfile:
+    path: "{{ item }}"
+    regexp: '^(\s+)sdr_addrs: mgmt_addr=.*,addr=.*,product=n320,serial=31B3A77,fpga=XG,clock_source=internal,time_source=internal'
+    line: '\1sdr_addrs: mgmt_addr={{ new_usrp_ip }},addr={{ new_usrp_ip }},product=n320,serial=31B3A77,fpga=XG,clock_source=internal,time_source=internal'
+    backrefs: yes
+  loop: "{{ target_files }}"
+  when: current_ip_cmd.stdout != new_usrp_ip
