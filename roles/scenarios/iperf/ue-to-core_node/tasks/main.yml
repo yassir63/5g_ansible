@@ -7,6 +7,6 @@
   include_tasks: connect_ue.yml
   loop: "{{ groups['qhats'] }}"
   loop_control:
-    loop_var: ue_item
+    loop_var: ue_target  # Nom explicite pour éviter les conflits
   vars:
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"

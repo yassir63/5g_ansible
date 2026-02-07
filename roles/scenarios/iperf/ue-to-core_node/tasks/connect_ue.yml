@@ -1,32 +1,42 @@
 ---
-- name: Connect UE to 5G network
+- name: Connect UE {{ ue_target }} to 5G network
   include_role:
     name: r2lab/ue/connect
   vars:
-    ue: "{{ ue }}"
+    ue: "{{ ue_target }}"
   ignore_errors: "{{ ignore_errors }}"
 
-- name: Retrieve wwan0 IP for UE
+- name: Wait for wwan0 IP on {{ ue_target }}
   shell: ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1
+  delegate_to: "{{ ue_target }}"
   register: ue_ip_cmd
+  until: ue_ip_cmd.stdout != ""
+  retries: 10
+  delay: 2
   changed_when: false
   ignore_errors: "{{ ignore_errors }}"
 
 - name: Build dict ue_ips
   set_fact:
-    ue_ips: "{{ ue_ips | default({}) | combine({ ue: ue_ip_cmd.stdout }) }}"
+    ue_ips: "{{ ue_ips | combine({ ue_target: ue_ip_cmd.stdout }) }}"
   when: ue_ip_cmd.stdout != ""
 
-- name: Run uplink iperf
-  shell: iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue }}_up.json
+- name: Run uplink iperf from {{ ue_target }}
+  shell: iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ ue_target }}_up.json
+  delegate_to: "{{ ue_target }}"
   ignore_errors: "{{ ignore_errors }}"
+  when: ue_ip_cmd.stdout != ""
 
-- pause:
+- name: Pause between tests
+  pause:
     seconds: "{{ sleep }}"
 
-- name: Run downlink iperf
-  shell: iperf3 -B {{ ue_ips[ue] }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue }}_down.json
+- name: Run downlink iperf from {{ ue_target }}
+  shell: iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ ue_target }}_down.json
+  delegate_to: "{{ ue_target }}"
   ignore_errors: "{{ ignore_errors }}"
+  when: ue_ip_cmd.stdout != ""
 
-- pause:
+- name: Pause between UEs
+  pause:
     seconds: "{{ sleep }}"
