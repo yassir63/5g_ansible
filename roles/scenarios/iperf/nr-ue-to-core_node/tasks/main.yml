@@ -19,15 +19,19 @@
   set_fact:
     ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^oai-nr-ue') | list }}"
 
-- name: Install iperf3 on ALL pods
+- name: Force Install iperf3 (Checking for existing installation first)
   shell: |
     kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
-    apt-get update -qq && apt-get install -y -qq iperf3 iproute2"
+    if ! command -v iperf3 &> /dev/null; then
+      apt-get update -qq && apt-get install -y -qq iperf3 iproute2
+    fi
+    which iperf3"
   loop: "{{ ue_resources }}"
   loop_control:
-    label: "Installing iperf3 on {{ item.metadata.name }}"
-  register: install_res
-  failed_when: "'err' in install_res.stderr"
+    label: "Checking/Installing iperf3 on {{ item.metadata.name }}"
+  register: install_check
+  # On arrête tout si iperf3 ne peut vraiment pas être installé
+  failed_when: install_check.rc != 0 
 
 - name: Get oaitun_ue1 IP
   shell: |
@@ -78,7 +82,7 @@
     label: "{{ item.pod }} (Port: {{ 5201 + idx | int }})"
   ignore_errors: yes
 
-# --- SECTION RÉCAPITULATIF AVEC FIX POUR RETOURS À LA LIGNE ---
+# --- SUMMARY DISPLAY ---
 
 - name: Read session logs from Core Node
   command: "cat {{ item.path }}"
@@ -87,17 +91,20 @@
     label: "{{ item.path | basename }}"
   register: log_contents
   delegate_to: "{{ groups['core_node'][0] }}"
+  when: iperf_files.files is defined
   changed_when: false
 
 - name: "📊 FINAL SUMMARY"
   debug:
-    msg: "{{ item }}"
-  loop: |
-    {% set reports = [] %}
-    {% for log in log_contents.results %}
-    {% set _ = reports.append('FILE: ' ~ log.item.path | basename) %}
-    {% set _ = reports.append('----------------------------------------') %}
-    {% set _ = reports.append(log.stdout | default('EMPTY LOG')) %}
-    {% set _ = reports.append(' ') %}
-    {% endfor %}
-    {{ reports }}
+    msg: "{{ report_lines }}"
+  vars:
+    report_lines: |
+      {% set reports = [] %}
+      {% for log in log_contents.results | default([]) %}
+      {% if log.stdout is defined %}
+      {{ '========================================' }}
+      {{ 'FILE: ' ~ log.item.path | basename }}
+      {{ '========================================' }}
+      {{ log.stdout }}
+      {% endif %}
+      {% endfor %}
