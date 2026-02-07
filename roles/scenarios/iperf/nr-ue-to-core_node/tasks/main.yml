@@ -54,11 +54,18 @@
 - name: Run iperf uplink with unique ports
   shell: >
     kubectl exec -n open5gs {{ item.pod }} -- 
-    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ 5201 + idx }} -t {{ duration }}
+    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration }}
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
+  register: uplink_results
   ignore_errors: yes
+
+- name: Debug Uplink Ports
+  debug:
+    msg: "Pod {{ item.item.pod }} is connecting to {{ core_ip }} on port {{ 5201 + item.ansible_loop_var_index | default(0) | int }}"
+  loop: "{{ uplink_results.results }}"
+  when: uplink_results.results is defined
 
 - name: Wait for sockets to clear
   pause:
