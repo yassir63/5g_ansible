@@ -361,7 +361,7 @@ optional_scenarios() {
 
 # ========== Optional Scenarios ==========
 # Available scenarios:
-# 1) Default Iperf Test whithout interference. Will run only on one UE, assumed to be already connected to the network (only if R2Lab platform is used, and at least one UE is selected).
+# 1) Default Iperf Test without interference. Will run only on one UE, assumed to be already connected to the network (only if R2Lab platform is used, and at least one UE is selected).
 # 2) Parallel Iperf Test without interference. Will run one the first 4 UEs, assumed to be already connected to the network (only if R2Lab platform is used, and at least 4 UEs are selected).
 # 3) RFSIM Iperf Test. Will run on 2 OAI-NR UEs simulated on RFSIM (only if RFSIM platform is used and RAN is OAI).
 # 4) Interference Test. Will run only on one UE, assumed to be already connected to the network (only if R2Lab platform is used, and at least one UE is selected).

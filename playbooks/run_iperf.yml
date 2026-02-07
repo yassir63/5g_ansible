@@ -1,4 +1,10 @@
 ---
+- hosts: all
+  gather_facts: true
+  tasks:
+    - name: Normalize booleans at playbook start
+      import_tasks: ../tasks/reload_booleans.yml
+
 
 - name: Run iperf servers on Core node and optionally run NR-UE tests
   hosts: core_node
