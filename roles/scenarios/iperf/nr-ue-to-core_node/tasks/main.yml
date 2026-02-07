@@ -5,17 +5,23 @@
     sleep: "{{ sleep | default(5) }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
 
-- name: Get NR-UE pods
+- name: Get all pods in namespace
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: open5gs
-    label_selectors:
-      - "app=oai-nr-ue"
-  register: ue_pods
+  register: all_pods
+
+- name: Filter UE pods by name
+  set_fact:
+    ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^oai-nr-ue') | list }}"
+
+- name: Debug - Number of UEs found
+  debug:
+    msg: "Found {{ ue_resources | length }} UE pods matching the pattern"
 
 - name: Clean up existing iperf3 clients in pods
   shell: "kubectl exec -n open5gs {{ item.metadata.name }} -- pkill iperf3 || true"
-  loop: "{{ ue_pods.resources }}"
+  loop: "{{ ue_resources }}"
   ignore_errors: yes
 
 - name: Install iperf3 and get oaitun_ue1 IP
@@ -31,7 +37,7 @@
       fi
       ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '
       "
-  loop: "{{ ue_pods.resources }}"
+  loop: "{{ ue_resources }}"
   register: ue_ip_results
   changed_when: false
 
@@ -43,7 +49,7 @@
   set_fact:
     valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
   loop: "{{ ue_ip_results.results }}"
-  when: 
+  when:
     - item.stdout is defined
     - item.stdout | trim is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
 
@@ -53,7 +59,7 @@
 
 - name: Run iperf uplink with unique ports
   shell: >
-    kubectl exec -n open5gs {{ item.pod }} -- 
+    kubectl exec -n open5gs {{ item.pod }} --
     iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration }}
   loop: "{{ valid_ues }}"
   loop_control:
@@ -63,7 +69,7 @@
 
 - name: Debug Uplink Ports
   debug:
-    msg: "Pod {{ item.item.pod }} is connecting to {{ core_ip }} on port {{ 5201 + item.ansible_loop_var_index | default(0) | int }}"
+    msg: "Pod {{ item.item.pod }} is connecting to {{ core_ip }} on port {{ 5201 + item.ansible_loop_var_index | int }}"
   loop: "{{ uplink_results.results }}"
   when: uplink_results.results is defined
 
@@ -73,8 +79,8 @@
 
 - name: Run iperf downlink with unique ports
   shell: >
-    kubectl exec -n open5gs {{ item.pod }} -- 
-    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ 5201 + idx }} -t {{ duration }} -R
+    kubectl exec -n open5gs {{ item.pod }} --
+    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration }} -R
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
