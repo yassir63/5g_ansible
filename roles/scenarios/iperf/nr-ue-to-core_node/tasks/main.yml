@@ -13,6 +13,11 @@
       - "app=oai-nr-ue"
   register: ue_pods
 
+- name: Clean up existing iperf3 clients in pods
+  shell: "kubectl exec -n open5gs {{ item.metadata.name }} -- pkill iperf3 || true"
+  loop: "{{ ue_pods.resources }}"
+  ignore_errors: yes
+
 - name: Install iperf3 and get oaitun_ue1 IP
   shell:
     cmd: |
@@ -24,7 +29,6 @@
           yum install -y -q iperf3 iproute >/dev/null 2>&1
         fi
       fi
-      # On utilise grep pour extraire uniquement l'IP et on supprime les retours a la ligne
       ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '
       "
   loop: "{{ ue_pods.resources }}"
@@ -34,7 +38,6 @@
 - name: Init UE lists
   set_fact:
     valid_ues: []
-    invalid_ues: []
 
 - name: Classify valid UEs
   set_fact:
@@ -42,14 +45,11 @@
   loop: "{{ ue_ip_results.results }}"
   when: 
     - item.stdout is defined
-    - item.stdout | trim != ""
-    - item.stdout is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
+    - item.stdout | trim is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
 
-- name: Classify invalid UEs
-  set_fact:
-    invalid_ues: "{{ invalid_ues + [ item.item.metadata.name ] }}"
-  loop: "{{ ue_ip_results.results }}"
-  when: item.stdout | trim == ""
+- name: Pause before tests
+  pause:
+    seconds: "{{ sleep }}"
 
 - name: Run iperf uplink with unique ports
   shell: >
@@ -60,6 +60,10 @@
     index_var: idx
   ignore_errors: yes
 
+- name: Wait for sockets to clear
+  pause:
+    seconds: 2
+
 - name: Run iperf downlink with unique ports
   shell: >
     kubectl exec -n open5gs {{ item.pod }} -- 
@@ -68,4 +72,3 @@
   loop_control:
     index_var: idx
   ignore_errors: yes
-

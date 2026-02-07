@@ -1,34 +1,42 @@
 ---
 #
-# Deploy one iperf per UE in the core_node server
+# Deploy iperf servers on core_node
 #
 - name: Set defaults
   set_fact:
-    nb_ues: "{{ (nb_ues | default(3)) | int }}"  # Force nb_ues en entier
     base_port: 5201
-
-- name: Ensure iperf3 is installed
-  package:
-    name: iperf3
-    state: present
+    # On s'assure de nettoyer la liste des ports pour ne pas avoir de restes
+    nb_ues: "{{ (nb_ues | default(3)) | int }}"
 
 - name: Create base directory for iperf logs
   file:
     path: /root/IPERF
     state: directory
-    owner: root
-    group: root
     mode: "0755"
 
-- name: Get timestamp for log files
+- name: Kill ANY existing iperf3 process
+  shell: pkill iperf3 || true
+  become: true
+  changed_when: false
+
+- name: Get timestamp
   command: date +"%Y%m%d_%H%M%S"
   register: iperf_timestamp
   changed_when: false
 
-- name: Start iperf3 servers for each UE
+- name: Start iperf3 servers on incremental ports
   shell: >
-    nohup iperf3 -s -p {{ base_port + item }} -D
+    iperf3 -s -p {{ base_port + item }} -D 
     --logfile /root/IPERF/iperf_{{ base_port + item }}_{{ iperf_timestamp.stdout }}.log
-  args:
-    executable: /bin/bash
-  loop: "{{ range(0, nb_ues | int) | list }}"
+  # item est l'index fourni par range (0, 1, 2...)
+  loop: "{{ range(0, nb_ues) | list }}"
+  become: true
+
+- name: Verify servers are listening
+  shell: netstat -tulpn | grep iperf3
+  register: iperf_status
+  changed_when: false
+
+- name: Debug server status
+  debug:
+    var: iperf_status.stdout_lines
