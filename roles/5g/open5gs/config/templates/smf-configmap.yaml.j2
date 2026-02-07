@@ -65,6 +65,7 @@ data:
 {% else %}
             sd: {{ slice.sd }}
 {% endif %}
+        # CE DNN DOIT ÊTRE ALIGNÉ AVEC s_nssai (6 espaces au lieu de 10)
           dnn:
             - {{ slice.dnn }}
 {% endif %}
