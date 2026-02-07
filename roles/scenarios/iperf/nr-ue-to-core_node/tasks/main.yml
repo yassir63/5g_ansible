@@ -16,31 +16,29 @@
 - name: Install iperf3 and get oaitun_ue1 IP
   shell: |
     kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c '
+      # On installe en silence total en redirigeant TOUT vers /dev/null
       if ! command -v iperf3 >/dev/null 2>&1; then
         if command -v apt-get >/dev/null 2>&1; then
-          apt-get update -qq && apt-get install -y -qq iperf3 iproute2
+          apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq iperf3 iproute2 >/dev/null 2>&1
         elif command -v yum >/dev/null 2>&1; then
-          yum install -y -q iperf3 iproute
+          yum install -y -q iperf3 iproute >/dev/null 2>&1
         fi
       fi
-      ip -4 addr show oaitun_ue1 2>/dev/null \
-        | grep -oP "(?<=inet\s)\d+(\.\d+){3}" \
-        | head -n1 || echo ""
+      # On récupère l'IP et on s'assure de ne renvoyer que la dernière ligne (l'IP seule)
+      IP=$(ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP "(?<=inet\s)\d+(\.\d+){3}" | head -n1)
+      echo "$IP" | tr -d "[:space:]"
     '
   loop: "{{ ue_pods.resources }}"
   register: ue_ip_results
   changed_when: false
 
-- name: Init UE lists
-  set_fact:
-    valid_ues: []
-    invalid_ues: []
-
 - name: Classify valid UEs
   set_fact:
-    valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout} ] }}"
+    # Utilisation de .stdout.split() ou trim pour être certain de n'avoir que l'IP
+    valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
   loop: "{{ ue_ip_results.results }}"
-  when: item.stdout != ""
+  # On vérifie que le résultat contient bien quelque chose qui ressemble à une IP
+  when: item.stdout is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
 
 - name: Classify invalid UEs
   set_fact:
