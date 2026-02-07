@@ -5,27 +5,12 @@
 - name: Set defaults
   set_fact:
     base_port: 5201
-    # On force la conversion ici au cas où
     actual_nb_ues: "{{ nb_ues | default(3) | int }}"
 
 - name: Kill ANY existing iperf3 process
   shell: pkill iperf3 || true
   become: true
   changed_when: false
-
-
-- name: Create base directory for iperf logs
-  file:
-    path: /root/IPERF
-    state: directory
-    mode: "0755"
-
-- name: Start iperf3 servers on incremental ports
-  shell: >
-    iperf3 -s -p {{ base_port + item }} -D 
-    --logfile /root/IPERF/iperf_{{ base_port + item }}_{{ iperf_timestamp.stdout }}.log
-  loop: "{{ range(0, actual_nb_ues | int) | list }}"
-  become: true
 
 - name: Create base directory for iperf logs
   file:
@@ -42,8 +27,7 @@
   shell: >
     iperf3 -s -p {{ base_port + item }} -D 
     --logfile /root/IPERF/iperf_{{ base_port + item }}_{{ iperf_timestamp.stdout }}.log
-  # item est l'index fourni par range (0, 1, 2...)
-  loop: "{{ range(0, nb_ues) | list }}"
+  loop: "{{ range(0, actual_nb_ues) | list }}"
   become: true
 
 - name: Verify servers are listening
