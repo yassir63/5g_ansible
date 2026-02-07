@@ -19,25 +19,23 @@
   set_fact:
     ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^oai-nr-ue') | list }}"
 
-- name: Clean up existing iperf3 clients
-  shell: "kubectl exec -n open5gs {{ item.metadata.name }} -- pkill iperf3 || true"
+- name: Install iperf3 on ALL pods
+  shell: |
+    kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
+    apt-get update -qq && apt-get install -y -qq iperf3 iproute2"
   loop: "{{ ue_resources }}"
   loop_control:
-    label: "{{ item.metadata.name }}"
-  ignore_errors: yes
+    label: "Installing iperf3 on {{ item.metadata.name }}"
+  register: install_res
+  failed_when: "'err' in install_res.stderr"
 
-- name: Install iperf3 and get IP
-  shell:
-    cmd: |
-      kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
-      if ! command -v iperf3 >/dev/null 2>&1; then
-        apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq iperf3 iproute2 >/dev/null 2>&1 || true
-      fi
-      ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '
-      "
+- name: Get oaitun_ue1 IP
+  shell: |
+    kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
+    ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '"
   loop: "{{ ue_resources }}"
   loop_control:
-    label: "{{ item.metadata.name }}"
+    label: "Getting IP for {{ item.metadata.name }}"
   register: ue_ip_results
   changed_when: false
 
@@ -54,10 +52,6 @@
   when:
     - item.stdout is defined
     - item.stdout | trim is search('([0-9]{1,3}\.){3}[0-9]{1,3}')
-
-- name: Pause before tests
-  pause:
-    seconds: "{{ sleep | int }}"
 
 - name: Run iperf uplink
   shell: >
@@ -84,33 +78,26 @@
     label: "{{ item.pod }} (Port: {{ 5201 + idx | int }})"
   ignore_errors: yes
 
-- name: Wait for tests to complete
-  pause:
-    seconds: 2
+# --- SECTION RÉCAPITULATIF AVEC FIX POUR RETOURS À LA LIGNE ---
 
-- name: Get CURRENT session log files
-  find:
-    paths: /root/IPERF
-    patterns: "iperf_*_{{ iperf_timestamp.stdout }}.log"
-  register: iperf_files
-  delegate_to: "{{ groups['core_node'][0] }}"
-
-- name: Read session logs
+- name: Read session logs from Core Node
   command: "cat {{ item.path }}"
-  loop: "{{ iperf_files.files | sort(attribute='path') }}"
+  loop: "{{ iperf_files.files | default([]) | sort(attribute='path') }}"
   loop_control:
     label: "{{ item.path | basename }}"
   register: log_contents
   delegate_to: "{{ groups['core_node'][0] }}"
   changed_when: false
 
-- name: "📊 IPERF Tests summary (Session: {{ iperf_timestamp.stdout }})"
+- name: "📊 FINAL SUMMARY"
   debug:
-    msg: |
-      {% for log in log_contents.results %}
-      ======================================================================
-      FILE: {{ log.item.path | basename }}
-      ======================================================================
-      {{ log.stdout }}
-
-      {% endfor %}
+    msg: "{{ item }}"
+  loop: |
+    {% set reports = [] %}
+    {% for log in log_contents.results %}
+    {% set _ = reports.append('FILE: ' ~ log.item.path | basename) %}
+    {% set _ = reports.append('----------------------------------------') %}
+    {% set _ = reports.append(log.stdout | default('EMPTY LOG')) %}
+    {% set _ = reports.append(' ') %}
+    {% endfor %}
+    {{ reports }}
