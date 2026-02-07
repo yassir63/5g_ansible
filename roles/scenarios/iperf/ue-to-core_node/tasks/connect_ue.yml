@@ -8,8 +8,7 @@
   ignore_errors: "{{ ignore_errors }}"
 
 - name: Retrieve wwan0 IP for {{ current_ue }}
-  shell: ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1
-  delegate_to: "{{ current_ue }}"
+  shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1"
   register: ue_ip_cmd
   until: ue_ip_cmd.stdout != ""
   retries: 15
@@ -23,8 +22,7 @@
   when: ue_ip_cmd.stdout != ""
 
 - name: Run uplink iperf from {{ current_ue }}
-  shell: iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json
-  delegate_to: "{{ current_ue }}"
+  shell: ssh root@{{ current_ue }} "iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json"
   ignore_errors: "{{ ignore_errors }}"
   when: ue_ip_cmd.stdout != ""
 
@@ -32,8 +30,7 @@
     seconds: "{{ sleep }}"
 
 - name: Run downlink iperf from {{ current_ue }}
-  shell: iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json
-  delegate_to: "{{ current_ue }}"
+  shell: ssh root@{{ current_ue }} "iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json"
   ignore_errors: "{{ ignore_errors }}"
   when: ue_ip_cmd.stdout != ""
 
