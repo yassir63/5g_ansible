@@ -48,9 +48,6 @@
     label: "{{ item }}"
   register: power_ue_jobs
 
----
-# ... (tâches précédentes inchangées) ...
-
 - name: Prepare and Display qhat-init command for each UE
   vars:
     # On définit la logique de calcul une seule fois pour le debug et pour l'exécution
@@ -94,8 +91,6 @@
   loop: "{{ set_ue_jobs.results }}"
   loop_control:
     label: "{{ item.item }}"
-
-# ... (après ta tâche "Wait for setup to finish on all UEs")
 
 - name: Run qhat-check on each UE to verify configuration
   shell: |

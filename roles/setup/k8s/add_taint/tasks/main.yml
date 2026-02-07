@@ -1,9 +1,10 @@
 ---
-- name: Check if node already tainted
-  ansible.builtin.shell: "kubectl get node {{ inventory_hostname }} -o jsonpath='{.spec.taints}'"
-  register: node_taints
-  changed_when: false
+- name: Force Taint node with NoSchedule
+  ansible.builtin.command: >
+    kubectl taint node {{ inventory_hostname }} node=noschedule:NoSchedule --overwrite
+  register: taint_out
 
-- name: Taint node with NoSchedule
-  ansible.builtin.command: "kubectl taint node {{ inventory_hostname }} node=noschedule:NoSchedule --overwrite"
-  when: "node=noschedule:NoSchedule' not in node_taints.stdout"
+- name: Clean up core pods from RAN node
+  ansible.builtin.shell: >
+    kubectl delete pods -n open5gs --field-selector spec.nodeName={{ inventory_hostname }} --ignore-not-found=true
+  when: taint_out.changed
