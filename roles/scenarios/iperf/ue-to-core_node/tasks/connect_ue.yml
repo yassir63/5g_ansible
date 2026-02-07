@@ -17,7 +17,7 @@
 
 # 3. Retrieve the IP (either from a new connection or an existing one)
 - name: Retrieve wwan0 IP for {{ current_ue }}
-  shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | awk '/inet / {print $2}' | cut -d/ -f1"
+  shell: ssh root@{{ current_ue }} "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
   register: ue_ip_cmd
   until: ue_ip_cmd.stdout != ""
   retries: 5
