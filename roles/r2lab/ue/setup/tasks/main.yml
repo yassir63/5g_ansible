@@ -48,12 +48,33 @@
     label: "{{ item }}"
   register: power_ue_jobs
 
+---
+# ... (tâches précédentes inchangées) ...
+
+- name: Prepare and Display qhat-init command for each UE
+  vars:
+    # On définit la logique de calcul une seule fois pour le debug et pour l'exécution
+    ue_slice_info: "{{ slices | selectattr('name', 'equalto', ues[item].slice) | first }}"
+    qhat_command: >-
+      qhat-init --mode={{ hostvars[item].mode | default('default') }}
+      --dnn="{{ ue_slice_info.dnn }}"
+      --nssai="{{ ue_slice_info.sst }}.{{ ue_slice_info.sd }}"
+  debug:
+    msg: "UE {{ item }} command: {{ qhat_command }}"
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    label: "{{ item }}"
+
 - name: Init UEs via jump host using 5G profile from YAML
+  vars:
+    ue_slice_info: "{{ slices | selectattr('name', 'equalto', ues[item].slice) | first }}"
+    # Note: J'ai corrigé le ":" en "." pour le NSSAI selon ton format 01.100000
+    qhat_command: >-
+      qhat-init --mode={{ hostvars[item].mode | default('default') }}
+      --dnn="{{ ue_slice_info.dnn }}"
+      --nssai="{{ ue_slice_info.sst }}.{{ ue_slice_info.sd }}"
   shell: |
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} \
-      'qhat-init --mode={{ hostvars[item].mode | default("default") }} \
-      --dnn="{{ slices | selectattr("name","equalto",ues[item].slice) | map(attribute="dnn") | first }}" \
-      --nssai="{{ slices | selectattr("name","equalto",ues[item].slice) | map(attribute="sst") | first }}:{{ slices | selectattr("name","equalto",ues[item].slice) | map(attribute="sd") | first }}"'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} '{{ qhat_command }}'
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'stop.sh'
   delegate_to: faraday.inria.fr
   async: 1800
@@ -73,4 +94,26 @@
   loop: "{{ set_ue_jobs.results }}"
   loop_control:
     label: "{{ item.item }}"
-  
+
+# ... (après ta tâche "Wait for setup to finish on all UEs")
+
+- name: Run qhat-check on each UE to verify configuration
+  shell: |
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'qhat-check'
+  delegate_to: faraday.inria.fr
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    label: "{{ item }}"
+  register: check_results
+  changed_when: false
+
+- name: Display qhat-check output for each UE
+  debug:
+    msg: 
+      - "------------------------------------------------"
+      - "UE: {{ item.item }}"
+      - "{{ item.stdout_lines }}"
+      - "------------------------------------------------"
+  loop: "{{ check_results.results }}"
+  loop_control:
+    label: "{{ item.item }}"
