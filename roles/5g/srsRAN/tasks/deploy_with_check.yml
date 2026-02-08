@@ -19,45 +19,44 @@
     values_files:
       - "{{ values_file }}"
     state: present
-    wait: true
-    atomic: true
-    timeout: 120s
+    # On désactive wait/atomic ici pour laisser le Deep Check analyser le crash
+    wait: false
+    atomic: false
 
-- name: Wait for gNB container to be Ready
+- name: Wait for gNB pod to exist
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ ran_ns }}"
     label_selectors: "{{ srs_gnb_label_selectors }}"
-  register: pod_check
-  until: 
-    - pod_check.resources | length > 0
-    - (pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false) == true
+  register: pod_exists
+  until: pod_exists.resources | length > 0
   retries: 10
-  delay: 5
+  delay: 2
 
-- name: Deep Check - Observe logs for FATAL ERROR (10s)
+- name: Deep Check - Observe logs for stability (15s)
   ansible.builtin.shell: |
-    # On suit les logs pendant 10s et on cherche les erreurs fatales
-    timeout 10 kubectl logs -n {{ ran_ns }} -l component=gnb -c gnb -f
+    timeout 15 kubectl logs -n {{ ran_ns }} -l component=gnb -c gnb -f
   register: gnb_logs
   failed_when: false
   changed_when: false
 
 - name: Verify if gNB is truly stable
   ansible.builtin.set_fact:
+    # On est strict : il faut le message de démarrage ET pas de Fatal Error
     gnb_startup_success: >-
       {{
-        pod_check.resources | length > 0 and
-        (pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false) and
+        '==== gNB started ===' in gnb_logs.stdout and
         'FATAL ERROR' not in gnb_logs.stdout and
-        '==== gNB started ===' in gnb_logs.stdout
+        'srsRAN FATAL ERROR' not in gnb_logs.stdout
       }}
 
 - name: Debug GNB stability status
   ansible.builtin.debug:
-    msg: "GNB success: {{ gnb_startup_success }}. Reason: {{ 'Fatal error found in logs' if 'FATAL ERROR' in gnb_logs.stdout else 'Started correctly' }}"
+    msg: 
+      - "GNB Startup Success: {{ gnb_startup_success }}"
+      - "Reason: {{ 'Success' if gnb_startup_success else ('FATAL ERROR detected' if 'FATAL' in gnb_logs.stdout else 'GNB never reached started state') }}"
 
-- name: Handle IP Swap if gNB failed or crashed
+- name: Handle IP Swap if gNB failed
   block:
     - name: Extract current IP (Strict)
       ansible.builtin.shell: |
@@ -93,9 +92,9 @@
         release_namespace: "{{ ran_ns }}"
         state: absent
         wait: true
+      # Toujours supprimer si on va re-boucler (item < max_attempts)
       when: item | int < max_attempts | int
 
   when: 
     - not gnb_startup_success
     - rru in ['n300', 'n320']
-
