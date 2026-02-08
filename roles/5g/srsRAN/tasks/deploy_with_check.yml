@@ -1,6 +1,16 @@
 ---
-- name: Execute deployment attempt {{ item }}
+- name: "Execute deployment attempt"
   block:
+    - name: Ensure values file has node constraints
+      ansible.builtin.blockinfile:
+        path: "{{ values_file }}"
+        marker: "# {mark} ANSIBLE MANAGED NODE SELECTOR"
+        insertafter: EOF
+        block: |
+          nodeSelector:
+            kubernetes.io/hostname: "{{ ran_node_name }}"
+          nodeName: {{ ran_node_name }}
+
     - name: Fix space before comma in device_args
       ansible.builtin.replace:
         path: "{{ values_file }}"
@@ -14,14 +24,10 @@
         release_namespace: "{{ ran_ns }}"
         values_files:
           - "{{ values_file }}"
-        values:
-          nodeSelector:
-            kubernetes.io/hostname: "{{ ran_node_name }}"
-          nodeName: "{{ ran_node_name }}"
         state: present
         wait: true
         atomic: true
-        timeout: 90s
+        timeout: 120s
       register: helm_result
       ignore_errors: yes
 
@@ -34,7 +40,7 @@
       until: 
         - pod_initial.resources | length > 0
         - (pod_initial.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready | bool
-      retries: 10
+      retries: 15
       delay: 5
       ignore_errors: yes
       when: helm_result is succeeded
@@ -56,7 +62,14 @@
 
     - name: Evaluate deployment success
       ansible.builtin.set_fact:
-        gnb_startup_success: "{{ (helm_result is succeeded) and (pod_final.resources | default([]) | length > 0) and (pod_final.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready | bool and ((pod_final.resources[0].status.containerStatuses | default([{'restartCount':100}]) | selectattr('name', 'equalto', 'gnb') | first).restartCount | int == (pod_initial.resources[0].status.containerStatuses | default([{'restartCount':0}]) | selectattr('name', 'equalto', 'gnb') | first).restartCount | int) }}"
+        gnb_startup_success: >-
+          {{
+            helm_result is succeeded and
+            pod_final.resources | default([]) | length > 0 and
+            (pod_final.resources[0].status.containerStatuses | selectattr('name', 'equalto', 'gnb') | first).ready | bool and
+            (pod_final.resources[0].status.containerStatuses | selectattr('name', 'equalto', 'gnb') | first).restartCount | int == 
+            (pod_initial.resources[0].status.containerStatuses | selectattr('name', 'equalto', 'gnb') | first).restartCount | int
+          }}
 
     - name: Handle IP Swap
       block:
@@ -95,4 +108,4 @@
         - rru in ['n300', 'n320']
 
   when: not gnb_startup_success | bool
-  
+
