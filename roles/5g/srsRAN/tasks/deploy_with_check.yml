@@ -1,11 +1,13 @@
 ---
-- name: Deploy srsRAN gNB using Helm
+- name: Deploy srsRAN gNB using Helm on {{ ran_node }}
   kubernetes.core.helm:
     name: srsran-gnb
     chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
     release_namespace: "{{ ran_ns }}"
     values_files:
       - "{{ values_file }}"
+    set_values:
+      - value: "nodeSelector.kubernetes\\.io/hostname={{ ran_node }}"
     state: present
     wait: true
     atomic: true
