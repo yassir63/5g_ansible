@@ -1,12 +1,18 @@
 ---
 - name: Prepare values file with node constraints
   ansible.builtin.shell: |
+    # Nettoyage radical : on enlève les lignes contenant ces motifs
     sed -i '/nodeSelector:/d' {{ values_file }}
     sed -i '/kubernetes.io\/hostname:/d' {{ values_file }}
     sed -i '/nodeName:/d' {{ values_file }}
-    echo -e "\nnodeSelector:\n  kubernetes.io/hostname: {{ ran_node_name }}" >> {{ values_file }}
-    echo -e "nodeName: {{ ran_node_name }}" >> {{ values_file }}
+    # On s'assure que le fichier finit par une ligne vide pour ne pas coller le texte
+    sed -i '$a\\' {{ values_file }}
+    # Ajout avec des retours à la ligne explicites
+    echo "nodeSelector:" >> {{ values_file }}
+    echo "  kubernetes.io/hostname: {{ ran_node_name }}" >> {{ values_file }}
+    echo "nodeName: {{ ran_node_name }}" >> {{ values_file }}
   changed_when: true
+
 
 - name: Deploy srsRAN gNB using Helm (Attempt {{ item }})
   kubernetes.core.helm:
