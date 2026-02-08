@@ -7,7 +7,7 @@
     values_files:
       - "{{ values_file }}"
     state: present
-    wait: false  # On ne peut pas attendre ici car le pod est au mauvais endroit
+    wait: false
     atomic: false
 
 - name: Force gNB Pod onto {{ ran_node_name }} via Patch
@@ -28,18 +28,24 @@
     kind: Pod
     namespace: "{{ ran_ns }}"
     label_selectors: "{{ srs_gnb_label_selectors }}"
+    field_selectors:
+      - "spec.nodeName={{ ran_node_name }}"
   register: pod_check
   until: 
     - pod_check.resources | length > 0
-    - pod_check.resources[0].spec.nodeName == ran_node_name
     - (pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false) == true
-  retries: 12
-  delay: 5
+  retries: 15
+  delay: 4
   ignore_errors: yes
 
 - name: Check if gNB is actually stable
   ansible.builtin.set_fact:
-    gnb_startup_success: "{{ (pod_check.resources | length > 0) and (pod_check.resources[0].spec.nodeName == ran_node_name) and ((pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false)) }}"
+    gnb_startup_success: >-
+      {{
+        pod_check.resources is defined and
+        pod_check.resources | length > 0 and
+        (pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false)
+      }}
 
 - name: Handle IP Swap if gNB failed
   block:
