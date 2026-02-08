@@ -1,17 +1,11 @@
 ---
-# roles/5g/srsRAN/tasks/deploy_with_check.yml
-
 - name: Execute deployment attempt {{ item }}
   block:
-    - name: Ensure values file has node constraints
-      ansible.builtin.blockinfile:
+    - name: Fix space before comma in device_args
+      ansible.builtin.replace:
         path: "{{ values_file }}"
-        marker: "# {mark} ANSIBLE MANAGED NODE SELECTOR"
-        insertafter: EOF
-        block: |
-          nodeSelector:
-            kubernetes.io/hostname: "{{ ran_node_name }}"
-          nodeName: {{ ran_node_name }}
+        regexp: '\s+,'
+        replace: ','
 
     - name: Deploy srsRAN gNB using Helm
       kubernetes.core.helm:
@@ -20,6 +14,11 @@
         release_namespace: "{{ ran_ns }}"
         values_files:
           - "{{ values_file }}"
+        set_values:
+          - value: "{{ ran_node_name }}"
+            key: "nodeSelector.kubernetes\\.io/hostname"
+          - value: "{{ ran_node_name }}"
+            key: "nodeName"
         state: present
         wait: true
         atomic: true
@@ -35,13 +34,13 @@
       register: pod_initial
       until: 
         - pod_initial.resources | length > 0
-        - (pod_initial.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready
+        - (pod_initial.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready | bool
       retries: 10
       delay: 5
       ignore_errors: yes
       when: helm_result is succeeded
 
-    - name: Stability window (Wait 45s to ensure gNB doesn't crash)
+    - name: Stability window
       ansible.builtin.pause:
         seconds: 45
       when: 
@@ -58,17 +57,9 @@
 
     - name: Evaluate deployment success
       ansible.builtin.set_fact:
-        gnb_startup_success: >-
-          {{
-            helm_result is succeeded and
-            pod_final.resources is defined and
-            pod_final.resources | length > 0 and
-            (pod_final.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready and
-            (pod_final.resources[0].status.containerStatuses | default([{'restartCount':100}]) | selectattr('name', 'equalto', 'gnb') | first).restartCount == 
-            (pod_initial.resources[0].status.containerStatuses | default([{'restartCount':0}]) | selectattr('name', 'equalto', 'gnb') | first).restartCount
-          }}
+        gnb_startup_success: "{{ (helm_result is succeeded) and (pod_final.resources | default([]) | length > 0) and (pod_final.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready | bool and ((pod_final.resources[0].status.containerStatuses | default([{'restartCount':100}]) | selectattr('name', 'equalto', 'gnb') | first).restartCount | int == (pod_initial.resources[0].status.containerStatuses | default([{'restartCount':0}]) | selectattr('name', 'equalto', 'gnb') | first).restartCount | int) }}"
 
-    - name: Handle IP Swap and Cleanup on failure
+    - name: Handle IP Swap
       block:
         - name: Extract current IP
           ansible.builtin.shell: |
@@ -76,7 +67,7 @@
           register: current_ip_cmd
           changed_when: false
 
-        - name: Determine new IP based on USRP swap rules
+        - name: Determine new IP
           ansible.builtin.set_fact:
             new_ip: >-
               {% if current_ip_cmd.stdout == '192.168.235.105' %}192.168.235.106
@@ -85,14 +76,14 @@
               {% elif current_ip_cmd.stdout == '192.168.235.104' %}192.168.235.103
               {% else %}{{ current_ip_cmd.stdout }}{% endif %}
 
-        - name: Apply IP swap in values file
+        - name: Apply IP swap
           ansible.builtin.replace:
             path: "{{ values_file }}"
             regexp: '(?<==){{ current_ip_cmd.stdout | regex_escape }}'
             replace: "{{ new_ip }}"
           when: new_ip != current_ip_cmd.stdout
 
-        - name: Remove failed Helm release before retry
+        - name: Remove failed Helm release
           kubernetes.core.helm:
             name: srsran-gnb
             release_namespace: "{{ ran_ns }}"
@@ -101,8 +92,8 @@
           when: item | int < max_attempts | int
 
       when: 
-        - not gnb_startup_success
+        - not gnb_startup_success | bool
         - rru in ['n300', 'n320']
 
-  # This condition prevents attempt 2 to run if attempts 1 succeeded
   when: not gnb_startup_success | bool
+
