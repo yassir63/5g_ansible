@@ -1,4 +1,9 @@
 ---
+- name: Remove existing srsRAN Helm directory to ensure clean state
+  ansible.builtin.file:
+    path: "{{ repo_dest }}"
+    state: absent
+
 - name: Clone repo srsRAN
   ansible.builtin.git:
     repo: "{{ repo_url }}"
