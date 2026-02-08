@@ -1,17 +1,14 @@
 ---
-- name: Inject nodeSelector into values file
-  ansible.builtin.blockinfile:
-    path: "{{ values_file }}"
-    marker: "# {mark} ANSIBLE MANAGED NODE SELECTOR"
-    insertbefore: BOF
-    block: |
-      nodeSelector:
-        kubernetes.io/hostname: "{{ ran_node_name }}"
-      gnb:
-        nodeSelector:
-          kubernetes.io/hostname: "{{ ran_node_name }}"
+- name: Prepare values file with node constraints
+  ansible.builtin.shell: |
+    sed -i '/nodeSelector:/d' {{ values_file }}
+    sed -i '/kubernetes.io\/hostname:/d' {{ values_file }}
+    sed -i '/nodeName:/d' {{ values_file }}
+    echo -e "\nnodeSelector:\n  kubernetes.io/hostname: {{ ran_node_name }}" >> {{ values_file }}
+    echo -e "nodeName: {{ ran_node_name }}" >> {{ values_file }}
+  changed_when: true
 
-- name: Deploy srsRAN gNB using Helm
+- name: Deploy srsRAN gNB using Helm (Attempt {{ item }})
   kubernetes.core.helm:
     name: srsran-gnb
     chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
@@ -19,52 +16,62 @@
     values_files:
       - "{{ values_file }}"
     state: present
-    # On désactive wait/atomic ici pour laisser le Deep Check analyser le crash
-    wait: false
-    atomic: false
+    wait: true
+    atomic: true
+    timeout: 90s
+  register: helm_result
+  ignore_errors: yes
 
-- name: Wait for gNB pod to exist
+- name: Wait for initial Ready state
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ ran_ns }}"
     label_selectors: "{{ srs_gnb_label_selectors }}"
-  register: pod_exists
-  until: pod_exists.resources | length > 0
+  register: pod_initial
+  until: 
+    - pod_initial.resources | length > 0
+    - (pod_initial.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready
   retries: 10
-  delay: 2
+  delay: 5
+  ignore_errors: yes
+  when: helm_result is succeeded
 
-- name: Deep Check - Observe logs for stability (15s)
-  ansible.builtin.shell: |
-    timeout 15 kubectl logs -n {{ ran_ns }} -l component=gnb -c gnb -f
-  register: gnb_logs
-  failed_when: false
-  changed_when: false
+- name: Stability window (Wait 45s to ensure gNB doesn't crash)
+  ansible.builtin.pause:
+    seconds: 45
+  when: 
+    - helm_result is succeeded
+    - pod_initial.resources is defined and pod_initial.resources | length > 0
 
-- name: Verify if gNB is truly stable
+- name: Final stability check
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ ran_ns }}"
+    label_selectors: "{{ srs_gnb_label_selectors }}"
+  register: pod_final
+  when: helm_result is succeeded
+
+- name: Evaluate deployment success
   ansible.builtin.set_fact:
-    # On est strict : il faut le message de démarrage ET pas de Fatal Error
     gnb_startup_success: >-
       {{
-        '==== gNB started ===' in gnb_logs.stdout and
-        'FATAL ERROR' not in gnb_logs.stdout and
-        'srsRAN FATAL ERROR' not in gnb_logs.stdout
+        helm_result is succeeded and
+        pod_final.resources is defined and
+        pod_final.resources | length > 0 and
+        (pod_final.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready and
+        (pod_final.resources[0].status.containerStatuses | default([{'restartCount':100}]) | selectattr('name', 'equalto', 'gnb') | first).restartCount == 
+        (pod_initial.resources[0].status.containerStatuses | default([{'restartCount':0}]) | selectattr('name', 'equalto', 'gnb') | first).restartCount
       }}
 
-- name: Debug GNB stability status
-  ansible.builtin.debug:
-    msg: 
-      - "GNB Startup Success: {{ gnb_startup_success }}"
-      - "Reason: {{ 'Success' if gnb_startup_success else ('FATAL ERROR detected' if 'FATAL' in gnb_logs.stdout else 'GNB never reached started state') }}"
-
-- name: Handle IP Swap if gNB failed
+- name: Handle IP Swap and Cleanup on failure
   block:
-    - name: Extract current IP (Strict)
+    - name: Extract current IP
       ansible.builtin.shell: |
-        grep -oE '(mgmt_addr|addr)=[0-9.]+' {{ values_file }} | head -1 | cut -d= -f2 | tr -d ' '
+        grep -oE 'addr=[0-9.]+' {{ values_file }} | head -1 | cut -d= -f2 | tr -d ' '
       register: current_ip_cmd
       changed_when: false
 
-    - name: Determine new IP
+    - name: Determine new IP based on USRP swap rules
       ansible.builtin.set_fact:
         new_ip: >-
           {% if current_ip_cmd.stdout == '192.168.235.105' %}192.168.235.106
@@ -73,26 +80,19 @@
           {% elif current_ip_cmd.stdout == '192.168.235.104' %}192.168.235.103
           {% else %}{{ current_ip_cmd.stdout }}{% endif %}
 
-    - name: Update IP in values file
+    - name: Apply IP swap in values file
       ansible.builtin.replace:
         path: "{{ values_file }}"
         regexp: '(?<==){{ current_ip_cmd.stdout | regex_escape }}'
         replace: "{{ new_ip }}"
       when: new_ip != current_ip_cmd.stdout
 
-    - name: Clean up spaces
-      ansible.builtin.replace:
-        path: "{{ values_file }}"
-        regexp: '\s+,'
-        replace: ','
-
-    - name: Stop gNB before retry
+    - name: Remove failed Helm release
       kubernetes.core.helm:
         name: srsran-gnb
         release_namespace: "{{ ran_ns }}"
         state: absent
         wait: true
-      # Toujours supprimer si on va re-boucler (item < max_attempts)
       when: item | int < max_attempts | int
 
   when: 
