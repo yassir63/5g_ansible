@@ -1,7 +1,6 @@
 ---
 - name: Set defaults and initialize ue_ips dictionary
   set_fact:
-    core_node_host: "{{ groups['core_node'][0] }}"
     ue_ips: {}
 
 - name: Connect all qhat UEs sequentially
@@ -22,7 +21,7 @@
         paths: "/root/IPERF"
         # Adjusted pattern to match common iperf server log naming
         patterns: "iperf_*.log"
-      delegate_to: "{{ core_node_host }}"
+      delegate_to: "{{ core_node_name }}"
       register: iperf_files
 
     - name: Read session logs from Core Node
@@ -31,7 +30,7 @@
       loop_control:
         label: "Reading {{ item.path | basename }}"
       register: log_contents
-      delegate_to: "{{ core_node_host }}"
+      delegate_to: "{{ core_node_name }}"
       when: iperf_files.matched > 0
       changed_when: false
 
