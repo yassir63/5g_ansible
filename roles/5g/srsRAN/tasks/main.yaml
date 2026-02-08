@@ -86,118 +86,27 @@
 - name: Apply 5G profile to gNB and UE configs
   include_tasks: apply_5g_profile.yaml
 
-# Deploy with kubernetes.core.helm (use chart_ref + values_files)
-- name: Deploy srsRAN gNB using Helm
-  kubernetes.core.helm:
-    name: srsran-gnb
-    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
-    release_namespace: "{{ ran_ns }}"
-    values_files:
-      - "{{ values_file }}"
-    state: present
-    wait: true
-    atomic: true
-
-- name: Wait 15 seconds for the gNB to be ready
-  pause:
-    seconds: 15
-
-# --- gNB pod discovery ---
-- name: Snapshot gNB pods by selectors
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ ran_ns }}"
-    label_selectors: "{{ srs_gnb_label_selectors }}"
-  register: srs_gnb_pods
-
-# Enhanced debugging: show per-container details
-- name: Debug gNB pod and container states
-  ansible.builtin.debug:
-    msg: |
-      {% for pod in srs_gnb_pods.resources %}
-      Pod: {{ pod.metadata.name }}
-      Phase: {{ pod.status.phase }}
-      Containers:
-      {% for c in pod.status.containerStatuses %}
-        - name: {{ c.name }}
-          ready: {{ c.ready }}
-          restartCount: {{ c.restartCount }}
-          state:
-            {% if 'waiting' in c.state %}
-              waiting: {{ c.state.waiting.reason }}
-            {% elif 'running' in c.state %}
-              running: Running
-            {% elif 'terminated' in c.state %}
-              terminated: {{ c.state.terminated.reason }}
-            {% else %}
-              unknown
-            {% endif %}
-      {% endfor %}
-
-      {% endfor %}
-
-# Pick the first gNB pod name
-- name: Select a gNB pod name (from selectors)
+- name: Set initial retry facts
   ansible.builtin.set_fact:
-    gnb_pod_name: "{{ (srs_gnb_pods.resources | first).metadata.name }}"
+    gnb_startup_success: false
+    max_attempts: 2
 
-- name: Probe 'gnb' container state 3 times with small delay
-  ansible.builtin.command: >
-    bash -l "
-    {{ kubectl_bin | default('kubectl') }} get pod {{ gnb_pod_name }}
-    -n {{ ran_ns }}
-    -o jsonpath='{.status.containerStatuses[?(@.name=="gnb")].ready}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.waiting.reason}{" "}{.status.containerStatuses[?(@.name=="gnb")].state.terminated.reason}'
-    " 
-  register: gnb_state_probes
-  changed_when: false
-  failed_when: false
-  loop: "{{ range(0, 3) | list }}"
-  loop_control:
-    loop_var: probe_index
+- name: Deploy and Monitor srsRAN gNB
+  block:
+    - name: "Attempt gNB deployment (Attempt {{ item }})"
+      include_tasks: deploy_with_check.yml
+      loop: "{{ range(1, max_attempts + 1) | list }}"
+      when: not gnb_startup_success
 
-- name: Show gNB sampled states
+  rescue:
+    - name: Final failure message
+      ansible.builtin.fail:
+        msg: "gNB failed to start properly on both IP addresses."
+      when: not gnb_startup_success
+
+- name: Confirm success
   ansible.builtin.debug:
-    var: gnb_state_probes.results
-
-#Decide if ANY of the 3 samples shows ERROR or CRASHLOOP
-- name: Initialize gnb_need_retry
-  set_fact:
-    gnb_need_retry: false
-    
-- name: Compute retry need based on 3 probes
-  ansible.builtin.set_fact:
-    gnb_need_retry: >-
-      {{
-        (
-          gnb_state_probes.results | map(attribute='stdout')
-          | select('search', 'CrashLoopBackOff') | list | length > 0
-        )
-        or
-        (
-          gnb_state_probes.results | map(attribute='stdout')
-          | select('search', 'Error') | list | length > 0
-        )
-      }}
-    gnb_recovered: "{{ not gnb_need_retry }}"
-
-# Retry mechanism
-- name: Retry RRU reset + gNB wait (max {{ gnb_rru_retry_max }} times)
-  ansible.builtin.include_tasks: "{{ role_path }}/tasks/rru_gnb_retry.yaml"
-  loop: "{{ range(0, gnb_rru_retry_max | int) | list }}"
-  loop_control:
-    loop_var: retry_index
-  when:
-    - rru in ['n320', 'n300']
-    - gnb_need_retry | bool
-  
-- name: Fail if gNB still not recovered after all retries
-  ansible.builtin.fail:
-    msg: >
-      gNB could not establish connection with the RRU ({{ rru }})
-      after {{ gnb_rru_retry_max }} attempts. Deployment aborted.
-  when:
-    - rru in ['n320', 'n300']
-    - gnb_need_retry | bool
+    msg: "srsRAN gNB is running successfully!"
 
 
 # ------------------------------
