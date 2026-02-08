@@ -51,42 +51,29 @@
   changed_when: true
   ignore_errors: true
 
-- name: Initialize gnb_slices
+- name: Initialize gnb_slices and amf_slices
   set_fact:
     gnb_slices: []
+    amf_slices: []
 
 - name: Map slices minimal pour gNB (srsRAN format)
   set_fact:
     gnb_slices: "{{ gnb_slices + [ slice_entry ] }}"
   loop: "{{ fiveg.slices }}"
   loop_control:
-    loop_var: item
+    loop_var: sl_item
   vars:
-    slice_entry: >-
-      {{
-        {'sst': (item.sst | int)}
-        | combine(
-            {'sd': item.sd}
-            if (item.sd is defined and item.sd != 'EMPTY')
-            else {}
-          )
-      }}
+    # On construit l'objet proprement : si SD est 'EMPTY', on ne met pas la clé SD.
+    slice_entry: "{{ {'sst': sl_item.sst | int} | combine({'sd': sl_item.sd} if (sl_item.sd is defined and sl_item.sd != 'EMPTY') else {}) }}"
 
 - name: Map slices pour AMF (TAI slice support list)
   set_fact:
-    amf_slices: >-
-      {{
-        amf_slices | default([]) +
-        [
-          (
-            {'sst': item.sst | int}
-            | combine({'sd': item.sd} if item.sd is defined and item.sd != 'EMPTY' else {})
-          )
-        ]
-      }}
+    amf_slices: "{{ amf_slices + [ slice_entry ] }}"
   loop: "{{ fiveg.slices }}"
   loop_control:
-    loop_var: item
+    loop_var: sl_item
+  vars:
+    slice_entry: "{{ {'sst': sl_item.sst | int} | combine({'sd': sl_item.sd} if (sl_item.sd is defined and sl_item.sd != 'EMPTY') else {}) }}"
 
 - name: Update AMF supported_tracking_areas from 5G profile
   ansible.builtin.shell: >
