@@ -14,11 +14,10 @@
         release_namespace: "{{ ran_ns }}"
         values_files:
           - "{{ values_file }}"
-        set_values:
-          - value: "{{ ran_node_name }}"
-            key: "nodeSelector.kubernetes\\.io/hostname"
-          - value: "{{ ran_node_name }}"
-            key: "nodeName"
+        values:
+          nodeSelector:
+            kubernetes.io/hostname: "{{ ran_node_name }}"
+          nodeName: "{{ ran_node_name }}"
         state: present
         wait: true
         atomic: true
@@ -96,4 +95,4 @@
         - rru in ['n300', 'n320']
 
   when: not gnb_startup_success | bool
-
+  
