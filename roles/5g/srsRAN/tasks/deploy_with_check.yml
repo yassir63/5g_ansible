@@ -1,5 +1,4 @@
 ---
-
 - name: Inject nodeSelector into values file
   ansible.builtin.blockinfile:
     path: "{{ values_file }}"
@@ -35,18 +34,30 @@
     - (pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false) == true
   retries: 10
   delay: 5
-  ignore_errors: yes
 
-- name: Check if gNB is actually stable
+- name: Deep Check - Observe logs for FATAL ERROR (10s)
+  ansible.builtin.shell: |
+    # On suit les logs pendant 10s et on cherche les erreurs fatales
+    timeout 10 kubectl logs -n {{ ran_ns }} -l component=gnb -c gnb -f
+  register: gnb_logs
+  failed_when: false
+  changed_when: false
+
+- name: Verify if gNB is truly stable
   ansible.builtin.set_fact:
     gnb_startup_success: >-
       {{
-        pod_check.resources is defined and
         pod_check.resources | length > 0 and
-        (pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false)
+        (pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false) and
+        'FATAL ERROR' not in gnb_logs.stdout and
+        '==== gNB started ===' in gnb_logs.stdout
       }}
 
-- name: Handle IP Swap if gNB failed
+- name: Debug GNB stability status
+  ansible.builtin.debug:
+    msg: "GNB success: {{ gnb_startup_success }}. Reason: {{ 'Fatal error found in logs' if 'FATAL ERROR' in gnb_logs.stdout else 'Started correctly' }}"
+
+- name: Handle IP Swap if gNB failed or crashed
   block:
     - name: Extract current IP (Strict)
       ansible.builtin.shell: |
@@ -54,7 +65,7 @@
       register: current_ip_cmd
       changed_when: false
 
-    - name: Determine new IP based on algorithm
+    - name: Determine new IP
       ansible.builtin.set_fact:
         new_ip: >-
           {% if current_ip_cmd.stdout == '192.168.235.105' %}192.168.235.106
@@ -63,14 +74,14 @@
           {% elif current_ip_cmd.stdout == '192.168.235.104' %}192.168.235.103
           {% else %}{{ current_ip_cmd.stdout }}{% endif %}
 
-    - name: Update IP in values file (No spaces)
+    - name: Update IP in values file
       ansible.builtin.replace:
         path: "{{ values_file }}"
         regexp: '(?<==){{ current_ip_cmd.stdout | regex_escape }}'
         replace: "{{ new_ip }}"
       when: new_ip != current_ip_cmd.stdout
 
-    - name: Clean up any accidental spaces around commas
+    - name: Clean up spaces
       ansible.builtin.replace:
         path: "{{ values_file }}"
         regexp: '\s+,'
