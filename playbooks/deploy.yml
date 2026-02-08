@@ -125,27 +125,6 @@
     - role: setup/gre_tunnel
       when: bridge_enabled
 
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: core_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: ran_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-############################################################################
-
-
 - name: Deploy Open5GS CN
   hosts: core_node
   pre_tasks:
@@ -173,6 +152,27 @@
       when: core == 'oai'
     - role: 5g/oai/ran
       when: ran == 'oai'
+
+############################################################################
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+- hosts: core_node
+  gather_facts: false
+  tasks:
+    - import_tasks: ../tasks/reload_booleans.yml
+- hosts: ran_node
+  gather_facts: false
+  tasks:
+    - import_tasks: ../tasks/reload_booleans.yml
+############################################################################
+
 
 - name: Deploy srsRAN
   hosts: ran_node
