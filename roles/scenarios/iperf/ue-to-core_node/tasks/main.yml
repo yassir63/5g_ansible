@@ -1,6 +1,7 @@
 ---
-- name: Initialize ue_ips dictionary
+- name: Set defaults and initialize ue_ips dictionary
   set_fact:
+    core_node_host: "{{ groups['core_node'][0] }}"
     ue_ips: {}
 
 - name: Connect all qhat UEs sequentially
