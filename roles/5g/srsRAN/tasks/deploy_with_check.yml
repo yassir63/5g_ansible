@@ -1,4 +1,17 @@
 ---
+
+- name: Inject nodeSelector into values file
+  ansible.builtin.blockinfile:
+    path: "{{ values_file }}"
+    marker: "# {mark} ANSIBLE MANAGED NODE SELECTOR"
+    insertbefore: BOF
+    block: |
+      nodeSelector:
+        kubernetes.io/hostname: "{{ ran_node_name }}"
+      gnb:
+        nodeSelector:
+          kubernetes.io/hostname: "{{ ran_node_name }}"
+
 - name: Deploy srsRAN gNB using Helm
   kubernetes.core.helm:
     name: srsran-gnb
@@ -7,35 +20,21 @@
     values_files:
       - "{{ values_file }}"
     state: present
-    wait: false
-    atomic: false
+    wait: true
+    atomic: true
+    timeout: 120s
 
-- name: Force gNB Pod onto {{ ran_node_name }} via Patch
-  kubernetes.core.k8s:
-    state: patched
-    kind: Deployment
-    name: srsran-gnb
-    namespace: "{{ ran_ns }}"
-    definition:
-      spec:
-        template:
-          spec:
-            nodeSelector:
-              kubernetes.io/hostname: "{{ ran_node_name }}"
-
-- name: Wait up to 60s for gNB container to be Ready on {{ ran_node_name }}
+- name: Wait for gNB container to be Ready
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: "{{ ran_ns }}"
     label_selectors: "{{ srs_gnb_label_selectors }}"
-    field_selectors:
-      - "spec.nodeName={{ ran_node_name }}"
   register: pod_check
   until: 
     - pod_check.resources | length > 0
     - (pod_check.resources[0].status.containerStatuses | default([]) | selectattr('name', 'equalto', 'gnb') | first).ready | default(false) == true
-  retries: 15
-  delay: 4
+  retries: 10
+  delay: 5
   ignore_errors: yes
 
 - name: Check if gNB is actually stable
@@ -49,9 +48,9 @@
 
 - name: Handle IP Swap if gNB failed
   block:
-    - name: Extract current IP from values file (addr or mgmt_addr)
+    - name: Extract current IP (Strict)
       ansible.builtin.shell: |
-        grep -oE '(mgmt_addr|addr)=[0-9.]+' {{ values_file }} | head -1 | cut -d= -f2
+        grep -oE '(mgmt_addr|addr)=[0-9.]+' {{ values_file }} | head -1 | cut -d= -f2 | tr -d ' '
       register: current_ip_cmd
       changed_when: false
 
@@ -64,20 +63,28 @@
           {% elif current_ip_cmd.stdout == '192.168.235.104' %}192.168.235.103
           {% else %}{{ current_ip_cmd.stdout }}{% endif %}
 
-    - name: Update IP in values file (Swap all occurrences)
+    - name: Update IP in values file (No spaces)
       ansible.builtin.replace:
         path: "{{ values_file }}"
-        regexp: "{{ current_ip_cmd.stdout }}"
+        regexp: '(?<==){{ current_ip_cmd.stdout | regex_escape }}'
         replace: "{{ new_ip }}"
       when: new_ip != current_ip_cmd.stdout
+
+    - name: Clean up any accidental spaces around commas
+      ansible.builtin.replace:
+        path: "{{ values_file }}"
+        regexp: '\s+,'
+        replace: ','
 
     - name: Stop gNB before retry
       kubernetes.core.helm:
         name: srsran-gnb
         release_namespace: "{{ ran_ns }}"
         state: absent
+        wait: true
       when: item | int < max_attempts | int
 
   when: 
     - not gnb_startup_success
     - rru in ['n300', 'n320']
+

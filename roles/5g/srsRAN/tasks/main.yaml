@@ -86,6 +86,9 @@
 - name: Apply 5G profile to gNB and UE configs
   include_tasks: apply_5g_profile.yaml
 
+- name: Apply 5G profile to gNB and UE configs
+  include_tasks: apply_5g_profile.yaml
+
 - name: Set initial retry facts
   ansible.builtin.set_fact:
     gnb_startup_success: false
@@ -107,7 +110,7 @@
 - name: Confirm success
   ansible.builtin.debug:
     msg: "srsRAN gNB is running successfully!"
-
+  when: gnb_startup_success
 
 # ------------------------------
 # Helm-based Telegraf deployment
