@@ -96,7 +96,7 @@
   become: true
   roles:
     - role: setup/k8s/add_taint
-      when: bridge_enabled
+      when: core_node_name != ran_node_name
 
 - name: Install Multus / CNAO
   hosts: core_node
