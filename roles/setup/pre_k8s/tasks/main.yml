@@ -25,9 +25,39 @@
         fstype: tmpfs
         opts: size=50G
         state: mounted
-  when: live_image_check.stdout == "live"
+  when: live_image_check.stdout == "live" and (ran_node_name != core_node_name)
   become: true
   tags: ['live-fix']
+
+- name: Mount tmpfs for K8s storage (containerd + kubelet)
+  block:
+    - name: Ensure directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /var/lib/containerd
+        - /var/lib/kubelet
+
+    - name: Mount tmpfs on /var/lib/containerd (50G)
+      ansible.builtin.mount:
+        path: /var/lib/containerd
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=50G
+        state: mounted
+
+    # Add kubelet on RAM to avoid DiskPressure on /
+    - name: Mount tmpfs on /var/lib/kubelet (5G)
+      ansible.builtin.mount:
+        path: /var/lib/kubelet
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=5G
+        state: mounted
+  when: live_image_check.stdout == "live" and (ran_node_name == core_node_name)
+  become: true
 
 # --- Handle containerd storage for persistent system ---
 - name: Ensure storage device exists
@@ -91,6 +121,20 @@
         nodefs.available: "10%"
         imagefs.available: "10%"
     marker: "# {mark} RAN pre-K8s patch"
+  when: core_node_name != ran_node_name
+
+- name: Patch kubelet config
+  ansible.builtin.blockinfile:
+    path: /var/lib/kubelet/config.yaml
+    block: |
+      evictionHard:
+        nodefs.available: "2%"    # On descend à 2% car on est sur tmpfs (RAM)
+        imagefs.available: "2%"
+      evictionMinimumReclaim:
+        nodefs.available: "500Mi"
+    marker: "# {mark} RAN pre-K8s patch"
+  when: core_node_name == ran_node_name
+
 
 # --- Restart services only if present ---
 - name: Check if containerd service exists
