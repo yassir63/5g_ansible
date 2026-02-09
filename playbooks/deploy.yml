@@ -77,7 +77,9 @@
   become: true
   roles:
     - role: setup/k8s/add_taint
-      when: not fhi72 and (ran_node_name != core_node_name)
+      when:
+        - not fhi72
+        - ran_node_name != core_node_name
 
 - name: Install Multus / CNAO
   hosts: core_node
