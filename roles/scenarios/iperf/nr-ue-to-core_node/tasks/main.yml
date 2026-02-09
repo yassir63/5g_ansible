@@ -5,11 +5,12 @@
     sleep: "{{ sleep | default(5) }}"
     core_node_host: "{{ groups['core_node'][0] }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+    core_ns: "{{ core }}"
 
 - name: Get all pods in namespace
   kubernetes.core.k8s_info:
     kind: Pod
-    namespace: open5gs
+    namespace: {{ core_ns }}
   register: all_pods
 
 - name: Filter UE pods by name
@@ -18,7 +19,7 @@
 
 - name: Force Install iperf3 (YUM then APT)
   shell: |
-    kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
+    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- bash -c "
     if ! command -v iperf3 &> /dev/null; then
       if command -v yum &> /dev/null; then
         yum install -y -q iperf3 iproute
@@ -37,7 +38,7 @@
 
 - name: Get oaitun_ue1 IP
   shell: |
-    kubectl exec -n open5gs {{ item.metadata.name }} -- bash -c "
+    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- bash -c "
     ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '"
   loop: "{{ ue_resources }}"
   loop_control:
@@ -57,7 +58,7 @@
 
 - name: Run iperf uplink
   shell: >
-    kubectl exec -n open5gs {{ item.pod }} --
+    kubectl exec -n {{ core_ns }} {{ item.pod }} --
     iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }}
   loop: "{{ valid_ues }}"
   loop_control:
@@ -71,7 +72,7 @@
 
 - name: Run iperf downlink
   shell: >
-    kubectl exec -n open5gs {{ item.pod }} --
+    kubectl exec -n {{ core_ns }} {{ item.pod }} --
     iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }} -R
   loop: "{{ valid_ues }}"
   loop_control:
