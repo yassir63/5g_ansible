@@ -812,7 +812,7 @@ f3_ran=$( [[ "${ran_node}" == "sopnode-f3" ]] && echo true || echo false )
 
 # ---- Other boolean parameters
 # bridge_enabled is true if OVS bridge required between core_node and ran_node
-bridge_enabled=$( [[ "$fhi72" == "false" || "$ran_node_name" != "$core_node_name" ]] && echo true || echo false )
+bridge_enabled=$( [[ "$fhi72" == "false" && "$ran_node_name" != "$core_node_name" ]] && echo true || echo false )
 monitoring_enabled=${monitoring_enabled}
 EOF
 
