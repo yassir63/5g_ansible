@@ -214,7 +214,8 @@ echo "Select the node to deploy RAN ($ran) on (default: ${DEFAULT_RAN_NODE}):"
 echo "1) sopnode-f1"
 echo "2) sopnode-f2"
 echo "3) sopnode-f3"
-read -rp "Enter choice [1-3]: " ran_node_choice
+echo "4) sopnode-w3"
+read -rp "Enter choice [1-4]: " ran_node_choice
 if [[ -z "${ran_node_choice}" ]]; then
   ran_node=${DEFAULT_RAN_NODE}
 else
@@ -222,6 +223,7 @@ else
     1) ran_node="sopnode-f1" ;;
     2) ran_node="sopnode-f2" ;;
     3) ran_node="sopnode-f3" ;;
+    3) ran_node="sopnode-w3" ;;
     *) echo "❌ Invalid RAN node"; exit 1 ;;
   esac
 fi
