@@ -65,8 +65,8 @@
       when: fhi72
     - role: setup/k8s/cluster_create
 
-- name: Debug type of bridge_enabled on CORE node
-  hosts: core_node
+- name: Debug type of bridge_enabled on RAN node
+  hosts: ran_node
   become: true
 
   tasks:
@@ -82,9 +82,7 @@
   become: true
   roles:
     - role: setup/k8s/remove_taint
-      when: >
-        bridge_enabled or
-        ran_node_name == core_node_name
+      when: not fhi72
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
@@ -98,9 +96,7 @@
   become: true
   roles:
     - role: setup/k8s/add_taint
-      when:
-        - not fhi72
-        - ran_node_name != core_node_name
+      when: bridge_enabled
 
 - name: Install Multus / CNAO
   hosts: core_node
