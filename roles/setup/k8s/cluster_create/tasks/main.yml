@@ -2,16 +2,13 @@
 - name: RESTART_K8S_CREATE
   ansible.builtin.meta: noop
 
-- name: Refresh boolean variables on all hosts
+- name: Normalize booleans for current host
   ansible.builtin.set_fact:
-    fhi72: "{{ (hostvars[item].get('fhi72', False) | bool) }}"
-    aw2s: "{{ (hostvars[item].get('aw2s', False) | bool) }}"
-    f3_ran: "{{ (hostvars[item].get('f3_ran', False) | bool) }}"
-    bridge_enabled: "{{ (hostvars[item].get('bridge_enabled', False) | bool) }}"
-    monitoring_enabled: "{{ (hostvars[item].get('monitoring_enabled', False) | bool) }}"
-  loop: "{{ groups['all'] }}"
-  delegate_to: "{{ item }}"
-  run_once: true
+    fhi72: "{{ fhi72 | default(false) | bool }}"
+    bridge_enabled: "{{ bridge_enabled | default(false) | bool }}"
+    monitoring_enabled: "{{ monitoring_enabled | default(false) | bool }}"
+    f3_ran: "{{ f3_ran | default(false) | bool }}"
+
 
 # === CLEANUP PHASE ============================================================
 - name: Reset Kubernetes (safe)
@@ -341,7 +338,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   become: true
-  when: bridge_enabled
+  when: bridge_enabled or (ran_node_name == core_node_name)
 
 # === JOIN COMMAND =============================================================
 - name: Generate join command
