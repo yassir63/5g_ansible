@@ -332,14 +332,6 @@
     kubectl delete pod dns-test --ignore-not-found
   changed_when: false
 
-- name: Remove control-plane taint
-  ansible.builtin.shell: |
-    kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  become: true
-  when: bridge_enabled or (ran_node_name == core_node_name)
-
 # === JOIN COMMAND =============================================================
 - name: Generate join command
   ansible.builtin.shell: kubeadm token create --print-join-command
@@ -347,7 +339,7 @@
   delegate_to: "{{ groups['core_node'][0] }}"
   run_once: true
 
-# dont save file on /tmp/ in localhost since multi-users, use HOME instead
+# Do not save file on /tmp/ in localhost since multi-users, use HOME instead
 - name: Save join command locally
   ansible.builtin.copy:
     content: "{{ join_cmd.stdout }}"

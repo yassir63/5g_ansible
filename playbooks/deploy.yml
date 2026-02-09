@@ -28,8 +28,8 @@
       loop_control:
         label: "{{ item.item }}"
 
-# Following role requires all nodes ssh-reachable
-# so should be run after previous one
+# The following task requires all nodes be ssh-reachable
+# so it can't be the first task of the playbook
 - hosts: all
   gather_facts: true
   tasks:
@@ -64,6 +64,15 @@
     - role: setup/ntp
       when: fhi72
     - role: setup/k8s/cluster_create
+
+- name: Remove Control-Plane NoSchedule taint on CORE node  
+  hosts: core_node
+  become: true
+  roles:
+    - role: setup/k8s/remove_taint
+      when: >
+        bridge_enabled or
+        ran_node_name == core_node_name
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers

@@ -1,10 +1,16 @@
 ---
 - name: Force Taint node with NoSchedule
   ansible.builtin.command: >
-    kubectl taint node {{ inventory_hostname }} node=noschedule:NoSchedule --overwrite
+    kubectl taint node {{ inventory_hostname }} test-eviction=true:NoSchedule --overwrite
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: taint_out
-
+  failed_when: false
+  changed_when: "'tainted' in taint_out.stdout"
+  
 - name: Clean up core pods from RAN node
   ansible.builtin.shell: >
     kubectl delete pods -n open5gs --field-selector spec.nodeName={{ inventory_hostname }} --ignore-not-found=true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   when: taint_out.changed
