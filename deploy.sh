@@ -223,7 +223,7 @@ else
     1) ran_node="sopnode-f1" ;;
     2) ran_node="sopnode-f2" ;;
     3) ran_node="sopnode-f3" ;;
-    3) ran_node="sopnode-w3" ;;
+    4) ran_node="sopnode-w3" ;;
     *) echo "❌ Invalid RAN node"; exit 1 ;;
   esac
 fi
