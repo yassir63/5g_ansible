@@ -65,6 +65,16 @@
       when: fhi72
     - role: setup/k8s/cluster_create
 
+- name: Debug type of bridge_enabled on CORE node
+  hosts: core_node
+  become: true
+  debug:
+    msg:
+      - "value = {{ bridge_enabled | default('UNDEFINED') }}"
+      - "type = {{ bridge_enabled | default(None) | type_debug }}"
+      - "ran_node_name value = {{ ran_node_name | default('UNDEFINED') }}"
+
+
 - name: Remove Control-Plane NoSchedule taint on CORE node  
   hosts: core_node
   become: true
