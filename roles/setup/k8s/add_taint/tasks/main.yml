@@ -5,9 +5,13 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: taint_out
-  failed_when: false
-  changed_when: "'tainted' in taint_out.stdout"
-  
+  failed_when: 
+    - taint_out.rc != 0
+    - "'already' not in taint_out.stderr" 
+  changed_when: >
+    'tainted' in taint_out.stdout or 
+    'modified' in taint_out.stdout
+
 - name: Clean up core pods from RAN node
   ansible.builtin.shell: >
     kubectl delete pods -n open5gs --field-selector spec.nodeName={{ inventory_hostname }} --ignore-not-found=true
