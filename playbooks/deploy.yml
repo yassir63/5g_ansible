@@ -90,14 +90,17 @@
   roles:
     - role: setup/k8s/cluster_join
       when: inventory_hostname != core_node_name
-  
-- name: Add NoSchedule taint on RAN node (reserved node for RAN pods) 
-  hosts: ran_node
+
+- name: Add NoSchedule taint on RAN node (reserved node for RAN pods)
+  hosts: core_node
   become: true
   roles:
     - role: setup/k8s/add_taint
+      vars:
+        target_node: "{{ ran_node_name }}"
       when: core_node_name != ran_node_name
-
+      
+      
 - name: Install Multus / CNAO
   hosts: core_node
   become: true
