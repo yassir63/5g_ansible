@@ -78,33 +78,3 @@
     index_var: idx
     label: "Downlink: {{ item.pod }} (Port: {{ 5201 + idx | int }})"
   ignore_errors: yes
-
-# --- FIX: RECOVERY OF LOG FILES ---
-
-- name: Find iperf log files on Core Node
-  find:
-    paths: "/root/IPERF" # Ajuste le chemin si les logs sont ailleurs
-    patterns: "iperf_*.log"
-  delegate_to: "{{ core_node_host }}"
-  register: iperf_files
-
-- name: Read session logs from Core Node
-  command: "cat {{ item.path }}"
-  loop: "{{ iperf_files.files | sort(attribute='path') }}"
-  loop_control:
-    label: "Reading {{ item.path | basename }}"
-  register: log_contents
-  delegate_to: "{{ core_node_host }}"
-  when: iperf_files.matched > 0
-  changed_when: false
-
-- name: "📊 FINAL SUMMARY"
-  debug:
-    msg: |
-      {% for log in log_contents.results %}
-      {{ '========================================' }}
-      {{ 'FILE: ' ~ log.item.path | basename }}
-      {{ '========================================' }}
-      {{ log.stdout | default('No content') }}
-      {% endfor %}
-  when: log_contents.results is defined

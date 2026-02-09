@@ -13,36 +13,3 @@
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
     # Each UE gets a unique port: 5201, 5202, 5203...
     iperf_port: "{{ 5201 + ue_index }}"
-
-- name: "--- COLLECTING SERVER-SIDE STATS FROM CORE NODE ---"
-  block:
-    - name: Find iperf log files on Core Node
-      find:
-        paths: "/root/IPERF"
-        # Adjusted pattern to match common iperf server log naming
-        patterns: "iperf_*.log"
-      delegate_to: "{{ core_node_name }}"
-      register: iperf_files
-
-    - name: Read session logs from Core Node
-      command: "cat {{ item.path }}"
-      loop: "{{ iperf_files.files | sort(attribute='path') }}"
-      loop_control:
-        label: "Reading {{ item.path | basename }}"
-      register: log_contents
-      delegate_to: "{{ core_node_name }}"
-      when: iperf_files.matched > 0
-      changed_when: false
-
-    - name: "📊 FINAL SUMMARY (Server Side)"
-      debug:
-        msg: |
-          {% for log in log_contents.results %}
-          {% if log.stdout is defined %}
-          ============================================================
-          FILE: {{ log.item.path | basename }}
-          ============================================================
-          {{ log.stdout }}
-          {% endif %}
-          {% endfor %}
-      when: log_contents.results is defined

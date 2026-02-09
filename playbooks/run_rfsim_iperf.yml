@@ -1,7 +1,0 @@
----
-- name: Start iperf servers on core_node
-  hosts: core_node
-  become: true
-  roles:
-    - scenarios/iperf_server
-    - scenarios/iperf/nr-ue-to-core_node

@@ -379,9 +379,9 @@ if [[ "$scenario_choice" =~ ^[Yy]$ ]]; then
   if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 1 ]]; then
     options+=("Default Iperf Test (without interference)")
   fi
-  if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 4 ]]; then
-    options+=("Parallel Iperf Test (without interference)")
-  fi
+#  if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 4 ]]; then
+#    options+=("Parallel Iperf Test (without interference)")
+#  fi
   if [[ "$platform" == "rfsim" && "$ran" == "oai" ]]; then
     options+=("RFSIM Iperf Test")
   fi
@@ -971,20 +971,13 @@ deploy() {
 
 run_scenarios() {
 
-# <<< YOUR ORIGINAL SCENARIO BLOCK UNCHANGED >>>
-# ========== Run Optional Scenario ==========
-# Use the run_iperf_test.sh for all scenarios, using the right flag, since it can also handle the interference.
-# echo "  -s           Use OAI rfsim iperf test playbook"
-# echo "  -d           Use default iperf test playbook"
-# echo "  -p           Use parallel iperf test playbook"
-# echo "  -i           Use interference iperf test playbook"
 if [[ "$run_scenario" == true ]]; then
   echo "Running $scenario"
   case "$scenario" in
-      "Default Iperf Test (without interference)")
+      "Iperf Test (without interference)")
 	  ansible-playbook -i "$INVENTORY" \
 			   "${ANSIBLE_EXTRA_ARGS[@]}" \
-			   playbooks/run_iperf.yml 2>&1 | tee logs-iperf.txt
+			   playbooks/run_scenario_iperf.yml 2>&1 | tee logs-scenario_iperf.txt
 	  ;;
       "Parallel Iperf Test (without interference)")
 	  ./run_iperf_test.sh -p
@@ -992,10 +985,12 @@ if [[ "$run_scenario" == true ]]; then
       "RFSIM Iperf Test")
 	  ansible-playbook -i "$INVENTORY" \
 			   "${ANSIBLE_EXTRA_ARGS[@]}" \
-			   playbooks/run_iperf.yml 2>&1 | tee logs-iperf.txt
+			   playbooks/run_scenario_iperf.yml 2>&1 | tee logs-scenario_iperf_rfsim.txt
 	  ;;
       "Interference Test")
-	  ./run_iperf_test.sh -i
+	  ansible-playbook -i "$INVENTORY" \
+			   "${ANSIBLE_EXTRA_ARGS[@]}" \
+			   playbooks/run_scenario_interference.yml 2>&1 | tee logs-scenario_interference.txt
 	  ;;
       *)
 	  echo "❌ Unknown iperf test scenario: $scenario"

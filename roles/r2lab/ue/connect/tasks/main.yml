@@ -1,4 +1,6 @@
 ---
+# ue_item stands for the UE name, defined in the inventory
+
 - name: Load active 5G profile variables
   ansible.builtin.include_vars:
     file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"

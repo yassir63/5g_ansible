@@ -1,6 +1,0 @@
----
-- name: Iperf3 client test on each NR-UE
-  hosts: ran_node
-  gather_facts: false
-  roles:
-    - role: scenarios/iperf/nr-ue

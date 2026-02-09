@@ -28,4 +28,4 @@ ansible-galaxy install -r collections/requirements.yml --force
 # "$@" is a special shell variable that captures all arguments passed to this script.
 # This allows you to run: ./run.sh -e "nb_ues=5" -e "duration=20"
 echo "Starting Playbook..."
-ansible-playbook -i "$INVENTORY" playbooks/run_iperf.yml "$@"
+ansible-playbook -i "$INVENTORY" playbooks/run_scenario_iperf.yml "$@"
