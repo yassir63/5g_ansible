@@ -10,7 +10,7 @@
 - name: Get all pods in namespace
   kubernetes.core.k8s_info:
     kind: Pod
-    namespace: {{ core_ns }}
+    namespace: "{{ core_ns }}"
   register: all_pods
 
 - name: Filter UE pods by name
