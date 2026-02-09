@@ -6,6 +6,7 @@
     core_node_host: "{{ groups['core_node'][0] }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
     core_ns: "{{ core }}"
+    valid_ues: []
 
 - name: Get all pods in namespace
   kubernetes.core.k8s_info:
@@ -48,7 +49,7 @@
 
 - name: Init and Classify valid UEs
   set_fact:
-    valid_ues: "{{ valid_ues | default([]) + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
+    valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
   loop: "{{ ue_ip_results.results }}"
   loop_control:
     label: "{{ item.item.metadata.name }} -> {{ item.stdout | trim }}"
