@@ -377,7 +377,7 @@ if [[ "$scenario_choice" =~ ^[Yy]$ ]]; then
   echo "Select the scenario to run:"
   options=()
   if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 1 ]]; then
-    options+=("Default Iperf Test (without interference)")
+    options+=("Iperf Test (without interference)")
   fi
 #  if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 4 ]]; then
 #    options+=("Parallel Iperf Test (without interference)")
@@ -934,35 +934,39 @@ fi
 
 deploy() {
 
-  ANSIBLE_EXTRA_ARGS=()
-  ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
-
-  for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
-    ANSIBLE_EXTRA_ARGS+=(-e "$ev")
-  done
+    ANSIBLE_EXTRA_ARGS=()
+    local vars="fiveg_profile=${PROFILE_5G}"
   
-  echo "Launching deployment..."
+    for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
+	# Clean argument if it starts by -- so that ansible handles it as a variable
+	clean_ev=$(echo "$ev" | sed 's/^--//')
+	vars="$vars $clean_ev"
+    done
 
-  run_cmd ansible-galaxy install -r collections/requirements.yml
+    ANSIBLE_EXTRA_ARGS+=(-e "$vars")
 
-  if [[ "$platform" == "r2lab" ]]; then
-      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy_r2lab.yml &"
-      run_cmd ansible-playbook -i "$INVENTORY" \
-        "${ANSIBLE_EXTRA_ARGS[@]}" \
-        playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
-  fi
+    echo "Launching deployment..."
+  
+    run_cmd ansible-galaxy install -r collections/requirements.yml
 
-  echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy.yml"
+    if [[ "$platform" == "r2lab" ]]; then
+	echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy_r2lab.yml &"
+	run_cmd ansible-playbook -i "$INVENTORY" \
+		"${ANSIBLE_EXTRA_ARGS[@]}" \
+		playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+    fi
 
-  run_cmd ansible-playbook -i "$INVENTORY" \
-    "${ANSIBLE_EXTRA_ARGS[@]}" \
-    playbooks/deploy.yml 2>&1 | tee logs.txt
+    echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy.yml"
 
-  echo ""
-  echo "=========================================="
-  echo "========== Deployment Completed =========="
-  echo "=========================================="
-  echo ""
+    run_cmd ansible-playbook -i "$INVENTORY" \
+	    "${ANSIBLE_EXTRA_ARGS[@]}" \
+	    playbooks/deploy.yml 2>&1 | tee logs.txt
+
+    echo ""
+    echo "=========================================="
+    echo "========== Deployment Completed =========="
+    echo "=========================================="
+    echo ""
 }
 
 ############################

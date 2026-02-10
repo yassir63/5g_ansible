@@ -48,7 +48,7 @@
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
-        age: 5m
+        age: 300 # 300time
         age_stamp: m
       register: iperf_files
 
