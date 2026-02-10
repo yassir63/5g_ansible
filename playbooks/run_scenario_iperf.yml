@@ -46,37 +46,31 @@
     separator_line: "------------------------------------------------------------"
 
   tasks:
-    - name: Find iperf log files modified in the last 5 minutes
+    - name: Find recent iperf log files (last 5 minutes)
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
-        age: 300  # 5 minutes in seconds
+        age: 300
         age_stamp: mtime
       register: iperf_files
 
-    - name: Sort files by port number
-      set_fact:
-        sorted_iperf_files: >-
-          {{ iperf_files.files | sort(attribute='path') }}
+    - name: Read each recent iperf log file
+      slurp:
+        src: "{{ item.path }}"
+      loop: "{{ iperf_files.files | sort(attribute='mtime', reverse=true) }}"
+      register: log_contents
+      changed_when: false
 
     - name: Display each recent iperf log with color by port
-      block:
-        - name: Determine UE color based on port
-          set_fact:
-            ue_port: "{{ item.path | regex_search('iperf_(\\d+)_') | first }}"
-            ue_color: "{{ ue_colors[ue_port] | default(ue_colors['reset']) }}"
-
-        - name: Print header for UE log
-          debug:
-            msg: "{{ ue_color }}{{ header_line }}\nUE Port {{ ue_port }} log: {{ item.path }}\n{{ separator_line }}{{ ue_colors['reset'] }}"
-
-        - name: Display log content
-          command: "cat {{ item.path }}"
-          register: log_content
-          changed_when: false
-
-        - name: Show log in Ansible output
-          debug:
-            msg: "{{ ue_color }}{{ log_content.stdout }}{{ ue_colors['reset'] }}"
-      loop: "{{ sorted_iperf_files }}"
-
+      debug:
+        msg: >-
+          {{
+            ue_colors[
+              (item.item.path | regex_search('520[0-9]', '\\0') | default('reset'))
+            ]
+            + (item.content | b64decode)
+            + ue_colors.reset
+          }}
+      loop: "{{ log_contents.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
