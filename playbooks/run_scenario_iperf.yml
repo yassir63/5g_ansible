@@ -35,29 +35,28 @@
   hosts: core_node
   gather_facts: false
   tasks:
-    - name: Find iperf log files from current run
+    - name: Find iperf log files on Core Node
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
-        age: 300        # prend uniquement les fichiers créés dans les 5 dernières minutes
-        age_stamp: ctime
+      delegate_to: "{{ inventory_hostname }}"
       register: iperf_files
 
     - name: Read session logs from Core Node
-      slurp:
-        src: "{{ item.path }}"
+      command: "cat {{ item.path }}"
       loop: "{{ iperf_files.files | sort(attribute='path') }}"
       register: log_contents
       delegate_to: "{{ inventory_hostname }}"
       when: iperf_files.matched > 0
+      changed_when: false
 
-    - name: "📊 FINAL SUMMARY (Server Side)"
+    - name: "📄 Display IPERF logs nicely"
       debug:
-        msg: |
-          {% for log in log_contents.results %}
-          ============================================================
-          FILE: {{ log.item.path | basename }}
-          ============================================================
-          {{ log.content | b64decode }}
-          {% endfor %}
-
+        msg:
+          - "============================================================"
+          - "FILE: {{ item.item.path | basename }}"
+          - "============================================================"
+          - "{{ item.stdout_lines }}"
+      loop: "{{ log_contents.results }}"
+      loop_control:
+        label: "{{ item.item.path | basename }}"
