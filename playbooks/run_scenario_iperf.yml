@@ -32,34 +32,32 @@
       when: rru != "rfsim"
 
 - name: Collect and Display Stats
-  hosts: faraday
-  gather_facts: false
+  hosts: core_node
+  gather_facts: true
   tasks:
     - name: Find iperf log files on Core Node
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
-      delegate_to: "{{ groups['core_node'][0] }}"
       register: iperf_files
 
     - name: Read session logs from Core Node
       command: "cat {{ item.path }}"
       loop: "{{ iperf_files.files | sort(attribute='path') }}"
       register: log_contents
-      delegate_to: "{{ groups['core_node'][0] }}"
-      when: iperf_files.matched > 0
       changed_when: false
+      when: iperf_files.matched > 0 and iperf_files.files | length > 0
 
     - name: "📊 FINAL SUMMARY (Server Side)"
       debug:
         msg: |
-          {% for log in log_contents.results %}
-          {% if log.stdout is defined %}
-          ============================================================
-          FILE: {{ log.item.path | basename }}
-          ============================================================
-          {{ log.stdout }}
+          {% if log_contents.results is defined and log_contents.results | length > 0 %}
+            {% for log in log_contents.results %}
+            ============================================================
+            FILE: {{ log.item.path | basename }}
+            ============================================================
+            {{ log.stdout }}
+            {% endfor %}
+          {% else %}
+          ⚠️ No iperf logs found
           {% endif %}
-          {% endfor %}
-      when: log_contents.results is defined
-
