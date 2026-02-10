@@ -22,7 +22,7 @@ echo "Using Profile: $PROFILE_5G"
 # --- Requirements ---
 # Install required Ansible collections defined in requirements.yml
 echo "Installing/Updating Ansible collections..."
-ansible-galaxy install -r collections/requirements.yml --force
+ansible-galaxy install -r collections/requirements.yml --ignore-errors
 
 # --- Playbook Execution ---
 # "$@" is a special shell variable that captures all arguments passed to this script.
