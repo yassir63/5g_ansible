@@ -31,33 +31,33 @@
     - role: scenarios/iperf/ue-to-core_node
       when: rru != "rfsim"
 
-- name: Collect and Display Stats
+- name: "📊 FINAL SUMMARY (Server Side)"
   hosts: core_node
-  gather_facts: true
+  gather_facts: false
   tasks:
-    - name: Find iperf log files on Core Node
+    - name: Find iperf log files from current run
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
+        age: 300        # prend uniquement les fichiers créés dans les 5 dernières minutes
+        age_stamp: ctime
       register: iperf_files
 
     - name: Read session logs from Core Node
-      command: "cat {{ item.path }}"
+      slurp:
+        src: "{{ item.path }}"
       loop: "{{ iperf_files.files | sort(attribute='path') }}"
       register: log_contents
-      changed_when: false
-      when: iperf_files.matched > 0 and iperf_files.files | length > 0
+      delegate_to: "{{ inventory_hostname }}"
+      when: iperf_files.matched > 0
 
     - name: "📊 FINAL SUMMARY (Server Side)"
       debug:
         msg: |
-          {% if log_contents.results is defined and log_contents.results | length > 0 %}
-            {% for log in log_contents.results %}
-            ============================================================
-            FILE: {{ log.item.path | basename }}
-            ============================================================
-            {{ log.stdout }}
-            {% endfor %}
-          {% else %}
-          ⚠️ No iperf logs found
-          {% endif %}
+          {% for log in log_contents.results %}
+          ============================================================
+          FILE: {{ log.item.path | basename }}
+          ============================================================
+          {{ log.content | b64decode }}
+          {% endfor %}
+
