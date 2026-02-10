@@ -45,6 +45,8 @@
     src: "/tmp/log_iperf_{{ current_ue }}_up.json"
     dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_ul_test.json"
     flat: yes
+  delegate_to: "{{ groups['core_node'][0] }}"
+  ignore_errors: true
   # Run this fetch via Faraday since the file is on the UE accessed via Faraday
   # Note: Ensure Faraday has connectivity to pull this, or use a ProxyJump if needed.
 
