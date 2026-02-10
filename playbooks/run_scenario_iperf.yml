@@ -29,32 +29,48 @@
     - role: scenarios/iperf/ue-to-core_node
       when: rru != "rfsim"
 
-- name: "📊 FINAL SUMMARY (Server Side)"
+- name: "📊 FINAL SUMMARY (Server Side) - last 5 minutes"
   hosts: core_node
   gather_facts: false
+  vars:
+    # Couleurs ANSI par UE (ports)
+    ue_colors:
+      "5201": "\033[91m"  # rouge
+      "5202": "\033[92m"  # vert
+      "5203": "\033[94m"  # bleu
+      "reset": "\033[0m"
+
+    header_line: "============================================================"
+    separator_line: "------------------------------------------------------------"
+
   tasks:
-    - name: Find iperf log files on Core Node
+    - name: Find recent iperf log files (last 5 minutes)
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
-      delegate_to: "{{ inventory_hostname }}"
+        age: 5m
+        age_stamp: m
       register: iperf_files
 
-    - name: Read session logs from Core Node
+    - name: Read recent session logs
       command: "cat {{ item.path }}"
-      loop: "{{ iperf_files.files | sort(attribute='path') }}"
+      loop: "{{ iperf_files.files | sort(attribute='mtime', reverse=true) }}"
       register: log_contents
-      delegate_to: "{{ inventory_hostname }}"
-      when: iperf_files.matched > 0
       changed_when: false
 
-    - name: "📄 Display IPERF logs nicely"
+    - name: "🎨 Display fancy colored FINAL SUMMARY per UE"
       debug:
-        msg:
-          - "============================================================"
-          - "FILE: {{ item.item.path | basename }}"
-          - "============================================================"
-          - "{{ item.stdout_lines }}"
+        msg: |
+          {{ header_line }}
+          📝 FILE: {{ item.item.path | basename }}
+          {{ header_line }}
+          {% set port = (item.item.path | basename).split('_')[1] %}
+          {% set color = ue_colors[port]|default(ue_colors['reset']) %}
+          {{ color }}
+          {{ separator_line }}
+          {{ item.stdout }}
+          {{ separator_line }}
+          {{ ue_colors['reset'] }}
       loop: "{{ log_contents.results }}"
       loop_control:
         label: "{{ item.item.path | basename }}"
