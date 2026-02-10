@@ -13,7 +13,7 @@
   vars:
     ue_item: "{{ current_ue }}"
   when: check_ip_ready.stdout == "" or check_ip_ready.rc != 0
-  ignore_errors: "{{ ignore_errors }}"
+  ignore_errors: "{{ ignore_task_errors | default(false) }}"
 
 - name: Retrieve wwan0 IP for {{ current_ue }}
   shell: |
@@ -24,7 +24,7 @@
   retries: 5
   delay: 2
   changed_when: false
-  ignore_errors: "{{ ignore_errors }}"
+  ignore_errors: "{{ ignore_task_errors | default(false) }}"
 
 - name: Check route to {{ core_ip }} on {{ current_ue }}
   shell: ssh -o BatchMode=yes root@{{ current_ue }} "ip route get {{ core_ip }}"
