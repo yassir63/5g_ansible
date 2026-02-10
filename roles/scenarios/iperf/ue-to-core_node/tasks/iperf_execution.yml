@@ -34,10 +34,10 @@
   when: ue_ip_cmd.stdout is defined and ue_ip_cmd.stdout != ""
 
 # Stop the dedicated iperf3 server
-- name: Stop iperf3 server on port {{ iperf_port }}
-  shell: "pkill -f 'iperf3 -s -p {{ iperf_port }}'"
-  delegate_to: "{{ groups['core_node'][0] }}"
-  ignore_errors: true
+#- name: Stop iperf3 server on port {{ iperf_port }}
+#  shell: "pkill -f 'iperf3 -s -p {{ iperf_port }}'"
+#  delegate_to: "{{ groups['core_node'][0] }}"
+#  ignore_errors: true
 
 - name: Fetch iperf3 uplink JSON results for {{ current_ue }}
   fetch:
