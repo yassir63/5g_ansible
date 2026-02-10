@@ -46,33 +46,37 @@
     separator_line: "------------------------------------------------------------"
 
   tasks:
-    - name: Find recent iperf log files (last 5 minutes)
+    - name: Find iperf log files modified in the last 5 minutes
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
-        age: 300 # 300time
-        age_stamp: m
+        age: 300  # 5 minutes in seconds
+        age_stamp: mtime
       register: iperf_files
 
-    - name: Read recent session logs
-      command: "cat {{ item.path }}"
-      loop: "{{ iperf_files.files | sort(attribute='mtime', reverse=true) }}"
-      register: log_contents
-      changed_when: false
+    - name: Sort files by port number
+      set_fact:
+        sorted_iperf_files: >-
+          {{ iperf_files.files | sort(attribute='path') }}
 
-    - name: "🎨 Display fancy colored FINAL SUMMARY per UE"
-      debug:
-        msg: |
-          {{ header_line }}
-          📝 FILE: {{ item.item.path | basename }}
-          {{ header_line }}
-          {% set port = (item.item.path | basename).split('_')[1] %}
-          {% set color = ue_colors[port]|default(ue_colors['reset']) %}
-          {{ color }}
-          {{ separator_line }}
-          {{ item.stdout }}
-          {{ separator_line }}
-          {{ ue_colors['reset'] }}
-      loop: "{{ log_contents.results }}"
-      loop_control:
-        label: "{{ item.item.path | basename }}"
+    - name: Display each recent iperf log with color by port
+      block:
+        - name: Determine UE color based on port
+          set_fact:
+            ue_port: "{{ item.path | regex_search('iperf_(\\d+)_') | first }}"
+            ue_color: "{{ ue_colors[ue_port] | default(ue_colors['reset']) }}"
+
+        - name: Print header for UE log
+          debug:
+            msg: "{{ ue_color }}{{ header_line }}\nUE Port {{ ue_port }} log: {{ item.path }}\n{{ separator_line }}{{ ue_colors['reset'] }}"
+
+        - name: Display log content
+          command: "cat {{ item.path }}"
+          register: log_content
+          changed_when: false
+
+        - name: Show log in Ansible output
+          debug:
+            msg: "{{ ue_color }}{{ log_content.stdout }}{{ ue_colors['reset'] }}"
+      loop: "{{ sorted_iperf_files }}"
+

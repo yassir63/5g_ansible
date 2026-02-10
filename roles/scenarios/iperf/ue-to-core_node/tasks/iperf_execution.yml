@@ -1,11 +1,6 @@
 ---
-# Start a dedicated iperf3 server for this UE on a unique port
-- name: Start iperf3 server on port {{ iperf_port }}
-  shell: "iperf3 -s -p {{ iperf_port }} -D --logfile /root/IPERF/iperf_{{ current_ue }}.log"
-  delegate_to: "{{ groups['core_node'][0] }}"
-
 # Display iPerf parameters before launching the client
-- name: "Display iPerf parameters for {{ current_ue }}"
+- name: Display iPerf parameters for {{ current_ue }}
   debug:
     msg:
       - "--- IPERF3 CONFIGURATION ---"
@@ -14,44 +9,45 @@
       - "Binding to Local IP: {{ ue_ip_cmd.stdout | default('NOT FOUND') }}"
       - "Connecting to Core IP: {{ core_ip }}"
 
-# Run Uplink test
+# Run Uplink test on UE
 - name: Run uplink iperf from {{ current_ue }}
   shell: |
-    ssh -o BatchMode=yes root@{{ current_ue }} \
-    "iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json"
+    iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json
+  delegate_to: "{{ current_ue }}"
   ignore_errors: "{{ ignore_task_errors | default(false) }}"
   when: ue_ip_cmd.stdout is defined and ue_ip_cmd.stdout != ""
 
 - pause:
     seconds: "{{ sleep }}"
 
-# Run Downlink test (Reverse mode)
+# Run Downlink test on UE
 - name: Run downlink iperf from {{ current_ue }}
   shell: |
-    ssh -o BatchMode=yes root@{{ current_ue }} \
-    "iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json"
+    iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json
+  delegate_to: "{{ current_ue }}"
   ignore_errors: "{{ ignore_task_errors | default(false) }}"
   when: ue_ip_cmd.stdout is defined and ue_ip_cmd.stdout != ""
 
-# Stop the dedicated iperf3 server
-#- name: Stop iperf3 server on port {{ iperf_port }}
-#  shell: "pkill -f 'iperf3 -s -p {{ iperf_port }}'"
-#  delegate_to: "{{ groups['core_node'][0] }}"
-#  ignore_errors: true
-
-- name: Fetch iperf3 uplink JSON results for {{ current_ue }}
+# Fetch JSON results from UE
+- name: Fetch uplink JSON results for {{ current_ue }}
   fetch:
-    # Use the path defined in your "Run uplink iperf" task
     src: "/tmp/log_iperf_{{ current_ue }}_up.json"
     dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_ul_test.json"
     flat: yes
-  delegate_to: "{{ groups['core_node'][0] }}"
+  delegate_to: "{{ current_ue }}"
   ignore_errors: true
-  # Run this fetch via Faraday since the file is on the UE accessed via Faraday
-  # Note: Ensure Faraday has connectivity to pull this, or use a ProxyJump if needed.
 
+- name: Fetch downlink JSON results for {{ current_ue }}
+  fetch:
+    src: "/tmp/log_iperf_{{ current_ue }}_down.json"
+    dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_dl_test.json"
+    flat: yes
+  delegate_to: "{{ current_ue }}"
+  ignore_errors: true
+
+# Extract Uplink average throughput locally
 - name: Extract Uplink average throughput for {{ current_ue }}
-  local_action: 
+  local_action:
     module: shell
     cmd: "jq '.end.sum_sent.bits_per_second' {{ playbook_dir }}/results/{{ current_ue }}_log_ul_test.json"
   register: ul_raw_value
@@ -62,8 +58,3 @@
   debug:
     msg: "UE {{ current_ue }} Uplink Average Throughput: {{ (ul_raw_value.stdout | default(0) | float / 1000000) | round(2) }} Mbps"
   when: ul_raw_value.stdout is defined and ul_raw_value.stdout != ""
-
-# Final pause before next UE
-- name: Pause between UEs
-  pause:
-    seconds: "{{ sleep }}"
