@@ -12,7 +12,7 @@
 # Run Uplink test on UE
 - name: Run uplink iperf from {{ current_ue }}
   shell: |
-    iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json
+    iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -J --timeout 20 > /tmp/log_iperf_{{ current_ue }}_up.json
   delegate_to: "{{ current_ue }}"
   ignore_errors: "{{ ignore_task_errors | default(false) }}"
   when: ue_ip_cmd.stdout is defined and ue_ip_cmd.stdout != ""
@@ -23,7 +23,7 @@
 # Run Downlink test on UE
 - name: Run downlink iperf from {{ current_ue }}
   shell: |
-    iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json
+    iperf3 -p {{ iperf_port }} -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} -t {{ duration }} -R -J --timeout 20 > /tmp/log_iperf_{{ current_ue }}_down.json
   delegate_to: "{{ current_ue }}"
   ignore_errors: "{{ ignore_task_errors | default(false) }}"
   when: ue_ip_cmd.stdout is defined and ue_ip_cmd.stdout != ""
