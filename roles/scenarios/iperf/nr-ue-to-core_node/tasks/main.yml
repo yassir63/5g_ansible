@@ -57,6 +57,16 @@
     - item.stdout is defined
     - item.stdout | trim is search('^[0-9.]+$')
 
+- name: Show iperf uplink command
+  debug:
+    msg: >
+      kubectl exec -n {{ core_ns }} {{ item.pod }} --
+      iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }}
+  loop: "{{ valid_ues }}"
+  loop_control:
+    index_var: idx
+    label: "Uplink CMD: {{ item.pod }}"
+
 - name: Run iperf uplink
   shell: >
     kubectl exec -n {{ core_ns }} {{ item.pod }} --
@@ -70,6 +80,16 @@
 - name: Wait for sockets to clear
   pause:
     seconds: "{{ sleep }}"
+
+- name: Show iperf downlink command
+  debug:
+    msg: >
+      kubectl exec -n {{ core_ns }} {{ item.pod }} --
+      iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }} -R
+  loop: "{{ valid_ues }}"
+  loop_control:
+    index_var: idx
+    label: "Downlink CMD: {{ item.pod }}"
 
 - name: Run iperf downlink
   shell: >
