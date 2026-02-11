@@ -134,7 +134,106 @@ monitoring_enabled=false
 
 ```
 
-> **IMPORTANT:** Update the `ansible_user` under `[faraday]` to match your actual R2Lab slice name.
+**IMPORTANT:** Update the `ansible_user` under `[faraday]` to match your actual R2Lab slice name.
+
+
+Note that the framework now uses a 5G profile that defines all 5G core parameters that can be changed with the -p option of the *deploy.sh* deployment script. By default the script runs with -p default option that corresponds to the profile located at *group_vars/all/5g_profile_default.yaml*. This 5G profile is used by the framework to configure the different types of cores (Open5GS, OAI) and ran (srsRAN, OAI) used in the target scenario. 
+
+
+
+```
+5g_ansible $ cat group_vars/all/5g_profile_default.yaml
+
+
+plmn:
+  mcc: "001"
+  mnc: "01"
+  tac: "1"
+
+dnns:
+  - name: internet
+    pdu_type: IPV4
+  - name: streaming
+    pdu_type: IPV4
+  - name: ims
+    pdu_type: IPV4V6
+
+slices:
+  - name: slice1
+    dnn: internet
+    sst: "1"
+    sd: "EMPTY"
+    qos:
+      five_qi: "9"
+      arp:
+        priority_level: "8"
+        preempt_cap: "NOT_PREEMPT"
+        preempt_vuln: "PREEMPTABLE"
+      priority_level: "1"
+    bandwidth:
+      uplink: "20Mbps"
+      downlink: "40Mbps"
+    ip_prefix: "12.1.1"
+
+  - name: slice2
+    dnn: streaming
+    sst: "1"
+    sd: "100000"
+    qos:
+      five_qi: "5"
+      arp:
+        priority_level: "1"
+        preempt_cap: "NOT_PREEMPT"
+        preempt_vuln: "PREEMPTABLE"
+      priority_level: "1"
+    bandwidth:
+      uplink: "30Mbps"
+      downlink: "50Mbps"
+    ip_prefix: "14.1.1"
+
+security:
+  full_key: "fec86ba6eb707ed08905757b1bb44b8f"
+  opc: "C42449363BBAD02B66D16BC975D77CC1"
+
+ues:
+  qhat01:
+    imsi_suffix: "0000000006"
+    slice: slice1
+  qhat02:
+    imsi_suffix: "0000000007"
+    slice: slice2
+  qhat03:
+    imsi_suffix: "0000000008"
+    slice: slice1
+  qhat10:
+    imsi_suffix: "0000000009"
+    slice: slice1
+  qhat11:
+    imsi_suffix: "0000000010"
+    slice: slice1
+  qhat20:
+    imsi_suffix: "0000000011"
+    slice: slice1
+  qhat21:
+    imsi_suffix: "0000000012"
+    slice: slice1
+  qhat22:
+    imsi_suffix: "0000000013"
+    slice: slice1
+  qhat23:
+    imsi_suffix: "0000000014"
+    slice: slice1
+  UE18:
+    imsi_suffix: "0000001121"  # used for OAI RFSIM UE
+    slice: slice1
+  UE19:
+    imsi_suffix: "0000001122"  # used for OAI RFSIM UE2
+    slice: slice2
+  UE20:
+    imsi_suffix: "0000001123"  # used for OAI RFSIM UE3
+    slice: slice1
+```
+
 
 ---
 
