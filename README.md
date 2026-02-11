@@ -8,7 +8,7 @@ This repository provides a fully automated [Ansible](https://www.ansible.com/) f
 - A valid reservation for the machines `sopnode-f1`, `sopnode-f2`, and `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
 - A valid [R2Lab account and reservation](https://r2lab.inria.fr/tuto-010-registration.md).
 
-> First version of this script was developed by Ziyad Mabrouk as part of his internship at [Inria Sophia Antipolis](https://www.inria.fr/en/inria-centre-universite-cote-azur), under the supervision of: Thierry Turletti, Chadi Barakat, and Walid Dabbous.
+> First version of this script was developed in June 2025 by Ziyad Mabrouk as part of his internship at [Inria Sophia Antipolis](https://www.inria.fr/en/inria-centre-universite-cote-azur), under the supervision of: Thierry Turletti, Chadi Barakat, and Walid Dabbous.
 
 ---
 
@@ -40,30 +40,27 @@ After running `deploy.sh`, choose one of the available scenarios to run based on
 
 #### Command Overview
 ```bash
-./run_iperf_test.sh [OPTION] [--no-setup]
+./run_iperf.sh 
 ```
-- `-d`: Run the default iperf test
-- `-p`: Run the parallel iperf test
-- `-i`: Run the interference test
-- `--no-setup`: Optional. Skip the setup phase and only run the test playbook.
-Use this when repeating the same test without redoing the necessary setup.
+
+Use this script when repeating the same test without redoing the necessary setup.
 
 ### 1. Default Iperf Test
 ```bash
-./run_iperf_test.sh -d
+./run_iperf_test.sh 
 ```
 - Connect all UEs defined in `[qhats]` host group.
 - Each UE runs downlink then uplink iperf3 test *separately*.
 > **Note:** This is the baseline scenario used to for basic connectivity testing and benchmarking.
 
-### 2. Parallel Iperf Tests
+### 2. Parallel Iperf Tests (TBD)
 ```bash
 ./run_iperf_test.sh -p
 ```
 - Connect the *first 4* UEs.
 - Each UE runs bidirectional iperf3 test for 400 seconds, sequentially spaced by 100 seconds.
 
-### 3. Interference Test with Spectrum Visualization
+### 3. Interference Test with Spectrum Visualization (TBD)
 ```bash
 ./run_iperf_test.sh -i
 ```
@@ -72,32 +69,9 @@ Use this when repeating the same test without redoing the necessary setup.
 - Noise generation via second fit node (`interference_usrp=fit`) or specified USRP (`n300` or `n320`).
 - Noise generation is active 100 seconds after the UE performs bidirectional iperf3.
 
-#### Re-running a Test without Setup
-To skip the setup phase (e.g., when UEs and USRPs are already configured), use the `--no-setup` flag:
-```bash
-./run_iperf_test.sh -i --no-setup
-```
-This avoids reconnecting UEs and reconfiguring the noise generator, and only re-runs the test logic.
 
 ---
 
-## RF Simulation Mode
-
-To run the setup **without any R2Lab devices**, using RF Simulation only, run:
-
-```bash
-./deploy_rfsim.sh
-```
-
-No changes to `inventory/hosts.ini` are required. The playbook not use Faraday and UE configurations and instead it will install 3 NR-UEs as Kubernetes pods (`oai-nr-ue`, `oai-nr-ue2`, `oai-nr-ue3`). Each uses the same IMSI as qhat01, qhat02, and qhat03 respectively.
-
-Afer that, to run the RFSIM iperf test:
-```bash
-./run_rfsim_iperf_test.sh
-```
-This will run uplink, then downlink iperf test for slice 1 (`oai-nr-ue`) and slice 2 (`oai-nr-ue2`) separately.
-
----
 
 ## Inventory Configuration
 
@@ -112,52 +86,59 @@ The deployment is driven by `inventory/hosts.ini`, where you define:
 ### Example Snippet:
 
 ```ini
-# SLICES Webshell
 [webshell]
 localhost ansible_connection=local
 
-# SLICES Deployment Nodes
 [core_node]
-# Acts as Kubernetes master + Open5GS Core node
-sopnode-f3 ansible_user=root nic_interface=ens15f1 ip=172.28.2.95 storage=sdb1
+sopnode-w3 ansible_user=root nic_interface=enp59s0f1np1 ip=172.28.2.71 storage=sda1
 
 [ran_node]
-# Hosts OAI gNB (sopnode-w3 is not supported for this role in the case of AW2S RAN)
-sopnode-f2 ansible_user=root nic_interface=ens2f1 ip=172.28.2.77 storage=sda1
+sopnode-f3 ansible_user=root nic_interface=ens15f1 ip=172.28.2.95 storage=sdb2 boot_mode=live
 
 [monitor_node]
-# Monarch monitoring stack + data persistance
-sopnode-f1 ansible_user=root nic_interface=ens2f1 ip=172.28.2.76 storage=sda1
 
-# R2Lab Section
-[faraday]
-faraday.inria.fr ansible_user=inria_ubinet01 rru=jaguar interference_usrp=n320 freq=3411.22M g=110 s=20M conf=gnb.sa.band78.51prb.aw2s.ddsuu.20MHz.conf
+#[fit_nodes]
+#fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_sopnode@faraday.inria.fr' fit_number=2 fit_usrp=b210
 
-[qhats]
-qhat01 ansible_host=qhat01 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
-qhat02 ansible_host=qhat02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=streaming upf_ip=10.42.0.1
-qhat03 ansible_host=qhat03 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=internet upf_ip=10.41.0.1
-qhat11 ansible_host=qhat11 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' mode=mbim dnn=streaming upf_ip=10.42.0.1
-
-[fit_nodes]
-fit02 ansible_host=fit02 ansible_user=root ansible_ssh_common_args='-o ProxyJump=inria_ubinet01@faraday.inria.fr' fit_number=2 fit_usrp=b210
-
-# Group aliases
 [sopnodes:children]
 core_node
 ran_node
-monitor_node
 
 [k8s_workers:children]
 ran_node
-monitor_node
+
+[all:vars]
+# ---- CORE / RAN type ----
+core="open5gs"
+ran="oai"
+
+# ---- Node aliases ----
+core_node_name="sopnode-w3"
+ran_node_name="sopnode-f3"
+faraday_node_name="faraday.inria.fr"
+
+# ---- RRU information ----
+rru="rfsim"
+
+# ---- RRU families ----
+fhi72=false
+aw2s=false
+
+# ---- hosts variants for RAN ----
+f3_ran=true
+
+# ---- Other boolean parameters
+# bridge_enabled is true if OVS bridge required between core_node and ran_node
+bridge_enabled=true
+monitoring_enabled=false
+
 ```
 
 > **IMPORTANT:** Update the `ansible_user` under `[faraday]` to match your actual R2Lab slice name.
 
 ---
 
-## Monitoring Dashboard Access
+## Monitoring Dashboard Access [TBD]
 
 After deployment, instructions will be printed to your terminal with the SSH command required to access the **Monarch monitoring dashboard**.
 
@@ -169,10 +150,8 @@ After deployment, instructions will be printed to your terminal with the SSH com
 ## Customization Tips
 
 - You may assign any node for any role (core, ran, monitor) **except** that AW2S RAN can only be deployed on `sopnode-f1`, `sopnode-f2` or `sopnode-f3`.
-- You can run everything on a single node (not recommended for performance).
 - The UPF and DNN of each UE are defined in [this configuration of the Open5gs core](https://github.com/Ziyad-Mabrouk/open5gs-k8s/blob/main/mongo-tools/generate-data.py) and should not be changed.
 - Supported RRUs are: `n300`, `n320`, `jaguar` and `panther`.
-- The specific gNB configuration file is mandatory and must be specified via the `conf` variable in the `hosts.ini` file (under the `[faraday]` group). Only config files available in the [`ran-config/conf/`](https://github.com/Ziyad-Mabrouk/oai5g-rru/tree/gen-cn2/ran-config/conf) directory of the `oai5g-rru` repository are supported.
 - The entire `[fit_nodes]` group, as well as the frequency, gain (g) and sample rate / bandwidth covered by the noise generator (s) specified in `[faraday]`, are only relevant to the interference test scenario and are not needed otherwise.
 - For the interference scenario, the first fist node (`groups[fit_nodes][0]`) is used for spectrum visualization. The USRP used for noise generation (`interference_usrp`) can be `=fit`(meaning the second fit node's USRP will be used as noise generator), or `=n300` / `=n320`).
 
