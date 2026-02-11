@@ -104,14 +104,16 @@
     - name: Run interference role if USRP type is compatible
       delegate_to: "{{ interference_host }}"
       become: true
-      include_role:
-        name: scenarios/interference/run
-      vars:
-        node: "{{ hostvars[interference_host].interference_usrp | default('n300') }}"
-        time: 100
-      when: 
-        - hostvars[interference_host].interference_usrp is defined
-        - hostvars[interference_host].interference_usrp in ['n300', 'n320']
+      block:
+        - name: Include interference role
+          include_role:
+            name: scenarios/interference/run
+          vars:
+            node: "{{ hostvars[interference_host].interference_usrp | default('n300') }}"
+            time: 100
+          when: 
+            - hostvars[interference_host].interference_usrp is defined
+            - hostvars[interference_host].interference_usrp in ['n300', 'n320']
 
     - name: Wait for iperf job to finish
       async_status:
@@ -153,6 +155,4 @@
           ============================================================
           {{ log.stdout }}
           {% endfor %}
-          {% else %}
-          No logs were found.
           {% endif %}
