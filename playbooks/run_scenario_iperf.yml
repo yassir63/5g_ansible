@@ -36,15 +36,11 @@
   become: true
   gather_facts: false
   vars:
-    # Couleurs ANSI par UE (ports)
     ue_colors:
       "5201": "\033[91m"  # rouge
       "5202": "\033[92m"  # vert
       "5203": "\033[94m"  # bleu
       "reset": "\033[0m"
-
-    header_line: "============================================================"
-    separator_line: "------------------------------------------------------------"
 
   tasks:
     - name: Find recent iperf log files (last 5 minutes)
@@ -64,13 +60,14 @@
 
     - name: Display each recent iperf log with color by port
       vars:
-        current_port: "{{ item.item.path | regex_search('520[0-9]') }}"
+        # On extrait le port du chemin du fichier
+        port: "{{ item.item.path | regex_search('520[0-9]') }}"
       debug:
         msg: |
-          {{ ue_colors[current_port | default('reset')] -}}
+          {{ ue_colors[port] | default(ue_colors.reset) -}}
           {{ item.content | b64decode }}
           {{- ue_colors.reset }}
       loop: "{{ log_contents.results | default([]) }}"
       loop_control:
-        label: "{{ item.item.path | default('no_file') }}"
+        label: "{{ item.item.path }}"
 
