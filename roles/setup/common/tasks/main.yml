@@ -67,11 +67,12 @@
   become: true
 
 # ptp on ran-node will use Etc/UTC time zone, core-node must do the same
-- name: Set time zone to Etc/UTC
-  command: timedatectl set-timezone Etc/UTC
+- name: Set time zone to Europe/Paris
+  command: timedatectl set-timezone Europe/Paris
+  become: true
   changed_when: true
   register: timezone_result
-
+  
 - name: Verify time zone setting
   command: timedatectl
   register: timedatectl_output
