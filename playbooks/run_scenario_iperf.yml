@@ -33,6 +33,7 @@
 
 - name: "📊 FINAL SUMMARY (Server Side) - last 5 minutes"
   hosts: core_node
+  become: true
   gather_facts: false
   vars:
     # Couleurs ANSI par UE (ports)
@@ -57,20 +58,20 @@
     - name: Read each recent iperf log file
       slurp:
         src: "{{ item.path }}"
-      loop: "{{ iperf_files.files | sort(attribute='mtime', reverse=true) }}"
+      loop: "{{ iperf_files.files | default([]) | sort(attribute='mtime', reverse=true) }}"
       register: log_contents
       changed_when: false
 
     - name: Display each recent iperf log with color by port
+      vars:
+        current_port: "{{ item.item.path | regex_search('520[0-9]') }}"
       debug:
         msg: >-
           {{
-            ue_colors[
-              (item.item.path | regex_search('520[0-9]', '\\0') | default('reset'))
-            ]
+            ue_colors[current_port | default('reset')]
             + (item.content | b64decode)
             + ue_colors.reset
           }}
-      loop: "{{ log_contents.results }}"
+      loop: "{{ log_contents.results | default([]) }}"
       loop_control:
-        label: "{{ item.item.path }}"
+        label: "{{ item.item.path | default('no_file') }}"
