@@ -82,7 +82,6 @@
       vars:
         nb_ues: "1"
       delegate_to: "{{ groups['core_node'][0] }}"
-      become: true
 
     # --- PERFORMANCE TEST AND INTERFERENCE ---
     - name: Start bidirectional iperf3 on first UE in background
