@@ -50,25 +50,55 @@
     python3 - <<'EOF'
     import yaml, os
     cfg = "/var/lib/kubelet/config.yaml"
+    
+    # 1. Base CPU Tuning Patch
     patch = {
-      "cgroupDriver": "systemd",
-      "cpuManagerPolicy": "static",
-      "cpuManagerPolicyOptions": {"full-pcpus-only": "true"},
-      "reservedSystemCPUs": "0-15",
-      "failSwapOn": False,
-      "featureGates": {
-        "CPUManager": True,
-        "CPUManagerPolicyOptions": True
-      }
+        "cgroupDriver": "systemd",
+        "cpuManagerPolicy": "static",
+        "cpuManagerPolicyOptions": {"full-pcpus-only": "true"},
+        "reservedSystemCPUs": "0-15",
+        "failSwapOn": False,
+        "featureGates": {
+            "CPUManager": True,
+            "CPUManagerPolicyOptions": True
+        }
     }
-    if not os.path.exists(cfg): exit(0)
-    with open(cfg) as f: data = yaml.safe_load(f) or {}
+
+    # 2. Add Storage settings if RAN and CORE are on the same node (passed via Jinja2)
+    # This prevents DiskPressure on Live Ubuntu images
+    is_shared_node = {{ True if (ran_node_name == core_node_name) else False }}
+    
+    if is_shared_node:
+        patch["rootDir"] = "/var/lib/containerd"
+        patch["evictionHard"] = {
+            "nodefs.available": "2%",
+            "imagefs.available": "2%"
+        }
+        patch["evictionMinimumReclaim"] = {
+            "nodefs.available": "500Mi"
+        }
+
+    if not os.path.exists(cfg):
+        print("ERROR: Kubelet config not found")
+        exit(1)
+
+    with open(cfg) as f: 
+        data = yaml.safe_load(f) or {}
+
+    # 3. Merge featureGates separately to avoid overwriting existing ones
     if "featureGates" in patch:
         data.setdefault("featureGates", {}).update(patch["featureGates"])
-    for k,v in patch.items():
-        if k != "featureGates": data[k] = v
-    with open(cfg+".tmp","w") as f: yaml.safe_dump(data,f,default_flow_style=False,sort_keys=False)
-    os.replace(cfg+".tmp", cfg)
+    
+    # 4. Merge other keys
+    for k, v in patch.items():
+        if k != "featureGates":
+            data[k] = v
+
+    # 5. Atomic write to avoid corrupted config
+    with open(cfg + ".tmp", "w") as f:
+        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+    
+    os.replace(cfg + ".tmp", cfg)
     print("APPLIED")
     EOF
   register: merge_result
