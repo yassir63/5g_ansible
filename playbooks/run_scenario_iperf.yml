@@ -31,42 +31,52 @@
     - role: scenarios/iperf/ue-to-core_node
       when: rru != "rfsim"
 
-- name: "📊 FINAL SUMMARY (Server Side) - last 5 minutes"
+- name: "📊 FINAL SUMMARY (Server Side)"
   hosts: core_node
   become: true
   gather_facts: false
-  vars:
-    ue_colors:
-      "5201": "\033[91m"  # rouge
-      "5202": "\033[92m"  # vert
-      "5203": "\033[94m"  # bleu
-      "reset": "\033[0m"
-
   tasks:
-    - name: Find recent iperf log files (last 5 minutes)
+    - name: Find recent iperf log files
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
         age: -300
-        age_stamp: mtime
       register: iperf_files
 
-    - name: Read each recent iperf log file
+    - name: Read logs
       slurp:
         src: "{{ item.path }}"
       loop: "{{ iperf_files.files | default([]) | sort(attribute='mtime', reverse=true) }}"
       register: log_contents
-      changed_when: false
 
-    - name: Display each recent iperf log with color by port
+    - name: 🚀 BERSERK DISPLAY (Direct Terminal Output)
+      delegate_to: localhost
+      become: false
+      run_once: true
+      python_script:
+        content: |
+          import sys
+          colors = {
+              "5201": "\033[91m",
+              "5202": "\033[92m",
+              "5203": "\033[94m",
+              "reset": "\033[0m"
+          }
+          
+          results = {{ log_contents.results | to_json }}
+          
+          for res in results:
+              path = res['item']['path']
+              import base64
+              raw_content = base64.b64decode(res['content']).decode('utf-8', errors='ignore').replace('\x00', '')
+              
+              port = "5201" if "5201" in path else "5202" if "5202" in path else "5203" if "5203" in path else "reset"
+              color = colors.get(port, colors["reset"])
+              
+              print(f"\n{color}--- FILE: {path} ---")
+              print(raw_content)
+              print(f"{colors['reset']}-----------------------------------------------------------")
       vars:
-        port: "{{ item.item.path | regex_search('520[0-9]') }}"
-      debug:
-        # On utilise le filtre 'pause' ou on passe par une variable 
-        # pour forcer l'affichage brut
-        msg: |
-          {{ ue_colors[port] | default('') }}{{ item.content | b64decode }}{{ ue_colors.reset }}
-      loop: "{{ log_contents.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.path }}"
+
+        results_data: "{{ log_contents.results }}"
 
