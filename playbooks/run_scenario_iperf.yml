@@ -60,13 +60,12 @@
 
     - name: Display each recent iperf log with color by port
       vars:
-        # On extrait le port du chemin du fichier
         port: "{{ item.item.path | regex_search('520[0-9]') }}"
       debug:
+        # On utilise le filtre 'pause' ou on passe par une variable 
+        # pour forcer l'affichage brut
         msg: |
-          {{ ue_colors[port] | default(ue_colors.reset) -}}
-          {{ item.content | b64decode }}
-          {{- ue_colors.reset }}
+          {{ ue_colors[port] | default('') }}{{ item.content | b64decode }}{{ ue_colors.reset }}
       loop: "{{ log_contents.results | default([]) }}"
       loop_control:
         label: "{{ item.item.path }}"
