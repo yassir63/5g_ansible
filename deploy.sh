@@ -361,10 +361,10 @@ optional_scenarios() {
 
 # ========== Optional Scenarios ==========
 # Available scenarios:
-# 1) Default Iperf Test without interference. Will run only on one UE, assumed to be already connected to the network (only if R2Lab platform is used, and at least one UE is selected).
+# 1) Iperf R2lab scenario without interference. Will run only on one UE, assumed to be already connected to the network (only if R2Lab platform is used, and at least one UE is selected).
 # 2) Parallel Iperf Test without interference. Will run one the first 4 UEs, assumed to be already connected to the network (only if R2Lab platform is used, and at least 4 UEs are selected).
-# 3) RFSIM Iperf Test. Will run on 2 OAI-NR UEs simulated on RFSIM (only if RFSIM platform is used and RAN is OAI).
-# 4) Interference Test. Will run only on one UE, assumed to be already connected to the network (only if R2Lab platform is used, and at least one UE is selected).
+# 3) Iperf RFSIM scenario without interference. Will run on 2 OAI-NR UEs simulated on RFSIM (only if RFSIM platform is used and RAN is OAI).
+# 4) Iperf R2lab scenario with interference. Will run only on one UE, assumed to be already connected to the network (only if R2Lab platform is used, and at least one UE is selected).
 
 # Based on the selected variables, ask the user if they want to run one of the optional scenarios after deployment. (Only one scenario can be selected).
 
@@ -377,16 +377,16 @@ if [[ "$scenario_choice" =~ ^[Yy]$ ]]; then
   echo "Select the scenario to run:"
   options=()
   if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 1 ]]; then
-    options+=("Iperf Test (without interference)")
+    options+=("Iperf R2lab scenario without interference")
   fi
 #  if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 4 ]]; then
 #    options+=("Parallel Iperf Test (without interference)")
 #  fi
   if [[ "$platform" == "rfsim" && "$ran" == "oai" ]]; then
-    options+=("RFSIM Iperf Test")
+    options+=("Iperf RFSIM scenario without interference")
   fi
   if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 1 ]]; then
-    options+=("Interference Test")
+    options+=("Iperf R2lab scenario with interference")
   fi
 
   for i in "${!options[@]}"; do
@@ -409,7 +409,7 @@ fi
 # For the normal iperf tests without interference, we do not need any additional user inputs, since the UEs are assumed to be already connected to the network after deployment.
 # We sill use the run_iperf_test.sh script to run the selected iperf test scenario after deployment.
 run_iperf_test=false
-if [[ "$run_scenario" == true && ( "$scenario" == "Default Iperf Test (without interference)" || "$scenario" == "Parallel Iperf Test (without interference)" || "$scenario" == "RFSIM Iperf Test" ) ]]; then
+if [[ "$run_scenario" == true && ( "$scenario" == "Iperf R2lab scenario without interference" || "$scenario" == "Parallel Iperf Test (without interference)" || "$scenario" == "Iperf RFSIM scenario without interference" ) ]]; then
   run_iperf_test=true
 fi
 }
@@ -532,13 +532,13 @@ if [[ "$run_iperf_test" == true ]]; then
   echo "Iperf Test: enabled"
   echo "  Scenario: $scenario"
   case "$scenario" in
-    "Default Iperf Test (without interference)")
+    "Iperf R2lab scenario without interference")
       echo "Will run iperf on ${R2LAB_UES[0]} for 5 minutes in downlink then uplink (10 minutes in total for the scenario)"
       ;;
     "Parallel Iperf Test (without interference)")
       echo "Will run a bidirectional iperf on ${R2LAB_UES[0]}, ${R2LAB_UES[1]}, ${R2LAB_UES[2]} and ${R2LAB_UES[3]} respectively for 5 minutes each, with an in-between wait time of 100 seconds (10 minutes in total for the scenario)"
       ;;
-    "RFSIM Iperf Test")
+    "Iperf RFSIM scenario without interference")
       echo "Will run iperf on OAI-NR-UE1 then OAI-NR-UE2 for 200 seconds each with an in-between wait time of 100 seconds in downlink then uplink (10 minutes in total for the scenario)"
       ;;
   esac
@@ -978,14 +978,14 @@ run_scenario() {
     if [[ "$run_scenario" == true ]]; then
 	echo "Running $scenario"
 	case "$scenario" in
-	    "Iperf Test (without interference)")
+	    "Iperf R2lab scenario without interference"|"Iperf RFSIM scenario without interference")
 		 run_cmd ./run_scenario.sh -d --inventory="$INVENTORY" \
 			 "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_iperf.txt
 		 ;;
 #	    "Parallel Iperf Test (without interference)")
 #		./run_iperf_test.sh -p
 #		;;
-	    "Interference Test")
+	    "Iperf R2lab scenario with interference")
 		run_cmd ./run_scenario.sh -i --inventory="$INVENTORY" \
 			 "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_interference.txt
 		;;
