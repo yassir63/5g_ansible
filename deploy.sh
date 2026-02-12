@@ -423,7 +423,7 @@ interference_setup() {
 # ========== Interference Test Setup ==========
 run_interference_test=false
 # If the user selected the Interference Test scenario, ask for additional parameters
-if [[ "$run_scenario" == true && "$scenario" == "Interference Test" ]]; then
+if [[ "$run_scenario" == true && "$scenario" == "Iperf R2lab scenario with interference" ]]; then
   run_interference_test=true
   USRPs=("n300" "n320" "b210" "b205mini")
   # Remove the RU used for RAN from the list of available USRPs for interference if it is a USRP
