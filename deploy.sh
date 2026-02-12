@@ -979,14 +979,14 @@ run_scenario() {
 	echo "Running $scenario"
 	case "$scenario" in
 	    "Iperf R2lab scenario without interference"|"Iperf RFSIM scenario without interference")
-		 run_cmd ./run_scenario.sh -d --inventory="$INVENTORY" \
+		 run_cmd ./run_scenario.sh -d --inventory="${NAME_INVENTORY}" \
 			 "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_iperf.txt
 		 ;;
 #	    "Parallel Iperf Test (without interference)")
 #		./run_iperf_test.sh -p
 #		;;
 	    "Iperf R2lab scenario with interference")
-		run_cmd ./run_scenario.sh -i --inventory="$INVENTORY" \
+		run_cmd ./run_scenario.sh -i --inventory="${NAME_INVENTORY}" \
 			 "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_interference.txt
 		;;
 	    *)
