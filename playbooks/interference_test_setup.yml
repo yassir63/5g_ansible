@@ -8,7 +8,7 @@
   roles:
     - role: scenarios/interference/setup
 
-- name: Setup first fit node for spectre visualization (uhd_fft)
+- name: Setup first fit node for spectrum visualization (uhd_fft)
   hosts: faraday
   vars:
     fit_node: "{{ groups['fit_nodes'][0] }}"
