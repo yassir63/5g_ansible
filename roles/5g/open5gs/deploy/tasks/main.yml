@@ -199,6 +199,7 @@
   register: patch_nad
   failed_when: false
   changed_when: "'Skipping' not in patch_nad.stdout"
+  when: not (core_node_name == ran_node_name and not fhi72)
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
