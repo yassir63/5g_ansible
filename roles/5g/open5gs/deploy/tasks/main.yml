@@ -102,83 +102,50 @@
   changed_when: false
   failed_when: false
 
-- name: Create Linux bridge NADs for single-node core/ran
+- name: Install OVS CNI via Cluster Network Addons Operator (single-node)
   block:
-    - name: Apply single-node n2network
+    - name: Apply Cluster Network Addons Operator namespace
       ansible.builtin.shell: |
-        kubectl apply -f - <<EOF
-        apiVersion: k8s.cni.cncf.io/v1
-        kind: NetworkAttachmentDefinition
-        metadata:
-          name: n2network
-          namespace: "{{ open5gs_ns }}"
-        spec:
-          config: '{
-            "cniVersion": "0.3.1",
-            "type": "bridge",
-            "bridge": "br-n2",
-            "isDefaultGateway": true,
-            "ipam": {
-              "type": "host-local",
-              "subnet": "10.10.2.0/24",
-              "rangeStart": "10.10.2.100",
-              "rangeEnd": "10.10.2.200",
-              "routes": [{"dst": "0.0.0.0/0"}]
-            }
-          }'
-        EOF
-      become: yes
+        kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/namespace.yaml
+      args:
+        warn: false
 
-    - name: Apply single-node n3network
+    - name: Apply Cluster Network Addons CRDs
       ansible.builtin.shell: |
-        kubectl apply -f - <<EOF
-        apiVersion: k8s.cni.cncf.io/v1
-        kind: NetworkAttachmentDefinition
-        metadata:
-          name: n3network
-          namespace: "{{ open5gs_ns }}"
-        spec:
-          config: '{
-            "cniVersion": "0.3.1",
-            "type": "bridge",
-            "bridge": "br-n3",
-            "isDefaultGateway": true,
-            "ipam": {
-              "type": "host-local",
-              "subnet": "10.10.3.0/24",
-              "rangeStart": "10.10.3.100",
-              "rangeEnd": "10.10.3.200",
-              "routes": [{"dst": "0.0.0.0/0"}]
-            }
-          }'
-        EOF
-      become: yes
+        kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/network-addons-config.crd.yaml
+      args:
+        warn: false
 
-    - name: Apply single-node n4network
+    - name: Apply Cluster Network Addons Operator
       ansible.builtin.shell: |
-        kubectl apply -f - <<EOF
-        apiVersion: k8s.cni.cncf.io/v1
-        kind: NetworkAttachmentDefinition
-        metadata:
-          name: n4network
-          namespace: "{{ open5gs_ns }}"
-        spec:
-          config: '{
-            "cniVersion": "0.3.1",
-            "type": "bridge",
-            "bridge": "br-n4",
-            "isDefaultGateway": true,
-            "ipam": {
-              "type": "host-local",
-              "subnet": "10.10.4.0/24",
-              "rangeStart": "10.10.4.100",
-              "rangeEnd": "10.10.4.200",
-              "routes": [{"dst": "0.0.0.0/0"}]
-            }
-          }'
-        EOF
-      become: yes
-  when: not fhi72 and core_node_name == ran_node_name
+        kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/operator.yaml
+      args:
+        warn: false
+
+    - name: Create NetworkAddonsConfig for OVS
+      ansible.builtin.copy:
+        dest: /tmp/netaddonsconf.yaml
+        content: |
+          apiVersion: networkaddonsoperator.network.kubevirt.io/v1
+          kind: NetworkAddonsConfig
+          metadata:
+            name: cluster
+          spec:
+            ovs: {}
+
+    - name: Apply NetworkAddonsConfig
+      ansible.builtin.shell: |
+        kubectl apply -f /tmp/netaddonsconf.yaml
+      args:
+        warn: false
+
+    - name: Wait for NetworkAddonsConfig to become Available
+      ansible.builtin.shell: |
+        kubectl wait networkaddonsconfig cluster --for condition=Available --timeout=300s
+      args:
+        warn: false
+  when: core_node_name == ran_node_name and not fhi72
+  become: yes
 
 - name: Patch NADs to use unique interface names
   shell: |
@@ -199,7 +166,6 @@
   register: patch_nad
   failed_when: false
   changed_when: "'Skipping' not in patch_nad.stdout"
-  when: not (core_node_name == ran_node_name and not fhi72)
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
