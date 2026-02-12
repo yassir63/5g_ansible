@@ -975,6 +975,17 @@ deploy() {
 
 run_scenario() {
 
+    ANSIBLE_EXTRA_ARGS=()
+
+    # Main variable
+    ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
+
+    # Additional variables
+    for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
+	clean_ev=$(echo "$ev" | sed 's/^--//')
+	ANSIBLE_EXTRA_ARGS+=(-e "$clean_ev")
+    done
+
     if [[ "$run_scenario" == true ]]; then
 	echo "Running $scenario"
 	case "$scenario" in
