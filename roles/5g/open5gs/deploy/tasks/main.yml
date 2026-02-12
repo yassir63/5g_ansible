@@ -116,7 +116,6 @@
       ansible.builtin.shell: |
         kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/operator.yaml
 
-
     - name: Create NetworkAddonsConfig for OVS
       ansible.builtin.copy:
         dest: /tmp/netaddonsconf.yaml
@@ -127,7 +126,6 @@
             name: cluster
           spec:
             ovs: {}
-
     - name: Apply NetworkAddonsConfig
       ansible.builtin.shell: |
         kubectl apply -f /tmp/netaddonsconf.yaml
@@ -170,6 +168,14 @@
     msg: "NAD {{ item }} is missing in {{ open5gs_ns }}"
   when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
   loop: "{{ nad_list }}"
+
+- name: Single-node Open5GS: bring OVS bridges up
+  ansible.builtin.shell: |
+    ip link set dev n2br up
+    ip link set dev n3br up
+    ip link set dev n4br up
+  become: true
+  when: core_node_name == ran_node_name and not fhi72
 
 - name: Apply Open5GS NFs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
