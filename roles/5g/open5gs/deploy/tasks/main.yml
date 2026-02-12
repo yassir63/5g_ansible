@@ -134,7 +134,7 @@
       ansible.builtin.shell: |
         kubectl wait networkaddonsconfig cluster --for condition=Available --timeout=300s
 
-  when: core_node_name == ran_node_name and not fhi72
+  when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
   become: yes
 
 - name: Patch NADs to use unique interface names
@@ -169,13 +169,13 @@
   when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
   loop: "{{ nad_list }}"
 
-- name: Single-node Open5GS: bring OVS bridges up
+- name:  bring OVS bridges up if single-node Open5GS:
   ansible.builtin.shell: |
     ip link set dev n2br up
     ip link set dev n3br up
     ip link set dev n4br up
   become: true
-  when: core_node_name == ran_node_name and not fhi72
+  when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
 
 - name: Apply Open5GS NFs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
