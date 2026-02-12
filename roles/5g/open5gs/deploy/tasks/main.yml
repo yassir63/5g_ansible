@@ -107,20 +107,15 @@
     - name: Apply Cluster Network Addons Operator namespace
       ansible.builtin.shell: |
         kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/namespace.yaml
-      args:
-        warn: false
 
     - name: Apply Cluster Network Addons CRDs
       ansible.builtin.shell: |
         kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/network-addons-config.crd.yaml
-      args:
-        warn: false
 
     - name: Apply Cluster Network Addons Operator
       ansible.builtin.shell: |
         kubectl apply -f https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/operator.yaml
-      args:
-        warn: false
+
 
     - name: Create NetworkAddonsConfig for OVS
       ansible.builtin.copy:
@@ -136,14 +131,11 @@
     - name: Apply NetworkAddonsConfig
       ansible.builtin.shell: |
         kubectl apply -f /tmp/netaddonsconf.yaml
-      args:
-        warn: false
 
     - name: Wait for NetworkAddonsConfig to become Available
       ansible.builtin.shell: |
         kubectl wait networkaddonsconfig cluster --for condition=Available --timeout=300s
-      args:
-        warn: false
+
   when: core_node_name == ran_node_name and not fhi72
   become: yes
 
