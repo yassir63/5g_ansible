@@ -169,7 +169,7 @@
   when: item not in (nad_info.resources | map(attribute='metadata.name') | list)
   loop: "{{ nad_list }}"
 
-- name:  bring OVS bridges up if single-node Open5GS:
+- name: Bring OVS bridges up if single-node Open5GS
   ansible.builtin.shell: |
     ip link set dev n2br up
     ip link set dev n3br up
