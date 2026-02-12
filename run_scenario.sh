@@ -30,6 +30,14 @@ run_cmd() {
 
 usage() {
     echo "Usage: $0 [-d|-i] [--no-setup] [--inventory=name] [-e vars] [--dry_run]"
+    echo ""
+    echo "-d                       Deploy the default iperf scenario"
+    echo "-i                       Deploy the interference scenario"
+    echo "--no_setup               Do not run the setup, --use this option if R2lab devices already up and running"
+    echo "-e <vars>                Extra ansible vars, e.g., -e \"nb_ues=5\" -e \"duration=20\""
+    echo "--inventory <name>       Use ./inventory/<name>/hosts.ini inventory instead of the default one"
+    echo "--dry_run                Only print ansible commands"
+    echo "-h, --help               Show help"
 }
 
 # Proper argument parsing

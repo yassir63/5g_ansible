@@ -975,9 +975,26 @@ deploy() {
 
 run_scenario() {
 
-if [[ "$run_scenario" == true ]]; then
-    echo "Running $scenario"
-    dry_run run_scenario
+    if [[ "$run_scenario" == true ]]; then
+	echo "Running $scenario"
+	case "$scenario" in
+	    "Iperf Test (without interference)")
+		 run_cmd ./run_scenario.sh -d --inventory="$INVENTORY" \
+			 "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_iperf.txt
+		 ;;
+#	    "Parallel Iperf Test (without interference)")
+#		./run_iperf_test.sh -p
+#		;;
+	    "Interference Test")
+		run_cmd ./run_scenario.sh -i --inventory="$INVENTORY" \
+			 "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_interference.txt
+		;;
+	    *)
+		echo "❌ Unknown iperf test scenario: $scenario"
+		exit 1
+		;;
+	esac
+    fi
     echo ""
     echo "=========================================="
     echo "========== Scenario Completed =========="
