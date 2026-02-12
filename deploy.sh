@@ -973,39 +973,16 @@ deploy() {
 # SCENARIOS
 ############################
 
-run_scenarios() {
+run_scenario() {
 
 if [[ "$run_scenario" == true ]]; then
-  echo "Running $scenario"
-  case "$scenario" in
-      "Iperf Test (without interference)")
-	  ansible-playbook -i "$INVENTORY" \
-			   "${ANSIBLE_EXTRA_ARGS[@]}" \
-			   playbooks/run_scenario_iperf.yml 2>&1 | tee logs-scenario_iperf.txt
-	  ;;
-      "Parallel Iperf Test (without interference)")
-	  ./run_iperf_test.sh -p
-	  ;;
-      "RFSIM Iperf Test")
-	  ansible-playbook -i "$INVENTORY" \
-			   "${ANSIBLE_EXTRA_ARGS[@]}" \
-			   playbooks/run_scenario_iperf.yml 2>&1 | tee logs-scenario_iperf_rfsim.txt
-	  ;;
-      "Interference Test")
-	  ansible-playbook -i "$INVENTORY" \
-			   "${ANSIBLE_EXTRA_ARGS[@]}" \
-			   playbooks/run_scenario_interference.yml 2>&1 | tee logs-scenario_interference.txt
-	  ;;
-      *)
-	  echo "❌ Unknown iperf test scenario: $scenario"
-	  exit 1
-	  ;;
-  esac
-  echo ""
-  echo "=========================================="
-  echo "========== Scenario Completed =========="
-  echo "=========================================="
-  echo ""
+    echo "Running $scenario"
+    dry_run run_scenario
+    echo ""
+    echo "=========================================="
+    echo "========== Scenario Completed =========="
+    echo "=========================================="
+    echo ""
 fi
 
 }
@@ -1081,7 +1058,7 @@ generate_inventory
 reserve_nodes
 reserve_r2lab
 deploy
-run_scenarios
+run_scenario
 show_access_info
 
 echo "✅ All done!"
