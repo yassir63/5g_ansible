@@ -17,7 +17,7 @@ usage() {
   echo "-p, --profile5g <name>   Use group_vars/all/5g_profile_<name>.yaml specific 5G profile"
   echo "-e <vars>                Extra ansible vars, e.g.:"
   echo "     -e \"oai_gnb_mode=cudu\" -e \"no_boot=true\""
-  echo "--dry_run                Only print ansible commands"
+  echo "--dry-run                Only print ansible commands"
   echo "--no-reservation         Skip node/R2lab reservations"
   echo "-h, --help               Show help"
 }
@@ -73,7 +73,7 @@ parse_args() {
 	EXTRA_VARS_ARRAY+=("$1")
 	;;
       
-      --dry_run)
+      --dry-run)
 	DRY_RUN=true
 	;;
       

@@ -36,33 +36,43 @@ This will:
 ---
 
 ## Available Scenarios
-After running `deploy.sh`, choose one of the available scenarios to run based on your experiment setup.
+The `deploy.sh` can be used to configure and deploy a scenario (iperf or interference). If such a scenario option is selected, the `deploy.sh`  script will execute, once the 5G CORE+CN deployement is ready, another script `run_scenario.sh` that can also be run manually, provided that the inventory is already configured for the target scenario.
 
 #### Command Overview
+
 ```bash
-./run_iperf.sh 
+
+./run_scenario.sh -h
+Usage: ./run_scenario.sh [-d|-i] [--no-setup] [--inventory=name] [-e vars] [--dry-run]
+
+-d                       Deploy the default iperf scenario
+-i                       Deploy the interference scenario
+--no-setup               Do not run the setup, --use this option if R2lab devices already up and running
+-e <vars>                Extra ansible vars, e.g., -e "nb_ues=5" -e "duration=20"
+--inventory <name>       Use ./inventory/<name>/hosts.ini inventory instead of the default one
+--dry-run                Only print ansible commands
+-h, --help               Show help
+
 ```
 
 Use this script when repeating the same test without redoing the necessary setup.
 
-### 1. Default Iperf Test
+In the current version, two scenarios are available
+
+### 1. Default Iperf Scenario
+
 ```bash
-./run_iperf_test.sh 
+./run_scenario.sh [-d] [--no-setup]
 ```
 - Connect all UEs defined in `[qhats]` host group.
 - Each UE runs downlink then uplink iperf3 test *separately*.
 > **Note:** This is the baseline scenario used to for basic connectivity testing and benchmarking.
 
-### 2. Parallel Iperf Tests (TBD)
-```bash
-./run_iperf_test.sh -p
-```
-- Connect the *first 4* UEs.
-- Each UE runs bidirectional iperf3 test for 400 seconds, sequentially spaced by 100 seconds.
 
-### 3. Interference Test with Spectrum Visualization (TBD)
+### 2. Interference Scenario with Spectrum Visualization
+
 ```bash
-./run_iperf_test.sh -i
+./run_iperf_test.sh -i [--no-setup]
 ```
 - Connect the first UE.
 - Spectrum visualization using `uhd_fft` on the first fit node.
