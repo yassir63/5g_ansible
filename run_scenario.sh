@@ -82,7 +82,7 @@ echo "Using Inventory: $INVENTORY"
 echo "Using Profile: $PROFILE_5G"
 
 echo "Installing/Updating Ansible collections..."
-dry_run ansible-galaxy install -r collections/requirements.yml --ignore-errors
+run_cmd ansible-galaxy install -r collections/requirements.yml --ignore-errors
 
 vars="fiveg_profile=${PROFILE_5G}"
 
