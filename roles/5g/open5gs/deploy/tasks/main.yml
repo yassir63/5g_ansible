@@ -1,5 +1,5 @@
 ---
-- name: RESTART_OPEN5GS_DEPLOY
+- name: START_OPEN5GS_DEPLOY
   ansible.builtin.meta: noop
 
 - name: Reload and restart kubelet
@@ -175,7 +175,7 @@
                 "routes": [{"dst": "0.0.0.0/0"}]
               }
             }'
-  when: core_node_name == ran_node_name
+  when: not fhi72 and core_node_name == ran_node_name
 
 
 - name: Patch NADs to use unique interface names
