@@ -18,7 +18,7 @@
     # Retrieve the IP of the first host in the core_node group
     core_ip: "{{ hostvars[groups['core_node'][0]]['ip'] | default(hostvars[groups['core_node'][0]]['ansible_host']) }}"
     # Identify the node that actually handles the interference USRP
-    interference_host: "{{ groups['ran_nodes'][0] }}"
+    interference_host: "{{ groups['ran_node'][0] }}"
 
   tasks:
     # --- UE INFO PREPARATION ---
