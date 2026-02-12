@@ -56,7 +56,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -e|--extra-vars)
-            EXTRA_VARS_ARRAY+=("$2")
+            EXTRA_VARS_ARRAY+=("-e" "$2")
             shift 2
             ;;
         -d)
@@ -92,10 +92,10 @@ echo "Using Profile: $PROFILE_5G"
 echo "Installing/Updating Ansible collections..."
 run_cmd ansible-galaxy install -r collections/requirements.yml --ignore-errors
 
-vars="fiveg_profile=${PROFILE_5G}"
+ANSIBLE_EXTRA_ARGS=(-e "fiveg_profile=${PROFILE_5G}")
 
 for ev in "${EXTRA_VARS_ARRAY[@]}"; do
-    vars="$vars ${ev#--}"
+    ANSIBLE_EXTRA_ARGS+=("$ev")
 done
 
 ANSIBLE_EXTRA_ARGS=(-e "$vars")
