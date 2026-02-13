@@ -12,7 +12,7 @@
   delegate_to: faraday.inria.fr
 
 - name: Launch VNC server on {{ fit_node }}
-  shell: ssh root@{{ fit_node }} 'vncserver'
+  shell: ssh root@{{ fit_node }} 'tigervncserver -xstartup /usr/bin/xterm'
   delegate_to: faraday.inria.fr
 
 - name: Launch uhd_fft inside xterm on {{ fit_node }}
