@@ -171,6 +171,6 @@
           {% endfor %}
           {% endif %}
 
-     - name: "📌 NOTE: Location of all iperf results"
+    - name: "📌 NOTE: Location of all iperf results"
       debug:
         msg: "NOTA: All iperfs results are stored in {{ inventory_hostname }} server on /root/IPERF directory"
