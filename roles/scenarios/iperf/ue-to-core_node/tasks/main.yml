@@ -15,4 +15,3 @@
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     # Each UE gets a unique port: 5201, 5202, 5203...
     iperf_port: "{{ 5201 + ue_index }}"
-    upf_ip: "{{ current_ue.upf_ip }}"
