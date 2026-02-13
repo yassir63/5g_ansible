@@ -1,13 +1,12 @@
 ---
-# Display iPerf parameters before launching the client
-- name: Display iPerf parameters for {{ current_ue }}
+- name: Debug IPERF UL parameters for {{ current_ue }}
   debug:
-    msg:
-      - "--- IPERF3 CONFIGURATION ---"
-      - "UE Host: {{ current_ue }}"
-      - "Port: {{ iperf_port }}"
-      - "Binding to Local IP: {{ ue_ip_cmd.stdout | default('NOT FOUND') }}"
-      - "Connecting to Core IP: {{ core_ip }}"
+    msg: |
+      UE: {{ current_ue }}
+      Bind IP: {{ ue_ip_cmd.stdout }}
+      Server IP: {{ core_ip }}
+      Port: {{ iperf_port }}
+      Duration: {{ duration }}s
 
 # Run Uplink test on UE
 - name: Run uplink iperf from {{ current_ue }} via faraday
@@ -21,7 +20,7 @@
 - pause:
     seconds: "{{ sleep }}"
 
-- name: Debug: IPERF DL parameters for {{ current_ue }}
+- name: Debug IPERF DL parameters for {{ current_ue }}
   debug:
     msg: |
       UE: {{ current_ue }}
