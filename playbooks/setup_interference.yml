@@ -38,4 +38,4 @@
   roles:
     - role: r2lab/ue/connect
       vars:
-        ue: "{{ groups['qhats'][0] }}"
+        ue_item: "{{ groups['qhats'][0] }}"
