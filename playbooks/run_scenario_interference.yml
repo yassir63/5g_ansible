@@ -9,37 +9,39 @@
     - name: Normalize booleans at playbook start
       import_tasks: ../tasks/reload_booleans.yml
 
+
 - name: Main Test Sequence on Faraday
   hosts: faraday
   gather_facts: false
+
   vars:
     fiveg_profile: default
     duration: 12
-    # Retrieve the IP of the first host in the core_node group
     core_ip: "{{ hostvars[groups['core_node'][0]]['ip'] | default(hostvars[groups['core_node'][0]]['ansible_host']) }}"
 
   tasks:
-    # --- UE INFO PREPARATION ---
-    - name: Initialize UE-related variables
+
+    # ---------------- UE PREP ----------------
+    - name: Initialize UE variable
       set_fact:
         current_ue: "{{ groups['qhats'][0] }}"
 
     - name: Load active 5G profile
-      ansible.builtin.include_vars:
+      include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile }}.yaml"
         name: fiveg
 
-    - name: Validate if UE exists in 5G profile
+    - name: Validate UE exists in profile
       fail:
         msg: "UE {{ current_ue }} not found in 5G profile"
       when: current_ue not in fiveg.ues
 
-    - name: Get slice name associated with UE
+    - name: Get UE slice
       set_fact:
         ue_slice: "{{ fiveg.ues[current_ue].slice }}"
 
-    # --- CONNECTION AND ROUTING (Executed via Faraday) ---
-    - name: Check if {{ current_ue }} already has a wwan0 IP
+    # ---------------- CONNECT UE ----------------
+    - name: Check if UE already has IP
       shell: |
         ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ current_ue }} \
         "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
@@ -47,16 +49,16 @@
       changed_when: false
       ignore_errors: true
 
-    - name: Connect UE {{ current_ue }} to 5G network if needed
+    - name: Connect UE if needed
       include_role:
         name: r2lab/ue/connect
       vars:
         ue_item: "{{ current_ue }}"
       when: check_ip_ready.stdout == "" or check_ip_ready.rc != 0
 
-    - name: Retrieve wwan0 IP for {{ current_ue }}
+    - name: Retrieve UE IP
       shell: |
-        ssh -o ConnectTimeout=5 root@{{ current_ue }} \
+        ssh root@{{ current_ue }} \
         "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
       register: ue_ip_cmd
       until: ue_ip_cmd.stdout != ""
@@ -64,30 +66,29 @@
       delay: 2
       changed_when: false
 
-    - name: Check route to {{ core_ip }} on {{ current_ue }}
-      shell: ssh -o BatchMode=yes root@{{ current_ue }} "ip route get {{ core_ip }}"
+    - name: Ensure route to core exists
+      shell: ssh root@{{ current_ue }} "ip route get {{ core_ip }}"
       register: route_check
       changed_when: false
       ignore_errors: true
 
-    - name: Add route to {{ core_ip }} via wwan0 if missing
-      shell: ssh -o BatchMode=yes root@{{ current_ue }} "ip route add {{ core_ip }} dev wwan0"
+    - name: Add route if missing
+      shell: ssh root@{{ current_ue }} "ip route add {{ core_ip }} dev wwan0"
       when: '"dev wwan0" not in route_check.stdout'
       ignore_errors: true
 
-    # --- IPERF SERVER (Delegated to Core Node) ---
-    - name: Run iperf servers on Core node
+    # ---------------- IPERF SERVER ----------------
+    - name: Run iperf server on core
       delegate_to: "{{ groups['core_node'][0] }}"
       become: true
       block:
-        - name: Include iperf_server role
-          include_role:
+        - include_role:
             name: scenarios/iperf_server
           vars:
             nb_ues: "1"
 
-    # --- PERFORMANCE TEST AND INTERFERENCE ---
-    - name: Start bidirectional iperf3 on first UE in background for 5mn
+    # ---------------- START IPERF ----------------
+    - name: Start iperf
       shell: >
         ssh root@{{ current_ue }}
         'iperf3 -B {{ ue_ip_cmd.stdout }} -c {{ core_ip }} --bidir -t 300 -J > /tmp/iperf_test.json'
@@ -95,40 +96,45 @@
       poll: 0
       register: iperf_job
 
-    - name: Wait 100 seconds before running noise generator
+    - name: Wait before interference
       pause:
         seconds: 100
 
-    - name: Initialize interference node based on USRP type
-      set_fact:
-        interference_node: >-
-          {% if hostvars['faraday'].interference_usrp == 'fit' %}
-            {{ groups['fit_nodes'][0] }}
-          {% elif hostvars['faraday'].interference_usrp in ['n300', 'n320'] %}
-            {{ hostvars['faraday'].interference_usrp }}
-          {% else %}
-            ""
-          {% endif %}
+    # =========================================================
+    #  INTERFERENCE NODE INITIALIZATION (FIXED VERSION)
+    # =========================================================
+
+    - set_fact:
+        faraday_host: "{{ groups['faraday'][0] }}"
+
+    - set_fact:
+        interference_node: "{{ groups['fit_nodes'][0] }}"
+      when: hostvars[faraday_host].interference_usrp == "fit"
+
+    - set_fact:
+        interference_node: "{{ hostvars[faraday_host].interference_usrp }}"
+      when: hostvars[faraday_host].interference_usrp in ["n300","n320"]
 
     - name: Debug chosen interference node
       debug:
-        msg: "Interference node = {{ interference_node }} (type={{ hostvars['faraday'].interference_usrp }})"
+        msg: "Interference node = {{ interference_node }} (type={{ hostvars[faraday_host].interference_usrp }})"
 
-    - name: Run noise generator (fit or N3XX)
+    # ---------------- RUN INTERFERENCE ----------------
+    - name: Run noise generator
       become: true
       vars:
-        usrp_type: "{{ hostvars['faraday'].interference_usrp | default('') }}"
+        usrp_type: "{{ hostvars[faraday_host].interference_usrp | default('') }}"
       block:
-        - name: Run interference role
-          include_role:
+        - include_role:
             name: scenarios/interference/run
           vars:
             node: "{{ interference_node }}"
-            freq: "{{ hostvars['faraday'].freq }}"
+            freq: "{{ hostvars[faraday_host].freq }}"
             time: 100
-          when: usrp_type in ['fit', 'n300', 'n320']
+          when: usrp_type in ['fit','n300','n320']
 
-    - name: Wait for iperf job to finish
+    # ---------------- WAIT IPERF ----------------
+    - name: Wait for iperf job
       async_status:
         jid: "{{ iperf_job.ansible_job_id }}"
       register: result
@@ -136,12 +142,18 @@
       retries: 100
       delay: 10
 
-# --- COLLECT AND DISPLAY STATS ---
-- name: Collect and Display Interference Test Stats
+
+# =========================================================
+# COLLECT RESULTS
+# =========================================================
+
+- name: Collect and display stats
   hosts: faraday
   gather_facts: false
+
   tasks:
-    - name: Find iperf log files on Core Node
+
+    - name: Find iperf logs
       find:
         paths: "/root/IPERF"
         patterns: "iperf_*.log"
@@ -149,7 +161,7 @@
       become: true
       register: iperf_files
 
-    - name: Read session logs from Core Node
+    - name: Read logs
       command: "cat {{ item.path }}"
       loop: "{{ iperf_files.files | sort(attribute='path') }}"
       register: log_contents
@@ -158,7 +170,7 @@
       when: iperf_files.matched > 0
       changed_when: false
 
-    - name: "📊 FINAL SUMMARY (Server Side)"
+    - name: FINAL SUMMARY
       debug:
         msg: |
           {% if log_contents.results is defined %}
@@ -170,6 +182,6 @@
           {% endfor %}
           {% endif %}
 
-    - name: "📌 NOTE Location of all iperf results"
+    - name: NOTE location of iperf results
       debug:
-        msg: "NOTA: All iperfs results are stored in {{ inventory_hostname }} server on /root/IPERF directory"
+        msg: "All iperf results are stored on core node in /root/IPERF"
