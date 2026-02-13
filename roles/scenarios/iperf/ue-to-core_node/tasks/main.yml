@@ -15,3 +15,16 @@
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     # Each UE gets a unique port: 5201, 5202, 5203...
     iperf_port: "{{ 5201 + ue_index }}"
+
+- name: Execute iperf tests for all connected UEs
+  include_tasks: iperf_execution.yml
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    loop_var: current_ue
+  vars:
+    ue_ip: "{{ ue_ips[current_ue] }}"
+    iperf_port: "{{ 5201 + loop.index0 }}"
+    duration: 300
+    target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
+    ignore_task_errors: true
+    sleep: 2

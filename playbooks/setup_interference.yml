@@ -1,4 +1,7 @@
 ---
+#
+# --- Visualization setup ---
+#
 - name: Setup first fit node on R2Lab
   hosts: faraday
   vars:
@@ -15,6 +18,9 @@
   roles:
     - role: scenarios/interference/watch
 
+#
+# --- Noise generation setup ---
+#
 - name: Setup second fit node on R2Lab for noise genaration
   hosts: faraday
   vars:
@@ -33,9 +39,18 @@
     - role: r2lab/rru
       when: hostvars[groups['faraday'][0]].interference_usrp in ['n300', 'n320']
 
-- name: Connect first UE on R2Lab to the 5G network
+#
+# --- UE setup (first UE on the list) ---
+#
+- name: Connect and configure routes on the first R2lab UE
   hosts: faraday
-  roles:
-    - role: r2lab/ue/connect
+  gather_facts: false
+  tasks:
+    - name: Connect first UE via connect_ue tasks
+      include_tasks: ../../roles/r2lab/ue/connect/tasks/connect_ue.yml
       vars:
-        ue_item: "{{ groups['qhats'][0] }}"
+        current_ue: "{{ groups['qhats'][0] }}"
+        fiveg_profile: default
+        ignore_task_errors: true
+        target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
+

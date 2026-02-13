@@ -66,6 +66,3 @@
   set_fact:
     ue_ips: "{{ ue_ips | default({}) | combine({ current_ue: ue_ip_cmd.stdout }) }}"
   when: ue_ip_cmd.stdout != ""
-
-- name: Execute iperf tests for {{ current_ue }}
-  include_tasks: iperf_execution.yml
