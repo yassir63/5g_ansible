@@ -5,7 +5,7 @@
       include_role:
         name: r2lab/ue/connect
       vars:
-        ue: "{{ item }}"
+        ue_item: "{{ item }}"
       loop: "{{ groups['qhats'] }}"
       loop_control:
         label: "{{ item }}"
