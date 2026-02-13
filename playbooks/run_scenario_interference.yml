@@ -125,7 +125,7 @@
             name: scenarios/interference/run
           vars:
             node: "{{ interference_node }}"
-	    freq: "{{ hostvars[groups['faraday'][0]].freq }}"
+            freq: "{{ hostvars[groups['faraday'][0]].freq }}"
             time: 100
           when: usrp_type in ['fit', 'n300', 'n320']
 
