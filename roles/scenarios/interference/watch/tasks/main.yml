@@ -11,6 +11,12 @@
     chmod 600 /root/.vnc/passwd"
   delegate_to: faraday.inria.fr
 
+- name: Resize recv/send buffers for N3XX
+  shell: |
+    ssh root@{{ fit_node }} "sysctl -w net.core.rmem_max=2500000 && \
+    sysctl -w net.core.wmem_max=2500000"
+  delegate_to: faraday.inria.fr
+
 - name: Launch VNC server on {{ fit_node }}
   shell: ssh root@{{ fit_node }} 'tigervncserver -xstartup /usr/bin/xterm'
   delegate_to: faraday.inria.fr

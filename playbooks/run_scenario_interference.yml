@@ -18,7 +18,6 @@
     # Retrieve the IP of the first host in the core_node group
     core_ip: "{{ hostvars[groups['core_node'][0]]['ip'] | default(hostvars[groups['core_node'][0]]['ansible_host']) }}"
 
-
   tasks:
     # --- UE INFO PREPARATION ---
     - name: Initialize UE-related variables
@@ -100,32 +99,32 @@
       pause:
         seconds: 100
 
+    - name: Initialize interference node based on USRP type
+      set_fact:
+        interference_node: >-
+          {% if hostvars['faraday'].interference_usrp == 'fit' %}
+            {{ groups['fit_nodes'][0] }}
+          {% elif hostvars['faraday'].interference_usrp in ['n300', 'n320'] %}
+            {{ hostvars['faraday'].interference_usrp }}
+          {% else %}
+            ""
+          {% endif %}
+
+    - name: Debug chosen interference node
+      debug:
+        msg: "Interference node = {{ interference_node }} (type={{ hostvars['faraday'].interference_usrp }})"
+
     - name: Run noise generator (fit or N3XX)
       become: true
       vars:
         usrp_type: "{{ hostvars['faraday'].interference_usrp | default('') }}"
       block:
-
-        - name: Select interference node for FIT
-          set_fact:
-            interference_node: "{{ groups['fit_nodes'][0] }}"
-          when: usrp_type == "fit"
-
-        - name: Select interference node for N3XX
-          set_fact:
-            interference_node: "{{ usrp_type }}"
-          when: usrp_type in ['n300', 'n320']
-
-        - name: Debug chosen interference node
-          debug:
-            msg: "Interference node = {{ interference_node }} (type={{ usrp_type }})"
-
         - name: Run interference role
           include_role:
             name: scenarios/interference/run
           vars:
             node: "{{ interference_node }}"
-            freq: "{{ hostvars[groups['faraday'][0]].freq }}"
+            freq: "{{ hostvars['faraday'].freq }}"
             time: 100
           when: usrp_type in ['fit', 'n300', 'n320']
 
@@ -174,3 +173,4 @@
     - name: "📌 NOTE: Location of all iperf results"
       debug:
         msg: "NOTA: All iperfs results are stored in {{ inventory_hostname }} server on /root/IPERF directory"
+
