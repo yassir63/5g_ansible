@@ -44,16 +44,21 @@
   changed_when: false
   ignore_errors: "{{ ignore_task_errors | default(false) }}"
 
+- name: Wait until wwan0 interface is fully up
+  shell: ssh root@{{ current_ue }} "ip link show wwan0"
+  register: wwan0_status
+  retries: 10
+  delay: 2
+  until: "'UP' in wwan0_status.stdout"
+  changed_when: false
+
+
 - name: Add route to {{ target_server }} via UPF IP when wwan0 is ready
   shell: |
     ssh -o BatchMode=yes root@{{ current_ue }} "
-      for i in \$(seq 1 10); do
-        ip link show wwan0 | grep -q 'state UP' || { sleep 1; continue; }
-        ip route add {{ upf_ip }} dev wwan0 2>/dev/null || true
+    	ip route add {{ upf_ip }} dev wwan0 2>/dev/null || true
         ip route add {{ target_server }} via {{ upf_ip }} 2>/dev/null || true
-        ip route get {{ target_server }} && break
-        sleep 1
-      done
+        ip route get {{ target_server }}
     "
   changed_when: false
   ignore_errors: true
