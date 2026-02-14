@@ -14,6 +14,8 @@
   vars:
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     iperf_port: "{{ 5201 + ue_index }}"
+    duration: "{{ duration }}"
+    ignore_task_errors: true
 
 - name: Execute iperf tests for all connected UEs
   include_tasks: iperf_execution.yml
@@ -22,9 +24,10 @@
     loop_var: current_ue
     index_var: ue_index
   vars:
-    ue_ip: "{{ ue_ips[current_ue] }}"
-    iperf_port: "{{ 5201 + ue_index }}"
-    duration: "{{ duration }}"
+    ue_ip_cmd:
+      stdout: "{{ ue_ips[current_ue] }}"   # on passe l'IP récupérée
+    iperf_port: "{{ 5201 + ue_index }}"   # on utilise l'index_var passé par loop_control
+    duration: "{{ duration }}"            # valeur passée depuis le playbook
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     ignore_task_errors: true
     sleep: 2
