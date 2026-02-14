@@ -16,8 +16,8 @@
       ssh root@{{ node }}
       "timeout {{ time }} uhd_siggen --gaussian
       -f '{{ hostvars[groups['faraday'][0]].freq }}'
-      -g '{{ hostvars[groups['faraday'][0]].g }}'
-      -s '{{ hostvars[groups['faraday'][0]].s }}'
+      -g '{{ hostvars[groups['faraday'][0]].gain }}'
+      -s '{{ hostvars[groups['faraday'][0]].noise_bandwidth }}'
       {{ usrp_args }}"
 
 - name: Debug command that will be executed
