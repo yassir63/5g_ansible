@@ -118,6 +118,20 @@
     - role: setup/k8s/benetel_specific_tuning_f3
       when: fhi72 and f3_ran
 
+############################################################################
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
+- hosts: localhost,core_node,ran_node
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+#
+############################################################################
+
+
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
   tasks:
@@ -156,19 +170,6 @@
   roles:
     - role: setup/gre_tunnel
       when: bridge_enabled
-
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost,core_node,ran_node
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-#
-############################################################################
 
 - name: Deploy Open5GS CN
   hosts: core_node
