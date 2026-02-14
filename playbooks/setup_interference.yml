@@ -47,7 +47,7 @@
   gather_facts: false
   tasks:
     - name: Connect first UE via connect_ue tasks
-      include_tasks: ../../roles/r2lab/ue/connect/tasks/connect_ue.yml
+      include_tasks: ../roles/scenarios/iperf/ue-to-core_node/tasks/connect_ue.yml
       vars:
         current_ue: "{{ groups['qhats'][0] }}"
         fiveg_profile: default
