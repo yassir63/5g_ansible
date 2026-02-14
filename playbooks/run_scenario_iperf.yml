@@ -9,8 +9,6 @@
   hosts: core_node
   become: true
   vars:
-    duration: 12
-    sleep: 5
     ignore_task_errors: yes
     nb_ues: "{{ 3 if rru == 'rfsim' else groups['qhats'] | length }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
@@ -22,8 +20,6 @@
 - name: Optionally run UE-to-core iperf tests from Faraday
   hosts: faraday
   vars:
-    duration: 12
-    sleep: 5
     ignore_task_errors: yes
     nb_ues: "{{ groups['qhats'] | length }}"
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"

@@ -4,6 +4,8 @@
     ue_ips: {}
     ignore_task_errors: true
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
+    duration: "{{ iperf_duration | default(12) }}"
+    sleep: "{{ iperf_sleep | default(5) }}"
 
 - name: Connect all qhat UEs sequentially
   include_tasks: connect_ue.yml
@@ -14,7 +16,6 @@
   vars:
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     iperf_port: "{{ 5201 + ue_index }}"
-    duration: "{{ duration }}"
     ignore_task_errors: true
 
 - name: Execute iperf tests for all connected UEs
@@ -25,9 +26,10 @@
     index_var: ue_index
   vars:
     ue_ip_cmd:
-      stdout: "{{ ue_ips[current_ue] }}"   # on passe l'IP récupérée
-    iperf_port: "{{ 5201 + ue_index }}"   # on utilise l'index_var passé par loop_control
-    duration: "{{ duration }}"            # valeur passée depuis le playbook
+      stdout: "{{ ue_ips[current_ue] }}"
+    iperf_port: "{{ 5201 + ue_index }}"
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
+    duration: "{{ iperf_duration | default(12) }}"
+    sleep: "{{ iperf_sleep | default(2) }}"
     ignore_task_errors: true
     sleep: 2
