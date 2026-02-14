@@ -25,11 +25,10 @@
     loop_var: current_ue
     index_var: ue_index
   vars:
-    ue_ip_cmd:
-      stdout: "{{ ue_ips[current_ue] }}"
+    ue_ip_cmd: "{{ {'stdout': ue_ips[current_ue]} }}" 
     iperf_port: "{{ 5201 + ue_index }}"
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     duration: "{{ iperf_duration | default(12) }}"
-    sleep: "{{ iperf_sleep | default(2) }}"
+    sleep: "{{ iperf_sleep | default(5) }}"
     ignore_task_errors: true
     sleep: 2
