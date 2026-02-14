@@ -29,6 +29,11 @@
         name: kepler
         namespace: "{{ monarch_ns }}"
 
+- name: Force delete Kepler pod to refresh token
+  ansible.builtin.command: >
+    kubectl delete pod -n {{ monarch_ns }} -l app.kubernetes.io/name=kepler --force --grace-period=0
+  ignore_errors: yes
+
 - name: Wait for Kepler pod to be ready
   kubernetes.core.k8s_info:
     api_version: v1
