@@ -1,0 +1,71 @@
+- name: Get list of AMF pods
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: open5gs
+  register: amf_pods
+  no_log: true
+
+- name: Select AMF pod name
+  set_fact:
+    amf_pod: "{{ item.metadata.name }}"
+  loop: "{{ amf_pods.resources }}"
+  when: item.metadata.name is match('^open5gs-amf-')
+  no_log: true
+
+# --- Minimal python install on AMF (no heavy recommends) ---
+
+- name: Ensure python3 + pip present on amf
+  shell: |
+    kubectl -n open5gs exec {{ amf_pod }} -- bash -c '
+      set -euo pipefail
+
+      # If python3 already exists, just show version and exit cleanly
+      if command -v python3 >/dev/null 2>&1; then
+        python3 --version
+        exit 0
+      fi
+
+      apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive \
+        apt-get install -y -qq --no-install-recommends python3 python3-pip tshark
+
+      python3 --version
+    '
+  register: amf_install
+  changed_when: "'Setting up python3' in amf_install.stdout or 'install' in amf_install.stdout"
+
+- name: Install redis + pyshark on amf via pip
+  shell: |
+    kubectl -n open5gs exec {{ amf_pod }} -- bash -c '
+      set -euo pipefail
+      python3 -m pip install --no-cache-dir --disable-pip-version-check redis pyshark
+    '
+  register: amf_pip_install
+  changed_when: "'Successfully installed' in amf_pip_install.stdout"
+
+# --- Copy sniffer into /open5gs/install/bin on AMF pod ---
+
+- name: Copy amf_sniffer.py into AMF pod (/open5gs/install/bin/)de&ée&
+  ansible.builtin.shell: |
+    kubectl -n open5gs cp \
+      ~/monitoring/sliceawareness/amfsniffer/amf_sniffer.py \
+      {{ amf_pod }}:/open5gs/install/bin/amf_sniffer.py
+  register: amf_sniffer_copy
+  changed_when: amf_sniffer_copy.rc == 0
+
+
+# --- Start sniffer in background from /open5gs/install/bin/ ---
+
+- name: Start amf_sniffer on AMF (n3, background)
+  ansible.builtin.shell: |
+    kubectl -n open5gs exec {{ amf_pod }} -- bash -c '
+      cd /open5gs/install/bin/
+      nohup python3 amf_sniffer.py n3 \
+        > /var/log/amf_sniffer_n3.log 2>&1 &
+    '
+  async: 0
+  poll: 0
+  changed_when: false
+
+
+# n3 with open5gs / n2 with OAI

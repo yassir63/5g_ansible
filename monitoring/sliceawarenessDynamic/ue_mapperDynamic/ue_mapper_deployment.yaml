@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ue-mapper-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ue-mapper-api
+  template:
+    metadata:
+      labels:
+        app: ue-mapper-api
+    spec:
+      containers:
+      - name: ue-mapper-api
+        image: r2labuser/ue_mapper_api:dynamic
+        ports:
+        - containerPort: 8080
+        env:
+        - name: REDIS_HOST
+          value: "redis"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ue-mapper-api
+spec:
+  selector:
+    app: ue-mapper-api
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP

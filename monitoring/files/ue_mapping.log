@@ -1,0 +1,240 @@
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 6e6134a0
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 362dadc2
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 40d3a5a8
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 5e10469c
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 40d3a5a8
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 5e10469c
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 6e6134a0
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 362dadc2
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 6e6134a0
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 362dadc2
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 6e6134a0
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 362dadc2
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 40d3a5a8
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 5e10469c
+
+[✓] UE Found:
+    IMSI: unknown
+    RAN_UE_ID: 1
+    SST: unknown
+    SD: empty
+    UL_TEID: unknown
+    DL_TEID: unknown
+
+[✓] UE Found:
+    IMSI: unknown
+    RAN_UE_ID: 2
+    SST: unknown
+    SD: empty
+    UL_TEID: unknown
+    DL_TEID: unknown
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 40d3a5a8
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 5e10469c
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 40d3a5a8
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 5e10469c
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: empty
+    UL_TEID: 00000001
+    DL_TEID: 40d3a5a8
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: empty
+    UL_TEID: 00000002
+    DL_TEID: 5e10469c
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 40d3a5a8
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 5e10469c
+
+[✓] UE Found:
+    IMSI: 0000000002
+    RAN_UE_ID: 1
+    SST: 02
+    SD: 000002
+    UL_TEID: 0000ff0a
+    DL_TEID: 00000001
+
+[✓] UE Found:
+    IMSI: 0000000001
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000001
+    UL_TEID: 0000df6a
+    DL_TEID: 00000002
+
+[✓] UE Found:
+    IMSI: 0000001121
+    RAN_UE_ID: 1
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000001
+    DL_TEID: 6e6134a0
+
+[✓] UE Found:
+    IMSI: 0000001122
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000003
+    UL_TEID: 00000002
+    DL_TEID: 362dadc2
+
+[✓] UE Found:
+    IMSI: 0000000002
+    RAN_UE_ID: 1
+    SST: 02
+    SD: 000002
+    UL_TEID: 0000ff0a
+    DL_TEID: 00000001
+
+[✓] UE Found:
+    IMSI: 0000000001
+    RAN_UE_ID: 2
+    SST: 01
+    SD: 000001
+    UL_TEID: 0000df6a
+    DL_TEID: 00000002
+

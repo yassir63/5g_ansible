@@ -1,0 +1,71 @@
+🔹 Running: ansible-playbook -i ./inventory/default/hosts.ini -e fiveg_profile=default -e  playbooks/deploy_r2lab.yml
+
+PLAY [Cleanup R2Lab] ***********************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [faraday.inria.fr]
+
+TASK [r2lab/cleanup : Power OFF R2Lab testbed] *********************************
+changed: [faraday.inria.fr]
+
+PLAY [Power ON RRU on R2Lab] ***************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [faraday.inria.fr]
+
+TASK [r2lab/rru : Power ON "jaguar" PDU outlet] ********************************
+changed: [faraday.inria.fr]
+
+TASK [r2lab/rru : Verify PDU status] *******************************************
+changed: [faraday.inria.fr]
+
+TASK [r2lab/rru : Show PDU status] *********************************************
+ok: [faraday.inria.fr] => {
+    "pdu_status.stdout": "pdu2 chain-0@outlet-4 (jaguar): ON (56W)"
+}
+
+PLAY [Setup UEs on R2Lab] ******************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [faraday.inria.fr]
+
+TASK [r2lab/ue/setup : RESTART_UE_SETUP] ***************************************
+
+TASK [r2lab/ue/setup : Load active 5G profile variables] ***********************
+ok: [faraday.inria.fr]
+
+TASK [r2lab/ue/setup : Assert 5G profile is loaded] ****************************
+ok: [faraday.inria.fr] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [r2lab/ue/setup : Power ON UEs PDU outlet] ********************************
+changed: [faraday.inria.fr] => (item=qhat01)
+changed: [faraday.inria.fr] => (item=qhat02)
+
+TASK [r2lab/ue/setup : Wait for all UEs to be turned ON] ***********************
+changed: [faraday.inria.fr] => (item=qhat01)
+changed: [faraday.inria.fr] => (item=qhat02)
+
+TASK [r2lab/ue/setup : Wait for UEs to be SSH accessible] **********************
+ok: [faraday.inria.fr] => (item=qhat01)
+ok: [faraday.inria.fr] => (item=qhat02)
+
+TASK [r2lab/ue/setup : Init UEs via jump host using 5G profile from YAML] ******
+changed: [faraday.inria.fr] => (item=qhat01)
+changed: [faraday.inria.fr] => (item=qhat02)
+
+TASK [r2lab/ue/setup : Wait for setup to finish on all UEs] ********************
+FAILED - RETRYING: [faraday.inria.fr]: Wait for setup to finish on all UEs (100 retries left).
+FAILED - RETRYING: [faraday.inria.fr]: Wait for setup to finish on all UEs (99 retries left).
+FAILED - RETRYING: [faraday.inria.fr]: Wait for setup to finish on all UEs (98 retries left).
+FAILED - RETRYING: [faraday.inria.fr]: Wait for setup to finish on all UEs (97 retries left).
+FAILED - RETRYING: [faraday.inria.fr]: Wait for setup to finish on all UEs (96 retries left).
+FAILED - RETRYING: [faraday.inria.fr]: Wait for setup to finish on all UEs (95 retries left).
+changed: [faraday.inria.fr] => (item=qhat01)
+changed: [faraday.inria.fr] => (item=qhat02)
+
+PLAY RECAP *********************************************************************
+faraday.inria.fr           : ok=14   changed=7    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
