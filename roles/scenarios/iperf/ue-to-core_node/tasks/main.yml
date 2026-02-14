@@ -10,10 +10,9 @@
   loop: "{{ groups['qhats'] }}"
   loop_control:
     loop_var: current_ue
-    index_var: ue_index # Use index (0, 1, 2...)
+    index_var: ue_index
   vars:
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
-    # Each UE gets a unique port: 5201, 5202, 5203...
     iperf_port: "{{ 5201 + ue_index }}"
 
 - name: Execute iperf tests for all connected UEs
@@ -21,9 +20,10 @@
   loop: "{{ groups['qhats'] }}"
   loop_control:
     loop_var: current_ue
+    index_var: ue_index
   vars:
     ue_ip: "{{ ue_ips[current_ue] }}"
-    iperf_port: "{{ 5201 + loop.index0 }}"
+    iperf_port: "{{ 5201 + ue_index }}"
     duration: 300
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     ignore_task_errors: true
