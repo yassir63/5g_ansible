@@ -44,13 +44,7 @@
   changed_when: false
   ignore_errors: "{{ ignore_task_errors | default(false) }}"
 
-- name: Check route to {{ target_server }} on {{ current_ue }}
-  shell: ssh -o BatchMode=yes root@{{ current_ue }} "ip route get {{ target_server }}"
-  register: route_check
-  changed_when: false
-  ignore_errors: true
-
-- name: Add route to {{ target_server }} via UPF IP if missing
+- name: Add route to {{ target_server }} via UPF IP
   shell: |
     ssh -o BatchMode=yes root@{{ current_ue }} "
       # Add route to UPF via wwan0 if not already present
@@ -58,9 +52,8 @@
       # Add route to target IP via UPF if not already present
       ip route add {{ target_server }} via {{ upf_ip }} 2>/dev/null || true
     "
-  when: route_check.stdout is defined and '"dev wwan0"' not in route_check.stdout
   changed_when: false
-  ignore_errors: true
+  ignore_errors: true  # garde le ignore_errors pour ne pas casser le play
 
 - name: Build dict ue_ips
   set_fact:
