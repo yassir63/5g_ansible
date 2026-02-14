@@ -126,18 +126,14 @@
         name: monarch/deploy
       vars:
         branch: srsRAN_metrics
-      when: 
-        - monitoring_enabled
-        - ran == 'srsRAN'
+      when: monitoring_enabled and ran == 'srsRAN'
 
     - name: Deploy Monarch for OAI
       include_role:
         name: monarch/deploy
       vars:
         branch: with_data_persistance_for_sopnodes
-      when: 
-        - monitoring_enabled
-        - ran == 'oai'
+      when: monitoring_enabled and ran == 'oai'
 
 - name: SRIOV setup
   hosts: ran_node
@@ -164,23 +160,15 @@
 ############################################################################
 # Move this block where you want to restart with start-at-task=RESTART_HERE"
 #
-- hosts: localhost
+- hosts: localhost,core_node,ran_node
   gather_facts: false
   tasks:
     - name: RESTART_HERE
       ansible.builtin.meta: noop
 
     - import_tasks: ../tasks/reload_booleans.yml
-- hosts: core_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
-- hosts: ran_node
-  gather_facts: false
-  tasks:
-    - import_tasks: ../tasks/reload_booleans.yml
+#
 ############################################################################
-
 
 - name: Deploy Open5GS CN
   hosts: core_node
@@ -223,7 +211,7 @@
     - role: 5g/srsRAN
       when: ran == 'srsRAN'
 
-- name: Launch 5G-Monarch monitoring
+- name: 5G-Monarch Final Operations
   hosts: monitor_node
   tasks:
     - name: Launch monitoring for OAI
@@ -237,4 +225,3 @@
       include_role:
         name: monarch/monitoring
       when: monitoring_enabled and ran == 'srsRAN'
-
