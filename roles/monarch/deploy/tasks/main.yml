@@ -39,6 +39,19 @@
     helm upgrade --install kyverno kyverno/kyverno -n kyverno --create-namespace
   when: kyverno_status.rc != 0
 
+- name: Wait for Kyverno Webhook service to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: kyverno
+    namespace: kyverno
+  register: kyverno_deploy
+  until: 
+    - kyverno_deploy.resources is defined
+    - kyverno_deploy.resources | length > 0
+    - kyverno_deploy.resources[0].status.readyReplicas | default(0) > 0
+  retries: 30
+  delay: 10
+
 - name: Copy Kyverno policy
   copy:
     dest: /tmp/monarch-force-node.yaml
