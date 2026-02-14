@@ -1,7 +1,8 @@
 ---
-repo_url: "https://github.com/yassir63/open5gs-k8s.git"
-#repo_url: "https://github.com/sopnode/open5gs-k8s.git"
+repo_url: "https://github.com/Ziyad-Mabrouk/5g-monarch.git"
 repo_dest: "~/5g-monarch"
+branch: "srsRAN_metrics"
 #branch: "with_data_persistance_for_sopnodes"
-branch: "main"
+#branch: "main"
 monarch_ns: "monarch"
+enable_kepler: true

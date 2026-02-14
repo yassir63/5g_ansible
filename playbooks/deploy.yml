@@ -118,13 +118,26 @@
     - role: setup/k8s/benetel_specific_tuning_f3
       when: fhi72 and f3_ran
 
-- name: Deploy 5G-Monarch
+- name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
-  roles:
-    - role: monarch/deploy
-      when: monitoring_enabled
+  tasks:
+    - name: Deploy Monarch for srsRAN
+      include_role:
+        name: monarch/deploy
       vars:
         branch: srsRAN_metrics
+      when: 
+        - monitoring_enabled
+        - ran == 'srsRAN'
+
+    - name: Deploy Monarch for OAI
+      include_role:
+        name: monarch/deploy
+      vars:
+        branch: with_data_persistance_for_sopnodes
+      when: 
+        - monitoring_enabled
+        - ran == 'oai'
 
 - name: SRIOV setup
   hosts: ran_node
@@ -212,6 +225,16 @@
 
 - name: Launch 5G-Monarch monitoring
   hosts: monitor_node
-  roles:
-    - role: monarch/monitoring
-      when: monitoring_enabled
+  tasks:
+    - name: Launch monitoring for OAI
+      include_role:
+        name: monarch/monitoring
+      vars:
+        set_gnb_monitoring: true
+      when: monitoring_enabled and ran == 'oai'
+
+    - name: Launch monitoring for srsRAN
+      include_role:
+        name: monarch/monitoring
+      when: monitoring_enabled and ran == 'srsRAN'
+
