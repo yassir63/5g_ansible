@@ -42,16 +42,16 @@
     helm upgrade --install kyverno kyverno/kyverno -n kyverno --create-namespace
   when: kyverno_status.rc != 0
 
-- name: Wait for Kyverno Webhook service to be ready
+- name: Wait for Kyverno Admission Controller to be ready
   kubernetes.core.k8s_info:
     kind: Deployment
-    name: kyverno
+    name: kyverno-admission-controller
     namespace: kyverno
-  register: kyverno_deploy
+  register: kyverno_adm_deploy
   until: 
-    - kyverno_deploy.resources is defined
-    - kyverno_deploy.resources | length > 0
-    - kyverno_deploy.resources[0].status.readyReplicas | default(0) > 0
+    - kyverno_adm_deploy.resources is defined
+    - kyverno_adm_deploy.resources | length > 0
+    - kyverno_adm_deploy.resources[0].status.readyReplicas | default(0) > 0
   retries: 30
   delay: 10
 
