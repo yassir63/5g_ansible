@@ -1,4 +1,7 @@
 ---
+- name: START_MONARCH_DEPLOY
+  ansible.builtin.meta: noop
+  
 - import_tasks: persist_data.yml
 
 - name: Clone 5G-Monarch repo
