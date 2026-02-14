@@ -12,6 +12,23 @@
     --namespace {{ monarch_ns }}
   when: kepler_status.rc != 0
 
+- name: Fix Kepler 403 (Kubelet RBAC)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: kepler-kubelet-reader-binding
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:kubelet-api-admin
+      subjects:
+      - kind: ServiceAccount
+        name: kepler
+        namespace: "{{ monarch_ns }}"
+
 - name: Wait for Kepler pod to be ready
   kubernetes.core.k8s_info:
     api_version: v1
@@ -23,11 +40,9 @@
   register: kepler_pods
   until: >
     kepler_pods.resources | length > 0 and
-    (
-      kepler_pods.resources[0].status.containerStatuses[0].ready | default(false)
-    )
+    (kepler_pods.resources[0].status.containerStatuses[0].ready | default(false))
   retries: 50
-  delay: 2
+  delay: 5
 
 - name: Patch Kepler service for Prometheus scraping
   ansible.builtin.command: >
