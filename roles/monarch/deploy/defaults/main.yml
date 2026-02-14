@@ -1,6 +1,7 @@
 ---
-repo_url: "https://github.com/sopnode/open5gs-k8s.git"
+repo_url: "https://github.com/yassir63/open5gs-k8s.git"
+#repo_url: "https://github.com/sopnode/open5gs-k8s.git"
 repo_dest: "~/5g-monarch"
-branch: "with_data_persistance_for_sopnodes"
-#branch: "main"
+#branch: "with_data_persistance_for_sopnodes"
+branch: "main"
 monarch_ns: "monarch"
