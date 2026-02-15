@@ -45,9 +45,14 @@
     - role: setup/pre_k8s
     - role: setup/k8s/k8s_setup
     - role: setup/k8s/k8s_env
+    - role: setup/optimization/cpu
+
+# not for monitor_node
+- name: Common sopnodes setup
+  hosts: core_node,ran_node
+  roles:
     - role: setup/ovs
       when: not fhi72
-    - role: setup/optimization/cpu
 
 - name: PTP setup on ran_node
   hosts: ran_node
