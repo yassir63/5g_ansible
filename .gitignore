@@ -2,3 +2,5 @@
 .r2lab_config
 ./inventory/default/hosts.ini
 logs*
+./playbooks/admin.conf
+./playbooks/.kubeadm_join_command.txt
