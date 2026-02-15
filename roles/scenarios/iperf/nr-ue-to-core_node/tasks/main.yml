@@ -1,10 +1,9 @@
 ---
 - name: Set defaults
   set_fact:
-    duration: "{{ duration | default(10) }}"
-    sleep: "{{ sleep | default(5) }}"
-    core_node_host: "{{ groups['core_node'][0] }}"
-    core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
+    duration: "{{ iperf_duration | default(12) }}"
+    sleep: "{{ iperf_sleep | default(5) }}"
+    target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     core_ns: "{{ core }}"
     valid_ues: []
 
@@ -61,7 +60,7 @@
   debug:
     msg: >
       kubectl exec -n {{ core_ns }} {{ item.pod }} --
-      iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }}
+      iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ (5201 + idx | int) }} -t {{ duration | int }}
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
@@ -70,7 +69,7 @@
 - name: Run iperf uplink
   shell: >
     kubectl exec -n {{ core_ns }} {{ item.pod }} --
-    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }}
+    iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ (5201 + idx | int) }} -t {{ duration | int }}
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
@@ -85,7 +84,7 @@
   debug:
     msg: >
       kubectl exec -n {{ core_ns }} {{ item.pod }} --
-      iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }} -R
+      iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ (5201 + idx | int) }} -t {{ duration | int }} -R
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
@@ -94,7 +93,7 @@
 - name: Run iperf downlink
   shell: >
     kubectl exec -n {{ core_ns }} {{ item.pod }} --
-    iperf3 -B {{ item.ip }} -c {{ core_ip }} -p {{ (5201 + idx | int) }} -t {{ duration | int }} -R
+    iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ (5201 + idx | int) }} -t {{ duration | int }} -R
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx

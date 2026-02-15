@@ -1,6 +1,32 @@
 ---
-- name: Start Gaussian Noise Emmission from {{ node }} on frequency {{ hostvars[groups['faraday'][0]].freq }} with -g {{ hostvars[groups['faraday'][0]].g }} for 5 minutes
-  shell: ssh root@{{ node }} 'timeout {{ time }} uhd_siggen --gaussian --freq="{{ hostvars[groups['faraday'][0]].freq }}" -g "{{ hostvars[groups['faraday'][0]].g }}" -s "{{ hostvars[groups['faraday'][0]].s }}"'
+- name: Build extra UHD args depending on node
+  set_fact:
+    usrp_args: >-
+      {% if node == "n320" %}
+      --args="product=n320,serial=31B3A77"
+      {% elif node == "n300" %}
+      --args="product=n300,serial=31D98C7"
+      {% else %}
+      ""
+      {% endif %}
+
+- name: Build final command
+  set_fact:
+    noise_cmd: >-
+      ssh root@{{ node }}
+      "timeout {{ time }} uhd_siggen --gaussian
+      -f '{{ hostvars[groups['faraday'][0]].freq }}'
+      -g '{{ hostvars[groups['faraday'][0]].gain }}'
+      -s '{{ hostvars[groups['faraday'][0]].noise_bandwidth }}'
+      {{ usrp_args }}"
+
+- name: Debug command that will be executed
+  debug:
+    msg: "{{ noise_cmd }}"
+
+- name: Start Gaussian Noise Emission from {{ node }}
+  shell: "{{ noise_cmd }}"
   delegate_to: faraday.inria.fr
   ignore_errors: true
   no_log: true
+

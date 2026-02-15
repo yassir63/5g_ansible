@@ -1,4 +1,22 @@
 ---
+- name: Include 5G profile variables
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg
+
+- name: "Get UPF IP for a specific UE"
+  set_fact:
+    upf_ip: >-
+      {{
+        (fiveg.slices
+         | selectattr('name', 'equalto', fiveg.ues[current_ue].slice)
+         | first).ip_prefix
+      }}.1
+
+- name: "Debug: Show UPF IP for current UE"
+  debug:
+    msg: "UE {{ current_ue }} → UPF IP = {{ upf_ip }}"
+
 - name: Check if {{ current_ue }} already has a wwan0 IP
   shell: |
     ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ current_ue }} \
@@ -26,21 +44,26 @@
   changed_when: false
   ignore_errors: "{{ ignore_task_errors | default(false) }}"
 
-- name: Check route to {{ core_ip }} on {{ current_ue }}
-  shell: ssh -o BatchMode=yes root@{{ current_ue }} "ip route get {{ core_ip }}"
-  register: route_check
+- name: Wait until wwan0 interface is fully up
+  shell: ssh root@{{ current_ue }} "ip link show wwan0"
+  register: wwan0_status
+  retries: 10
+  delay: 2
+  until: "'UP' in wwan0_status.stdout"
   changed_when: false
-  ignore_errors: true
 
-- name: Add route to {{ core_ip }} via wwan0
-  shell: ssh -o BatchMode=yes root@{{ current_ue }} "ip route add {{ core_ip }} dev wwan0"
-  when: route_check.stdout is defined and "dev wwan0" not in route_check.stdout
+
+- name: Add route to {{ target_server }} via UPF IP when wwan0 is ready
+  shell: |
+    ssh -o BatchMode=yes root@{{ current_ue }} "
+    	ip route add {{ upf_ip }} dev wwan0 2>/dev/null || true
+        ip route add {{ target_server }} via {{ upf_ip }} 2>/dev/null || true
+        ip route get {{ target_server }}
+    "
+  changed_when: false
   ignore_errors: true
 
 - name: Build dict ue_ips
   set_fact:
     ue_ips: "{{ ue_ips | default({}) | combine({ current_ue: ue_ip_cmd.stdout }) }}"
   when: ue_ip_cmd.stdout != ""
-
-- name: Execute iperf tests for {{ current_ue }}
-  include_tasks: iperf_execution.yml

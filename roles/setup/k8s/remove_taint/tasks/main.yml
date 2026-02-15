@@ -1,12 +1,15 @@
 ---
-- name: Remove NoSchedule taint from control-plane node
+- name: Remove taint from node {{ target_node }}
   ansible.builtin.command: >
-    kubectl taint nodes {{ inventory_hostname }} node-role.kubernetes.io/control-plane:NoSchedule-
+    kubectl taint node {{ target_node }} test-eviction=true:NoSchedule-
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: taint_result
-  failed_when: false # ignore possible error
-  changed_when: "'untainted' in taint_result.stdout"
+  register: taint_out
+  failed_when: >
+    taint_out.rc != 0 and
+    'not found' not in taint_out.stderr
+  changed_when: >
+    'untainted' in taint_out.stdout
 
 
 

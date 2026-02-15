@@ -1,0 +1,56 @@
+---
+- name: Check if Kepler release exists
+  ansible.builtin.command: helm status kepler -n {{ monarch_ns }}
+  register: kepler_status
+  failed_when: false
+  changed_when: false
+
+- name: Install Kepler using Helm
+  ansible.builtin.command: >
+    helm install kepler oci://quay.io/sustainable_computing_io/charts/kepler
+    --version 0.11.1
+    --namespace {{ monarch_ns }}
+  when: kepler_status.rc != 0
+
+- name: Fix Kepler 403 (Kubelet RBAC)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: kepler-kubelet-reader-binding
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:kubelet-api-admin
+      subjects:
+      - kind: ServiceAccount
+        name: kepler
+        namespace: "{{ monarch_ns }}"
+
+- name: Force delete Kepler pod to refresh token
+  ansible.builtin.command: >
+    kubectl delete pod -n {{ monarch_ns }} -l app.kubernetes.io/name=kepler --force --grace-period=0
+  ignore_errors: yes
+
+- name: Wait for Kepler pod to be ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ monarch_ns }}"
+    label_selectors:
+      - "app.kubernetes.io/instance=kepler"
+      - "app.kubernetes.io/name=kepler"
+  register: kepler_pods
+  until: >
+    kepler_pods.resources | length > 0 and
+    (kepler_pods.resources[0].status.containerStatuses[0].ready | default(false))
+  retries: 50
+  delay: 5
+
+- name: Patch Kepler service for Prometheus scraping
+  ansible.builtin.command: >
+    kubectl -n {{ monarch_ns }} patch svc kepler --type merge
+    -p '{"metadata":{"annotations":{"prometheus.io/scrape":"true","prometheus.io/path":"/metrics","prometheus.io/port":"9102"}}}'
+  when: kepler_status.rc == 0 or kepler_pods.resources | length > 0

@@ -18,4 +18,4 @@
 - name: Start UE via jump host
   shell: "ssh root@{{ ue_item }} 'start.sh -F {{ current_dnn }}'"
   when: current_dnn is defined
-  ignore_errors: "{{ ignore_errors | default(false) }}"
+  ignore_errors: "{{ ignore_errors | default(true) }}"
