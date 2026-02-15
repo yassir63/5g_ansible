@@ -122,20 +122,6 @@
     - role: setup/k8s/benetel_specific_tuning_f3
       when: fhi72 and f3_ran
 
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost,core_node,ran_node
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-#
-############################################################################
-
-
 - name: Deploy 5G-Monarch for monitoring
   hosts: monitor_node
   tasks:
@@ -224,14 +210,30 @@
     - role: 5g/srsRAN
       when: ran == 'srsRAN'
 
-#- name: Remove NoSchedule taint on Monitor node # check if it is useful or not before launching 5G-Monarch
-#  hosts: core_node
-#  become: true
-#  roles:
-#    - role: setup/k8s/add_taint
-#      vars:
-#        target_node: "{{ monitor_node_name }}"
-#      when: core_node_name != ran_node_name
+############################################################################
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
+- hosts: localhost,core_node,ran_node
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+#
+############################################################################
+
+
+
+
+- name: Remove NoSchedule taint on Monitor node
+  hosts: core_node
+  become: true
+  roles:
+    - role: setup/k8s/add_taint
+      vars:
+        target_node: "{{ monitor_node_name }}"
+      when: core_node_name != ran_node_name
 
 - name: 5G-Monarch Final Operations
   hosts: monitor_node
