@@ -86,7 +86,7 @@
   hosts: core_node
   become: true
   roles:
-    - role: setup/k8s/remove_taint
+    - role: setup/k8s/remove_cp_taint
       when: not fhi72
 
 - name: Join Kubernetes Cluster on Workers
@@ -104,8 +104,7 @@
       vars:
         target_node: "{{ ran_node_name }}"
       when: core_node_name != ran_node_name
-      
-      
+
 - name: Install Multus / CNAO
   hosts: core_node
   become: true
@@ -154,6 +153,15 @@
         branch: with_data_persistance_for_sopnodes
       when: monitoring_enabled and ran == 'oai'
 
+- name: Add NoSchedule taint on Monitor node (core/ran pods should not run on monitor_node)
+  hosts: core_node
+  become: true
+  roles:
+    - role: setup/k8s/add_taint
+      vars:
+        target_node: "{{ monitor_node_name }}"
+      when: core_node_name != ran_node_name
+      
 - name: SRIOV setup
   hosts: ran_node
   become: true
@@ -212,10 +220,18 @@
     - name: Load 5G profile
       include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-
   roles:
     - role: 5g/srsRAN
       when: ran == 'srsRAN'
+
+#- name: Remove NoSchedule taint on Monitor node # check if it is useful or not before launching 5G-Monarch
+#  hosts: core_node
+#  become: true
+#  roles:
+#    - role: setup/k8s/add_taint
+#      vars:
+#        target_node: "{{ monitor_node_name }}"
+#      when: core_node_name != ran_node_name
 
 - name: 5G-Monarch Final Operations
   hosts: monitor_node
