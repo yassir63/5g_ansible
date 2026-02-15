@@ -148,19 +148,6 @@
         target_node: "{{ monitor_node_name }}"
       when: core_node_name != ran_node_name
       
-- name: Setup sniffers on SMFs
-  hosts: core_node
-  gather_facts: false
-  roles:
-    - role: monarch/sniffers/smf
-      when: monitoring_enabled
-
-- name: Setup sniffers on AMF
-  hosts: core_node
-  gather_facts: false
-  roles:
-    - role: monarch/sniffers/amf
-      when: monitoring_enabled
 
 - name: SRIOV setup
   hosts: ran_node
@@ -195,6 +182,20 @@
       when: core == 'open5gs'
     - role: 5g/open5gs/deploy
       when: core == 'open5gs'
+
+- name: Setup sniffers on SMFs
+  hosts: monitor_node
+  gather_facts: false
+  roles:
+    - role: monarch/sniffers/smf
+      when: monitoring_enabled
+
+- name: Setup sniffers on AMF
+  hosts: monitor_node
+  gather_facts: false
+  roles:
+    - role: monarch/sniffers/amf
+      when: monitoring_enabled
 
 - name: Deploy OAI CN/RAN
   hosts: ran_node
