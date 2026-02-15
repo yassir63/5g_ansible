@@ -1,0 +1,11 @@
+groups:
+  - name: gtp-alerts
+    rules:
+      - alert: LowGTPThroughput
+        expr: gtp_throughput_bitrate_bps < 10000000
+        for: 5s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low GTP Throughput (TEID: {{ $labels.teid }}, Slice: {{ $labels.slice }})"
+          description: "Throughput is below 10 Mbps (currently: {{ $value }} bps) for TEID {{ $labels.teid }} on slice {{ $labels.slice }} from instance {{ $labels.instance }}."

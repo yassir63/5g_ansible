@@ -1,0 +1,140 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gtp-alert-rules
+  namespace: oail1
+data:
+  gtp-alert.rules.yaml: |
+    groups:
+      - name: gtp-alerts
+        rules:
+          - alert: LowGTPThroughput
+            expr: gtp_throughput_bitrate_bps{teid=~"0x00000001|0x00000002"} < 1e7
+            for: 5s
+            labels:
+              severity: warning
+            annotations:
+              summary: "Low GTP Throughput (TEID: {{ $labels.teid }}, Slice: {{ $labels.slice }})"
+              description: "Throughput is below 10 Mbps (currently: {{ $value }} bps) for TEID {{ $labels.teid }} on slice {{ $labels.slice }} from instance {{ $labels.instance }}."
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: oail1
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 2s
+      evaluation_interval: 2s
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+          - targets: ['alertmanager.oail1.svc:9093']
+
+    rule_files:
+      - /etc/prometheus/rules/gtp-alert.rules.yaml
+
+    scrape_configs:
+      - job_name: 'gnb-throughput'
+        metrics_path: /throughput
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['oail1']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: oai-gnb
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: ${1}:9200
+
+      - job_name: 'gnb-latency'
+        metrics_path: /latency
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['oail1']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: oai-gnb
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: ${1}:9100
+
+      - job_name: 'kubelet-cadvisor'   # ✅ NEW
+        scheme: https
+        metrics_path: /metrics/cadvisor
+        kubernetes_sd_configs:
+          - role: node
+        tls_config:
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: oail1
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.52.0
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/prometheus
+            - name: rules-volume
+              mountPath: /etc/prometheus/rules
+      volumes:
+        - name: config-volume
+          configMap:
+            name: prometheus-config
+        - name: rules-volume
+          configMap:
+            name: gtp-alert-rules
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: oail1
+spec:
+  type: NodePort
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+      nodePort: 30090

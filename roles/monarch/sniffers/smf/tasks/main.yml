@@ -1,0 +1,123 @@
+---
+- name: Get list of SMF pods
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: open5gs
+  register: smf_pods
+  no_log: true
+
+- set_fact:
+    smf1_pod: "{{ item.metadata.name }}"
+  loop: "{{ smf_pods.resources }}"
+  when: item.metadata.name is match('^open5gs-smf1-')
+  no_log: true
+
+- set_fact:
+    smf2_pod: "{{ item.metadata.name }}"
+  loop: "{{ smf_pods.resources }}"
+  when: item.metadata.name is match('^open5gs-smf2-')
+  no_log: true
+
+
+# --- Install Python on each SMF ---
+
+- name: Install minimal python3 on smf1
+  shell: |
+    kubectl -n open5gs exec {{ smf1_pod }} -- bash -c '
+      set -euo pipefail
+
+      # If python3 already exists, just show version and exit
+      if command -v python3 >/dev/null 2>&1; then
+        python3 --version
+        exit 0
+      fi
+
+      apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive \
+        apt-get install -y -qq --no-install-recommends python3 python3-pip tshark
+
+      python3 --version
+    '
+  register: smf1_install
+  changed_when: "'Setting up python3' in smf1_install.stdout or 'install' in smf1_install.stdout"
+
+- name: Install redis + pyshark on smf1
+  shell: |
+    kubectl -n open5gs exec {{ smf1_pod }} -- bash -c '
+      set -euo pipefail
+      python3 -m pip install --no-cache-dir --disable-pip-version-check redis pyshark scapy
+    '
+  register: smf1_pip_install
+  changed_when: "'Successfully installed' in smf1_pip_install.stdout"
+
+- name: Install minimal python3 on smf2
+  shell: |
+    kubectl -n open5gs exec {{ smf2_pod }} -- bash -c '
+      set -euo pipefail
+
+      if command -v python3 >/dev/null 2>&1; then
+        python3 --version
+        exit 0
+      fi
+
+      apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive \
+        apt-get install -y -qq --no-install-recommends python3 python3-pip tshark
+
+      python3 --version
+    '
+  register: smf2_install
+  changed_when: "'Setting up python3' in smf2_install.stdout or 'install' in smf2_install.stdout"
+
+- name: Install redis + pyshark on smf2
+  shell: |
+    kubectl -n open5gs exec {{ smf2_pod }} -- bash -c '
+      set -euo pipefail
+      python3 -m pip install --no-cache-dir --disable-pip-version-check redis pyshark scapy
+    '
+  register: smf2_pip_install
+  changed_when: "'Successfully installed' in smf2_pip_install.stdout" 
+
+
+# --- Copy sniffer script into SMF pods (new path!) ---
+
+- name: Copy smf_sniffer.py into smf1 pod (/open5gs/install/bin/)
+  ansible.builtin.shell: |
+    kubectl -n open5gs cp \
+      ~/monitoring/sliceawareness/smfsniffer/smf_sniffer.py \
+      {{ smf1_pod }}:/open5gs/install/bin/smf_sniffer.py
+  register: smf1_sniffer_copy
+  changed_when: smf1_sniffer_copy.rc == 0
+
+- name: Copy smf_sniffer.py into smf2 pod (/open5gs/install/bin/)
+  ansible.builtin.shell: |
+    kubectl -n open5gs cp \
+      ~/monitoring/sliceawareness/smfsniffer/smf_sniffer.py \
+      {{ smf2_pod }}:/open5gs/install/bin/smf_sniffer.py
+  register: smf2_sniffer_copy
+  changed_when: smf2_sniffer_copy.rc == 0
+
+
+# --- Start sniffer in background on both SMFs (from new directory) ---
+
+- name: Start smf_sniffer on smf1 (n4, background)
+  ansible.builtin.shell: |
+    kubectl -n open5gs exec {{ smf1_pod }} -- bash -c '
+      cd /open5gs/install/bin/
+      nohup python3 smf_sniffer.py n4 \
+        > /var/log/smf_sniffer_n4.log 2>&1 &
+    '
+  async: 0
+  poll: 0
+  changed_when: false
+
+- name: Start smf_sniffer on smf2 (n4, background)
+  ansible.builtin.shell: |
+    kubectl -n open5gs exec {{ smf2_pod }} -- bash -c '
+      cd /open5gs/install/bin/
+      nohup python3 smf_sniffer.py n4 \
+        > /var/log/smf_sniffer_n4.log 2>&1 &
+    '
+  async: 0
+  poll: 0
+  changed_when: false

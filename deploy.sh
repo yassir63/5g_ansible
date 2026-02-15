@@ -241,6 +241,7 @@ if [[ "$core" != "oai" && "$ran" != "ueransim" ]]; then
     echo "1) sopnode-f1"
     echo "2) sopnode-f2"
     echo "3) sopnode-f3"
+    echo "4) sopnode-w3"
     read -rp "Enter choice [1-3]: " monitor_node_choice
     if [[ -z "${monitor_node_choice}" ]]; then
       monitor_node=${DEFAULT_MONITOR_NODE}
@@ -249,6 +250,7 @@ if [[ "$core" != "oai" && "$ran" != "ueransim" ]]; then
         1) monitor_node="sopnode-f1" ;;
         2) monitor_node="sopnode-f2" ;;
         3) monitor_node="sopnode-f3" ;;
+        4) monitor_node="sopnode-w3" ;;
         *) echo "❌ Invalid Monitoring node"; exit 1 ;;
       esac
     fi
