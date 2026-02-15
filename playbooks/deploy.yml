@@ -230,7 +230,7 @@
   hosts: core_node
   become: true
   roles:
-    - role: setup/k8s/add_taint
+    - role: setup/k8s/remove_taint
       vars:
         target_node: "{{ monitor_node_name }}"
       when: core_node_name != ran_node_name
