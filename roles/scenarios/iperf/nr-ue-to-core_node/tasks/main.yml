@@ -34,7 +34,18 @@
   loop_control:
     label: "Installing iperf3 on {{ item.metadata.name }}"
   register: install_check
-  failed_when: install_check.rc != 0 
+  failed_when: install_check.rc != 0
+
+# following solve issues with iperf
+- name: Configure UE MTU to 1350
+  shell: |
+    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- \
+    ip link set dev oaitun_ue1 mtu 1350
+  loop: "{{ ue_resources }}"
+  loop_control:
+    label: "Setting MTU 1350 on {{ item.metadata.name }}"
+  register: mtu_result
+  failed_when: false
 
 - name: Get oaitun_ue1 IP
   shell: |
