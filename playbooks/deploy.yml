@@ -49,7 +49,7 @@
 
 # not for monitor_node
 - name: Common sopnodes setup
-  hosts: core_node,ran_node,monitor_nodes
+  hosts: core_node,ran_node,monitor_node
   roles:
     - role: setup/ovs
       when: not fhi72
@@ -146,7 +146,7 @@
     - role: setup/k8s/add_taint
       vars:
         target_node: "{{ monitor_node_name }}"
-      when: core_node_name != ran_node_name
+      when: monitoring_enabled and core_node_name != ran_node_name
       
 - name: Setup sniffers on SMFs
   hosts: core_node
@@ -237,9 +237,6 @@
 #
 ############################################################################
 
-
-
-
 - name: Remove NoSchedule taint on Monitor node
   hosts: core_node
   become: true
@@ -247,7 +244,7 @@
     - role: setup/k8s/remove_taint
       vars:
         target_node: "{{ monitor_node_name }}"
-      when: core_node_name != ran_node_name
+      when: monitoring_enabled and core_node_name != ran_node_name
 
 - name: 5G-Monarch Final Operations
   hosts: monitor_node
