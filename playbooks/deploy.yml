@@ -183,17 +183,27 @@
     - role: 5g/open5gs/deploy
       when: core == 'open5gs'
 
-- name: Setup sniffers on SMFs
-  hosts: monitor_node
+# - name: Setup sniffers on SMFs
+#   hosts: monitor_node
+#   gather_facts: false
+#   roles:
+#     - role: monarch/sniffers/smf
+#       when: monitoring_enabled
+
+# - name: Setup sniffers on AMF
+#   hosts: monitor_node
+#   gather_facts: false
+#   roles:
+#     - role: monarch/sniffers/amf
+#       when: monitoring_enabled
+
+
+- name: Setup sniffers on SMFs and AMF
+  hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
   gather_facts: false
   roles:
     - role: monarch/sniffers/smf
       when: monitoring_enabled
-
-- name: Setup sniffers on AMF
-  hosts: monitor_node
-  gather_facts: false
-  roles:
     - role: monarch/sniffers/amf
       when: monitoring_enabled
 
