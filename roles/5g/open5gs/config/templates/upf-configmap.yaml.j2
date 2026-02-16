@@ -39,6 +39,7 @@ data:
     sysctl -w net.ipv6.conf.all.disable_ipv6=1;
     ip link set ogstun up;
     ip link set dev ogstun mtu 1400;
+    iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu;
     sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward";
     iptables -t nat -A POSTROUTING -s {{ upf_slice_data.ip_prefix }}.0/16 ! -o ogstun -j MASQUERADE;
 
