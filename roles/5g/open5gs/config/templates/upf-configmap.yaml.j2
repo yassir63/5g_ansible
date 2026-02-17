@@ -19,13 +19,19 @@ data:
     upf:
       pfcp:
         server:
-          - dev: n4
+{% for slice in fiveg.slices %}{% if slice.name == upf_slice %}
+          - address: 10.10.4.{{ loop.index }}
+{% endif %}{% endfor %}
       gtpu:
         server:
-          - dev: n3
+{% for slice in fiveg.slices %}{% if slice.name == upf_slice %}
+          - address: 10.10.3.{{ loop.index }}
+{% endif %}{% endfor %}
       session:
-        - subnet: {{ upf_slice_data.ip_prefix }}.1/16
-          dnn: {{ upf_slice_data.dnn }}
+{% for slice in fiveg.slices %}{% if slice.name == upf_slice %}
+        - subnet: {{ slice.ip_prefix }}.0/16
+          dnn: {{ slice.dnn }}
+{% endif %}{% endfor %}
       metrics:
         server:
           - address: 0.0.0.0
@@ -33,13 +39,13 @@ data:
 
   wrapper.sh: |
     #!/bin/bash
-
+{% for slice in fiveg.slices %}{% if slice.name == upf_slice %}
     ip tuntap add name ogstun mode tun;
-    ip addr add {{ upf_slice_data.ip_prefix }}.1/16 dev ogstun;
+    ip addr add {{ slice.ip_prefix }}.1/16 dev ogstun;
     sysctl -w net.ipv6.conf.all.disable_ipv6=1;
     ip link set ogstun up;
     ip link set dev ogstun mtu 1350;
     sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward";
-    iptables -t nat -A POSTROUTING -s {{ upf_slice_data.ip_prefix }}.0/16 ! -o ogstun -j MASQUERADE;
-
+    iptables -t nat -A POSTROUTING -s {{ slice.ip_prefix }}.0/16 ! -o ogstun -j MASQUERADE;
+{% endif %}{% endfor %}
     /open5gs/install/bin/open5gs-upfd -c /open5gs/config/upfcfg.yaml
