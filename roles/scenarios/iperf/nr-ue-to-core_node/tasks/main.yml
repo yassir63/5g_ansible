@@ -34,17 +34,38 @@
   loop_control:
     label: "Installing iperf3 on {{ item.metadata.name }}"
   register: install_check
-  failed_when: install_check.rc != 0 
+  failed_when: install_check.rc != 0
+
+# following solve issues with iperf
+- name: Configure UE MTU to 1350
+  shell: |
+    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- \
+    ip link set dev oaitun_ue1 mtu 1350
+  loop: "{{ ue_resources }}"
+  loop_control:
+    label: "Setting MTU 1350 on {{ item.metadata.name }}"
+  register: mtu_result
+  failed_when: false
 
 - name: Get oaitun_ue1 IP
   shell: |
-    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- bash -c "
-    ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '"
+    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- \
+    /bin/bash -c "ip -4 addr show oaitun_ue1 | awk '/inet / {print \$2}' | cut -d/ -f1"
   loop: "{{ ue_resources }}"
   loop_control:
     label: "Getting IP for {{ item.metadata.name }}"
   register: ue_ip_results
   changed_when: false
+
+- name: Init and Classify valid UEs
+  set_fact:
+    valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
+  loop: "{{ ue_ip_results.results }}"
+  # On change la condition pour être plus tolérant mais strict sur le contenu
+  when: 
+    - item.stdout is defined
+    - item.stdout | trim | length > 0
+    - item.stdout | trim != ""
 
 - name: Init and Classify valid UEs
   set_fact:
@@ -74,7 +95,13 @@
   loop_control:
     index_var: idx
     label: "Uplink: {{ item.pod }} (Port: {{ 5201 + idx | int }})"
+  register: iperf_results
+  failed_when: false
   ignore_errors: yes
+
+# wait 1s to prevent Bad file descriptor error
+- pause:
+    seconds: 1
 
 - name: Wait for sockets to clear
   pause:

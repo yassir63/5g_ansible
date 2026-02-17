@@ -24,8 +24,10 @@ data:
         server:
           - dev: n3
       session:
-        - subnet: {{ upf_slice_data.ip_prefix }}.1/16
-          dnn: {{ upf_slice_data.dnn }}
+{% for slice in fiveg.slices %}{% if slice.name == upf_slice %}
+        - subnet: {{ slice.ip_prefix }}.0/16
+          dnn: {{ slice.dnn }}
+{% endif %}{% endfor %}
       metrics:
         server:
           - address: 0.0.0.0
@@ -34,13 +36,30 @@ data:
   wrapper.sh: |
     #!/bin/bash
 
+    # Wait for Multus to finish attaching interfaces n3 and n4
+    echo "Waiting for network interfaces..."
+    while ! ip link show n3 >/dev/null 2>&1; do echo "Waiting for n3..."; sleep 2; done
+    while ! ip link show n4 >/dev/null 2>&1; do echo "Waiting for n4..."; sleep 2; done
+
+    # Create and configure the TUN device (ogstun)
     ip tuntap add name ogstun mode tun;
     ip addr add {{ upf_slice_data.ip_prefix }}.1/16 dev ogstun;
+    
+    # Disable IPv6 for the TUN interface
     sysctl -w net.ipv6.conf.all.disable_ipv6=1;
+    
+    # Bring the interface up and set MTU
     ip link set ogstun up;
-    ip link set dev ogstun mtu 1400;
-    iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu;
+    ip link set dev ogstun mtu 1350;
+    
+    # Enable IPv4 forwarding for user plane traffic
     sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward";
+    
+    # Set up NAT Masquerade for the UE subnet
     iptables -t nat -A POSTROUTING -s {{ upf_slice_data.ip_prefix }}.0/16 ! -o ogstun -j MASQUERADE;
 
+    # Final stabilization delay before starting the binary
+    sleep 5;
+
+    # Start the Open5GS UPF daemon
     /open5gs/install/bin/open5gs-upfd -c /open5gs/config/upfcfg.yaml
