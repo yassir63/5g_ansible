@@ -1,7 +1,7 @@
 ---
 - name: Set defaults
   set_fact:
-    duration: "{{ iperf_duration | default(12) }}"
+    duration: "{{ iperf_duration | default(30) }}"
     sleep: "{{ iperf_sleep | default(5) }}"
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     core_ns: "{{ core }}"

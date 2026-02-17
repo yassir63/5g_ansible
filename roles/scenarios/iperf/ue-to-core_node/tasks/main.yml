@@ -4,7 +4,7 @@
     ue_ips: {}
     ignore_task_errors: true
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
-    duration: "{{ iperf_duration | default(12) }}"
+    duration: "{{ iperf_duration | default(30) }}"
     sleep: "{{ iperf_sleep | default(5) }}"
 
 - name: Connect all qhat UEs sequentially

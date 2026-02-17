@@ -280,7 +280,11 @@ R2LAB_UES=()
 
 # If R2Lab platform is selected, ask for RU and UEs
 if [[ "$platform" == "r2lab" ]]; then
-  R2LAB_RUs=("benetel1" "benetel2" "jaguar" "panther" "n300" "n320")
+  if [[ "$ran" == "oai" ]]; then
+      R2LAB_RUs=("benetel1" "benetel2" "jaguar" "panther" "n300" "n320")
+  else # $ran == "srsRAN" for now, only n3xx RUs supported
+      R2LAB_RUs=("n300" "n320")
+  fi
   # Select RU
   # Make jaguar the default if the user just presses enter
   echo ""
@@ -337,7 +341,7 @@ if [[ "$platform" == "r2lab" ]]; then
   fi
 fi
 
-# Store the R2Lab slice name (usename) as well as email and passowrd for future use
+# Store the R2Lab slice name (usename) as well as email and password for future use
 R2LAB_CONFIG="./.r2lab_config"
 if [[ -f "$R2LAB_CONFIG" ]]; then
   source "$R2LAB_CONFIG"
@@ -536,13 +540,13 @@ if [[ "$run_iperf_test" == true ]]; then
   echo "  Scenario: $scenario"
   case "$scenario" in
     "Iperf R2lab scenario without interference")
-      echo "Will run iperf on ${R2LAB_UES[0]} for 5 minutes in downlink then uplink (10 minutes in total for the scenario)"
+      echo "Will run iperf in a sequential way on ${R2LAB_UES[0]} for 30 seconds in downlink then uplink (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
       ;;
     "Parallel Iperf Test (without interference)")
       echo "Will run a bidirectional iperf on ${R2LAB_UES[0]}, ${R2LAB_UES[1]}, ${R2LAB_UES[2]} and ${R2LAB_UES[3]} respectively for 5 minutes each, with an in-between wait time of 100 seconds (10 minutes in total for the scenario)"
       ;;
     "Iperf RFSIM scenario without interference")
-      echo "Will run iperf on OAI-NR-UE1 then OAI-NR-UE2 for 200 seconds each with an in-between wait time of 100 seconds in downlink then uplink (10 minutes in total for the scenario)"
+      echo "Will run iperf sequentially OAI-NR-UE1, OAI-NR-UE2 and OAI-NR-UE3 for 30 seconds each with an in-between wait time of 5 seconds in downlink then uplink (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
       ;;
   esac
 fi
