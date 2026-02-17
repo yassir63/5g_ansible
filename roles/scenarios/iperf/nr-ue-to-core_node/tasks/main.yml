@@ -47,15 +47,20 @@
   register: mtu_result
   failed_when: false
 
-- name: Get oaitun_ue1 IP
+- name: Get oaitun_ue1 IP (with retry)
   shell: |
     kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- bash -c "
     ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '"
   loop: "{{ ue_resources }}"
   loop_control:
-    label: "Getting IP for {{ item.metadata.name }}"
+    label: "Waiting for IP on {{ item.metadata.name }}"
   register: ue_ip_results
+  until: ue_ip_results.stdout | trim | length > 0
+  retries: 10
+  delay: 3
   changed_when: false
+  ignore_errors: yes
+
 
 - name: Init and Classify valid UEs
   set_fact:
