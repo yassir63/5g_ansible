@@ -124,6 +124,9 @@ PROFILE_5G="${PROFILE_5G:-$DEFAULT_PROFILE_5G}"
 NAME_INVENTORY="${NAME_INVENTORY:-$DEFAULT_INVENTORY}"
 INVENTORY="${INVENTORY:-./inventory/${NAME_INVENTORY}/hosts.ini}"
 
+DIR_LOGS="LOGS"
+mkdir -p ${DIR_LOGS}
+
 echo -e "${CYAN}\
     ____  ____ __    _   __ __       ____________   ____             __               ______            __
    / __ \/  _/   |  / | / /   |     / ____/ ____/  / __ \___  ____  / /___  __  __   /_  __/___  ____  / /   
@@ -953,7 +956,7 @@ deploy() {
 	echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy_r2lab.yml &"
 	run_cmd ansible-playbook -i "$INVENTORY" \
 		"${ANSIBLE_EXTRA_ARGS[@]}" \
-		playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+		playbooks/deploy_r2lab.yml 2>&1 | tee ${DIR_LOGS}/logs-r2lab.txt &
     fi
 
     echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy.yml"
@@ -995,11 +998,11 @@ run_scenario() {
         case "$scenario" in
             "Iperf R2lab scenario without interference"|"Iperf RFSIM scenario without interference")
                 run_cmd ./run_scenario.sh -d --inventory="${NAME_INVENTORY}" \
-                    "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_iperf.txt
+                    "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee ${DIR_LOGS}/logs-scenario_iperf.txt
                 ;;
             "Iperf R2lab scenario with interference")
                 run_cmd ./run_scenario.sh -i --inventory="${NAME_INVENTORY}" \
-                    "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_interference.txt
+                    "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee ${DIR_LOGS}/logs-scenario_interference.txt
                 ;;
             *)
                 echo "❌ Unknown iperf test scenario: $scenario"
