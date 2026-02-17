@@ -96,6 +96,20 @@
     - role: setup/k8s/cluster_join
       when: inventory_hostname != core_node_name
 
+############################################################################
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
+- hosts: localhost,core_node,ran_node
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+#
+############################################################################
+
+
 - name: Add NoSchedule taint on RAN node (reserved node for RAN pods)
   hosts: core_node
   become: true
@@ -103,7 +117,7 @@
     - role: setup/k8s/add_taint
       vars:
         target_node: "{{ ran_node_name }}"
-      when: core_node_name != ran_node_name
+      when: core_node_name != ran_node_name and not fhi72
 
 - name: Install Multus / CNAO
   hosts: core_node
@@ -169,20 +183,6 @@
   roles:
     - role: setup/gre_tunnel
       when: bridge_enabled
-
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost,core_node,ran_node
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-#
-############################################################################
-
 
 - name: Deploy Open5GS CN
   hosts: core_node
