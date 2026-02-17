@@ -47,20 +47,25 @@
   register: mtu_result
   failed_when: false
 
-- name: Get oaitun_ue1 IP (with retry)
+- name: Get oaitun_ue1 IP
   shell: |
-    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- bash -c "
-    ip -4 addr show oaitun_ue1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 | tr -d '\n\r '"
+    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- \
+    /bin/bash -c "ip -4 addr show oaitun_ue1 | awk '/inet / {print \$2}' | cut -d/ -f1"
   loop: "{{ ue_resources }}"
   loop_control:
-    label: "Waiting for IP on {{ item.metadata.name }}"
+    label: "Getting IP for {{ item.metadata.name }}"
   register: ue_ip_results
-  until: ue_ip_results.stdout | trim | length > 0
-  retries: 10
-  delay: 3
   changed_when: false
-  ignore_errors: yes
 
+- name: Init and Classify valid UEs
+  set_fact:
+    valid_ues: "{{ valid_ues + [ {'pod': item.item.metadata.name, 'ip': item.stdout | trim} ] }}"
+  loop: "{{ ue_ip_results.results }}"
+  # On change la condition pour être plus tolérant mais strict sur le contenu
+  when: 
+    - item.stdout is defined
+    - item.stdout | trim | length > 0
+    - item.stdout | trim != ""
 
 - name: Init and Classify valid UEs
   set_fact:
