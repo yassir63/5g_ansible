@@ -177,6 +177,16 @@
   become: true
   when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
 
+- name: Assign Gateway IPs to OVS bridges for Single-Node SCTP bind
+  ansible.builtin.shell: |
+    # Assign IP .1 of each subnet to the bridge to simulate active link
+    ip addr add 10.10.2.1/24 dev n2br || true
+    ip addr add 10.10.3.1/24 dev n3br || true
+    ip addr add 10.10.4.1/24 dev n4br || true
+  become: true
+  when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
+
+
 - name: Apply Open5GS NFs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
 
