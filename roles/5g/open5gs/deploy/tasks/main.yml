@@ -142,9 +142,9 @@
     set -euo pipefail
     for nad in n2network n3network n4network; do
       case "$nad" in
-        n2network) ifname=n2 ;;
-        n3network) ifname=n3 ;;
-        n4network) ifname=n4 ;;
+        n2network) ifname=net1 ;;
+        n3network) ifname=net2 ;;
+        n4network) ifname=net3 ;;
       esac
       if ! kubectl get networkattachmentdefinition "$nad" -n open5gs &>/dev/null; then
         continue
