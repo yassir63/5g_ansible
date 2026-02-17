@@ -10,28 +10,29 @@
   run_once: true
   delegate_to: localhost
 
-- name: Create venv on worker
-  ansible.builtin.command:
-    cmd: python3 -m venv /opt/ansible-k8s-venv
-    creates: /opt/ansible-k8s-venv/bin/activate
+- name: Prepare Python environment on Master (Core Node)
+  delegate_to: "{{ groups['core_node'][0] }}"
+  run_once: true
   become: true
-  when: inventory_hostname in groups['ran_node']
+  block:
+    - name: Create venv for Kubernetes modules
+      ansible.builtin.command:
+        cmd: python3 -m venv /opt/ansible-k8s-venv
+        creates: /opt/ansible-k8s-venv/bin/activate
 
-- name: Ensure pip, setuptools, wheel are installed in venv
-  ansible.builtin.shell: |
-    set -eux
-    /opt/ansible-k8s-venv/bin/pip install --upgrade pip setuptools wheel
-  args:
-    executable: /bin/bash
-  become: true
-  when: inventory_hostname in groups['ran_node']
+    - name: Install required Python libraries (including setuptools)
+      ansible.builtin.pip:
+        name: 
+          - pip
+          - setuptools
+          - wheel
+          - kubernetes
+        state: latest
+        executable: /opt/ansible-k8s-venv/bin/pip
 
-- name: Install Python kubernetes library on worker ran_node
-  ansible.builtin.pip:
-    name: kubernetes
-    executable: /opt/ansible-k8s-venv/bin/pip
-  become: true
-  when: inventory_hostname in groups['ran_node']
+    - name: Force Ansible to use this venv for delegated tasks
+      ansible.builtin.set_fact:
+        ansible_python_interpreter: /opt/ansible-k8s-venv/bin/python
 
 - name: Label node {{ inventory_hostname }} as SR-IOV capable
   kubernetes.core.k8s:
