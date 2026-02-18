@@ -58,35 +58,35 @@
 
 - name: Map slices minimal pour gNB (srsRAN format)
   set_fact:
-    gnb_slices: "{{ (gnb_slices | default([])) + [ slice_entry ] }}"
+    gnb_slices: "{{ gnb_slices + [slice_entry] }}"
   loop: "{{ fiveg.slices }}"
   loop_control:
     loop_var: sl_item
   vars:
-    # On construit le SD avec 0x de manière sécurisée
+    # On prépare la valeur brute sans quotes
     formatted_sd: >-
-      {% if sl_item.sd is defined and sl_item.sd != 'EMPTY' %}
-      {{ '0x' ~ sl_item.sd if not sl_item.sd.startswith('0x') else sl_item.sd }}
-      {% else %}EMPTY{% endif %}
-    # Construction de l'objet slice
+      {% if sl_item.sd is defined and sl_item.sd != 'EMPTY' -%}
+        {{ '0x' ~ sl_item.sd if not sl_item.sd.startswith('0x') else sl_item.sd }}
+      {%- else -%}0xFFFFFF{%- endif %}
+    # Construction de l'objet avec les types corrects
     slice_entry:
       sst: "{{ sl_item.sst | int }}"
-      sd: "{{ (formatted_sd != 'EMPTY') | ternary(formatted_sd, '0xFFFFFF') }}"
+      sd: "{{ formatted_sd | trim }}"
 
 - name: Map slices pour AMF (TAI slice support list)
   set_fact:
-    amf_slices: "{{ (amf_slices | default([])) + [ slice_entry ] }}"
+    amf_slices: "{{ amf_slices + [slice_entry] }}"
   loop: "{{ fiveg.slices }}"
   loop_control:
     loop_var: sl_item
   vars:
     formatted_sd: >-
-      {% if sl_item.sd is defined and sl_item.sd != 'EMPTY' %}
-      {{ '0x' ~ sl_item.sd if not sl_item.sd.startswith('0x') else sl_item.sd }}
-      {% else %}EMPTY{% endif %}
+      {% if sl_item.sd is defined and sl_item.sd != 'EMPTY' -%}
+        {{ '0x' ~ sl_item.sd if not sl_item.sd.startswith('0x') else sl_item.sd }}
+      {%- else -%}0xFFFFFF{%- endif %}
     slice_entry:
       sst: "{{ sl_item.sst | int }}"
-      sd: "{{ (formatted_sd != 'EMPTY') | ternary(formatted_sd, '0xFFFFFF') }}"
+      sd: "{{ formatted_sd | trim }}"
 
 - name: Update AMF supported_tracking_areas from 5G profile
   ansible.builtin.shell: >
