@@ -56,7 +56,7 @@
     gnb_slices: []
     amf_slices: []
 
-- name: Map slices for gNB strictly
+- name: Map slices minimal pour gNB (srsRAN format)
   set_fact:
     gnb_slices: "{{ (gnb_slices | default([])) + [ slice_entry ] }}"
   loop: "{{ fiveg.slices }}"
@@ -67,7 +67,12 @@
       sst: "{{ sl_item.sst | int }}"
       sd: >-
         {% if sl_item.sd is defined and sl_item.sd != 'EMPTY' %}
-          0x{{ '%06X' | format((sl_item.sd|string).startswith('0x') | ternary(sl_item.sd|string[2:]|int(base=16), sl_item.sd|int)) }}
+          {% set raw_sd = sl_item.sd|string %}
+          {% if raw_sd.startswith('0x') %}
+            0x{{ '%06X' | format(raw_sd[2:]|int(base=16)) }}
+          {% else %}
+            0x{{ '%06X' | format(raw_sd|int) }}
+          {% endif %}
         {% else %}
           0xFFFFFF
         {% endif %}
