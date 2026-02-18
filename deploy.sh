@@ -967,7 +967,7 @@ deploy() {
 
     run_cmd ansible-playbook -i "$INVENTORY" \
 	    "${ANSIBLE_EXTRA_ARGS[@]}" \
-	    playbooks/deploy.yml 2>&1 | tee logs.txt
+	    playbooks/deploy.yml 2>&1 | tee ${DIR_LOGS}/logs.txt
 
     echo ""
     echo "=========================================="
