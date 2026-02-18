@@ -56,34 +56,38 @@
     gnb_slices: []
     amf_slices: []
 
-- name: Apply 5G profile and fix slicing types
-  ansible.builtin.shell: |
-    {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" | .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }}' "{{ values_file }}"
-    {{ yq_bin_path }} eval -i '.gnbConfig.cu_cp.amf.supported_tracking_areas[0].tac = {{ fiveg.plmn.tac | int }} | .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}"' "{{ values_file }}"
 
-    cat <<EOF > /tmp/slices_block.yaml
-    {% for sl in fiveg.slices %}
-    - sst: {{ sl.sst | int }}
-      sd: {{ sl.sd if (sl.sd is defined and sl.sd != 'EMPTY') else '0xFFFFFF' }}
-    {% endfor %}
-    EOF
+- name: Map slices minimal pour gNB (srsRAN format)
+  set_fact:
+    gnb_slices: "{{ (gnb_slices | default([])) + [ slice_entry ] }}"
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: sl_item
+  vars:
+    # On construit le SD avec 0x de manière sécurisée
+    formatted_sd: >-
+      {% if sl_item.sd is defined and sl_item.sd != 'EMPTY' %}
+      {{ '0x' ~ sl_item.sd if not sl_item.sd.startswith('0x') else sl_item.sd }}
+      {% else %}EMPTY{% endif %}
+    # Construction de l'objet slice
+    slice_entry:
+      sst: "{{ sl_item.sst | int }}"
+      sd: {{ (formatted_sd != 'EMPTY') | ternary(formatted_sd, '0xFFFFFF') }}
 
-    {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.slicing = load("/tmp/slices_block.yaml")' "{{ values_file }}"
-    {{ yq_bin_path }} eval -i '.gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = load("/tmp/slices_block.yaml")' "{{ values_file }}"
-
-    sed -i 's/sst: "\(.*\)"/sst: \1/g' "{{ values_file }}"
-    sed -i 's/sd: "\(.*\)"/sd: \1/g' "{{ values_file }}"
-    rm /tmp/slices_block.yaml
-  become: true
-
-- name: Check SD values
-  ansible.builtin.shell: "grep 'sd:' {{ values_file }}"
-  register: check_sd
-  changed_when: false
-
-- name: Display SD
-  ansible.builtin.debug:
-    var: check_sd.stdout_lines
+- name: Map slices pour AMF (TAI slice support list)
+  set_fact:
+    amf_slices: "{{ (amf_slices | default([])) + [ slice_entry ] }}"
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: sl_item
+  vars:
+    formatted_sd: >-
+      {% if sl_item.sd is defined and sl_item.sd != 'EMPTY' %}
+      {{ '0x' ~ sl_item.sd if not sl_item.sd.startswith('0x') else sl_item.sd }}
+      {% else %}EMPTY{% endif %}
+    slice_entry:
+      sst: "{{ sl_item.sst | int }}"
+      sd: {{ (formatted_sd != 'EMPTY') | ternary(formatted_sd, '0xFFFFFF') }}
 
 - name: Update AMF supported_tracking_areas from 5G profile
   ansible.builtin.shell: >
