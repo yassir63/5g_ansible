@@ -56,31 +56,15 @@
     gnb_slices: []
     amf_slices: []
 
-- name: Map slices strictly for gNB (srsRAN format)
-  set_fact:
-    gnb_slices: "{{ (gnb_slices | default([])) + [ slice_entry ] }}"
-  loop: "{{ fiveg.slices }}"
-  loop_control:
-    loop_var: sl_item
-  vars:
-    slice_entry:
-      sst: "{{ sl_item.sst | int }}"
-      sd: >-
-        {{ '0xFFFFFF' if (sl_item.sd is not defined or sl_item.sd|string|upper == 'EMPTY') 
-           else ('0x%06X' % ((sl_item.sd|string).replace('0x','')|int(base=16) if (sl_item.sd|string).startswith('0x') else sl_item.sd|int)) }}
+- name: Generate gNB slicing via template (no quotes)
+  template:
+    src: slicing_values.j2
+    dest: "{{ repo_dest_abs }}/charts/srsran-gnb/gnb_slicing.yaml"
 
-- name: Map slices pour AMF (TAI slice support list)
-  set_fact:
-    amf_slices: "{{ (amf_slices | default([])) + [ slice_entry ] }}"
-  loop: "{{ fiveg.slices }}"
-  loop_control:
-    loop_var: sl_item
-  vars:
-    slice_entry:
-      sst: "{{ sl_item.sst | int }}"
-      sd: >-
-        {{ '0xFFFFFF' if (sl_item.sd is not defined or sl_item.sd|string|upper == 'EMPTY') 
-           else ('0x%06X' % ((sl_item.sd|string).replace('0x','')|int(base=16) if (sl_item.sd|string).startswith('0x') else sl_item.sd|int)) }}
+- name: Generate AMF slicing via template (no quotes)
+  template:
+    src: slicing_values.j2
+    dest: "{{ repo_dest_abs }}/charts/srsran-gnb/amf_slicing.yaml"
 
 
 - name: Update AMF supported_tracking_areas from 5G profile
