@@ -1,8 +1,8 @@
-{% set raw_sd = sl_item.sd|string if sl_item.sd is defined else 'EMPTY' %}
-{% if raw_sd.upper() == 'EMPTY' %}
+{% set raw = sl_item.sd|string if sl_item.sd is defined else 'EMPTY' %}
+{% if raw.upper() == 'EMPTY' %}
 0xFFFFFF
-{% elif raw_sd.lower().startswith('0x') %}
-0x{{ '%06X' | format(raw_sd[2:]|int(base=16)) }}
+{% elif raw.startswith('0x') or raw.startswith('0X') %}
+0x{{ '%06X' | format(raw[2:]|int(base=16)) }}
 {% else %}
-0x{{ '%06X' | format(raw_sd|int) }}
+0x{{ '%06X' | format(raw|int) }}
 {% endif %}
