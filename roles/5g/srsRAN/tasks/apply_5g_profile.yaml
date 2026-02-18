@@ -56,31 +56,24 @@
     gnb_slices: []
     amf_slices: []
 
-- name: Simple and Robust Slicing Update
+- name: Update slicing one by one (The Only Robust Way)
   ansible.builtin.shell: |
-    cat <<EOF > /tmp/slices.json
-    {{ fiveg.slices | to_json }}
-    EOF
+    {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.slicing = [] | .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = []' "{{ values_file }}"
 
-    {{ yq_bin_path }} eval -i '
-      .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
-      .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }} |
-      .gnbConfig.cell_cfg.slicing = load("/tmp/slices.json") |
-      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].tac = {{ fiveg.plmn.tac | int }} |
-      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
-      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = load("/tmp/slices.json")
-    ' "{{ values_file }}"
+    {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" | .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }}' "{{ values_file }}"
+    {{ yq_bin_path }} eval -i '.gnbConfig.cu_cp.amf.supported_tracking_areas[0].tac = {{ fiveg.plmn.tac | int }} | .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}"' "{{ values_file }}"
 
-    sed -i 's/"EMPTY"/0xFFFFFF/g' "{{ values_file }}"
-    sed -i 's/sd: EMPTY/sd: 0xFFFFFF/g' "{{ values_file }}"
+    {% for sl in fiveg.slices %}
+    {% set sst_val = sl.sst | int %}
+    {% set sd_val = sl.sd if (sl.sd is defined and sl.sd != 'EMPTY') else '0xFFFFFF' %}
     
-    # Ensuite on vire toutes les quotes autour des valeurs SST et SD
+    {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.slicing += {"sst": {{ sst_val }}, "sd": {{ sd_val }}}' "{{ values_file }}"
+    {{ yq_bin_path }} eval -i '.gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list += {"sst": {{ sst_val }}, "sd": {{ sd_val }}}' "{{ values_file }}"
+    {% endfor %}
+
+    # 4. Suppression de toutes les quotes sur SST et SD
     sed -i 's/sst: "\(.*\)"/sst: \1/g' "{{ values_file }}"
     sed -i 's/sd: "\(.*\)"/sd: \1/g' "{{ values_file }}"
-    
-    # Enfin on vire les quotes sur l'hexa s'il en reste
-    sed -i 's/sd: "\(0x[0-9A-Fa-f]*\)"/sd: \1/g' "{{ values_file }}"
-
 
 - name: Update AMF supported_tracking_areas from 5G profile
   ansible.builtin.shell: >
