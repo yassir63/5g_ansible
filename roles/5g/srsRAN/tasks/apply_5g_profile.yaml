@@ -67,7 +67,7 @@
       sst: "{{ sl_item.sst | int }}"
       sd: >-
         {% if sl_item.sd is defined and sl_item.sd != 'EMPTY' %}
-          0x{{ '%06X' | format(sl_item.sd | int(base=16) if sl_item.sd|string.startswith('0x') else sl_item.sd | int) }}
+          0x{{ '%06X' | format((sl_item.sd|string).startswith('0x') | ternary(sl_item.sd|string[2:]|int(base=16), sl_item.sd|int)) }}
         {% else %}
           0xFFFFFF
         {% endif %}
