@@ -56,24 +56,38 @@
     gnb_slices: []
     amf_slices: []
 
-- name: Update slicing one by one (The Only Robust Way)
+- name: Apply 5G profile and fix slicing types
   ansible.builtin.shell: |
-    {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.slicing = [] | .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = []' "{{ values_file }}"
-
+    # 1. Basics
     {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" | .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }}' "{{ values_file }}"
     {{ yq_bin_path }} eval -i '.gnbConfig.cu_cp.amf.supported_tracking_areas[0].tac = {{ fiveg.plmn.tac | int }} | .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}"' "{{ values_file }}"
 
-    {% for sl in fiveg.slices %}
-    {% set sst_val = sl.sst | int %}
-    {% set sd_val = sl.sd if (sl.sd is defined and sl.sd != 'EMPTY') else '0xFFFFFF' %}
-    
-    {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.slicing += {"sst": {{ sst_val }}, "sd": {{ sd_val }}}' "{{ values_file }}"
-    {{ yq_bin_path }} eval -i '.gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list += {"sst": {{ sst_val }}, "sd": {{ sd_val }}}' "{{ values_file }}"
-    {% endfor %}
+    # 2. Slices block generation
+    cat <<EOF > /tmp/slices_block.yaml
+{% for sl in fiveg.slices %}
+- sst: {{ sl.sst | int }}
+  sd: {{ sl.sd if (sl.sd is defined and sl.sd != 'EMPTY') else '0xFFFFFF' }}
+{% endfor %}
+EOF
 
-    # 4. Suppression de toutes les quotes sur SST et SD
+    # 3. Injection
+    {{ yq_bin_path }} eval -i '.gnbConfig.cell_cfg.slicing = load("/tmp/slices_block.yaml")' "{{ values_file }}"
+    {{ yq_bin_path }} eval -i '.gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = load("/tmp/slices_block.yaml")' "{{ values_file }}"
+
+    # 4. Quotes removal
     sed -i 's/sst: "\(.*\)"/sst: \1/g' "{{ values_file }}"
     sed -i 's/sd: "\(.*\)"/sd: \1/g' "{{ values_file }}"
+    rm /tmp/slices_block.yaml
+  become: true
+
+- name: Check SD values
+  ansible.builtin.shell: "grep 'sd:' {{ values_file }}"
+  register: check_sd
+  changed_when: false
+
+- name: Display SD
+  ansible.builtin.debug:
+    var: check_sd.stdout_lines
 
 - name: Update AMF supported_tracking_areas from 5G profile
   ansible.builtin.shell: >
