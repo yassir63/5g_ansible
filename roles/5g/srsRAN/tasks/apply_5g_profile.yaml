@@ -71,9 +71,7 @@
     # Construction de l'objet slice
     slice_entry:
       sst: "{{ sl_item.sst | int }}"
-      {% if formatted_sd != 'EMPTY' %}
-      sd: {{ formatted_sd }}
-      {% endif %}
+      sd: "{{ (formatted_sd != 'EMPTY') | ternary(formatted_sd, '0xFFFFFF') }}"
 
 - name: Map slices pour AMF (TAI slice support list)
   set_fact:
@@ -88,9 +86,7 @@
       {% else %}EMPTY{% endif %}
     slice_entry:
       sst: "{{ sl_item.sst | int }}"
-      {% if formatted_sd != 'EMPTY' %}
-      sd: {{ formatted_sd }}
-      {% endif %}
+      sd: "{{ (formatted_sd != 'EMPTY') | ternary(formatted_sd, '0xFFFFFF') }}"
 
 - name: Update AMF supported_tracking_areas from 5G profile
   ansible.builtin.shell: >
