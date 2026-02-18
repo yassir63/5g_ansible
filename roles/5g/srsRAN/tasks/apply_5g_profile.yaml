@@ -65,7 +65,15 @@
   vars:
     slice_entry:
       sst: "{{ sl_item.sst | int }}"
-      sd: "{{ lookup('template', 'slice_sd.j2', sl_item=sl_item) | trim }}"
+      sd: >-
+        {% set raw = sl_item.sd|string if sl_item.sd is defined else 'EMPTY' %}
+        {% if raw.upper() == 'EMPTY' %}
+0xFFFFFF
+        {% elif raw.startswith('0x') or raw.startswith('0X') %}
+0x{{ '%06X' | format(raw[2:] | int(base=16)) }}
+        {% else %}
+0x{{ '%06X' | format(raw | int) }}
+        {% endif %}
 
 - name: Map slices pour AMF (TAI slice support list)
   set_fact:
@@ -76,7 +84,15 @@
   vars:
     slice_entry:
       sst: "{{ sl_item.sst | int }}"
-      sd: "{{ lookup('template', 'slice_sd.j2', sl_item=sl_item) | trim }}"
+      sd: >-
+        {% set raw = sl_item.sd|string if sl_item.sd is defined else 'EMPTY' %}
+        {% if raw.upper() == 'EMPTY' %}
+0xFFFFFF
+        {% elif raw.startswith('0x') or raw.startswith('0X') %}
+0x{{ '%06X' | format(raw[2:] | int(base=16)) }}
+        {% else %}
+0x{{ '%06X' | format(raw | int) }}
+        {% endif %}
 
 - name: Update AMF supported_tracking_areas from 5G profile
   ansible.builtin.shell: >
