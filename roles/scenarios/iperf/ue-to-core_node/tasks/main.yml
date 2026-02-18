@@ -18,9 +18,26 @@
     iperf_port: "{{ 5201 + ue_index }}"
     ignore_task_errors: true
 
+- name: Filter out UEs without IP and warn
+  set_fact:
+    valid_ue_list: >-
+      {{
+        groups['qhats']
+        | select('in', ue_ips.keys())
+        | list
+      }}
+  register: ue_filter_result
+
+- name: Warn about UEs without IP
+  debug:
+    msg: "Warning: UE {{ item }} has no IP and will be skipped in iperf tests"
+  loop: "{{ groups['qhats'] | difference(valid_ue_list) }}"
+  when: (groups['qhats'] | difference(valid_ue_list)) | length > 0
+
+
 - name: Execute iperf tests for all connected UEs
   include_tasks: iperf_execution.yml
-  loop: "{{ groups['qhats'] }}"
+  loop: "{{ valid_ue_list }}"
   loop_control:
     loop_var: current_ue
     index_var: ue_index
