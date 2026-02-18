@@ -56,19 +56,23 @@
     gnb_slices: []
     amf_slices: []
 
-- name: Update AMF and gNB slicing using yq direct injection
-  ansible.builtin.shell: >
+- name: Update AMF and gNB slicing (Factuel)
+  ansible.builtin.shell: |
+    export SLICES_DATA='{{ fiveg.slices | to_json }}'
     {{ yq_bin_path }} eval -i '
       .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
       .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }} |
       .gnbConfig.cu_cp.amf.supported_tracking_areas[0].tac = {{ fiveg.plmn.tac | int }} |
       .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
+      
+      # On injecte les slices
+      .gnbConfig.cell_cfg.slicing = env(SLICES_DATA) |
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = env(SLICES_DATA) |
 
-      .gnbConfig.cell_cfg.slicing = load("{{ fiveg_profile_file }}").slices |
-      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = load("{{ fiveg_profile_file }}").slices |
-
-      (.. | select(has("sst"))).sst |= (. style="" | tag="!!int") |
-      (.. | select(has("sd"))).sd |= (if . == "EMPTY" then 0xFFFFFF else . end | . style="" | tag="!!int")
+      (.. | select(has("sst"))).sst style="" | 
+      (.. | select(has("sst"))).sst tag="!!int" |
+      (.. | select(has("sd"))).sd style="" |
+      (.. | select(has("sd"))).sd tag="!!int"
     ' "{{ values_file }}"
 
 - name: Update AMF supported_tracking_areas from 5G profile
