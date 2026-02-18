@@ -65,7 +65,7 @@
   vars:
     slice_entry:
       sst: "{{ sl_item.sst | int }}"
-      sd: "{{ lookup('template', 'slice_sd.j2') | trim }}"
+      sd: "{{ lookup('template', 'slice_sd.j2', sl_item=sl_item) | trim }}"
 
 - name: Map slices pour AMF (TAI slice support list)
   set_fact:
@@ -76,7 +76,7 @@
   vars:
     slice_entry:
       sst: "{{ sl_item.sst | int }}"
-      sd: "{{ lookup('template', 'slice_sd.j2') | trim }}"
+      sd: "{{ lookup('template', 'slice_sd.j2', sl_item=sl_item) | trim }}"
 
 - name: Update AMF supported_tracking_areas from 5G profile
   ansible.builtin.shell: >
