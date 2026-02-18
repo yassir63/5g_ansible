@@ -58,28 +58,27 @@
 
 - name: Prepare slice data
   set_fact:
-    slices_json: "{{ fiveg.slices | map('combine', {'sd': (item.sd if item.sd != 'EMPTY' else '0xFFFFFF')}) | list | to_json }}"
+    slices_json: []
 
-- name: Update AMF and Slicing with correct types
+- name: Build slices list
+  set_fact:
+    slices_json: "{{ slices_json + [ {'sst': sl_item.sst | int, 'sd': (sl_item.sd if (sl_item.sd is defined and sl_item.sd != 'EMPTY') else '0xFFFFFF')} ] }}"
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: sl_item
+
+- name: Update AMF, PLMN and Slicing with correct types
   ansible.builtin.shell: >
     yq eval -i '
-      .gnbConfig.cu_cp.amf.supported_tracking_areas = [
-        {
-          "tac": {{ fiveg.plmn.tac | int }},
-          "plmn_list": [
-            {
-              "plmn": "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}",
-              "tai_slice_support_list": {{ slices_json }}
-            }
-          ]
-        }
-      ] |
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].tac = {{ fiveg.plmn.tac | int }} |
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = {{ slices_json | to_json }} |
       .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
       .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }} |
-      .gnbConfig.cell_cfg.slicing = {{ slices_json }} |
+      .gnbConfig.cell_cfg.slicing = {{ slices_json | to_json }} |
       
-      (.. | select(has("sst"))).sst |= (. style="" | tag="!!int") |
-      (.. | select(has("sd"))).sd |= (. style="" | tag="!!int")
+      (.. | select(has("sst"))).sst tag="!!int" |
+      (.. | select(has("sd"))).sd tag="!!int"
     ' "{{ values_file }}"
 
 - name: Update AMF supported_tracking_areas from 5G profile
