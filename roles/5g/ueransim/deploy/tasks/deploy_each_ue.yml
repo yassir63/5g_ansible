@@ -1,0 +1,19 @@
+---
+- name: Create ConfigMap for {{ ue_item.key }}
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ ue_item.key }}-configmap"
+        namespace: "{{ ran_ns | default('default') }}"
+      data:
+        "{{ ue_item.key }}.yaml": "{{ lookup('file', ueransim_root + '/ueransim-ue/' + ue_item.key + '/' + ue_item.key + '.yaml') }}"
+        wrapper.sh: "{{ lookup('file', ueransim_root + '/ueransim-ue/' + ue_item.key + '/wrapper.sh') }}"
+
+- name: Deploy {{ ue_item.key }} Deployment
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ueransim_root }}/ueransim-ue/{{ ue_item.key }}/ue-deployment.yaml"
+    namespace: "{{ ran_ns | default('default') }}"
