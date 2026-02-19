@@ -24,10 +24,12 @@ data:
         server:
           - dev: n3
       session:
-{% for slice in fiveg.slices %}{% if slice.name == upf_slice %}
-        - subnet: {{ slice.ip_prefix }}.0/16
-          dnn: {{ slice.dnn }}
-{% endif %}{% endfor %}
+        - subnet: {{ upf_slice_data.ip_prefix }}.1/16
+          dnn: {{ upf_slice_data.dnn }}
+#{% for slice in fiveg.slices %}{% if slice.name == upf_slice %}
+#        - subnet: {{ slice.ip_prefix }}.0/16
+#          dnn: {{ slice.dnn }}
+#{% endif %}{% endfor %}
       metrics:
         server:
           - address: 0.0.0.0
