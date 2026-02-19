@@ -3,7 +3,7 @@
   set_fact:
     target_ue: "ue{{ ue_idx + 1 }}"
 
-- name: Slurp UE config from remote
+- name: Slurp UE config
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
   register: ue_cfg_encoded
@@ -18,10 +18,9 @@
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        # Tâche chirurgicale : supprime '0x' uniquement sur les lignes contenant 'sd:'
         ue.yaml: "{{ ue_cfg_encoded.content | b64decode | regex_replace('sd: 0[xX]', 'sd: ') }}"
 
-- name: Deploy UERANSIM Deployment for {{ target_ue }}
+- name: Deploy UERANSIM UE Deployment
   kubernetes.core.k8s:
     state: present
     definition:
@@ -30,10 +29,6 @@
       metadata:
         name: "ueransim-{{ target_ue }}"
         namespace: "{{ ran_ns | default('open5gs') }}"
-        labels:
-          app: ueransim
-          component: ue
-          name: "{{ target_ue }}"
       spec:
         replicas: 1
         selector:
@@ -49,7 +44,7 @@
             initContainers:
             - name: wait-gnb
               image: busybox:1.32.0
-              command: ["sh", "-c", "until nslookup gnb-service; do echo waiting for gNB; sleep 2; done;"]
+              command: ["sh", "-c", "until nslookup gnb-service; do sleep 2; done;"]
             containers:
             - name: ue
               image: ghcr.io/niloysh/ueransim:v3.2.6

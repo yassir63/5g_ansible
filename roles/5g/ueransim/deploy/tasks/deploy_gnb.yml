@@ -14,8 +14,25 @@
         name: gnb-configmap
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        # Suppression chirurgicale du 0x uniquement sur les lignes sd:
         gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode | regex_replace('sd: 0[xX]', 'sd: ') }}"
+
+- name: Deploy gNB Service
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: gnb-service
+        namespace: "{{ ran_ns | default('open5gs') }}"
+      spec:
+        selector:
+          app: ueransim
+          component: gnb
+        ports:
+        - protocol: UDP
+          port: 4997
+          targetPort: 4997
 
 - name: Deploy gNB Deployment
   kubernetes.core.k8s:
@@ -43,9 +60,6 @@
               image: ghcr.io/niloysh/ueransim:v3.2.6
               command: ["/ueransim/nr-gnb"]
               args: ["-c", "/ueransim/config/gnb.yaml"]
-              ports:
-              - containerPort: 4997
-                protocol: UDP
               volumeMounts:
               - name: gnb-volume
                 mountPath: /ueransim/config
