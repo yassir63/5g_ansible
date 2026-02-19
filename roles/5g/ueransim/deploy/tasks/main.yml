@@ -1,5 +1,4 @@
 ---
-
 - name: Read modified gNB config from remote
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
@@ -31,7 +30,6 @@
 
 - name: Deploy UERANSIM UEs (ConfigMap + Deployment)
   include_tasks: deploy_each_ue.yml
-  # On filtre pour ne prendre que les 3 UEs du profil
   loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['UE18', 'UE19', 'UE20']) | list }}"
   loop_control:
     index_var: ue_idx
