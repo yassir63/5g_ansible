@@ -222,12 +222,12 @@
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
   roles:
 #   old srsran role not yet removed
-    - role: 5g/srsRAN
+#    - role: 5g/srsRAN
+#      when: ran == 'srsRAN'
+    - role: 5g/srsRAN/config
       when: ran == 'srsRAN'
-#    - role: 5g/srsRAN/config
-#      when: ran == 'srsRAN'
-#    - role: 5g/srsRAN/deploy
-#      when: ran == 'srsRAN'
+    - role: 5g/srsRAN/deploy
+      when: ran == 'srsRAN'
 
 - name: Deploy ueransim
   hosts: ran_node
