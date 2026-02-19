@@ -97,20 +97,19 @@
   loop_control:
     index_var: loop_item_index
 
-
-    
-- name: Remove quotes for UERANSIM SD/SST
+- name: Remove quotes for UERANSIM (SUPI, SD, SST)
   ansible.builtin.replace:
     path: "{{ item.0 }}"
-    regexp: '{{ item.1.regexp }}'
-    replace: '{{ item.1.replace }}'
+    regexp: "{{ item.1.regexp }}"
+    replace: "{{ item.1.replace }}"
   with_nested:
     - - "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
       - "{{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
       - "{{ ueransim_root }}/ueransim-ue/ue2/ue2.yaml"
       - "{{ ueransim_root }}/ueransim-ue/ue3/ue3.yaml"
-    - - { regexp: 'sd: "(0x[0-9A-Fa-f]+)"', replace: 'sd: \1' }
-      - { regexp: 'sst: "([0-9]+)"', replace: 'sst: \1' }
+    - - { regexp: "sd: '?(0x[0-9A-Fa-f]+)'?", replace: 'sd: \1' }
+      - { regexp: "sst: '?([0-9]+)'?", replace: 'sst: \1' }
+      - { regexp: "supi: '?(imsi-[0-9]+)'?", replace: 'supi: \1' }
       
 - name: Final check of generated configs
   ansible.builtin.shell: "grep -E 'sst:|sd:|supi:' {{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
