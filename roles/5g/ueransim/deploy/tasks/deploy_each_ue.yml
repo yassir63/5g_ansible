@@ -3,12 +3,6 @@
   set_fact:
     target_ue: "ue{{ ue_idx + 1 }}"
 
-- name: Remove 0x prefix from sd lines in UE config file
-  ansible.builtin.replace:
-    path: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
-    regexp: 'sd: 0[xX]'
-    replace: 'sd: '
-
 - name: Slurp UE config
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
@@ -24,7 +18,7 @@
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        ue.yaml: "{{ ue_cfg_encoded.content | b64decode | regex_replace('sd: 0[xX]', 'sd: ') }}"
+        ue.yaml: "{{ ue_cfg_encoded.content | b64decode }}"
 
 - name: Deploy UERANSIM UE Deployment
   kubernetes.core.k8s:

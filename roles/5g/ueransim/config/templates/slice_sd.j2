@@ -2,7 +2,7 @@
 {%- if raw_sd.upper() == 'EMPTY' or raw_sd == '' -%}
 0xFFFFFF
 {%- else -%}
-{%- set clean_sd = raw_sd | replace('0x', '') -%}
-{#- Force le format sur 6 caractères (3 octets) si nécessaire -#}
+{%- set clean_sd = raw_sd | replace('0x', '') | trim -%}
 0x{{ '%06s' | format(clean_sd) | replace(' ', '0') }}
 {%- endif -%}
+

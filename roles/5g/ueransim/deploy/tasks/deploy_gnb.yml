@@ -1,11 +1,4 @@
 ---
-- name: Remove 0x prefix from sd lines in gNB config file
-  ansible.builtin.replace:
-    path: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
-    regexp: 'sd: 0[xX]'
-    replace: 'sd: '
-
-
 - name: Read gNB config
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
@@ -21,7 +14,7 @@
         name: gnb-configmap
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode | regex_replace('sd: 0[xX]', 'sd: ') }}"
+        gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode }}"
 
 - name: Deploy gNB Service
   kubernetes.core.k8s:
