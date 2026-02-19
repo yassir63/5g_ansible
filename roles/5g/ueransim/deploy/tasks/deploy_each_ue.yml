@@ -1,19 +1,34 @@
 ---
-- name: Create ConfigMap for {{ ue_item.key }}
+- name: Set target UE name
+  set_fact:
+    target_ue: "ue{{ ue_idx + 1 }}"
+
+- name: Slurp UE config from remote
+  ansible.builtin.slurp:
+    src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
+  register: ue_cfg_encoded
+
+- name: Slurp UE wrapper from remote
+  ansible.builtin.slurp:
+    src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/wrapper.sh"
+  register: ue_wrapper_encoded
+
+- name: Create ConfigMap for {{ target_ue }}
   kubernetes.core.k8s:
     state: present
     definition:
       apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: "{{ ue_item.key }}-configmap"
+        name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('default') }}"
       data:
-        "{{ ue_item.key }}.yaml": "{{ lookup('file', ueransim_root + '/ueransim-ue/' + ue_item.key + '/' + ue_item.key + '.yaml') }}"
-        wrapper.sh: "{{ lookup('file', ueransim_root + '/ueransim-ue/' + ue_item.key + '/wrapper.sh') }}"
+        "{{ target_ue }}.yaml": "{{ ue_cfg_encoded.content | b64decode }}"
+        wrapper.sh: "{{ ue_wrapper_encoded.content | b64decode }}"
 
-- name: Deploy {{ ue_item.key }} Deployment
+- name: Deploy UERANSIM Deployment for {{ target_ue }}
   kubernetes.core.k8s:
     state: present
-    src: "{{ ueransim_root }}/ueransim-ue/{{ ue_item.key }}/ue-deployment.yaml"
+    src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/ue-deployment.yaml"
     namespace: "{{ ran_ns | default('default') }}"
+
