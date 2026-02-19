@@ -23,6 +23,7 @@
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('default') }}"
       data:
+        # Utilisation de la syntaxe dict pour forcer l'évaluation de la clé
         "{{ target_ue }}.yaml": "{{ ue_cfg_encoded.content | b64decode }}"
         wrapper.sh: "{{ ue_wrapper_encoded.content | b64decode }}"
 
@@ -31,4 +32,3 @@
     state: present
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/ue-deployment.yaml"
     namespace: "{{ ran_ns | default('default') }}"
-
