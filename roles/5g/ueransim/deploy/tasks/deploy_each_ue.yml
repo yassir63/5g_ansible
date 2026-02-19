@@ -18,7 +18,7 @@
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        ue.yaml: "{{ ue_cfg_encoded.content | b64decode }}"
+        ue.yaml: "{{ ue_cfg_encoded.content | b64decode | replace('sd: 0x', 'sd: ') | replace('sd: 0X', 'sd: ') }}"
 
 - name: Deploy UERANSIM Deployment for {{ target_ue }}
   kubernetes.core.k8s:
