@@ -1,68 +1,9 @@
 ---
-- name: Set target UE name
-  set_fact:
-    target_ue: "ue{{ ue_idx + 1 }}"
+- name: Deploy UERANSIM gNB
+  include_tasks: deploy_gnb.yml
 
-- name: Slurp UE config from remote
-  ansible.builtin.slurp:
-    src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
-  register: ue_cfg_encoded
-
-- name: Create ConfigMap for {{ target_ue }}
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: "{{ target_ue }}-configmap"
-        namespace: "{{ ran_ns | default('open5gs') }}"
-      data:
-        # Tâche chirurgicale : supprime '0x' uniquement sur les lignes contenant 'sd:'
-        ue.yaml: "{{ ue_cfg_encoded.content | b64decode | regex_replace('sd: 0[xX]', 'sd: ') }}"
-
-- name: Deploy UERANSIM Deployment for {{ target_ue }}
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: "ueransim-{{ target_ue }}"
-        namespace: "{{ ran_ns | default('open5gs') }}"
-        labels:
-          app: ueransim
-          component: ue
-          name: "{{ target_ue }}"
-      spec:
-        replicas: 1
-        selector:
-          matchLabels:
-            name: "{{ target_ue }}"
-        template:
-          metadata:
-            labels:
-              app: ueransim
-              component: ue
-              name: "{{ target_ue }}"
-          spec:
-            initContainers:
-            - name: wait-gnb
-              image: busybox:1.32.0
-              command: ["sh", "-c", "until nslookup gnb-service; do echo waiting for gNB; sleep 2; done;"]
-            containers:
-            - name: ue
-              image: ghcr.io/niloysh/ueransim:v3.2.6
-              securityContext:
-                privileged: true
-                capabilities:
-                  add: ["NET_ADMIN"]
-              command: ["/ueransim/nr-ue"]
-              args: ["-c", "/ueransim/config/ue.yaml"]
-              volumeMounts:
-              - name: ue-volume
-                mountPath: /ueransim/config
-            volumes:
-            - name: ue-volume
-              configMap:
-                name: "{{ target_ue }}-configmap"
+- name: Deploy UERANSIM UEs
+  include_tasks: deploy_each_ue.yml
+  loop: "{{ range(0, 3) | list }}"
+  loop_control:
+    index_var: ue_idx
