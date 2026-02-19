@@ -1,6 +1,4 @@
 ---
-# Apply the 5G profile settings on ueransim
-
 - name: Check if yq is already installed
   ansible.builtin.stat:
     path: "{{ yq_bin_path }}"
