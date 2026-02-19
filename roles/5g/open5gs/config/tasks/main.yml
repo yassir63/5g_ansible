@@ -4,7 +4,7 @@
   ansible.builtin.git:
     repo: "{{ repo_url }}"
     dest: "{{ repo_dest }}"
-    version: main
+    version: "{{ repo_branch }}"
     update: yes
     force: yes
 
