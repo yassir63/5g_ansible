@@ -1,3 +1,4 @@
+---
 - name: Read modified gNB config from remote
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
@@ -13,8 +14,8 @@
         name: gnb-configmap
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        # CORRECTION : Nettoyage du 0x pour le gNB
-        gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode | replace('sd: 0x', 'sd: ') | replace('sd: 0X', 'sd: ') }}"
+        # Suppression chirurgicale du 0x pour UERANSIM
+        gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode | regex_replace('sd:\\s*0[xX]', 'sd: ') }}"
 
 - name: Deploy UERANSIM gNB Service
   kubernetes.core.k8s:
@@ -43,6 +44,9 @@
       metadata:
         name: ueransim-gnb
         namespace: "{{ ran_ns | default('open5gs') }}"
+        labels:
+          app: ueransim
+          component: gnb
       spec:
         replicas: 1
         selector:
@@ -62,6 +66,7 @@
               args: ["-c", "/ueransim/config/gnb.yaml"]
               ports:
               - containerPort: 4997
+                name: gnb-ue
                 protocol: UDP
               volumeMounts:
               - name: gnb-volume
@@ -70,22 +75,3 @@
             - name: gnb-volume
               configMap:
                 name: gnb-configmap
-
-- name: Deploy UERANSIM UEs (ConfigMap + Deployment)
-  include_tasks: deploy_each_ue.yml
-  loop: "{{ range(0, 3) | list }}" # Adapte ici selon le nombre d'UEs (ex: 3 UEs)
-  loop_control:
-    index_var: ue_idx
-
-- name: Wait for UERANSIM Pods to be ready
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ ran_ns | default('open5gs') }}"
-    label_selectors:
-      - "app=ueransim"
-  register: ueransim_pods
-  until: >
-    ueransim_pods.resources | length > 0 and
-    ueransim_pods.resources | map(attribute='status.phase') | unique | list == ['Running']
-  retries: 20
-  delay: 5
