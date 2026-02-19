@@ -198,18 +198,6 @@
     - role: 5g/oai/ran
       when: ran == 'oai'
 
-- name: Deploy srsRAN
-  hosts: ran_node
-  vars:
-    ue_count: 4
-  pre_tasks:
-    - name: Load 5G profile
-      include_vars:
-        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-  roles:
-    - role: 5g/srsRAN
-      when: ran == 'srsRAN'
-
 ############################################################################
 # Move this block where you want to restart with start-at-task=RESTART_HERE"
 #
@@ -223,6 +211,23 @@
 #
 ############################################################################
 
+
+- name: Deploy srsRAN
+  hosts: ran_node
+  vars:
+    ue_count: 4
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  roles:
+#   old srsran role not yet removed
+    - role: 5g/srsRAN
+      when: ran == 'srsRAN'
+#    - role: 5g/srsRAN/config
+#      when: ran == 'srsRAN'
+#    - role: 5g/srsRAN/deploy
+#      when: ran == 'srsRAN'
 
 - name: Deploy ueransim
   hosts: ran_node

@@ -1,0 +1,89 @@
+---
+- name: Load common variables
+  include_vars:
+    file: "../../common/defaults/main.yml"
+
+- name: Remove existing srsRAN Helm directory to ensure clean state
+  ansible.builtin.file:
+    path: "{{ repo_dest }}"
+    state: absent
+
+- name: Clone repo srsRAN
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: "{{ version | default('main') }}"
+    update: no
+    force: yes
+  
+- name: Ensure namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ ran_ns }}"
+    state: present
+
+- name: Normalize flags
+  ansible.builtin.set_fact:
+    rru_l: "{{ (rru | default('') | string | lower | trim) }}"
+    mon_enabled: "{{ (monitoring_enabled | default(false)) | bool }}"
+
+# See types as well (very handy)
+- name: Show normalized vars + types
+  ansible.builtin.debug:
+    msg:
+      - "rru='{{ rru }}'  -> rru_l='{{ rru_l }}'"
+
+# Ensure we have remote env facts
+- name: Gather env facts (remote)
+  ansible.builtin.setup:
+    filter: ansible_env
+  when: ansible_env is not defined
+
+# Normalize repo_dest to an absolute remote path (expand ~, trim)
+- name: Normalize repo_dest to remote HOME
+  ansible.builtin.set_fact:
+    repo_dest_abs: "{{ (repo_dest | default('~/srsran-helm') | trim)
+                       | regex_replace('^~/?', ansible_env.HOME ~ '/') }}"
+
+# Choose filename from rru (lower/trim), fall back to values.yaml
+- name: Select values filename from rru
+  ansible.builtin.set_fact:
+    values_filename: "{{ rru_file_map[(rru | default('rfsim') | string | trim | lower)] | default('values.yaml') }}"
+  vars:
+    rru_file_map:
+      benetel: values-benetel.yaml
+      liteon:  values-liteon.yaml
+      #n300:    values-n300.yaml
+      n300:    values-n300-n78-20MHz.yaml
+      n320:    values-n320.yaml
+      rfsim:   values-rfsim.yaml
+
+# Build full path with path_join (prevents spaces/slash issues)
+- name: Build absolute values_file path
+  ansible.builtin.set_fact:
+    values_file: "{{ [repo_dest_abs, 'charts', 'srsran-gnb', values_filename] | path_join }}"
+
+# Sanity check
+- name: debug
+  ansible.builtin.debug:
+    msg:
+      - "repo_dest_abs='{{ repo_dest_abs }}'"
+      - "values_file='{{ values_file }}'"
+
+- name: Ensure values file exists (remote)
+  ansible.builtin.stat:
+    path: "{{ values_file }}"
+  register: values_stat
+
+- name: Fail if values file missing
+  ansible.builtin.fail:
+    msg: "Values file not found: {{ values_file }}"
+  when: not values_stat.stat.exists
+
+# Apply 5G profile (PLMN, slicing, UE config)
+- name: Apply 5G profile to gNB and UE configs
+  include_tasks: apply_5g_profile.yaml
+
+- name: Apply 5G profile to gNB and UE configs
+  include_tasks: apply_5g_profile.yaml

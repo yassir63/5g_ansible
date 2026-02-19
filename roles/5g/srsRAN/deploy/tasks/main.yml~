@@ -1,0 +1,44 @@
+---
+- name: Load common variables
+  include_vars:
+    file: "../../common/defaults/main.yml"
+
+- name: Set initial retry facts
+  ansible.builtin.set_fact:
+    gnb_startup_success: false
+    max_attempts: 2
+
+- name: Deploy and Monitor srsRAN gNB
+  block:
+    - name: "Attempt gNB deployment (Attempt {{ item }})"
+      include_tasks: deploy_with_check.yml
+      loop: "{{ range(1, max_attempts + 1) | list }}"
+      when: not gnb_startup_success
+
+  rescue:
+    - name: Final failure message
+      ansible.builtin.fail:
+        msg: "gNB failed to start properly on both IP addresses."
+      when: not gnb_startup_success
+
+- name: Confirm success
+  ansible.builtin.debug:
+    msg: "srsRAN gNB is running successfully!"
+  when: gnb_startup_success
+
+# ------------------------------
+# Helm-based Telegraf deployment
+# ------------------------------
+- name: Deploy Telegraf using Helm
+  when: mon_enabled
+  kubernetes.core.helm:
+    name: telegraf
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'telegraf'] | path_join }}"
+    release_namespace: "{{ ran_ns }}"
+    values_files:
+      - "{{ [repo_dest_abs, 'charts', 'telegraf', 'values.yaml'] | path_join }}"
+    state: present
+    wait: true
+    atomic: true
+    timeout: 600s
+  register: telegraf_apply

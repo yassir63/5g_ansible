@@ -33,12 +33,6 @@
     msg:
       - "rru='{{ rru }}'  -> rru_l='{{ rru_l }}'"
 
-# (If your play doesn't already gather facts)
-- name: Gather env facts (remote)
-  ansible.builtin.setup:
-    filter: ansible_env
-  when: ansible_env is not defined
-
 # Ensure we have remote env facts
 - name: Gather env facts (remote)
   ansible.builtin.setup:
