@@ -31,11 +31,6 @@
   loop_control:
     loop_var: ue
 
-- name: Update AMF ConfigMap on disk
-  ansible.builtin.template:
-    src: amf-configmap.yaml.j2
-    dest: "{{ open5gs_root }}/common/amf/amf-configmap.yaml"
-
 - name: Update UERANSIM gNB configuration
   ansible.builtin.shell: >
     yq eval -i '
