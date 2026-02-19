@@ -31,6 +31,17 @@
   loop_control:
     loop_var: ue
 
+- name: Initialize ueransim_slices list
+  set_fact:
+    ueransim_slices: []
+
+- name: Map slices for UERANSIM
+  set_fact:
+    ueransim_slices: "{{ ueransim_slices + [ {'sst': sl_item.sst | int, 'sd': lookup('template', 'slice_sd.j2') | trim} ] }}"
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: sl_item
+
 - name: Update UERANSIM gNB configuration
   ansible.builtin.shell: >
     yq eval -i '
