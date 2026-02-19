@@ -78,35 +78,41 @@
       .slices = {{ ueransim_slices | to_json }}
     ' "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
 
-- name: Update UERANSIM UEs configurations (ue1, ue2, ue3)
+- name: Update UERANSIM UEs configurations (UE18/19/20 -> ue1/2/3)
   ansible.builtin.shell: >
     {{ yq_bin_path }} eval -i '
       .mcc = "{{ fiveg.plmn.mcc }}" |
       .mnc = "{{ fiveg.plmn.mnc }}" |
-      .supi = "imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}000000000{{ item.key | regex_replace(\"ue\", \"\") }}" |
-      .key = "{{ item.value.key }}" |
-      .op = "{{ item.value.op }}" |
-      .opType = "{{ item.value.op_type }}" |
+      .supi = "imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ item.value.imsi_suffix }}" |
       .configured-nssai = {{ ueransim_slices | to_json }} |
-      .default-nssai = [{{ ueransim_slices | selectattr("sst", "equalto", (fiveg.slices | selectattr("name", "equalto", item.value.slice) | first).sst | int) | first | to_json }}]
-    ' "{{ ueransim_root }}/ueransim-ue/{{ item.key }}/{{ item.key }}.yaml"
-  loop: "{{ fiveg.ues | dict2items }}"
+      .default-nssai = [{{ ueransim_slices[idx | int] | to_json }}]
+    ' "{{ ueransim_root_abs }}/ueransim-ue/ue{{ loop_idx + 1 }}/ue{{ loop_idx + 1 }}.yaml"
+  vars:
+    # On trouve l'index de la slice pour cet UE
+    idx: >-
+      {% set mapping = {} %}
+      {% for s in fiveg.slices %} {% set _ = mapping.update({s.name: loop.index0}) %} {% endfor %}
+      {{ mapping[item.value.slice] | default(0) }}
+    loop_idx: "{{ loop_item_index }}"
+  # On filtre les UEs sources et on utilise l'index de la boucle pour nommer les destinations
+  loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['UE18', 'UE19', 'UE20']) | list }}"
+  loop_control:
+    index_var: loop_item_index
+    label: "Mapping {{ item.key }} to ue{{ loop_item_index + 1 }}"
 
-- name: Remove quotes for UERANSIM SD/SST (Post-processing)
+- name: Remove quotes for UERANSIM SD/SST
   ansible.builtin.replace:
     path: "{{ item.0 }}"
     regexp: '{{ item.1.regexp }}'
     replace: '{{ item.1.replace }}'
   with_nested:
-    - - "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
-      - "{{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
-      - "{{ ueransim_root }}/ueransim-ue/ue2/ue2.yaml"
-      - "{{ ueransim_root }}/ueransim-ue/ue3/ue3.yaml"
+    - - "{{ ueransim_root_abs }}/ueransim-gnb/config/open5gs-gnb.yaml"
+      - "{{ ueransim_root_abs }}/ueransim-ue/ue1/ue1.yaml"
+      - "{{ ueransim_root_abs }}/ueransim-ue/ue2/ue2.yaml"
+      - "{{ ueransim_root_abs }}/ueransim-ue/ue3/ue3.yaml"
     - - { regexp: 'sd: "(0x[0-9A-Fa-f]+)"', replace: 'sd: \1' }
       - { regexp: 'sst: "([0-9]+)"', replace: 'sst: \1' }
-  loop_control:
-    label: "Cleaning {{ item.0 }}"
-
+      
 - name: Final check of generated configs
   ansible.builtin.shell: "grep -E 'sst:|sd:|supi:' {{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
   register: check_ue
