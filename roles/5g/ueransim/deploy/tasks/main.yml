@@ -22,11 +22,24 @@
         open5gs-gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode }}"
         wrapper.sh: "{{ gnb_wrapper_encoded.content | b64decode }}"
 
+- name: Deploy UERANSIM gNB Service
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ueransim_root }}/ueransim-gnb/gnb-service.yaml"
+    namespace: "{{ ran_ns | default('open5gs') }}"
+
 - name: Deploy UERANSIM gNB Deployment
   kubernetes.core.k8s:
     state: present
     src: "{{ ueransim_root }}/ueransim-gnb/gnb-deployment.yaml"
     namespace: "{{ ran_ns | default('open5gs') }}"
+
+- name: Fix Init Container command in UE deployment files
+  ansible.builtin.replace:
+    path: "{{ ueransim_root }}/ueransim-ue/ue{{ item }}/ue-deployment.yaml"
+    regexp: 'nc -z -u \$DEPENDENCIES'
+    replace: 'nslookup gnb-service'
+  loop: [1, 2, 3]
 
 - name: Deploy UERANSIM UEs (ConfigMap + Deployment)
   include_tasks: deploy_each_ue.yml
