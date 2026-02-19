@@ -23,7 +23,6 @@
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
       data: 
-        # Ici on utilise une syntaxe plus simple pour forcer l'évaluation
         "{{ target_ue }}.yaml": "{{ ue_cfg_encoded.content | b64decode }}"
         "wrapper.sh": "{{ ue_wrapper_encoded.content | b64decode }}"
 
@@ -72,4 +71,3 @@
             - name: ue-volume
               configMap:
                 name: "{{ target_ue }}-configmap"
-
