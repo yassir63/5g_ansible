@@ -21,7 +21,7 @@
       kind: ConfigMap
       metadata:
         name: "{{ target_ue }}-configmap"
-        namespace: "{{ ran_ns | default('default') }}"
+        namespace: "{{ ran_ns | default('open5gs') }}"
       # On utilise une structure dictionnaire dynamique
       data: "{{ { target_ue ~ '.yaml': ue_cfg_encoded.content | b64decode, 'wrapper.sh': ue_wrapper_encoded.content | b64decode } }}"
 
@@ -29,5 +29,5 @@
   kubernetes.core.k8s:
     state: present
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/ue-deployment.yaml"
-    namespace: "{{ ran_ns | default('default') }}"
+    namespace: "{{ ran_ns | default('open5gs') }}"
 
