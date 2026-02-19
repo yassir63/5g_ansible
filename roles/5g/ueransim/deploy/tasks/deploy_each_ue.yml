@@ -47,6 +47,8 @@
               component: ue
               name: "{{ target_ue }}"
           spec:
+            nodeSelector:
+              kubernetes.io/hostname: "{{ ran_node_name }}"
             initContainers:
             - name: wait-gnb
               image: busybox:1.32.0

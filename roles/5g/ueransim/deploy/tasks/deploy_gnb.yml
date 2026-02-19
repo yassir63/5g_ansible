@@ -62,6 +62,8 @@
               app: ueransim
               component: gnb
           spec:
+            nodeSelector:
+              kubernetes.io/hostname: "{{ ran_node_name }}"
             containers:
             - name: gnb
               image: ghcr.io/niloysh/ueransim:v3.2.6
