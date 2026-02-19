@@ -1,0 +1,111 @@
+---
+- name: "Execute deployment attempt"
+  block:
+    - name: Ensure values file has node constraints
+      ansible.builtin.blockinfile:
+        path: "{{ values_file }}"
+        marker: "# {mark} ANSIBLE MANAGED NODE SELECTOR"
+        insertafter: EOF
+        block: |
+          nodeSelector:
+            kubernetes.io/hostname: "{{ ran_node_name }}"
+          nodeName: {{ ran_node_name }}
+
+    - name: Fix space before comma in device_args
+      ansible.builtin.replace:
+        path: "{{ values_file }}"
+        regexp: '\s+,'
+        replace: ','
+
+    - name: Deploy srsRAN gNB using Helm
+      kubernetes.core.helm:
+        name: srsran-gnb
+        chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
+        release_namespace: "{{ ran_ns }}"
+        values_files:
+          - "{{ values_file }}"
+        state: present
+        wait: true
+        atomic: true
+        timeout: 120s
+      register: helm_result
+      ignore_errors: yes
+
+    - name: Wait for initial Ready state
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ ran_ns }}"
+        label_selectors: "{{ srs_gnb_label_selectors }}"
+      register: pod_initial
+      until: 
+        - pod_initial.resources | length > 0
+        - (pod_initial.resources[0].status.containerStatuses | default([{'ready':false}]) | selectattr('name', 'equalto', 'gnb') | first).ready | bool
+      retries: 15
+      delay: 5
+      ignore_errors: yes
+      when: helm_result is succeeded
+
+    - name: Stability window
+      ansible.builtin.pause:
+        seconds: 45
+      when: 
+        - helm_result is succeeded
+        - pod_initial.resources is defined and pod_initial.resources | length > 0
+
+    - name: Final stability check
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ ran_ns }}"
+        label_selectors: "{{ srs_gnb_label_selectors }}"
+      register: pod_final
+      when: helm_result is succeeded
+
+    - name: Evaluate deployment success
+      ansible.builtin.set_fact:
+        gnb_startup_success: >-
+          {{
+            helm_result is succeeded and
+            pod_final.resources | default([]) | length > 0 and
+            (pod_final.resources[0].status.containerStatuses | selectattr('name', 'equalto', 'gnb') | first).ready | bool and
+            (pod_final.resources[0].status.containerStatuses | selectattr('name', 'equalto', 'gnb') | first).restartCount | int == 
+            (pod_initial.resources[0].status.containerStatuses | selectattr('name', 'equalto', 'gnb') | first).restartCount | int
+          }}
+
+    - name: Handle IP Swap
+      block:
+        - name: Extract current IP
+          ansible.builtin.shell: |
+            grep -oE 'addr=[0-9.]+' {{ values_file }} | head -1 | cut -d= -f2 | tr -d ' '
+          register: current_ip_cmd
+          changed_when: false
+
+        - name: Determine new IP
+          ansible.builtin.set_fact:
+            new_ip: >-
+              {% if current_ip_cmd.stdout == '192.168.235.105' %}192.168.235.106
+              {% elif current_ip_cmd.stdout == '192.168.235.106' %}192.168.235.105
+              {% elif current_ip_cmd.stdout == '192.168.235.103' %}192.168.235.104
+              {% elif current_ip_cmd.stdout == '192.168.235.104' %}192.168.235.103
+              {% else %}{{ current_ip_cmd.stdout }}{% endif %}
+
+        - name: Apply IP swap
+          ansible.builtin.replace:
+            path: "{{ values_file }}"
+            regexp: '(?<==){{ current_ip_cmd.stdout | regex_escape }}'
+            replace: "{{ new_ip }}"
+          when: new_ip != current_ip_cmd.stdout
+
+        - name: Remove failed Helm release
+          kubernetes.core.helm:
+            name: srsran-gnb
+            release_namespace: "{{ ran_ns }}"
+            state: absent
+            wait: true
+          when: item | int < max_attempts | int
+
+      when: 
+        - not gnb_startup_success | bool
+        - rru in ['n300', 'n320']
+
+  when: not gnb_startup_success | bool
+

@@ -1,0 +1,175 @@
+---
+# Apply 5G profile to srsRAN values.yaml 
+
+- name: Check if yq is already installed
+  ansible.builtin.stat:
+    path: "{{ yq_bin_path }}"
+  register: yq_bin
+
+- name: Download yq binary using curl or wget
+  ansible.builtin.shell: |
+    set -e
+    if command -v curl >/dev/null 2>&1; then
+      curl -L --fail "{{ yq_url }}" -o "{{ yq_bin_path }}"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -O "{{ yq_bin_path }}" "{{ yq_url }}"
+    else
+      echo "Neither curl nor wget found" >&2
+      exit 1
+    fi
+  args:
+    creates: "{{ yq_bin_path }}"
+  when: not yq_bin.stat.exists
+  become: true
+
+- name: Ensure yq is executable
+  ansible.builtin.file:
+    path: "{{ yq_bin_path }}"
+    mode: '0755'
+    state: file
+  become: true
+  
+- name: Resolve 5G profile file
+  set_fact:
+    fiveg_profile_file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+
+- name: Load 5G profile
+  include_vars:
+    file: "{{ fiveg_profile_file }}"
+    name: fiveg
+
+- name: Show active 5G profile
+  debug:
+    msg:
+      - "Using 5G profile: {{ fiveg_profile | default('default') }}"
+      - "PLMN: {{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}"
+      - "TAC: {{ fiveg.plmn.tac }}"
+
+- name: Uninstall existing srsran-gnb Helm release if present
+  ansible.builtin.shell: >
+    helm -n {{ ran_ns }} uninstall srsran-gnb || true
+  changed_when: true
+  ignore_errors: true
+
+- name: Initialize gnb_slices and amf_slices
+  set_fact:
+    gnb_slices: []
+    amf_slices: []
+
+- name: Map slices strictly for gNB and AMF
+  set_fact:
+    gnb_slices: "{{ (gnb_slices | default([])) + [ slice_entry ] }}"
+    amf_slices: "{{ (amf_slices | default([])) + [ slice_entry ] }}"
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: sl_item
+  vars:
+    slice_entry:
+      sst: "{{ sl_item.sst | int }}"
+      sd: "{{ lookup('template', 'slice_sd.j2') | trim }}"
+
+- name: Update gNB configurations (Structure only)
+  ansible.builtin.shell: >
+    {{ yq_bin_path }} eval -i '
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = {{ amf_slices | to_json }} |
+      .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
+      .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }} |
+      .gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }}
+    ' "{{ values_file }}"
+
+- name: Force remove quotes on SD values (Post-processing)
+  ansible.builtin.replace:
+    path: "{{ values_file }}"
+    regexp: 'sd: "(0x[0-9A-Fa-f]+)"'
+    replace: 'sd: \1'
+
+- name: Force remove quotes on SST values (Post-processing)
+  ansible.builtin.replace:
+    path: "{{ values_file }}"
+    regexp: 'sst: "([0-9]+)"'
+    replace: 'sst: \1'
+
+- name: Verify final result (No quotes)
+  ansible.builtin.shell: "grep -E 'sst:|sd:' {{ values_file }}"
+  register: check_quotes
+  changed_when: false
+
+- name: Display raw YAML lines
+  debug:
+    msg: "{{ check_quotes.stdout_lines }}"
+
+- name: Ensure values file has node constraints
+  blockinfile:
+    path: "{{ values_file }}"
+    marker: "# {mark} ANSIBLE MANAGED NODE SELECTOR"
+    insertafter: EOF
+    block: |
+      nodeSelector:
+        kubernetes.io/hostname: "{{ ran_node_name }}"
+      nodeName: {{ ran_node_name }}
+
+- name: Fix space before comma in device_args
+  replace:
+    path: "{{ values_file }}"
+    regexp: '\s+,'
+    replace: ','
+
+- name: Deploy srsRAN gNB using Helm
+  kubernetes.core.helm:
+    name: srsran-gnb
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
+    release_namespace: "{{ ran_ns }}"
+    values_files:
+      - "{{ values_file }}"
+    state: present
+    wait: True
+    atomic: True
+    timeout: 120s
+
+# Set path to the srsUE ConfigMap template in the cloned repository
+- name: Set path to UE configmap template
+  set_fact:
+    ue_cm_template: "{{ [repo_dest_abs, 'charts', 'srsue', 'templates', 'configmap.yaml'] | path_join }}"
+
+# Inject Security Key (K) into the python configuration generator
+- name: Update K_HEX in generate_ue_conf.py
+  ansible.builtin.replace:
+    path: "{{ ue_cm_template }}"
+    regexp: 'K_HEX = "[a-fA-F0-9]+"'
+    replace: 'K_HEX = "{{ fiveg.ue.k }}"'
+
+# Inject OPC into the python configuration generator
+- name: Update OPC_HEX in generate_ue_conf.py
+  ansible.builtin.replace:
+    path: "{{ ue_cm_template }}"
+    regexp: 'OPC_HEX = "[a-fA-F0-9]+"'
+    replace: 'OPC_HEX = "{{ fiveg.ue.opc }}"'
+
+# Update IMSI generation logic to match 5G Profile PLMN
+- name: Update IMSI prefix in imsi_for function
+  ansible.builtin.replace:
+    path: "{{ ue_cm_template }}"
+    regexp: 'return f"0010100000000\{ue_number:02d\}"'
+    replace: 'return f"{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}0000000{ue_number:02d}"'
+
+# Set fixed APN from 5G profile
+- name: Update APN logic in apn_for function
+  ansible.builtin.replace:
+    path: "{{ ue_cm_template }}"
+    regexp: '"internet" if ue_number % 2 == 1 else "streaming"'
+    replace: '"{{ fiveg.ue.apn }}"'
+
+# Update Radio parameters to match gNB capabilities
+- name: Update Radio parameters in UE_TEMPLATE
+  block:
+    - name: Set NR Band
+      ansible.builtin.replace:
+        path: "{{ ue_cm_template }}"
+        regexp: 'bands = 3'
+        replace: 'bands = {{ fiveg.radio.nr_band }}'
+
+    - name: Set PRB configuration (max and current)
+      ansible.builtin.replace:
+        path: "{{ ue_cm_template }}"
+        regexp: '(max_)?nof_prb = 106'
+        replace: '\1nof_prb = {{ fiveg.radio.nof_prb }}'
