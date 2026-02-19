@@ -1,0 +1,3 @@
+---
+repo_dest: "~/open5gs-k8s"
+ueransim_root: "{{ repo_dest }}/open5gs/ueransim"
