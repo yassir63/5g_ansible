@@ -75,6 +75,9 @@
       .mcc = "{{ fiveg.plmn.mcc }}" |
       .mnc = "{{ fiveg.plmn.mnc }}" |
       .tac = {{ fiveg.plmn.tac | int }} |
+      .linkIp = "0.0.0.0" |
+      .ngapIp = "0.0.0.0" |
+      .gtpIp = "0.0.0.0" |
       .slices = {{ ueransim_slices | to_json }}
     ' "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
 
