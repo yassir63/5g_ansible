@@ -13,6 +13,10 @@
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/wrapper.sh"
   register: ue_wrapper_encoded
 
+- name: Construct ConfigMap data dictionary
+  set_fact:
+    ue_data_dict: "{ '{}.yaml'.format(target_ue) : '{{ ue_cfg_encoded.content | b64decode }}', 'wrapper.sh': '{{ ue_wrapper_encoded.content | b64decode }}' }"
+
 - name: Create ConfigMap for {{ target_ue }}
   kubernetes.core.k8s:
     state: present
@@ -22,9 +26,7 @@
       metadata:
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
-      data: 
-        "{{ target_ue }}.yaml": "{{ ue_cfg_encoded.content | b64decode }}"
-        "wrapper.sh": "{{ ue_wrapper_encoded.content | b64decode }}"
+      data: "{{ ue_data_dict }}"
 
 - name: Deploy UERANSIM Deployment for {{ target_ue }}
   kubernetes.core.k8s:
