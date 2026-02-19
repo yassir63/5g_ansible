@@ -224,6 +224,19 @@
     - role: 5g/srsRAN
       when: ran == 'srsRAN'
 
+- name: Deploy ueransim
+  hosts: ran_node
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  roles:
+    - role: 5g/ueransim/config
+      when: ran == 'ueransim'
+    - role: 5g/ueransim/deploy
+      when: ran == 'ueransim'
+
+
 - name: Remove NoSchedule taint on Monitor node
   hosts: core_node
   become: true

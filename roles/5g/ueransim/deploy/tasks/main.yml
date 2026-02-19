@@ -1,0 +1,58 @@
+---
+# roles/5g/ueransim/deploy/tasks/main.yml
+
+- name: Deploy UERANSIM gNB ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: gnb-configmap
+        namespace: "{{ ran_ns | default('default') }}"
+      data:
+        open5gs-gnb.yaml: "{{ lookup('file', ueransim_root + '/ueransim-gnb/config/open5gs-gnb.yaml') }}"
+        wrapper.sh: "{{ lookup('file', ueransim_root + '/ueransim-gnb/config/wrapper.sh') }}"
+
+- name: Deploy UERANSIM gNB Deployment
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ueransim_root }}/ueransim-gnb/gnb-deployment.yaml"
+    namespace: "{{ ran_ns | default('default') }}"
+
+- name: Deploy UERANSIM UEs ConfigMaps and Deployments
+  block:
+    - name: Create ConfigMap for {{ item.key }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ item.key }}-configmap"
+            namespace: "{{ ran_ns | default('default') }}"
+          data:
+            "{{ item.key }}.yaml": "{{ lookup('file', ueransim_root + '/ueransim-ue/' + item.key + '/' + item.key + '.yaml') }}"
+            wrapper.sh: "{{ lookup('file', ueransim_root + '/ueransim-ue/' + item.key + '/wrapper.sh') }}"
+
+    - name: Deploy {{ item.key }} Deployment
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ ueransim_root }}/ueransim-ue/{{ item.key }}/ue-deployment.yaml"
+        namespace: "{{ ran_ns | default('default') }}"
+  loop: "{{ fiveg.ues | dict2items }}"
+  loop_control:
+    label: "Deploying {{ item.key }}"
+
+- name: Wait for UERANSIM Pods to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ ran_ns | default('default') }}"
+    label_selectors:
+      - "app=ueransim"
+  register: ueransim_pods
+  until: >
+    ueransim_pods.resources | length > 0 and
+    ueransim_pods.resources | map(attribute='status.phase') | unique | list == ['Running']
+  retries: 20
+  delay: 5

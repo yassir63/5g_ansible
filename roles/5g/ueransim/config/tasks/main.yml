@@ -35,3 +35,49 @@
   ansible.builtin.template:
     src: amf-configmap.yaml.j2
     dest: "{{ open5gs_root }}/common/amf/amf-configmap.yaml"
+
+- name: Update UERANSIM gNB configuration
+  ansible.builtin.shell: >
+    yq eval -i '
+      .mcc = "{{ fiveg.plmn.mcc }}" |
+      .mnc = "{{ fiveg.plmn.mnc }}" |
+      .tac = {{ fiveg.plmn.tac | int }} |
+      .slices = {{ ueransim_slices | to_json }}
+    ' "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
+
+- name: Update UERANSIM UEs configurations (ue1, ue2, ue3)
+  ansible.builtin.shell: >
+    yq eval -i '
+      .mcc = "{{ fiveg.plmn.mcc }}" |
+      .mnc = "{{ fiveg.plmn.mnc }}" |
+      .supi = "imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}000000000{{ item.key | regex_replace(\"ue\", \"\") }}" |
+      .key = "{{ item.value.key }}" |
+      .op = "{{ item.value.op }}" |
+      .opType = "{{ item.value.op_type }}" |
+      .configured-nssai = {{ ueransim_slices | to_json }} |
+      .default-nssai = [{{ ueransim_slices | selectattr("sst", "equalto", (fiveg.slices | selectattr("name", "equalto", item.value.slice) | first).sst | int) | first | to_json }}]
+    ' "{{ ueransim_root }}/ueransim-ue/{{ item.key }}/{{ item.key }}.yaml"
+  loop: "{{ fiveg.ues | dict2items }}"
+
+- name: Remove quotes for UERANSIM SD/SST (Post-processing)
+  ansible.builtin.replace:
+    path: "{{ item.0 }}"
+    regexp: '{{ item.1.regexp }}'
+    replace: '{{ item.1.replace }}'
+  with_nested:
+    - - "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
+      - "{{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
+      - "{{ ueransim_root }}/ueransim-ue/ue2/ue2.yaml"
+      - "{{ ueransim_root }}/ueransim-ue/ue3/ue3.yaml"
+    - - { regexp: 'sd: "(0x[0-9A-Fa-f]+)"', replace: 'sd: \1' }
+      - { regexp: 'sst: "([0-9]+)"', replace: 'sst: \1' }
+  loop_control:
+    label: "Cleaning {{ item.0 }}"
+
+- name: Final check of generated configs
+  ansible.builtin.shell: "grep -E 'sst:|sd:|supi:' {{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
+  register: check_ue
+  changed_when: false
+
+- debug:
+    var: check_ue.stdout_lines
