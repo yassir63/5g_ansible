@@ -142,21 +142,21 @@
   ansible.builtin.replace:
     path: "{{ ue_cm_template }}"
     regexp: 'OPC_HEX = "[a-fA-F0-9]+"'
-    replace: 'OPC_HEX = "{{ fiveg.security.ue.opc }}"'
+    replace: 'OPC_HEX = "{{ fiveg.security.opc }}"'
 
 # Update IMSI generation logic to match 5G Profile PLMN
 - name: Update IMSI prefix in imsi_for function
   ansible.builtin.replace:
     path: "{{ ue_cm_template }}"
     regexp: 'return f"0010100000000\{ue_number:02d\}"'
-    replace: 'return f"{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}0000000{ue_number:02d}"'
+    replace: 'return f"{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.qhat01.imsi_suffix[:-2] }}{ue_number:02d}"'
 
 # Set fixed APN from 5G profile # TBD retrieve from slice parameter of UE
 - name: Update APN logic in apn_for function
   ansible.builtin.replace:
     path: "{{ ue_cm_template }}"
     regexp: '"internet" if ue_number % 2 == 1 else "streaming"'
-    replace: '"{{ fiveg.ue.apn }}"'
+    replace: '"{{ fiveg.slices[0].dnn }}"'
 
 ## Update Radio parameters to match gNB capabilities
 #- name: Update Radio parameters in UE_TEMPLATE
