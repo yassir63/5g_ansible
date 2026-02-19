@@ -8,11 +8,6 @@
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
   register: ue_cfg_encoded
 
-- name: Slurp UE wrapper from remote
-  ansible.builtin.slurp:
-    src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/wrapper.sh"
-  register: ue_wrapper_encoded
-
 - name: Create ConfigMap for {{ target_ue }}
   kubernetes.core.k8s:
     state: present
@@ -23,9 +18,7 @@
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        # Utilisation d'une clé fixe pour éviter le bug Ansible des clés dynamiques
         ue.yaml: "{{ ue_cfg_encoded.content | b64decode }}"
-        wrapper.sh: "{{ ue_wrapper_encoded.content | b64decode }}"
 
 - name: Deploy UERANSIM Deployment for {{ target_ue }}
   kubernetes.core.k8s:
@@ -55,7 +48,7 @@
             initContainers:
             - name: wait-gnb
               image: busybox:1.32.0
-              command: ["sh", "-c", "until nslookup gnb-service; do echo waiting; sleep 2; done;"]
+              command: ["sh", "-c", "until nslookup gnb-service; do echo waiting for gNB; sleep 2; done;"]
             containers:
             - name: ue
               image: ghcr.io/niloysh/ueransim:v3.2.6
@@ -63,16 +56,12 @@
                 privileged: true
                 capabilities:
                   add: ["NET_ADMIN"]
-              command: ["/bin/bash", "-c", "--"]
-              # On force l'UE à lire ue.yaml (la clé fixe du ConfigMap)
-              args: ["/ueransim/nr-ue -c /ueransim/config/ue.yaml"]
+              command: ["/ueransim/nr-ue"]
+              args: ["-c", "/ueransim/config/ue.yaml"]
               volumeMounts:
               - name: ue-volume
                 mountPath: /ueransim/config
             volumes:
-            - name: ue-volume
-              configMap:
-                name: "{{ target_ue }}-configmap"
             - name: ue-volume
               configMap:
                 name: "{{ target_ue }}-configmap"
