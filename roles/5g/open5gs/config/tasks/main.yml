@@ -1,5 +1,4 @@
 ---
----
 - name: Clone open5gs-k8s repo
   ansible.builtin.git:
     repo: "{{ repo_url }}"
