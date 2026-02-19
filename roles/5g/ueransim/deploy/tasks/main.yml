@@ -1,74 +1,68 @@
 ---
-- name: Read gNB config
-  ansible.builtin.slurp:
-    src: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
-  register: gnb_cfg_encoded
+- name: Set target UE name
+  set_fact:
+    target_ue: "ue{{ ue_idx + 1 }}"
 
-- name: Deploy gNB ConfigMap
+- name: Slurp UE config from remote
+  ansible.builtin.slurp:
+    src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
+  register: ue_cfg_encoded
+
+- name: Create ConfigMap for {{ target_ue }}
   kubernetes.core.k8s:
     state: present
     definition:
       apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: gnb-configmap
+        name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        # Pareil ici, on dégage tous les 0x du fichier.
-        gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode | replace('0x', '') | replace('0X', '') }}"
+        # Tâche chirurgicale : supprime '0x' uniquement sur les lignes contenant 'sd:'
+        ue.yaml: "{{ ue_cfg_encoded.content | b64decode | regex_replace('sd: 0[xX]', 'sd: ') }}"
 
-- name: Deploy gNB Service
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: v1
-      kind: Service
-      metadata:
-        name: gnb-service
-        namespace: "{{ ran_ns | default('open5gs') }}"
-      spec:
-        selector:
-          app: ueransim
-          component: gnb
-        ports:
-        - protocol: UDP
-          port: 4997
-          targetPort: 4997
-
-- name: Deploy gNB Deployment
+- name: Deploy UERANSIM Deployment for {{ target_ue }}
   kubernetes.core.k8s:
     state: present
     definition:
       apiVersion: apps/v1
       kind: Deployment
       metadata:
-        name: ueransim-gnb
+        name: "ueransim-{{ target_ue }}"
         namespace: "{{ ran_ns | default('open5gs') }}"
+        labels:
+          app: ueransim
+          component: ue
+          name: "{{ target_ue }}"
       spec:
         replicas: 1
         selector:
           matchLabels:
-            app: ueransim
-            component: gnb
+            name: "{{ target_ue }}"
         template:
           metadata:
             labels:
               app: ueransim
-              component: gnb
+              component: ue
+              name: "{{ target_ue }}"
           spec:
+            initContainers:
+            - name: wait-gnb
+              image: busybox:1.32.0
+              command: ["sh", "-c", "until nslookup gnb-service; do echo waiting for gNB; sleep 2; done;"]
             containers:
-            - name: gnb
+            - name: ue
               image: ghcr.io/niloysh/ueransim:v3.2.6
-              command: ["/ueransim/nr-gnb"]
-              args: ["-c", "/ueransim/config/gnb.yaml"]
-              ports:
-              - containerPort: 4997
-                name: gnb-ue
-                protocol: UDP
+              securityContext:
+                privileged: true
+                capabilities:
+                  add: ["NET_ADMIN"]
+              command: ["/ueransim/nr-ue"]
+              args: ["-c", "/ueransim/config/ue.yaml"]
               volumeMounts:
-              - name: gnb-volume
+              - name: ue-volume
                 mountPath: /ueransim/config
             volumes:
-            - name: gnb-volume
+            - name: ue-volume
               configMap:
-                name: gnb-configmap
+                name: "{{ target_ue }}-configmap"
