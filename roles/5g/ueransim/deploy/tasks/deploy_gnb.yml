@@ -1,4 +1,11 @@
 ---
+- name: Remove 0x prefix from sd lines in gNB config file
+  ansible.builtin.replace:
+    path: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
+    regexp: 'sd: 0[xX]'
+    replace: 'sd: '
+
+
 - name: Read gNB config
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"

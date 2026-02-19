@@ -3,6 +3,12 @@
   set_fact:
     target_ue: "ue{{ ue_idx + 1 }}"
 
+- name: Remove 0x prefix from sd lines in UE config file
+  ansible.builtin.replace:
+    path: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
+    regexp: 'sd: 0[xX]'
+    replace: 'sd: '
+
 - name: Slurp UE config
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
