@@ -131,19 +131,18 @@
   set_fact:
     ue_cm_template: "{{ [repo_dest_abs, 'charts', 'srsue', 'templates', 'configmap.yaml'] | path_join }}"
 
-# Inject Security Key (K) into the python configuration generator
 - name: Update K_HEX in generate_ue_conf.py
   ansible.builtin.replace:
     path: "{{ ue_cm_template }}"
     regexp: 'K_HEX = "[a-fA-F0-9]+"'
-    replace: 'K_HEX = "{{ fiveg.ue.k }}"'
-
+    replace: 'K_HEX = "{{ fiveg.security.full_key }}"'
+    
 # Inject OPC into the python configuration generator
 - name: Update OPC_HEX in generate_ue_conf.py
   ansible.builtin.replace:
     path: "{{ ue_cm_template }}"
     regexp: 'OPC_HEX = "[a-fA-F0-9]+"'
-    replace: 'OPC_HEX = "{{ fiveg.ue.opc }}"'
+    replace: 'OPC_HEX = "{{ fiveg.security.ue.opc }}"'
 
 # Update IMSI generation logic to match 5G Profile PLMN
 - name: Update IMSI prefix in imsi_for function
@@ -152,24 +151,24 @@
     regexp: 'return f"0010100000000\{ue_number:02d\}"'
     replace: 'return f"{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}0000000{ue_number:02d}"'
 
-# Set fixed APN from 5G profile
+# Set fixed APN from 5G profile # TBD retrieve from slice parameter of UE
 - name: Update APN logic in apn_for function
   ansible.builtin.replace:
     path: "{{ ue_cm_template }}"
     regexp: '"internet" if ue_number % 2 == 1 else "streaming"'
     replace: '"{{ fiveg.ue.apn }}"'
 
-# Update Radio parameters to match gNB capabilities
-- name: Update Radio parameters in UE_TEMPLATE
-  block:
-    - name: Set NR Band
-      ansible.builtin.replace:
-        path: "{{ ue_cm_template }}"
-        regexp: 'bands = 3'
-        replace: 'bands = {{ fiveg.radio.nr_band }}'
-
-    - name: Set PRB configuration (max and current)
-      ansible.builtin.replace:
-        path: "{{ ue_cm_template }}"
-        regexp: '(max_)?nof_prb = 106'
-        replace: '\1nof_prb = {{ fiveg.radio.nof_prb }}'
+## Update Radio parameters to match gNB capabilities
+#- name: Update Radio parameters in UE_TEMPLATE
+#  block:
+#    - name: Set NR Band
+#      ansible.builtin.replace:
+#        path: "{{ ue_cm_template }}"
+#        regexp: 'bands = 3'
+#        replace: 'bands = {{ fiveg.radio.nr_band }}'
+#
+#    - name: Set PRB configuration (max and current)
+#      ansible.builtin.replace:
+#        path: "{{ ue_cm_template }}"
+#        regexp: '(max_)?nof_prb = 106'
+#        replace: '\1nof_prb = {{ fiveg.radio.nof_prb }}'
