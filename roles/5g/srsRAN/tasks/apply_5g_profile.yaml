@@ -56,34 +56,63 @@
     gnb_slices: []
     amf_slices: []
 
-- name: Update all gNB configurations (AMF and Cell Config) and force scalar types
+- name: Map slices strictly for gNB and AMF
+  set_fact:
+    gnb_slices: "{{ (gnb_slices | default([])) + [ slice_entry ] }}"
+    amf_slices: "{{ (amf_slices | default([])) + [ slice_entry ] }}"
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: sl_item
+  vars:
+    slice_entry:
+      sst: "{{ sl_item.sst | int }}"
+      sd: "{{ lookup('template', 'slice_sd.j2') | trim }}"
+
+- name: Update all gNB configurations (AMF and Cell Config) via yq
   ansible.builtin.shell: >
     {{ yq_bin_path }} eval -i '
       .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = {{ amf_slices | to_json }} |
-      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list[].sd style="" |
-      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list[].sst |= !!int |
+      with(.gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list[]; .sd style="" | .sst |= !!int) |
       
       .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
       .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }} |
       .gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }} |
-      .gnbConfig.cell_cfg.slicing[].sd style="" |
-      .gnbConfig.cell_cfg.slicing[].sst |= !!int
+      with(.gnbConfig.cell_cfg.slicing[]; .sd style="" | .sst |= !!int)
     ' "{{ values_file }}"
 
-- name: Verify absence of quotes in values file
+- name: Verify no quotes in final values file
   ansible.builtin.shell: "grep -E 'sst:|sd:' {{ values_file }}"
   register: check_quotes
+  changed_when: false
 
-- name: Display raw lines for verification
+- name: Display raw YAML lines for SST/SD verification
   debug:
     msg: "{{ check_quotes.stdout_lines }}"
 
-- name: Show final updated values (PLMN, TAC, slicing)
-  ansible.builtin.shell: >
-    yq eval -P '.gnbConfig.cell_cfg.plmn, .gnbConfig.cell_cfg.tac, .gnbConfig.cell_cfg.slicing' "{{ values_file }}"
-  register: final_values
-  changed_when: false
+- name: Ensure values file has node constraints
+  blockinfile:
+    path: "{{ values_file }}"
+    marker: "# {mark} ANSIBLE MANAGED NODE SELECTOR"
+    insertafter: EOF
+    block: |
+      nodeSelector:
+        kubernetes.io/hostname: "{{ ran_node_name }}"
+      nodeName: {{ ran_node_name }}
 
-- name: Display final YAML values
-  ansible.builtin.debug:
-    var: final_values.stdout
+- name: Fix space before comma in device_args
+  replace:
+    path: "{{ values_file }}"
+    regexp: '\s+,'
+    replace: ','
+
+- name: Deploy srsRAN gNB using Helm
+  kubernetes.core.helm:
+    name: srsran-gnb
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
+    release_namespace: "{{ ran_ns }}"
+    values_files:
+      - "{{ values_file }}"
+    state: present
+    wait: True
+    atomic: True
+    timeout: 120s
