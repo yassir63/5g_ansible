@@ -1,8 +1,2 @@
-{% set raw = sl_item.sd | string if sl_item.sd is defined else 'EMPTY' %}
-{% if raw.upper() == 'EMPTY' %}
-0xFFFFFF
-{% elif raw.startswith('0x') or raw.startswith('0X') %}
-0x{{ raw[2:] }}
-{% else %}
-0x{{ raw }}
-{% endif %}
+{% set raw = sl_item.sd | string %}
+{% if raw.upper() == 'EMPTY' %}0xFFFFFF{% else %}0x{{ raw | replace('0x','') }}{% endif %}

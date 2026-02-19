@@ -91,7 +91,9 @@
     yq eval -i '
       .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
       .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac }} |
-      .gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }}
+      .gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }} |
+      .gnbConfig.cell_cfg.slicing[].sd style="" |
+      .gnbConfig.cell_cfg.slicing[].sst style=""
     ' "{{ values_file }}"
 
 - name: Show final updated values (PLMN, TAC, slicing)
