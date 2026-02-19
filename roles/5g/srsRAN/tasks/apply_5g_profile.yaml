@@ -56,45 +56,27 @@
     gnb_slices: []
     amf_slices: []
 
-- name: Map slices strictly for gNB (srsRAN format)
-  set_fact:
-    gnb_slices: "{{ (gnb_slices | default([])) + [ slice_entry ] }}"
-  loop: "{{ fiveg.slices }}"
-  loop_control:
-    loop_var: sl_item
-  vars:
-    slice_entry:
-      sst: "{{ sl_item.sst | int }}"
-      sd: "{{ lookup('template', 'slice_sd.j2') | trim }}"
-
-- name: Map slices pour AMF (TAI slice support list)
-  set_fact:
-    amf_slices: "{{ (amf_slices | default([])) + [ slice_entry ] }}"
-  loop: "{{ fiveg.slices }}"
-  loop_control:
-    loop_var: sl_item
-  vars:
-    slice_entry:
-      sst: "{{ sl_item.sst | int }}"
-      sd: "{{ lookup('template', 'slice_sd.j2') | trim }}"
-
-- name: Update AMF supported_tracking_areas
+- name: Update all gNB configurations (AMF and Cell Config) and force scalar types
   ansible.builtin.shell: >
-    yq eval -i '
+    {{ yq_bin_path }} eval -i '
       .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = {{ amf_slices | to_json }} |
       .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list[].sd style="" |
-      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list[].sst style=""
-    ' "{{ values_file }}"
-
-- name: Update PLMN, TAC and slicing in values file
-  ansible.builtin.shell: >
-    yq eval -i '
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list[].sst |= !!int |
+      
       .gnbConfig.cell_cfg.plmn = "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}" |
-      .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac }} |
+      .gnbConfig.cell_cfg.tac = {{ fiveg.plmn.tac | int }} |
       .gnbConfig.cell_cfg.slicing = {{ gnb_slices | to_json }} |
       .gnbConfig.cell_cfg.slicing[].sd style="" |
-      .gnbConfig.cell_cfg.slicing[].sst style=""
+      .gnbConfig.cell_cfg.slicing[].sst |= !!int
     ' "{{ values_file }}"
+
+- name: Verify absence of quotes in values file
+  ansible.builtin.shell: "grep -E 'sst:|sd:' {{ values_file }}"
+  register: check_quotes
+
+- name: Display raw lines for verification
+  debug:
+    msg: "{{ check_quotes.stdout_lines }}"
 
 - name: Show final updated values (PLMN, TAC, slicing)
   ansible.builtin.shell: >
