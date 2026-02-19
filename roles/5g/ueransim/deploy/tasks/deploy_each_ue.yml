@@ -22,19 +22,53 @@
       metadata:
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
-      data: "{{ { target_ue ~ '.yaml': ue_cfg_encoded.content | b64decode, 'wrapper.sh': ue_wrapper_encoded.content | b64decode } }}"
+      data: 
+        "{{ target_ue }}.yaml": "{{ ue_cfg_encoded.content | b64decode }}"
+        "wrapper.sh": "{{ ue_wrapper_encoded.content | b64decode }}"
 
 - name: Deploy UERANSIM Deployment for {{ target_ue }}
   kubernetes.core.k8s:
     state: present
-    namespace: "{{ ran_ns | default('open5gs') }}"
-    definition: "{{ lookup('file', ueransim_root ~ '/ueransim-ue/' ~ target_ue ~ '/ue-deployment.yaml') | from_yaml | combine(patch, recursive=True) }}"
-  vars:
-    patch:
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "ueransim-{{ target_ue }}"
+        namespace: "{{ ran_ns | default('open5gs') }}"
+        labels:
+          app: ueransim
+          component: ue
+          name: "{{ target_ue }}"
       spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            name: "{{ target_ue }}"
         template:
+          metadata:
+            labels:
+              app: ueransim
+              component: ue
+              name: "{{ target_ue }}"
           spec:
             initContainers:
-              - name: wait-gnb
-                command: ["sh", "-c", "until nslookup gnb-service; do echo waiting; sleep 2; done;"]
+            - name: wait-gnb
+              image: busybox:1.32.0
+              command: ["sh", "-c", "until nslookup gnb-service; do echo waiting for gNB; sleep 2; done;"]
+            containers:
+            - name: ue
+              image: ghcr.io/niloysh/ueransim:v3.2.6
+              securityContext:
+                privileged: true
+                capabilities:
+                  add: ["NET_ADMIN"]
+              command: ["/bin/bash", "-c", "--"]
+              args: ["/ueransim/config/wrapper.sh"]
+              volumeMounts:
+              - name: ue-volume
+                mountPath: /ueransim/config
+            volumes:
+            - name: ue-volume
+              configMap:
+                name: "{{ target_ue }}-configmap"
 
