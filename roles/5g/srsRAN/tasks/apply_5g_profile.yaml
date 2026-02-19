@@ -78,21 +78,12 @@
       sst: "{{ sl_item.sst | int }}"
       sd: "{{ lookup('template', 'slice_sd.j2') | trim }}"
 
-
-- name: Update AMF supported_tracking_areas from 5G profile
+- name: Update AMF supported_tracking_areas
   ansible.builtin.shell: >
     yq eval -i '
-      .gnbConfig.cu_cp.amf.supported_tracking_areas = [
-        {
-          "tac": {{ fiveg.plmn.tac | int }},
-          "plmn_list": [
-            {
-              "plmn": "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}",
-              "tai_slice_support_list": {{ amf_slices | to_json }}
-            }
-          ]
-        }
-      ]
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list = {{ amf_slices | to_json }} |
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list[].sd style="" |
+      .gnbConfig.cu_cp.amf.supported_tracking_areas[0].plmn_list[0].tai_slice_support_list[].sst style=""
     ' "{{ values_file }}"
 
 - name: Update PLMN, TAC and slicing in values file
