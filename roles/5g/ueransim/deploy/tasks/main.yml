@@ -1,10 +1,10 @@
 ---
-- name: Read modified gNB config from remote
+- name: Read gNB config
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
   register: gnb_cfg_encoded
 
-- name: Deploy UERANSIM gNB ConfigMap
+- name: Deploy gNB ConfigMap
   kubernetes.core.k8s:
     state: present
     definition:
@@ -14,10 +14,10 @@
         name: gnb-configmap
         namespace: "{{ ran_ns | default('open5gs') }}"
       data:
-        # Suppression chirurgicale du 0x pour UERANSIM
-        gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode | regex_replace('sd:\\s*0[xX]', 'sd: ') }}"
+        # Pareil ici, on dégage tous les 0x du fichier.
+        gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode | replace('0x', '') | replace('0X', '') }}"
 
-- name: Deploy UERANSIM gNB Service
+- name: Deploy gNB Service
   kubernetes.core.k8s:
     state: present
     definition:
@@ -35,7 +35,7 @@
           port: 4997
           targetPort: 4997
 
-- name: Deploy UERANSIM gNB Deployment
+- name: Deploy gNB Deployment
   kubernetes.core.k8s:
     state: present
     definition:
@@ -44,9 +44,6 @@
       metadata:
         name: ueransim-gnb
         namespace: "{{ ran_ns | default('open5gs') }}"
-        labels:
-          app: ueransim
-          component: gnb
       spec:
         replicas: 1
         selector:
