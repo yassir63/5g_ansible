@@ -1,5 +1,14 @@
 ---
-# roles/5g/ueransim/deploy/tasks/main.yml
+
+- name: Read modified gNB config from remote
+  ansible.builtin.slurp:
+    src: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
+  register: gnb_cfg_encoded
+
+- name: Read gNB wrapper script from remote
+  ansible.builtin.slurp:
+    src: "{{ ueransim_root }}/ueransim-gnb/config/wrapper.sh"
+  register: gnb_wrapper_encoded
 
 - name: Deploy UERANSIM gNB ConfigMap
   kubernetes.core.k8s:
@@ -11,8 +20,8 @@
         name: gnb-configmap
         namespace: "{{ ran_ns | default('default') }}"
       data:
-        open5gs-gnb.yaml: "{{ lookup('file', ueransim_root + '/ueransim-gnb/config/open5gs-gnb.yaml') }}"
-        wrapper.sh: "{{ lookup('file', ueransim_root + '/ueransim-gnb/config/wrapper.sh') }}"
+        open5gs-gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode }}"
+        wrapper.sh: "{{ gnb_wrapper_encoded.content | b64decode }}"
 
 - name: Deploy UERANSIM gNB Deployment
   kubernetes.core.k8s:
@@ -22,8 +31,10 @@
 
 - name: Deploy UERANSIM UEs (ConfigMap + Deployment)
   include_tasks: deploy_each_ue.yml
-  loop: "{{ fiveg.ues | dict2items }}"
+  # On filtre pour ne prendre que les 3 UEs du profil
+  loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['UE18', 'UE19', 'UE20']) | list }}"
   loop_control:
+    index_var: ue_idx
     loop_var: ue_item
 
 - name: Wait for UERANSIM Pods to be ready

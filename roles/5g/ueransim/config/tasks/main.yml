@@ -84,22 +84,21 @@
       .mcc = "{{ fiveg.plmn.mcc }}" |
       .mnc = "{{ fiveg.plmn.mnc }}" |
       .supi = "imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ item.value.imsi_suffix }}" |
+      .supi style="plain" |
       .configured-nssai = {{ ueransim_slices | to_json }} |
-      .default-nssai = [{{ ueransim_slices[idx | int] | to_json }}]
+      .default-nssai = [{{ ueransim_slices[idx | int] | to_json }}] |
+      .. style="plain"
     ' "{{ ueransim_root }}/ueransim-ue/ue{{ loop_idx + 1 }}/ue{{ loop_idx + 1 }}.yaml"
   vars:
-    # On trouve l'index de la slice pour cet UE
     idx: >-
       {% set mapping = {} %}
       {% for s in fiveg.slices %} {% set _ = mapping.update({s.name: loop.index0}) %} {% endfor %}
       {{ mapping[item.value.slice] | default(0) }}
     loop_idx: "{{ loop_item_index }}"
-  # On filtre les UEs sources et on utilise l'index de la boucle pour nommer les destinations
   loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['UE18', 'UE19', 'UE20']) | list }}"
   loop_control:
     index_var: loop_item_index
-    label: "Mapping {{ item.key }} to ue{{ loop_item_index + 1 }}"
-
+    
 - name: Remove quotes for UERANSIM SD/SST
   ansible.builtin.replace:
     path: "{{ item.0 }}"
