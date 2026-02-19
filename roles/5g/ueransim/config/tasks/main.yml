@@ -84,10 +84,8 @@
       .mcc = "{{ fiveg.plmn.mcc }}" |
       .mnc = "{{ fiveg.plmn.mnc }}" |
       .supi = "imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ item.value.imsi_suffix }}" |
-      .supi style="plain" |
       .configured-nssai = {{ ueransim_slices | to_json }} |
-      .default-nssai = [{{ ueransim_slices[idx | int] | to_json }}] |
-      .. style="plain"
+      .default-nssai = [{{ ueransim_slices[idx | int] | to_json }}]
     ' "{{ ueransim_root }}/ueransim-ue/ue{{ loop_idx + 1 }}/ue{{ loop_idx + 1 }}.yaml"
   vars:
     idx: >-
@@ -98,6 +96,8 @@
   loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['UE18', 'UE19', 'UE20']) | list }}"
   loop_control:
     index_var: loop_item_index
+
+
     
 - name: Remove quotes for UERANSIM SD/SST
   ansible.builtin.replace:
