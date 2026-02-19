@@ -260,19 +260,23 @@ fi
 
 # Select Platform
 # Make r2lab the default if the user just presses enter
-echo ""
-echo "Which PLATFORM do you want to deploy on? (default: ${DEFAULT_PLATFORM})"
-echo "1) Real radio devices on the R2lab platform"
-echo "2) Fake RAN only (e.g., rfsim)"
-read -rp "Enter choice [1-2]: " platform_choice
-if [[ -z "$platform_choice" ]]; then
-  platform=${DEFAULT_PLATFORM}
+if [[ "$ran" != "ueransim" ]]; then
+    echo ""
+    echo "Which PLATFORM do you want to deploy on? (default: ${DEFAULT_PLATFORM})"
+    echo "1) Real radio devices on the R2lab platform"
+    echo "2) Fake RAN only (e.g., rfsim)"
+    read -rp "Enter choice [1-2]: " platform_choice
+    if [[ -z "$platform_choice" ]]; then
+	platform=${DEFAULT_PLATFORM}
+    else
+	case "$platform_choice" in
+	    1) platform="r2lab" ;;
+	    2) platform="rfsim"; fhi72=false ;;
+	    *) echo "❌ Invalid choice"; exit 1 ;;
+	esac
+    fi
 else
-  case "$platform_choice" in
-    1) platform="r2lab" ;;
-    2) platform="rfsim"; fhi72=false ;;
-    *) echo "❌ Invalid choice"; exit 1 ;;
-  esac
+    platform="rfsim"; fhi72=false
 fi
 
 R2LAB_RU="$platform" # if rfsim, RU is "rfsim"
