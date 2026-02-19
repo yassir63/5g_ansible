@@ -3,6 +3,12 @@
   set_fact:
     target_ue: "ue{{ ue_idx + 1 }}"
 
+- name: Fix nc UDP hang in deployment file
+  ansible.builtin.replace:
+    path: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/ue-deployment.yaml"
+    regexp: 'nc -z -u \$DEPENDENCIES'
+    replace: 'nc -z gnb-service 4997'
+
 - name: Slurp UE config from remote
   ansible.builtin.slurp:
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/{{ target_ue }}.yaml"
@@ -22,7 +28,6 @@
       metadata:
         name: "{{ target_ue }}-configmap"
         namespace: "{{ ran_ns | default('open5gs') }}"
-      # On utilise une structure dictionnaire dynamique
       data: "{{ { target_ue ~ '.yaml': ue_cfg_encoded.content | b64decode, 'wrapper.sh': ue_wrapper_encoded.content | b64decode } }}"
 
 - name: Deploy UERANSIM Deployment for {{ target_ue }}
@@ -30,4 +35,3 @@
     state: present
     src: "{{ ueransim_root }}/ueransim-ue/{{ target_ue }}/ue-deployment.yaml"
     namespace: "{{ ran_ns | default('open5gs') }}"
-
