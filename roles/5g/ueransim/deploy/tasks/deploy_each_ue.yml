@@ -49,6 +49,11 @@
           spec:
             nodeSelector:
               kubernetes.io/hostname: "{{ ran_node_name }}"
+            tolerations:
+            - key: "test-eviction"
+              operator: "Equal"
+              value: "true"
+              effect: "NoSchedule"
             initContainers:
             - name: wait-gnb
               image: busybox:1.32.0
