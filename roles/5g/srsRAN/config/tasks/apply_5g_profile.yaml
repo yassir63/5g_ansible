@@ -1,5 +1,5 @@
 ---
-# Apply 5G profile to srsRAN values.yaml 
+# roles/5g/srsRAN/config/tasks/apply_5g_profile.yaml
 
 - name: Check if yq is already installed
   ansible.builtin.stat:
@@ -28,7 +28,7 @@
     mode: '0755'
     state: file
   become: true
-  
+
 - name: Resolve 5G profile file
   set_fact:
     fiveg_profile_file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
@@ -78,25 +78,17 @@
     ' "{{ values_file }}"
 
 - name: Force remove quotes on SD values (Post-processing)
-  ansible.builtin.replace:
+  replace:
     path: "{{ values_file }}"
     regexp: 'sd: "(0x[0-9A-Fa-f]+)"'
     replace: 'sd: \1'
 
 - name: Force remove quotes on SST values (Post-processing)
-  ansible.builtin.replace:
+  replace:
     path: "{{ values_file }}"
     regexp: 'sst: "([0-9]+)"'
     replace: 'sst: \1'
 
-- name: Verify final result (No quotes)
-  ansible.builtin.shell: "grep -E 'sst:|sd:' {{ values_file }}"
-  register: check_quotes
-  changed_when: false
-
-- name: Display raw YAML lines
-  debug:
-    msg: "{{ check_quotes.stdout_lines }}"
 
 - name: Ensure values file has node constraints
   blockinfile:
@@ -107,12 +99,6 @@
       nodeSelector:
         kubernetes.io/hostname: "{{ ran_node_name }}"
       nodeName: {{ ran_node_name }}
-
-- name: Fix space before comma in device_args
-  replace:
-    path: "{{ values_file }}"
-    regexp: '\s+,'
-    replace: ','
 
 - name: Deploy srsRAN gNB using Helm
   kubernetes.core.helm:
@@ -126,49 +112,60 @@
     atomic: True
     timeout: 120s
 
-# Set path to the srsUE ConfigMap template in the cloned repository
+# --- UE CONFIGURATION ---
+
 - name: Set path to UE configmap template
   set_fact:
     ue_cm_template: "{{ [repo_dest_abs, 'charts', 'srsue', 'templates', 'configmap.yaml'] | path_join }}"
 
-- name: Update K_HEX in generate_ue_conf.py
-  ansible.builtin.replace:
-    path: "{{ ue_cm_template }}"
-    regexp: 'K_HEX = "[a-fA-F0-9]+"'
-    replace: 'K_HEX = "{{ fiveg.security.full_key }}"'
-    
-# Inject OPC into the python configuration generator
-- name: Update OPC_HEX in generate_ue_conf.py
-  ansible.builtin.replace:
-    path: "{{ ue_cm_template }}"
-    regexp: 'OPC_HEX = "[a-fA-F0-9]+"'
-    replace: 'OPC_HEX = "{{ fiveg.security.opc }}"'
+- name: Prepare slice variables for UE script logic
+  set_fact:
+    s1_sst: "{{ fiveg.slices[0].sst }}"
+    s1_sd: "{{ '0xffffff' if fiveg.slices[0].sd == 'EMPTY' else '0x' + fiveg.slices[0].sd }}"
+    s1_dnn: "{{ fiveg.slices[0].dnn }}"
+    s2_sst: "{{ fiveg.slices[1].sst }}"
+    s2_sd: "{{ '0xffffff' if fiveg.slices[1].sd == 'EMPTY' else '0x' + fiveg.slices[1].sd }}"
+    s2_dnn: "{{ fiveg.slices[1].dnn }}"
 
-# Update IMSI generation logic to match 5G Profile PLMN
-- name: Update IMSI prefix in imsi_for function
+- name: Update K_HEX and OPC_HEX in generate_ue_conf.py
+  ansible.builtin.replace:
+    path: "{{ ue_cm_template }}"
+    regexp: '{{ item.regexp }}'
+    replace: '{{ item.replace }}'
+  loop:
+    - { regexp: 'K_HEX = "[a-fA-F0-9]+"', replace: 'K_HEX = "{{ fiveg.security.full_key }}"' }
+    - { regexp: 'OPC_HEX = "[a-fA-F0-9]+"', replace: 'OPC_HEX = "{{ fiveg.security.opc }}"' }
+
+- name: Update IMSI prefix logic
   ansible.builtin.replace:
     path: "{{ ue_cm_template }}"
     regexp: 'return f"0010100000000\{ue_number:02d\}"'
-    replace: 'return f"{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.qhat01.imsi_suffix[:-2] }}{ue_number:02d}"'
+    replace: 'return f"{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}0000000{ue_number:02d}"'
 
-# Set fixed APN from 5G profile # TBD retrieve from slice parameter of UE
-- name: Update APN logic in apn_for function
+- name: Update APN logic with dynamic DNNs
   ansible.builtin.replace:
     path: "{{ ue_cm_template }}"
-    regexp: '"internet" if ue_number % 2 == 1 else "streaming"'
-    replace: '"{{ fiveg.slices[0].dnn }}"'
+    regexp: 'return "internet"'
+    replace: 'return "{{ s2_dnn }}" if ue_number == 7 else "{{ s1_dnn }}"'
 
-## Update Radio parameters to match gNB capabilities
-#- name: Update Radio parameters in UE_TEMPLATE
-#  block:
-#    - name: Set NR Band
-#      ansible.builtin.replace:
-#        path: "{{ ue_cm_template }}"
-#        regexp: 'bands = 3'
-#        replace: 'bands = {{ fiveg.radio.nr_band }}'
-#
-#    - name: Set PRB configuration (max and current)
-#      ansible.builtin.replace:
-#        path: "{{ ue_cm_template }}"
-#        regexp: '(max_)?nof_prb = 106'
-#        replace: '\1nof_prb = {{ fiveg.radio.nof_prb }}'
+- name: Add NSSAI placeholders to UE_TEMPLATE section
+  ansible.builtin.replace:
+    path: "{{ ue_cm_template }}"
+    regexp: 'apn_protocol = ipv4'
+    replace: "apn_protocol = ipv4\n    nssai_sst = {sst}\n    nssai_sd = {sd}"
+
+- name: Finalize SST/SD logic in Python formatter
+  ansible.builtin.replace:
+    path: "{{ ue_cm_template }}"
+    regexp: 'apn=apn_for\(ue_number\),'
+    replace: |
+      apn=apn_for(ue_number),
+                  sst={{ s2_sst }} if ue_number == 7 else {{ s1_sst }},
+                  sd="{{ s2_sd }}" if ue_number == 7 else "{{ s1_sd }}",
+
+- name: Deploy srsRAN UE using Helm
+  kubernetes.core.helm:
+    name: srsran-ue
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsue'] | path_join }}"
+    release_namespace: "{{ ran_ns }}"
+    state: present
