@@ -1,0 +1,2 @@
+{% set raw = sl_item.sd | string %}
+{% if raw.upper() == 'EMPTY' %}0xFFFFFF{% else %}0x{{ raw | replace('0x','') }}{% endif %}

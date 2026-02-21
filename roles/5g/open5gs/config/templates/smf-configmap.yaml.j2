@@ -70,3 +70,17 @@ data:
 {% endif %}
 {% endfor %}
 
+  wrapper.sh: |
+    #!/bin/bash
+
+    # Wait for Multus to attach the n4 interface
+    echo "Waiting for n4 interface..."
+    while ! ip link show n4 >/dev/null 2>&1; do echo "Waiting for n4..."; sleep 2; done
+
+    # Added security delay to ensure UPF and NRF/SCP are fully reachable
+    # This prevents the 'No SMF Instance' error in AMF during registration
+    echo "Stabilizing network and waiting for SBI discovery (15s)..."
+    sleep 15;
+
+    # Start the Open5GS SMF daemon
+    /open5gs/install/bin/open5gs-smfd -c /open5gs/config/smfcfg.yaml

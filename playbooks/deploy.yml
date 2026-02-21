@@ -103,7 +103,7 @@
     - role: setup/k8s/add_taint
       vars:
         target_node: "{{ ran_node_name }}"
-      when: core_node_name != ran_node_name
+      when: core_node_name != ran_node_name and not fhi72
 
 - name: Install Multus / CNAO
   hosts: core_node
@@ -221,7 +221,12 @@
       include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
   roles:
-    - role: 5g/srsRAN
+#   old srsran role not yet removed
+#    - role: 5g/srsRAN
+#      when: ran == 'srsRAN'
+    - role: 5g/srsRAN/config
+      when: ran == 'srsRAN'
+    - role: 5g/srsRAN/deploy
       when: ran == 'srsRAN'
 
 ############################################################################
@@ -236,6 +241,20 @@
     - import_tasks: ../tasks/reload_booleans.yml
 #
 ############################################################################
+
+
+- name: Deploy ueransim
+  hosts: core_node # ueransim included on open5gs_k8s on core_node
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  roles:
+    - role: 5g/ueransim/config
+      when: ran == 'ueransim'
+    - role: 5g/ueransim/deploy
+      when: ran == 'ueransim'
+
 
 - name: Remove NoSchedule taint on Monitor node
   hosts: core_node

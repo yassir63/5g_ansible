@@ -1,0 +1,18 @@
+---
+- name: Load common variables
+  include_vars:
+    file: "../../common/defaults/main.yml"
+
+- name: Deploy Telegraf using Helm
+  when: mon_enabled
+  kubernetes.core.helm:
+    name: telegraf
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'telegraf'] | path_join }}"
+    release_namespace: "{{ ran_ns }}"
+    values_files:
+      - "{{ [repo_dest_abs, 'charts', 'telegraf', 'values.yaml'] | path_join }}"
+    state: present
+    wait: true
+    atomic: true
+    timeout: 600s
+  register: telegraf_apply

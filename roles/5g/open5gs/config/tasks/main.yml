@@ -1,10 +1,9 @@
 ---
-# First clone open5gs-k8s
 - name: Clone open5gs-k8s repo
   ansible.builtin.git:
     repo: "{{ repo_url }}"
     dest: "{{ repo_dest }}"
-    version: main
+    version: "{{ repo_branch }}"
     update: yes
     force: yes
 

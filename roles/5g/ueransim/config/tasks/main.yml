@@ -1,0 +1,124 @@
+---
+- name: Check if yq is already installed
+  ansible.builtin.stat:
+    path: "{{ yq_bin_path }}"
+  register: yq_bin
+
+- name: Download yq binary using curl or wget
+  ansible.builtin.shell: |
+    set -e
+    if command -v curl >/dev/null 2>&1; then
+      curl -L --fail "{{ yq_url }}" -o "{{ yq_bin_path }}"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -O "{{ yq_bin_path }}" "{{ yq_url }}"
+    else
+      echo "Neither curl nor wget found" >&2
+      exit 1
+    fi
+  args:
+    creates: "{{ yq_bin_path }}"
+  when: not yq_bin.stat.exists
+  become: true
+
+- name: Ensure yq is executable
+  ansible.builtin.file:
+    path: "{{ yq_bin_path }}"
+    mode: '0755'
+    state: file
+  become: true
+
+
+- name: Load active 5G profile
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg
+
+- name: Validate PLMN
+  assert:
+    that:
+      - fiveg.plmn.mcc is defined
+      - fiveg.plmn.mnc is defined
+      - fiveg.plmn.tac is defined
+
+- name: Validate slices
+  assert:
+    that:
+      - slice.name is defined
+      - slice.sst is defined
+      - slice.dnn is defined
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: slice
+
+- name: Validate UE slice references
+  assert:
+    that:
+      - ue.value.slice in fiveg.slices | map(attribute='name') | list
+  loop: "{{ fiveg.ues | dict2items }}"
+  loop_control:
+    loop_var: ue
+
+- name: Initialize ueransim_slices list
+  set_fact:
+    ueransim_slices: []
+
+- name: Map slices for UERANSIM
+  set_fact:
+    ueransim_slices: "{{ ueransim_slices + [ {'sst': sl_item.sst | int, 'sd': lookup('template', 'slice_sd.j2') | trim} ] }}"
+  loop: "{{ fiveg.slices }}"
+  loop_control:
+    loop_var: sl_item
+
+- name: Update UERANSIM gNB configuration
+  ansible.builtin.shell: >
+    {{ yq_bin_path }} eval -i '
+      .mcc = "{{ fiveg.plmn.mcc }}" |
+      .mnc = "{{ fiveg.plmn.mnc }}" |
+      .tac = {{ fiveg.plmn.tac | int }} |
+      .linkIp = "0.0.0.0" |
+      .ngapIp = "0.0.0.0" |
+      .gtpIp = "0.0.0.0" |
+      .slices = {{ ueransim_slices | to_json }}
+    ' "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
+
+- name: Update UERANSIM UEs configurations (UE18/19/20 -> ue1/2/3)
+  ansible.builtin.shell: >
+    {{ yq_bin_path }} eval -i '
+      .mcc = "{{ fiveg.plmn.mcc }}" |
+      .mnc = "{{ fiveg.plmn.mnc }}" |
+      .supi = "imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ item.value.imsi_suffix }}" |
+      .configured-nssai = {{ ueransim_slices | to_json }} |
+      .default-nssai = [{{ ueransim_slices[idx | int] | to_json }}]
+    ' "{{ ueransim_root }}/ueransim-ue/ue{{ loop_idx + 1 }}/ue{{ loop_idx + 1 }}.yaml"
+  vars:
+    idx: >-
+      {% set mapping = {} %}
+      {% for s in fiveg.slices %} {% set _ = mapping.update({s.name: loop.index0}) %} {% endfor %}
+      {{ mapping[item.value.slice] | default(0) }}
+    loop_idx: "{{ loop_item_index }}"
+  loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['UE18', 'UE19', 'UE20']) | list }}"
+  loop_control:
+    index_var: loop_item_index
+
+- name: Remove ALL quotes for UERANSIM (Final Fix)
+  ansible.builtin.replace:
+    path: "{{ item.0 }}"
+    regexp: '{{ item.1.regexp }}'
+    replace: '{{ item.1.replace }}'
+  with_nested:
+    - - "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
+      - "{{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
+      - "{{ ueransim_root }}/ueransim-ue/ue2/ue2.yaml"
+      - "{{ ueransim_root }}/ueransim-ue/ue3/ue3.yaml"
+    - - { regexp: 'sd:\s*["+'']?([0-9A-Fa-fXx]+)["+'']?', replace: 'sd: \1' }
+      - { regexp: 'sst:\s*["+'']?([0-9]+)["+'']?', replace: 'sst: \1' }
+      - { regexp: 'supi:\s*["+'']?(imsi-[0-9]+)["+'']?', replace: 'supi: \1' }
+
+      
+- name: Final check of generated configs
+  ansible.builtin.shell: "grep -E 'sst:|sd:|supi:' {{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
+  register: check_ue
+  changed_when: false
+
+- debug:
+    var: check_ue.stdout_lines

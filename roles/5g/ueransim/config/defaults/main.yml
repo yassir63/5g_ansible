@@ -1,0 +1,6 @@
+---
+repo_dest: "/root/open5gs-k8s"
+ueransim_root: "{{ repo_dest }}/ueransim"
+yq_version: "v4.45.1"
+yq_bin_path: "/usr/local/bin/yq"
+yq_url: "https://github.com/mikefarah/yq/releases/download/{{ yq_version }}/yq_linux_amd64"

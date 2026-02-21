@@ -1,0 +1,24 @@
+---
+
+- name: Set initial retry facts
+  ansible.builtin.set_fact:
+    gnb_startup_success: false
+    max_attempts: 2
+
+- name: Deploy and Monitor srsRAN gNB
+  block:
+    - name: "Attempt gNB deployment (Attempt {{ item }})"
+      include_tasks: deploy_with_check.yml
+      loop: "{{ range(1, max_attempts + 1) | list }}"
+      when: not gnb_startup_success
+
+  rescue:
+    - name: Final failure message
+      ansible.builtin.fail:
+        msg: "gNB failed to start properly on both IP addresses."
+      when: not gnb_startup_success
+
+- name: Confirm success
+  ansible.builtin.debug:
+    msg: "srsRAN gNB is running successfully!"
+  when: gnb_startup_success
