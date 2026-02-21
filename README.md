@@ -1,3 +1,12 @@
+⚠️ This repository is no longer maintained and is used for testing purposes.
+The actively maintained/stable version is now available at our lab's official repo:
+[sopnode/5g_ansible](https://github.com/sopnode/5g_ansible)
+
+This original repository is preserved for reproducibility of the published papers:
+- Paper 1 (2026) : Toward Real-Time RAN Observability in Open-Source 5G Systems
+- Paper 2 (2026) : Demonstrating Real-Time RAN Observability in Open-Source 5G: Controlled Interference Scenario
+
+---
 # Automated 5G Deployment & Monitoring with Ansible
 
 ![setup](images/setup.png)
