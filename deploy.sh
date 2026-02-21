@@ -116,13 +116,16 @@ DEFAULT_INVENTORY="default"
 DEFAULT_CORE="open5gs"
 DEFAULT_RAN="oai"
 DEFAULT_PLATFORM="r2lab"
-DEFAULT_RU="jaguar"
+DEFAULT_RU="n320"
 DEFAULT_LIST_UE="qhat01"
 
 PROFILE_5G="${PROFILE_5G:-$DEFAULT_PROFILE_5G}"
 
 NAME_INVENTORY="${NAME_INVENTORY:-$DEFAULT_INVENTORY}"
 INVENTORY="${INVENTORY:-./inventory/${NAME_INVENTORY}/hosts.ini}"
+
+DIR_LOGS="LOGS"
+mkdir -p ${DIR_LOGS}
 
 echo -e "${CYAN}\
     ____  ____ __    _   __ __       ____________   ____             __               ______            __
@@ -259,19 +262,23 @@ fi
 
 # Select Platform
 # Make r2lab the default if the user just presses enter
-echo ""
-echo "Which PLATFORM do you want to deploy on? (default: ${DEFAULT_PLATFORM})"
-echo "1) Real radio devices on the R2lab platform"
-echo "2) Fake RAN only (e.g., rfsim)"
-read -rp "Enter choice [1-2]: " platform_choice
-if [[ -z "$platform_choice" ]]; then
-  platform=${DEFAULT_PLATFORM}
+if [[ "$ran" != "ueransim" ]]; then
+    echo ""
+    echo "Which PLATFORM do you want to deploy on? (default: ${DEFAULT_PLATFORM})"
+    echo "1) Real radio devices on the R2lab platform"
+    echo "2) Fake RAN only (e.g., rfsim)"
+    read -rp "Enter choice [1-2]: " platform_choice
+    if [[ -z "$platform_choice" ]]; then
+	platform=${DEFAULT_PLATFORM}
+    else
+	case "$platform_choice" in
+	    1) platform="r2lab" ;;
+	    2) platform="rfsim"; fhi72=false ;;
+	    *) echo "❌ Invalid choice"; exit 1 ;;
+	esac
+    fi
 else
-  case "$platform_choice" in
-    1) platform="r2lab" ;;
-    2) platform="rfsim"; fhi72=false ;;
-    *) echo "❌ Invalid choice"; exit 1 ;;
-  esac
+    platform="rfsim"; fhi72=false
 fi
 
 R2LAB_RU="$platform" # if rfsim, RU is "rfsim"
@@ -279,7 +286,11 @@ R2LAB_UES=()
 
 # If R2Lab platform is selected, ask for RU and UEs
 if [[ "$platform" == "r2lab" ]]; then
-  R2LAB_RUs=("benetel1" "benetel2" "jaguar" "panther" "n300" "n320")
+  if [[ "$ran" == "oai" ]]; then
+      R2LAB_RUs=("benetel1" "benetel2" "jaguar" "panther" "n300" "n320")
+  else # $ran == "srsRAN" for now, only n3xx RUs supported
+      R2LAB_RUs=("n300" "n320")
+  fi
   # Select RU
   # Make jaguar the default if the user just presses enter
   echo ""
@@ -336,7 +347,7 @@ if [[ "$platform" == "r2lab" ]]; then
   fi
 fi
 
-# Store the R2Lab slice name (usename) as well as email and passowrd for future use
+# Store the R2Lab slice name (usename) as well as email and password for future use
 R2LAB_CONFIG="./.r2lab_config"
 if [[ -f "$R2LAB_CONFIG" ]]; then
   source "$R2LAB_CONFIG"
@@ -535,13 +546,13 @@ if [[ "$run_iperf_test" == true ]]; then
   echo "  Scenario: $scenario"
   case "$scenario" in
     "Iperf R2lab scenario without interference")
-      echo "Will run iperf on ${R2LAB_UES[0]} for 5 minutes in downlink then uplink (10 minutes in total for the scenario)"
+      echo "Will run iperf in a sequential way on ${R2LAB_UES[0]} for 30 seconds in downlink then uplink (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
       ;;
     "Parallel Iperf Test (without interference)")
       echo "Will run a bidirectional iperf on ${R2LAB_UES[0]}, ${R2LAB_UES[1]}, ${R2LAB_UES[2]} and ${R2LAB_UES[3]} respectively for 5 minutes each, with an in-between wait time of 100 seconds (10 minutes in total for the scenario)"
       ;;
     "Iperf RFSIM scenario without interference")
-      echo "Will run iperf on OAI-NR-UE1 then OAI-NR-UE2 for 200 seconds each with an in-between wait time of 100 seconds in downlink then uplink (10 minutes in total for the scenario)"
+      echo "Will run iperf sequentially OAI-NR-UE1, OAI-NR-UE2 and OAI-NR-UE3 for 30 seconds each with an in-between wait time of 5 seconds in downlink then uplink (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
       ;;
   esac
 fi
@@ -955,14 +966,14 @@ deploy() {
 	echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy_r2lab.yml &"
 	run_cmd ansible-playbook -i "$INVENTORY" \
 		"${ANSIBLE_EXTRA_ARGS[@]}" \
-		playbooks/deploy_r2lab.yml 2>&1 | tee logs-r2lab.txt &
+		playbooks/deploy_r2lab.yml 2>&1 | tee ${DIR_LOGS}/logs-r2lab.txt &
     fi
 
     echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy.yml"
 
     run_cmd ansible-playbook -i "$INVENTORY" \
 	    "${ANSIBLE_EXTRA_ARGS[@]}" \
-	    playbooks/deploy.yml 2>&1 | tee logs.txt
+	    playbooks/deploy.yml 2>&1 | tee ${DIR_LOGS}/logs.txt
 
     echo ""
     echo "=========================================="
@@ -997,11 +1008,11 @@ run_scenario() {
         case "$scenario" in
             "Iperf R2lab scenario without interference"|"Iperf RFSIM scenario without interference")
                 run_cmd ./run_scenario.sh -d --inventory="${NAME_INVENTORY}" \
-                    "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_iperf.txt
+                    "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee ${DIR_LOGS}/logs-scenario_iperf.txt
                 ;;
             "Iperf R2lab scenario with interference")
                 run_cmd ./run_scenario.sh -i --inventory="${NAME_INVENTORY}" \
-                    "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee logs-scenario_interference.txt
+                    "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee ${DIR_LOGS}/logs-scenario_interference.txt
                 ;;
             *)
                 echo "❌ Unknown iperf test scenario: $scenario"

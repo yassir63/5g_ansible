@@ -142,9 +142,9 @@
     set -euo pipefail
     for nad in n2network n3network n4network; do
       case "$nad" in
-        n2network) ifname=net1 ;;
-        n3network) ifname=net2 ;;
-        n4network) ifname=net3 ;;
+        n2network) ifname=n2 ;;
+        n3network) ifname=n3 ;;
+        n4network) ifname=n4 ;;
       esac
       if ! kubectl get networkattachmentdefinition "$nad" -n open5gs &>/dev/null; then
         continue
@@ -176,6 +176,16 @@
     ip link set dev n4br up
   become: true
   when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
+
+- name: Assign Gateway IPs to OVS bridges for Single-Node SCTP bind
+  ansible.builtin.shell: |
+    # Assign IP .254 of each subnet to the bridge to simulate active link
+    ip addr add 10.10.2.254/24 dev n2br || true
+    ip addr add 10.10.3.254/24 dev n3br || true
+    ip addr add 10.10.4.254/24 dev n4br || true
+  become: true
+  when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
+
 
 - name: Apply Open5GS NFs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}

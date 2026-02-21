@@ -1,0 +1,19 @@
+---
+- name: Deploy srsRAN gNB
+  include_tasks: deploy_gnb.yml
+
+- name: Deploy Telegraf
+  include_tasks: deploy_telegraf.yml
+
+- name: Deploy srsRAN UEs
+  include_tasks: deploy_srsues.yml
+  when: rru == 'rfsim'
+
+- name: Summary (Non-RFSIM)
+  ansible.builtin.debug:
+    msg:
+      - "gNB deployed via Helm chart 'srsran-gnb' in namespace {{ ran_ns }}"
+      - "Telegraf if deployed via Helm chart 'telegraf' in namespace {{ ran_ns }}"
+      - "UE deployment skipped (rru={{ rru }})"
+  when: rru != 'rfsim'
+

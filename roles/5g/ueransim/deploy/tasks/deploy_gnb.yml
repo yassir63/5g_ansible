@@ -1,0 +1,76 @@
+---
+- name: Read gNB config
+  ansible.builtin.slurp:
+    src: "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
+  register: gnb_cfg_encoded
+
+- name: Deploy gNB ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: gnb-configmap
+        namespace: "{{ ran_ns | default('open5gs') }}"
+      data:
+        gnb.yaml: "{{ gnb_cfg_encoded.content | b64decode }}"
+
+- name: Deploy gNB Service
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: gnb-service
+        namespace: "{{ ran_ns | default('open5gs') }}"
+      spec:
+        selector:
+          app: ueransim
+          component: gnb
+        ports:
+        - protocol: UDP
+          port: 4997
+          targetPort: 4997
+
+- name: Deploy gNB Deployment
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ueransim-gnb
+        namespace: "{{ ran_ns | default('open5gs') }}"
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: ueransim
+            component: gnb
+        template:
+          metadata:
+            labels:
+              app: ueransim
+              component: gnb
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: "{{ ran_node_name }}"
+            tolerations:
+            - key: "test-eviction"
+              operator: "Equal"
+              value: "true"
+              effect: "NoSchedule"
+            containers:
+            - name: gnb
+              image: ghcr.io/niloysh/ueransim:v3.2.6
+              command: ["/ueransim/nr-gnb"]
+              args: ["-c", "/ueransim/config/gnb.yaml"]
+              volumeMounts:
+              - name: gnb-volume
+                mountPath: /ueransim/config
+            volumes:
+            - name: gnb-volume
+              configMap:
+                name: gnb-configmap

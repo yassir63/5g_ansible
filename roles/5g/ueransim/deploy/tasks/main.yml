@@ -1,0 +1,9 @@
+---
+- name: Deploy UERANSIM gNB
+  include_tasks: deploy_gnb.yml
+
+- name: Deploy UERANSIM UEs
+  include_tasks: deploy_each_ue.yml
+  loop: "{{ range(0, 3) | list }}"
+  loop_control:
+    index_var: ue_idx
