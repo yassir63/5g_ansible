@@ -53,6 +53,7 @@
     state: present                          # Ensure the release is installed
     wait: true                              # Wait for pod readiness
     values:                                 # Specific values for this UE
+      nodeName: "{{ ran_node_name }}"
       imsi: "{{ item.imsi }}"               # IMSI from profile
       k: "{{ fiveg.security.full_key }}"    # UE K key
       opc: "{{ fiveg.security.opc }}"       # UE OPC
