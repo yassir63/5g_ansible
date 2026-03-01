@@ -11,8 +11,8 @@
       - name: ue1
         imsi: "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.UE18.imsi_suffix }}"
         dnn: "{{ fiveg.slices | selectattr('name','equalto',fiveg.ues.UE18.slice) | map(attribute='dnn') | first }}"
-        tx_port: 2001
-        rx_port: 2000
+        tx_port: 2001 # because gnb's tx_port is 2000
+        rx_port: 2000 # because gnb's rx_port is 2001
 
       - name: ue2
         imsi: "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.UE19.imsi_suffix }}"
