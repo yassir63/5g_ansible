@@ -13,18 +13,21 @@
         dnn: "{{ fiveg.slices | selectattr('name','equalto',fiveg.ues.UE18.slice) | map(attribute='dnn') | first }}"
         tx_port: 2001 # because gnb's tx_port is 2000
         rx_port: 2000 # because gnb's rx_port is 2001
+        ueIp: 10.10.3.232
 
       - name: ue2
         imsi: "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.UE19.imsi_suffix }}"
         dnn: "{{ fiveg.slices | selectattr('name','equalto',fiveg.ues.UE19.slice) | map(attribute='dnn') | first }}"
         tx_port: 2001
         rx_port: 2000
+        ueIp: 10.10.3.233
 
       - name: ue3
         imsi: "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.UE20.imsi_suffix }}"
         dnn: "{{ fiveg.slices | selectattr('name','equalto',fiveg.ues.UE20.slice) | map(attribute='dnn') | first }}"
         tx_port: 2001
         rx_port: 2000
+        ueIp: 10.10.3.234
 
 # Debug the list of UEs before deployment
 - name: Debug UE list
@@ -58,6 +61,7 @@
       k: "{{ fiveg.security.full_key }}"    # UE K key
       opc: "{{ fiveg.security.opc }}"       # UE OPC
       apn: "{{ item.dnn }}"                 # DNN slice
+      ueIp: "{{ item.ueIp }}"               # Different IP per UE
       zmq:
         tx_port: "{{ item.tx_port }}"       # Unique TX port for this UE
         rx_port: "{{ item.rx_port }}"       # RX port on gNB (can be shared)
