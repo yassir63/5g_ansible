@@ -1,68 +1,43 @@
 ---
-# ------------------------------
-# Deploy srsRAN UEs (multi-pod, RFSIM only)
-# Minimal changes, safe for USRP mode
-# ------------------------------
-
-# Build the list of UEs to deploy from the 5G profile
 - name: Build UE list from 5G profile (UE18/19/20)
   set_fact:
     ue_list:
       - name: ue1
         imsi: "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.UE18.imsi_suffix }}"
         dnn: "{{ fiveg.slices | selectattr('name','equalto',fiveg.ues.UE18.slice) | map(attribute='dnn') | first }}"
-        tx_port: 2001 # because gnb's tx_port is 2000
-        rx_port: 2000 # because gnb's rx_port is 2001
-        ueIp: 10.10.3.232
-
+        ueIp: "{{ srsran_rfsim.ues.UE18.ip }}"
+        tx_port: "{{ srsran_rfsim.ues.UE18.ul_port }}"
+        rx_port: "{{ srsran_rfsim.ues.UE18.dl_port }}"
       - name: ue2
         imsi: "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.UE19.imsi_suffix }}"
         dnn: "{{ fiveg.slices | selectattr('name','equalto',fiveg.ues.UE19.slice) | map(attribute='dnn') | first }}"
-        tx_port: 2001
-        rx_port: 2000
-        ueIp: 10.10.3.233
-
+        ueIp: "{{ srsran_rfsim.ues.UE19.ip }}"
+        tx_port: "{{ srsran_rfsim.ues.UE19.ul_port }}"
+        rx_port: "{{ srsran_rfsim.ues.UE19.dl_port }}"
       - name: ue3
         imsi: "{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ fiveg.ues.UE20.imsi_suffix }}"
         dnn: "{{ fiveg.slices | selectattr('name','equalto',fiveg.ues.UE20.slice) | map(attribute='dnn') | first }}"
-        tx_port: 2001
-        rx_port: 2000
-        ueIp: 10.10.3.234
+        ueIp: "{{ srsran_rfsim.ues.UE20.ip }}"
+        tx_port: "{{ srsran_rfsim.ues.UE20.ul_port }}"
+        rx_port: "{{ srsran_rfsim.ues.UE20.dl_port }}"
 
-# Debug the list of UEs before deployment
-- name: Debug UE list
-  ansible.builtin.debug:
-    msg: "{{ ue_list }}"
-
-- name: Clean old ConfigMap for this UE release
-  when: rru == "rfsim"
-  kubernetes.core.k8s:
-    api_version: v1
-    kind: ConfigMap
-    namespace: "{{ ran_ns }}"
-    name: "srsran-ue-{{ item.name }}-ue-config"
-    state: absent
-  loop: "{{ ue_list }}"
-  loop_control:
-    loop_var: item
-
-# Deploy each UE as a separate Helm release
 - name: Deploy each srsUE pod as separate Helm release
   when: rru == "rfsim"
   kubernetes.core.helm:
-    name: "srsue-{{ item.name }}"           # Unique release name per UE
-    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsue'] | path_join }}" # Path to srsUE Helm chart
-    release_namespace: "{{ ran_ns }}"       # Deployment namespace
-    state: present                          # Ensure the release is installed
-    wait: true                              # Wait for pod readiness
-    values:                                 # Specific values for this UE
+    name: "srsue-{{ item.name }}"
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsue'] | path_join }}"
+    release_namespace: "{{ ran_ns }}"
+    state: present
+    wait: true
+    values:
       nodeName: "{{ ran_node_name }}"
-      imsi: "{{ item.imsi }}"               # IMSI from profile
-      k: "{{ fiveg.security.full_key }}"    # UE K key
-      opc: "{{ fiveg.security.opc }}"       # UE OPC
-      apn: "{{ item.dnn }}"                 # DNN slice
-      ueIp: "{{ item.ueIp }}"               # Different IP per UE
+      imsi: "{{ item.imsi }}"
+      k: "{{ fiveg.security.full_key }}"
+      opc: "{{ fiveg.security.opc }}"
+      apn: "{{ item.dnn }}"
+      ueIp: "{{ item.ueIp }}"
+      gnbIp: "{{ srsran_rfsim.broker_ip }}"
       zmq:
-        tx_port: "{{ item.tx_port }}"       # Unique TX port for this UE
-        rx_port: "{{ item.rx_port }}"       # RX port on gNB (can be shared)
+        tx_port: "{{ item.tx_port }}"
+        rx_port: "{{ item.rx_port }}"
   loop: "{{ ue_list }}"

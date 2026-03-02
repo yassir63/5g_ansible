@@ -1,4 +1,8 @@
 ---
+- name: Deploy ZMQ broker
+  include_tasks: deploy_broker.yml
+  when: rru == 'rfsim'
+  
 - name: Deploy srsRAN gNB
   include_tasks: deploy_gnb.yml
 

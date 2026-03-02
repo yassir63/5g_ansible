@@ -1,0 +1,19 @@
+# ZMQ broker config - rfsim multi-UE scenario only
+srsran_rfsim:
+  broker_ip: "10.10.3.230"
+  gnb_ip: "10.10.3.231"
+  gnb_dl_port: 2000
+  gnb_ul_port: 2001
+  ues:
+    UE18:
+      ip: "10.10.3.232"
+      dl_port: 2100
+      ul_port: 2101
+    UE19:
+      ip: "10.10.3.233"
+      dl_port: 2200
+      ul_port: 2201
+    UE20:
+      ip: "10.10.3.234"
+      dl_port: 2300
+      ul_port: 2301
