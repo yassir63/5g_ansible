@@ -97,16 +97,3 @@
       nodeSelector:
         kubernetes.io/hostname: "{{ ran_node_name }}"
       nodeName: {{ ran_node_name }}
-
-- name: Load srsRAN rfsim defaults
-  include_vars:
-    file: "{{ role_path }}/../deploy/defaults/main.yml"
-  when: rru == 'rfsim'
-
-
-- name: Update gNB ZMQ device_args to point to broker (rfsim only)
-  when: rru == 'rfsim'
-  ansible.builtin.shell: >
-    {{ yq_bin_path }} eval -i '
-      .gnbConfig.ru_sdr.device_args = "tx_port=tcp://0.0.0.0:{{ srsran_rfsim.gnb_dl_port }},rx_port=tcp://{{ srsran_rfsim.broker_ip }}:{{ srsran_rfsim.gnb_ul_port }},base_srate=23.04e6"
-    ' "{{ values_file }}"
