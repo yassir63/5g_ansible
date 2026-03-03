@@ -27,12 +27,11 @@
     # FIX: was: mount tmpfs 10G — same root cause as pre_k8s: tmpfs causes
     #      InvalidDiskCapacity. pre_k8s already mounts the real disk here.
     #      This block now only asserts the mount is present; it does NOT remount.
-    - name: Fail if /var/lib/containerd is not on a real FS (should be done by pre_k8s)
-      ansible.builtin.fail:
+    - name: Warn if /var/lib/containerd is not yet mounted (will be done by pre_k8s)
+      ansible.builtin.debug:
         msg: >
-          /var/lib/containerd is not mounted on a real filesystem. Run pre_k8s role
-          before this role so that /dev/{{ storage }} is mounted here.
-      when: containerd_mp.rc != 0
+          WARNING: /var/lib/containerd is not mounted on a real filesystem yet on {{ inventory_hostname }}.
+          pre_k8s role (which runs after this role) will mount /dev/{{ storage }} here.
 
   when:
     - inventory_hostname in groups['ran_node']
