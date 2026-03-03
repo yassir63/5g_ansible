@@ -20,15 +20,20 @@
         cmd: python3 -m venv /opt/ansible-k8s-venv
         creates: /opt/ansible-k8s-venv/bin/activate
 
-    - name: Install required Python libraries (including setuptools)
-      ansible.builtin.pip:
-        name: 
-          - pip
-          - setuptools
-          - wheel
-          - kubernetes
-        state: latest
-        executable: /opt/ansible-k8s-venv/bin/pip
+    - name: Bootstrap pip, setuptools and wheel in venv
+      ansible.builtin.command:
+        cmd: /opt/ansible-k8s-venv/bin/python -m ensurepip --upgrade
+      become: true
+
+    - name: Upgrade pip, setuptools and wheel explicitly in venv
+      ansible.builtin.command:
+        cmd: /opt/ansible-k8s-venv/bin/pip install --upgrade pip setuptools wheel
+      become: true
+
+    - name: Install kubernetes Python module in venv
+      ansible.builtin.command:
+        cmd: /opt/ansible-k8s-venv/bin/pip install --upgrade kubernetes
+      become: true
 
     - name: Force Ansible to use this venv for delegated tasks
       ansible.builtin.set_fact:

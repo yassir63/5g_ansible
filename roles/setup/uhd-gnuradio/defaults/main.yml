@@ -1,0 +1,8 @@
+---
+uhd_version: "4.7.0"
+gnuradio_version: "3.10.12.0"
+install_prefix: "/usr/local"
+uhd_src_dir: "/tmp/uhd"       
+gnuradio_src_dir: "/tmp/gnuradio" 
+# Determine number of parallel make jobs automatically
+make_jobs: "{{ ansible_processor_vcpus | default(ansible_facts['processor_vcpus'] | default(2)) }}"

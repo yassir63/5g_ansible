@@ -56,8 +56,8 @@
 - name: Add route to {{ target_server }} via UPF IP when wwan0 is ready
   shell: |
     ssh -o BatchMode=yes root@{{ current_ue }} "
-    	ip route add {{ upf_ip }} dev wwan0 2>/dev/null || true
-        ip route add {{ target_server }} via {{ upf_ip }} 2>/dev/null || true
+    	ip route replace {{ upf_ip }} dev wwan0 &&
+        ip route replace {{ target_server }} via {{ upf_ip }} &&
         ip route get {{ target_server }}
     "
   changed_when: false

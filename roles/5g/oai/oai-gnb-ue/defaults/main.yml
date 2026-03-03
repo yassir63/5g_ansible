@@ -1,0 +1,14 @@
+---
+uhd_version: "4.8.0.0"
+oai_branch: "develop"
+oai_src_dir: "/root/openairinterface5g"
+uhd_src_dir: "/root/uhd"
+build_jobs: "{{ ansible_processor_vcpus | default(ansible_facts['processor_vcpus'] | default(4)) }}"
+
+# UE launch options (optional)
+launch_ue: false
+ue_numerology: 1
+ue_band: 78
+ue_carrier_freq: 3619200000
+ue_rbs: 106
+ue_imsi: "001010000000001"

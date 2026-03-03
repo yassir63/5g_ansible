@@ -1,4 +1,5 @@
 ---
+
 - name: Check if yq is already installed
   ansible.builtin.stat:
     path: "{{ yq_bin_path }}"
@@ -76,49 +77,65 @@
       .mnc = "{{ fiveg.plmn.mnc }}" |
       .tac = {{ fiveg.plmn.tac | int }} |
       .linkIp = "0.0.0.0" |
-      .ngapIp = "0.0.0.0" |
-      .gtpIp = "0.0.0.0" |
+      .ngapIp = "10.10.3.231" |
+      .gtpIp = "10.10.3.231" |
       .slices = {{ ueransim_slices | to_json }}
     ' "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
 
-- name: Update UERANSIM UEs configurations (UE18/19/20 -> ue1/2/3)
-  ansible.builtin.shell: >
-    {{ yq_bin_path }} eval -i '
-      .mcc = "{{ fiveg.plmn.mcc }}" |
-      .mnc = "{{ fiveg.plmn.mnc }}" |
-      .supi = "imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ item.value.imsi_suffix }}" |
-      .configured-nssai = {{ ueransim_slices | to_json }} |
-      .default-nssai = [{{ ueransim_slices[idx | int] | to_json }}]
-    ' "{{ ueransim_root }}/ueransim-ue/ue{{ loop_idx + 1 }}/ue{{ loop_idx + 1 }}.yaml"
+- name: Rewrite UERANSIM configs
+  ansible.builtin.copy:
+    dest: "{{ ueransim_root }}/ueransim-ue/ue{{ ue_num }}/ue{{ ue_num }}.yaml"
+    content: |
+      supi: imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ item.value.imsi_suffix }}
+      mcc: '{{ fiveg.plmn.mcc }}'
+      mnc: '{{ fiveg.plmn.mnc }}'
+      key: 'fec86ba6eb707ed08905757b1bb44b8f'
+      op: 'C42449363BBAD02B66D16BC975D77CC1'
+      opType: 'OPC'
+      amf: '8000'
+      imei: '356938035643803'
+      imeiSv: '4370816125816151'
+      gnbSearchList:
+        - gnb-service
+      uacAic:
+        mps: false
+        mcs: false
+      uacAcc:
+        normalClass: 0
+        class11: false
+        class12: false
+        class13: false
+        class14: false
+        class15: false
+      sessions:
+        - type: 'IPv4'
+          apn: '{{ curr_slice.dnn }}'
+          slice:
+            sst: 1
+            sd: {{ '0xFFFFFF' if curr_slice.sd == 'EMPTY' else ('0x' + curr_slice.sd if '0x' not in curr_slice.sd|string else curr_slice.sd) }}
+      configured-nssai:
+        - sst: 1
+          sd: {{ '0xFFFFFF' if curr_slice.sd == 'EMPTY' else ('0x' + curr_slice.sd if '0x' not in curr_slice.sd|string else curr_slice.sd) }}
+      default-nssai:
+        - sst: 1
+          sd: {{ '0xFFFFFF' if curr_slice.sd == 'EMPTY' else ('0x' + curr_slice.sd if '0x' not in curr_slice.sd|string else curr_slice.sd) }}
+      integrity:
+        IA1: true
+        IA2: true
+        IA3: true
+      ciphering:
+        EA1: true
+        EA2: true
+        EA3: true
+      integrityMaxRate:
+        uplink: 'full'
+        downlink: 'full'
   vars:
-    idx: >-
-      {% set mapping = {} %}
-      {% for s in fiveg.slices %} {% set _ = mapping.update({s.name: loop.index0}) %} {% endfor %}
-      {{ mapping[item.value.slice] | default(0) }}
-    loop_idx: "{{ loop_item_index }}"
+    curr_slice: "{{ fiveg.slices | selectattr('name', 'equalto', item.value.slice) | first }}"
+    ue_num: "{{ '1' if item.key == 'UE18' else '2' if item.key == 'UE19' else '3' }}"
   loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['UE18', 'UE19', 'UE20']) | list }}"
-  loop_control:
-    index_var: loop_item_index
 
-- name: Remove ALL quotes for UERANSIM (Final Fix)
-  ansible.builtin.replace:
-    path: "{{ item.0 }}"
-    regexp: '{{ item.1.regexp }}'
-    replace: '{{ item.1.replace }}'
-  with_nested:
-    - - "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
-      - "{{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
-      - "{{ ueransim_root }}/ueransim-ue/ue2/ue2.yaml"
-      - "{{ ueransim_root }}/ueransim-ue/ue3/ue3.yaml"
-    - - { regexp: 'sd:\s*["+'']?([0-9A-Fa-fXx]+)["+'']?', replace: 'sd: \1' }
-      - { regexp: 'sst:\s*["+'']?([0-9]+)["+'']?', replace: 'sst: \1' }
-      - { regexp: 'supi:\s*["+'']?(imsi-[0-9]+)["+'']?', replace: 'supi: \1' }
-
-      
-- name: Final check of generated configs
-  ansible.builtin.shell: "grep -E 'sst:|sd:|supi:' {{ ueransim_root }}/ueransim-ue/ue1/ue1.yaml"
-  register: check_ue
-  changed_when: false
-
-- debug:
-    var: check_ue.stdout_lines
+- name: Replicas to 0
+  ansible.builtin.shell: >
+    {{ yq_bin_path }} eval -i '.spec.replicas = 0' "{{ ueransim_root }}/ueransim-ue/ue{{ item }}/ue-deployment.yaml"
+  loop: [1, 2, 3]

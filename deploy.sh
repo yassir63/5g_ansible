@@ -395,7 +395,7 @@ if [[ "$scenario_choice" =~ ^[Yy]$ ]]; then
 #  if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 4 ]]; then
 #    options+=("Parallel Iperf Test (without interference)")
 #  fi
-  if [[ "$platform" == "rfsim" && "$ran" == "oai" ]]; then
+  if [[ "$platform" == "rfsim" && ( "$ran" == "oai" || "$ran" == "srsRAN" || "$ran" == "ueransim" ) ]]; then
     options+=("Iperf RFSIM scenario without interference")
   fi
   if [[ "$platform" == "r2lab" && "${#R2LAB_UES[@]}" -ge 1 ]]; then

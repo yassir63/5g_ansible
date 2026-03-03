@@ -133,29 +133,30 @@
     - name: Wait for NetworkAddonsConfig to become Available
       ansible.builtin.shell: |
         kubectl wait networkaddonsconfig cluster --for condition=Available --timeout=300s
-
   when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
   become: yes
 
 - name: Patch NADs to use unique interface names
   shell: |
-    set -euo pipefail
+    set -eu
     for nad in n2network n3network n4network; do
       case "$nad" in
         n2network) ifname=n2 ;;
         n3network) ifname=n3 ;;
         n4network) ifname=n4 ;;
       esac
-      if ! kubectl get networkattachmentdefinition "$nad" -n open5gs &>/dev/null; then
+      if ! kubectl get networkattachmentdefinition "$nad" -n {{ open5gs_ns }} &>/dev/null; then
         continue
       fi
-      config=$(kubectl get networkattachmentdefinition "$nad" -n open5gs -o jsonpath='{.spec.config}')
+      config=$(kubectl get networkattachmentdefinition "$nad" -n {{ open5gs_ns }} -o jsonpath='{.spec.config}')
       newconfig=$(echo "$config" | jq --arg n "$ifname" '.ifname = $n')
-      kubectl patch networkattachmentdefinition "$nad" -n open5gs --type=merge -p "{\"spec\":{\"config\":$newconfig}}"
+      kubectl patch networkattachmentdefinition "$nad" -n {{ open5gs_ns }} --type=merge -p "{\"spec\":{\"config\":$newconfig}}"
     done
+  args:
+    executable: /bin/bash
   register: patch_nad
   failed_when: false
-  changed_when: "'Skipping' not in patch_nad.stdout"
+  changed_when: false
 
 - name: Verify required NADs exist
   kubernetes.core.k8s_info:
@@ -174,18 +175,36 @@
     ip link set dev n2br up
     ip link set dev n3br up
     ip link set dev n4br up
+    for br in n2br n3br n4br; do
+      for port in $(ovs-vsctl list-ports $br | grep veth); do
+         ovs-vsctl del-port $br $port || true
+      done
+    done
   become: true
   when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
 
 - name: Assign Gateway IPs to OVS bridges for Single-Node SCTP bind
   ansible.builtin.shell: |
-    # Assign IP .254 of each subnet to the bridge to simulate active link
     ip addr add 10.10.2.254/24 dev n2br || true
     ip addr add 10.10.3.254/24 dev n3br || true
     ip addr add 10.10.4.254/24 dev n4br || true
   become: true
   when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
 
+- name: Wait for OVS resource registration on Node
+  ansible.builtin.shell: |
+    kubectl get node {{ inventory_hostname }} -o json | grep -q "ovs-cni.network.kubevirt.io/n3br"
+  register: ovs_res_check
+  until: ovs_res_check.rc == 0
+  retries: 20
+  delay: 5
+  changed_when: false
+  when: core_node_name == ran_node_name and core == "open5gs" and not fhi72
+
+# --- CLEANUP PRE-DEPLOY TO ENSURE MULTUS RE-ATTACH ---
+- name: Force cleanup existing Open5GS pods
+  ansible.builtin.shell: kubectl delete pods -n {{ open5gs_ns }} -l app=open5gs --force --grace-period=0 || true
+  when: core_node_name == ran_node_name and core == "open5gs"
 
 - name: Apply Open5GS NFs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
@@ -207,29 +226,46 @@
   loop_control:
     label: "{{ item }}"
 
-- name: Install python3-venv
+- name: Verify Multus N3 interface inside AMF pod
+  ansible.builtin.shell: |
+    AMF_POD=$(kubectl get pods -n {{ open5gs_ns }} -l nf=amf -o jsonpath='{.items[0].metadata.name}')
+    kubectl exec -n {{ open5gs_ns }} $AMF_POD -- ip addr show n3 | grep "inet 10.10.3.200"
+  register: amf_n3_check
+  until: amf_n3_check.rc == 0
+  retries: 15
+  delay: 5
+  when: core == "open5gs"
+  changed_when: false
+
+- name: Install python3-venv, python3-pip, setuptools and wheel
   ansible.builtin.apt:
-    name: python3-venv
+    name:
+      - python3-venv
+      - python3-pip
+      - python3-setuptools
+      - python3-wheel
     state: present
   become: yes
 
-- name: Create Python virtual environment
+- name: Create Python virtual environment (idempotent)
   ansible.builtin.command:
     cmd: python3 -m venv "{{ repo_dest }}/venv"
     creates: "{{ repo_dest }}/venv/bin/activate"
   become: yes
 
-- name: Upgrade pip in virtualenv
-  ansible.builtin.pip:
-    name: pip
-    state: latest
-    executable: "{{ repo_dest }}/venv/bin/pip"
+- name: Bootstrap pip, setuptools and wheel in venv
+  ansible.builtin.command:
+    cmd: "{{ repo_dest }}/venv/bin/python -m ensurepip --upgrade"
   become: yes
 
-- name: Install Python requirements
-  ansible.builtin.pip:
-    requirements: "{{ repo_dest }}/requirements.txt"
-    executable: "{{ repo_dest }}/venv/bin/pip"
+- name: Upgrade pip, setuptools and wheel explicitly in venv
+  ansible.builtin.command:
+    cmd: "{{ repo_dest }}/venv/bin/pip install --upgrade pip setuptools wheel"
+  become: yes
+
+- name: Install Python requirements in venv
+  ansible.builtin.command:
+    cmd: "{{ repo_dest }}/venv/bin/pip install -r {{ repo_dest }}/requirements.txt"
   become: yes
 
 - name: Deploy Open5GS Web UI

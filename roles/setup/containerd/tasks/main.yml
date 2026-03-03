@@ -1,5 +1,5 @@
 ---
-- name: RESTART_CONTAINERD
+- name: START_CONTAINERD
   ansible.builtin.meta: noop
 
 # --- Handle live Ubuntu RAN images before containerd install ---
@@ -24,14 +24,15 @@
       ignore_errors: true
       changed_when: false
 
-    - name: Mount tmpfs on /var/lib/containerd only if not already mounted
-      ansible.builtin.mount:
-        path: /var/lib/containerd
-        src: tmpfs
-        fstype: tmpfs
-        opts: size=10G
-        state: mounted
-      when: containerd_mp.rc != 0
+    # FIX: was: mount tmpfs 10G — same root cause as pre_k8s: tmpfs causes
+    #      InvalidDiskCapacity. pre_k8s already mounts the real disk here.
+    #      This block now only asserts the mount is present; it does NOT remount.
+    - name: Warn if /var/lib/containerd is not yet mounted (will be done by pre_k8s)
+      ansible.builtin.debug:
+        msg: >
+          WARNING: /var/lib/containerd is not mounted on a real filesystem yet on {{ inventory_hostname }}.
+          pre_k8s role (which runs after this role) will mount /dev/{{ storage }} here.
+
   when:
     - inventory_hostname in groups['ran_node']
     - live_image_check.stdout == "live"
@@ -94,12 +95,15 @@
     state: present
   become: true
 
-# ---- Optional performance tweak (native snapshotter = lower compat risk)
-- name: Switch snapshotter to native
+# FIX: was: snapshotter = "native" — the native snapshotter does not expose disk
+#      usage stats to kubelet via CRI, so kubelet sees imageFs capacity = 0 and
+#      fires InvalidDiskCapacity warnings. overlayfs works on ext4 (sda2/sdb2) and
+#      correctly reports capacity through statfs().
+- name: Switch snapshotter to overlayfs (fix InvalidDiskCapacity)
   ansible.builtin.replace:
     path: /etc/containerd/config.toml
-    regexp: 'snapshotter = "overlayfs"'
-    replace: 'snapshotter = "native"'
+    regexp: 'snapshotter\s*=\s*"native"'
+    replace: 'snapshotter = "overlayfs"'
   become: true
 
 # ---- Kubernetes 1.32+ requires pause:3.10
@@ -136,3 +140,15 @@
 
 - ansible.builtin.debug:
     var: cgroup_check.stdout
+
+# FIX: added snapshotter verification — catch any residual "native" entry that
+#      the replace above may have missed (e.g. plugin-specific overrides).
+- name: Verify no native snapshotter remains in config
+  ansible.builtin.shell: |
+    grep 'snapshotter' /etc/containerd/config.toml | grep '"native"' || echo "OK: no native snapshotter"
+  register: snapshotter_check
+  changed_when: false
+  become: true
+
+- ansible.builtin.debug:
+    var: snapshotter_check.stdout

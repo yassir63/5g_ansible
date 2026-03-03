@@ -18,46 +18,101 @@
         state: directory
         mode: '0755'
 
-    - name: Mount tmpfs on /var/lib/containerd (50G)
-      ansible.builtin.mount:
-        path: /var/lib/containerd
-        src: tmpfs
-        fstype: tmpfs
-        opts: size=50G
-        state: mounted
-  when: live_image_check.stdout == "live" and (ran_node_name != core_node_name)
-  become: true
-  tags: ['live-fix']
+    # FIX: purge all /var/lib/containerd entries from fstab — previous runs of
+    #      ansible.builtin.mount wrote both tmpfs and ext4 entries here; systemd
+    #      replayed both at containerd restart creating a stacked mount → InvalidDiskCapacity.
+    - name: Remove all /var/lib/containerd entries from fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '.*/var/lib/containerd.*'
+        state: absent
 
-- name: Mount tmpfs for K8s storage (containerd + kubelet)
-  block:
-    - name: Ensure directories exist
+    - name: Stop containerd before unmounting
+      ansible.builtin.systemd:
+        name: containerd
+        state: stopped
+      ignore_errors: true
+
+    # FIX: unmount all stacked mounts via shell loop — avoids ansible.builtin.mount
+    #      state: unmounted which would write a new fstab entry.
+    - name: Unmount all stacked mounts on /var/lib/containerd
+      ansible.builtin.shell: |
+        for i in $(seq 1 10); do
+          findmnt /var/lib/containerd &>/dev/null || break
+          umount /var/lib/containerd 2>/dev/null || umount -l /var/lib/containerd 2>/dev/null || break
+          sleep 1
+        done
+
+    # Detect whether /dev/{{ storage }} is already mounted elsewhere on this node
+    - name: Detect existing mountpoint for /dev/{{ storage }}
+      ansible.builtin.shell: |
+        findmnt -n -o TARGET /dev/{{ storage }} 2>/dev/null || echo "none"
+      register: storage_existing_mount
+      changed_when: false
+
+    # Strategy A: disk already mounted elsewhere → bind-mount a subdir
+    - name: "[bind] Create containerd subdir under existing mountpoint"
       ansible.builtin.file:
-        path: "{{ item }}"
+        path: "{{ storage_existing_mount.stdout | trim }}/containerd"
         state: directory
         mode: '0755'
-      loop:
-        - /var/lib/containerd
-        - /var/lib/kubelet
+      when:
+        - storage_existing_mount.stdout | trim != "none"
+        - storage_existing_mount.stdout | trim != "/var/lib/containerd"
 
-    - name: Mount tmpfs on /var/lib/containerd (50G)
-      ansible.builtin.mount:
-        path: /var/lib/containerd
-        src: tmpfs
-        fstype: tmpfs
-        opts: size=50G
-        state: mounted
+    # FIX: use shell mount --bind instead of ansible.builtin.mount to avoid fstab write
+    - name: "[bind] Bind-mount {{ storage_existing_mount.stdout | trim }}/containerd onto /var/lib/containerd"
+      ansible.builtin.shell: |
+        mount --bind "{{ storage_existing_mount.stdout | trim }}/containerd" /var/lib/containerd
+      when:
+        - storage_existing_mount.stdout | trim != "none"
+        - storage_existing_mount.stdout | trim != "/var/lib/containerd"
 
-    # Add kubelet on RAM to avoid DiskPressure on /
-    - name: Mount tmpfs on /var/lib/kubelet (5G)
+    # Strategy B: disk not mounted anywhere → mount directly
+    # FIX: use shell mount instead of ansible.builtin.mount to avoid fstab write
+    - name: "[direct] Mount /dev/{{ storage }} onto /var/lib/containerd"
+      ansible.builtin.shell: |
+        mount -t ext4 -o defaults,noatime /dev/{{ storage }} /var/lib/containerd
+      when:
+        - storage_existing_mount.stdout | trim == "none"
+
+    # FIX: containerd 1.7 does not report capacityBytes via CRI stats when the
+    #      overlayfs snapshotter directory is a plain subdirectory (not a mountpoint).
+    #      kubelet receives capacity=0 → InvalidDiskCapacity warning.
+    #      Bind-mounting the overlayfs dir onto itself makes it a real mountpoint,
+    #      so statfs() returns the correct capacity and containerd forwards it via CRI.
+    - name: Create overlayfs snapshotter directory
+      ansible.builtin.file:
+        path: /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+        state: directory
+        mode: '0755'
+
+    - name: Bind-mount overlayfs snapshotter dir as a separate mountpoint (fix CRI capacityBytes)
+      ansible.builtin.shell: |
+        findmnt /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs &>/dev/null || \
+          mount --bind /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs \
+                       /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+
+    # kubelet on tmpfs is acceptable — kubelet workdir does not need statfs capacity
+    - name: Ensure /var/lib/kubelet directory exists
+      ansible.builtin.file:
+        path: /var/lib/kubelet
+        state: directory
+        mode: '0755'
+      when: ran_node_name == core_node_name
+
+    - name: Mount tmpfs on /var/lib/kubelet (5G) — shared node only
       ansible.builtin.mount:
         path: /var/lib/kubelet
         src: tmpfs
         fstype: tmpfs
         opts: size=5G
         state: mounted
-  when: live_image_check.stdout == "live" and (ran_node_name == core_node_name)
+      when: ran_node_name == core_node_name
+
+  when: live_image_check.stdout == "live"
   become: true
+  tags: ['live-fix']
 
 # --- Handle containerd storage for persistent system ---
 - name: Ensure storage device exists
@@ -83,7 +138,6 @@
     src: "/dev/{{ storage }}"
     fstype: ext4
     state: mounted
-  # Only mount if not a live-boot system
   when: live_image_check.stdout != "live"
   become: true
 
@@ -112,11 +166,21 @@
     state: touch
     mode: '0644'
 
+# FIX: remove any existing rootDir line before patching — blockinfile only adds
+#      its own block, it does not clean up lines written by previous role runs
+#      (e.g. k8s_cpu_tuning). rootDir must be absent: it is kubelet's workdir
+#      (default /var/lib/kubelet) and must NOT point to /var/lib/containerd.
+- name: Remove rootDir from kubelet config if present
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^\s*rootDir:'
+    state: absent
+  become: true
+
 - name: Patch kubelet config (Unified)
   ansible.builtin.blockinfile:
     path: /var/lib/kubelet/config.yaml
     block: |
-      rootDir: /var/lib/containerd
       evictionHard:
         nodefs.available: "{{ '2%' if (core_node_name == ran_node_name) else '10%' }}"
         imagefs.available: "{{ '2%' if (core_node_name == ran_node_name) else '10%' }}"
@@ -124,6 +188,8 @@
       evictionMinimumReclaim:
         nodefs.available: "500Mi"
       {% endif %}
+      imageGCHighThresholdPercent: 85
+      imageGCLowThresholdPercent: 80
     marker: "# {mark} KUBELET STORAGE PATCH"
   become: true
 
@@ -158,18 +224,30 @@
   when: kubelet_service.rc == 0
 
 # --- Validation of disk pressure fix ---
-- name: Check /var/lib/containerd mount
-  ansible.builtin.shell: mount | grep /var/lib/containerd || true
+# FIX: use findmnt -n -o FSTYPE (returns just "ext4") instead of "mount | grep"
+#      which returned the full mount line — the old regex matched "tmpfs" inside
+#      that string even when the check ran after a successful remount.
+- name: Check /var/lib/containerd mount fstype
+  ansible.builtin.shell: |
+    findmnt -n -o FSTYPE /var/lib/containerd 2>/dev/null | head -1 || echo "NOT_MOUNTED"
   register: containerd_mount
   changed_when: false
   become: true
 
 - name: Show /var/lib/containerd mount status
   ansible.builtin.debug:
-    msg: "{{ containerd_mount.stdout if containerd_mount.stdout else 'not mounted' }}"
+    msg: "/var/lib/containerd fstype = {{ containerd_mount.stdout }}"
 
-- name: Verify kubelet rootDir and evictionHard
-  ansible.builtin.shell: grep -A 3 'evictionHard' /var/lib/kubelet/config.yaml || true; grep 'rootDir' /var/lib/kubelet/config.yaml || true
+- name: Fail if /var/lib/containerd is on a virtual filesystem
+  ansible.builtin.fail:
+    msg: >
+      /var/lib/containerd fstype is '{{ containerd_mount.stdout }}' — kubelet will report
+      InvalidDiskCapacity. Ensure /dev/{{ storage }} is ext4-formatted and mounted.
+  when: containerd_mount.stdout in ['NOT_MOUNTED', 'tmpfs', 'squashfs', 'ramfs', 'none']
+
+- name: Verify kubelet evictionHard and imageGC
+  ansible.builtin.shell: |
+    grep 'evictionHard' /var/lib/kubelet/config.yaml && echo "OK" || echo "MISSING"
   register: kubelet_config_check
   changed_when: false
   become: true
@@ -178,10 +256,12 @@
   ansible.builtin.debug:
     msg: "{{ kubelet_config_check.stdout }}"
 
-- name: Fail if disk pressure patch not applied
+- name: Fail if /var/lib/containerd is not on a real filesystem
   ansible.builtin.fail:
-    msg: "Disk pressure fix not applied: check /var/lib/containerd mount or kubelet config"
-  when: >
-    containerd_mount.stdout == "" or
-    "rootDir: /var/lib/containerd" not in kubelet_config_check.stdout
+    msg: "/var/lib/containerd fstype is '{{ containerd_mount.stdout }}' — kubelet will report InvalidDiskCapacity"
+  when: containerd_mount.stdout | trim in ['', 'NOT_MOUNTED', 'tmpfs', 'squashfs', 'ramfs', 'none']
 
+- name: Fail if evictionHard is missing from kubelet config
+  ansible.builtin.fail:
+    msg: "evictionHard not found in /var/lib/kubelet/config.yaml"
+  when: '"evictionHard" not in kubelet_config_check.stdout'

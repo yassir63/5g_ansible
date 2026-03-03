@@ -1,0 +1,55 @@
+---
+
+- name: Install UHD + GNU Radio on sopnode
+  hosts: core_node
+  become: true
+  vars:
+    uhd_version: "4.7.0.0"
+    gnuradio_version: "3.10.12.0"
+    install_prefix: "/usr/local"
+
+  roles:
+    - role: setup/uhd-gnuradio
+
+  tasks:
+    - name: Verify complete installation
+      shell: |
+        export PATH={{ install_prefix }}/bin:$PATH
+        export LD_LIBRARY_PATH={{ install_prefix }}/lib:$LD_LIBRARY_PATH
+        
+        echo "=========================================="
+        echo "Installation Summary"
+        echo "=========================================="
+        echo ""
+        
+        echo "UHD Version:"
+        uhd_config_info --version
+        echo ""
+        
+        echo "GNU Radio Version:"
+        gnuradio-config-info --version
+        echo ""
+        
+        echo "uhd_siggen Status:"
+        if command -v uhd_siggen &> /dev/null; then
+          echo "✓ uhd_siggen found at: $(which uhd_siggen)"
+        else
+          echo "✗ uhd_siggen NOT FOUND"
+          exit 1
+        fi
+        echo ""
+        
+        echo "Installed UHD/GNU Radio binaries:"
+        ls -1 {{ install_prefix }}/bin/ | grep -E "^(uhd_|gnuradio)" | head -20
+        echo ""
+        
+        echo "=========================================="
+        echo "Installation completed successfully!"
+        echo "=========================================="
+      args:
+        executable: /bin/bash
+      register: final_check
+
+    - name: Display installation summary
+      debug:
+        msg: "{{ final_check.stdout_lines }}"

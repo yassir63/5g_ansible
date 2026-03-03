@@ -1,6 +1,6 @@
 ---
 
-- name: RESTART_RAN_K8S
+- name: START_RAN_K8S
   ansible.builtin.meta: noop
 
 - name: Ensure CPUAffinity 5-15 is set in system.conf
@@ -50,8 +50,7 @@
     python3 - <<'EOF'
     import yaml, os
     cfg = "/var/lib/kubelet/config.yaml"
-    
-    # 1. Base CPU Tuning Patch
+    # 1. CPU/RT patch only
     patch = {
         "cgroupDriver": "systemd",
         "cpuManagerPolicy": "static",
@@ -63,13 +62,16 @@
             "CPUManagerPolicyOptions": True
         }
     }
+    # FIX: removed rootDir from patch — rootDir is kubelet's own working directory
+    #      (default /var/lib/kubelet). Setting it to /var/lib/containerd was incorrect:
+    #      it pointed kubelet's state dir at the containerd data dir, corrupting both.
+    #      kubelet detects imageFs automatically via containerd CRI stats.
+    #      Storage eviction settings are owned by pre_k8s and must not be overwritten here.
 
-    # 2. Add Storage settings if RAN and CORE are on the same node (passed via Jinja2)
-    # This prevents DiskPressure on Live Ubuntu images
+    # 2. Add storage settings only on shared RAN+CORE node
     is_shared_node = {{ True if (ran_node_name == core_node_name) else False }}
-    
     if is_shared_node:
-        patch["rootDir"] = "/var/lib/containerd"
+        # FIX: removed rootDir here too — same reason as above
         patch["evictionHard"] = {
             "nodefs.available": "2%",
             "imagefs.available": "2%"
@@ -117,3 +119,13 @@
     path: /var/lib/kubelet/cpu_manager_state
     state: absent
 
+# FIX: added post-merge check to catch any rootDir regression
+- name: Verify rootDir is absent from kubelet config after merge
+  ansible.builtin.shell: |
+    grep 'rootDir' /var/lib/kubelet/config.yaml && echo "ERROR: rootDir still present" || echo "OK: rootDir absent"
+  register: rootdir_check
+  changed_when: false
+  become: true
+
+- ansible.builtin.debug:
+    var: rootdir_check.stdout

@@ -44,6 +44,11 @@
     src: amf-configmap.yaml.j2
     dest: "{{ open5gs_root }}/common/amf/amf-configmap.yaml"
 
+- name: Update NSSF ConfigMap on disk
+  ansible.builtin.template:
+    src: nssf-configmap.yaml.j2
+    dest: "{{ open5gs_root }}/common/nssf/nssf-configmap.yaml"
+
 - name: Update SMF1 ConfigMap on disk
   ansible.builtin.template:
     src: smf-configmap.yaml.j2

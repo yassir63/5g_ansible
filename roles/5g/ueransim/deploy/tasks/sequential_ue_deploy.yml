@@ -1,0 +1,9 @@
+---
+- name: "Activate ueransim-ue{{ ue_idx + 1 }}"
+  ansible.builtin.shell: |
+    kubectl scale deployment "ueransim-ue{{ ue_idx + 1 }}" --replicas=1 -n {{ ran_ns | default('open5gs') }}
+    kubectl wait --for=condition=Ready pod -l "name=ue{{ ue_idx + 1 }}" -n {{ ran_ns | default('open5gs') }} --timeout=60s
+
+- name: "Delay before next UE"
+  ansible.builtin.pause:
+    seconds: 5
