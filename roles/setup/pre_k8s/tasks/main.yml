@@ -26,7 +26,15 @@
         path: /etc/fstab
         regexp: '.*/var/lib/containerd.*'
         state: absent
-    # END FIX
+
+    # FIX: purge all /var/lib/containerd entries from fstab — previous runs of
+    #      ansible.builtin.mount wrote both tmpfs and ext4 entries here; systemd
+    #      replayed both at containerd restart creating a stacked mount → InvalidDiskCapacity.
+    - name: Remove all /var/lib/containerd entries from fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '.*/var/lib/containerd.*'
+        state: absent
 
     - name: Stop containerd before unmounting
       ansible.builtin.systemd:
@@ -43,7 +51,6 @@
           umount /var/lib/containerd 2>/dev/null || umount -l /var/lib/containerd 2>/dev/null || break
           sleep 1
         done
-    # END FIX
 
     # Detect whether /dev/{{ storage }} is already mounted elsewhere on this node
     - name: Detect existing mountpoint for /dev/{{ storage }}

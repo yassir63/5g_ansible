@@ -51,7 +51,7 @@
     done
   become: true
   changed_when: false
-# END FIX
+
 
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
