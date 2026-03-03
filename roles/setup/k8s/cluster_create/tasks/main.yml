@@ -51,6 +51,7 @@
     done
   become: true
   changed_when: false
+# END FIX
 
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
@@ -72,26 +73,28 @@
   become: true
   ignore_errors: true
 
-# FIX: removed tmpfs remount block — pre_k8s already mounted the real disk (ext4)
-#      on /var/lib/containerd. Re-mounting a tmpfs on top was creating a stacked
-#      mount (ext4 + tmpfs), causing findmnt to return both fstypes and kubelet
-#      to still see InvalidDiskCapacity on the image filesystem.
-#
-#      kubeadm reset -f can itself re-add a tmpfs on /var/lib/containerd.
-#      Strip all stacked mounts after reset, then remount the real disk from
-#      inventory so containerd starts on a clean single ext4 mount.
+# FIX: kubeadm reset and previous Ansible runs pollute /etc/fstab with tmpfs
+#      and ext4 entries for /var/lib/containerd. systemd replays them at containerd
+#      restart creating stacked mounts. Fix: purge fstab entries, unmount all
+#      stacked mounts, then remount the real disk using direct shell mount (no fstab).
+- name: Remove all /var/lib/containerd entries from fstab after reset
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '.*/var/lib/containerd.*'
+    state: absent
+  become: true
+
 - name: Unmount all stacked mounts on /var/lib/containerd after reset
   ansible.builtin.shell: |
-    # umount in a loop until nothing is mounted there anymore
-    for i in $(seq 1 5); do
+    for i in $(seq 1 10); do
       findmnt /var/lib/containerd &>/dev/null || break
-      umount /var/lib/containerd 2>/dev/null || umount -f /var/lib/containerd 2>/dev/null || break
+      umount /var/lib/containerd 2>/dev/null || umount -l /var/lib/containerd 2>/dev/null || break
+      sleep 1
     done
-    # Confirm clean state
     findmnt /var/lib/containerd && echo "STILL_MOUNTED" || echo "CLEAN"
-  register: unmount_result
-  become: true
+  register: unmount_after_reset
   changed_when: false
+  become: true
 
 - name: Recreate /var/lib/containerd directory after cleanup
   ansible.builtin.file:
@@ -100,8 +103,6 @@
     mode: '0755'
   become: true
 
-# FIX: detect whether the disk is already mounted elsewhere (same logic as pre_k8s)
-#      so the remount strategy works regardless of what prior roles have done.
 - name: Detect existing mountpoint for storage device after reset
   ansible.builtin.shell: |
     findmnt -n -o TARGET /dev/{{ storage }} 2>/dev/null || echo "none"
@@ -110,32 +111,23 @@
   become: true
 
 - name: "[bind] Remount via bind after reset (disk already mounted elsewhere)"
-  ansible.builtin.mount:
-    path: /var/lib/containerd
-    src: "{{ storage_mount_after_reset.stdout }}/containerd"
-    fstype: none
-    opts: bind
-    state: mounted
+  ansible.builtin.shell: |
+    mkdir -p "{{ storage_mount_after_reset.stdout }}/containerd"
+    mount --bind "{{ storage_mount_after_reset.stdout }}/containerd" /var/lib/containerd
   become: true
   when:
     - storage_mount_after_reset.stdout != "none"
     - storage_mount_after_reset.stdout != "/var/lib/containerd"
 
 - name: "[direct] Remount disk directly after reset"
-  ansible.builtin.mount:
-    path: /var/lib/containerd
-    src: "/dev/{{ storage }}"
-    fstype: ext4
-    opts: defaults,noatime
-    state: mounted
+  ansible.builtin.shell: |
+    mount -t ext4 -o defaults,noatime /dev/{{ storage }} /var/lib/containerd
   become: true
   when: storage_mount_after_reset.stdout == "none"
 
 - name: Assert /var/lib/containerd is on a real FS before kubeadm init
   ansible.builtin.shell: |
-    fstype=$(findmnt -n -o FSTYPE /var/lib/containerd 2>/dev/null || echo "NOT_MOUNTED")
-    # Only take the first line — guard against stacked mounts returning multiple lines
-    fstype=$(echo "$fstype" | head -1)
+    fstype=$(findmnt -n -o FSTYPE /var/lib/containerd 2>/dev/null | head -1 || echo "NOT_MOUNTED")
     echo "fstype=$fstype"
     case "$fstype" in
       ext4|xfs|btrfs) exit 0 ;;
@@ -197,6 +189,7 @@
     state: restarted
     daemon_reload: yes
   become: true
+# END FIX
 
 # === KUBE-PROXY ================================================
 - name: Wait until at least one kube-proxy pod exists

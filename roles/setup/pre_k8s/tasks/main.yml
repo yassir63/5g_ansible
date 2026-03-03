@@ -10,21 +10,9 @@
   become: true
 
 # --- Handle containerd storage for live system ---
-# FIX: unified mount block — no inventory variable needed.
-#      The disk strategy is detected dynamically at runtime:
-#
-#      - If /dev/{{ storage }} is already mounted somewhere (e.g. /mnt/data after
-#        a previous role ran): bind-mount <existing_mountpoint>/containerd onto
-#        /var/lib/containerd. This covers f1 today but also any node where a prior
-#        role has already claimed the disk.
-#      - If /dev/{{ storage }} is not mounted anywhere: mount it directly onto
-#        /var/lib/containerd (ext4). Covers f2, f3 and any fresh node.
-#
-#      In both cases: stop containerd to release file handles on any existing tmpfs,
-#      unmount the tmpfs, then apply the real mount.
-- name: Handle containerd storage for live system
+- name: Create /var/lib/containerd tmpfs for live system
   block:
-    - name: Create /var/lib/containerd directory
+    - name: Create containerd directory
       ansible.builtin.file:
         path: /var/lib/containerd
         state: directory
@@ -36,18 +24,34 @@
       register: containerd_current_fstype
       changed_when: false
 
-    - name: Stop containerd before unmounting tmpfs
+    # FIX: purge all /var/lib/containerd entries from fstab — previous runs of
+    #      ansible.builtin.mount wrote both tmpfs and ext4 entries here; systemd
+    #      replayed both at containerd restart creating a stacked mount → InvalidDiskCapacity.
+    - name: Remove all /var/lib/containerd entries from fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '.*/var/lib/containerd.*'
+        state: absent
+    # END FIX
+
+    - name: Stop containerd before unmounting
       ansible.builtin.systemd:
         name: containerd
         state: stopped
-      when: containerd_current_fstype.stdout == "tmpfs"
+      when: containerd_current_fstype.stdout not in ['none', 'ext4']
       ignore_errors: true
 
-    - name: Unmount existing tmpfs on /var/lib/containerd
-      ansible.builtin.mount:
-        path: /var/lib/containerd
-        state: unmounted
-      when: containerd_current_fstype.stdout == "tmpfs"
+    # FIX: unmount all stacked mounts via shell loop — avoids ansible.builtin.mount
+    #      state: unmounted which would write a new fstab entry.
+    - name: Unmount all stacked mounts on /var/lib/containerd
+      ansible.builtin.shell: |
+        for i in $(seq 1 10); do
+          findmnt /var/lib/containerd &>/dev/null || break
+          umount /var/lib/containerd 2>/dev/null || umount -l /var/lib/containerd 2>/dev/null || break
+          sleep 1
+        done
+      when: containerd_current_fstype.stdout != "none"
+    # END FIX
 
     # Detect whether /dev/{{ storage }} is already mounted elsewhere on this node
     - name: Detect existing mountpoint for /dev/{{ storage }}
@@ -67,29 +71,24 @@
         - storage_existing_mount.stdout != "none"
         - storage_existing_mount.stdout != "/var/lib/containerd"
 
+    # FIX: use shell mount --bind instead of ansible.builtin.mount to avoid fstab write
     - name: "[bind] Bind-mount {{ storage_existing_mount.stdout }}/containerd onto /var/lib/containerd"
-      ansible.builtin.mount:
-        path: /var/lib/containerd
-        src: "{{ storage_existing_mount.stdout }}/containerd"
-        fstype: none
-        opts: bind
-        state: mounted
+      ansible.builtin.shell: |
+        mount --bind "{{ storage_existing_mount.stdout }}/containerd" /var/lib/containerd
       when:
         - containerd_current_fstype.stdout != "ext4"
         - storage_existing_mount.stdout != "none"
         - storage_existing_mount.stdout != "/var/lib/containerd"
 
     # Strategy B: disk not mounted anywhere → mount directly
+    # FIX: use shell mount instead of ansible.builtin.mount to avoid fstab write
     - name: "[direct] Mount /dev/{{ storage }} onto /var/lib/containerd"
-      ansible.builtin.mount:
-        path: /var/lib/containerd
-        src: "/dev/{{ storage }}"
-        fstype: ext4
-        opts: defaults,noatime
-        state: mounted
+      ansible.builtin.shell: |
+        mount -t ext4 -o defaults,noatime /dev/{{ storage }} /var/lib/containerd
       when:
         - containerd_current_fstype.stdout != "ext4"
         - storage_existing_mount.stdout == "none"
+    # END FIX
 
     # kubelet on tmpfs is acceptable — kubelet workdir does not need statfs capacity
     - name: Ensure /var/lib/kubelet directory exists
@@ -111,7 +110,6 @@
   when: live_image_check.stdout == "live"
   become: true
   tags: ['live-fix']
-# END FIX
 
 # --- Handle containerd storage for persistent system ---
 - name: Ensure storage device exists
@@ -236,7 +234,7 @@
 #      that string even when the check ran after a successful remount.
 - name: Check /var/lib/containerd mount fstype
   ansible.builtin.shell: |
-    findmnt -n -o FSTYPE /var/lib/containerd 2>/dev/null || echo "NOT_MOUNTED"
+    findmnt -n -o FSTYPE /var/lib/containerd 2>/dev/null | head -1 || echo "NOT_MOUNTED"
   register: containerd_mount
   changed_when: false
   become: true
