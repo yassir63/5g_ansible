@@ -198,17 +198,34 @@
 #       when: monitoring_enabled
 
 
-- name: Setup sniffers on SMFs and AMF
-  hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
-  gather_facts: false
-  roles:
-    - role: monarch/sniffers/smf
-      when: monitoring_enabled
-    - role: monarch/sniffers/amf
-      when: monitoring_enabled
 
-- name: Deploy OAI CN/RAN
-  hosts: ran_node
+# - name: Setup sniffers on SMFs and AMF
+#   hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
+#   gather_facts: false
+#   roles:
+#     - role: monarch/sniffers/smf
+#       # when: monitoring_enabled
+#     - role: monarch/sniffers/amf
+#       # when: monitoring_enabled
+
+# - name: Deploy OAI CN/RAN
+#   hosts: ran_node
+#   pre_tasks:
+#     - name: Load 5G profile
+#       include_vars:
+#         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+#   roles:
+#     - role: 5g/oai/config
+#       when: core == 'oai' or ran == 'oai'
+#     - role: 5g/oai/setup
+#       when: core == 'oai' or ran == 'oai'
+#     - role: 5g/oai/core
+#       when: core == 'oai'
+#     - role: 5g/oai/ran
+#       when: ran == 'oai'
+
+- name: OAI Setup
+  hosts: core_node,ran_node
   pre_tasks:
     - name: Load 5G profile
       include_vars:
@@ -218,8 +235,64 @@
       when: core == 'oai' or ran == 'oai'
     - role: 5g/oai/setup
       when: core == 'oai' or ran == 'oai'
+
+- name: Deploy OAI CN
+  hosts: core_node
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  roles:
     - role: 5g/oai/core
       when: core == 'oai'
+
+- name: Deploy monitoring folder and run slice-aware script on core node (Provisoire)
+  hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
+  become: true
+  gather_facts: false
+  # when: monitoring_enabled | default(false)
+
+  tasks:
+
+    - name: Sync monitoring directory from control node (no sudo locally)
+      ansible.posix.synchronize:
+        src: "{{ lookup('env','HOME') }}/5g_ansible/monitoring/"
+        dest: /root/monitoring/
+        recursive: yes
+        rsync_path: "sudo rsync"
+      delegate_to: localhost
+      become: false
+
+    - name: Run slice-aware script (Provisoire)
+      ansible.builtin.shell: CORE_NS="{{ core }}" ./5gsliceaware.sh
+      args:
+        chdir: /root/monitoring/scripts
+      
+    # - name: Start kopf controller
+    #   ansible.builtin.command: kopf run /path/to/controller.py
+    #   environment:
+    #     CORE_NS: "{{ core }}"
+
+- name: Setup sniffers on SMFs and AMF (Provisoire)
+  hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
+  gather_facts: false
+  roles:
+    - role: monarch/sniffers/smf
+      vars:
+        core_type: "{{ core }}"
+      # when: monitoring_enabled
+    - role: monarch/sniffers/amf
+      vars:
+        core_type: "{{ core }}"
+      # when: monitoring_enabled
+
+- name: Deploy OAI RAN
+  hosts: ran_node
+  pre_tasks:
+    - name: Load 5G profile
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  roles:
     - role: 5g/oai/ran
       when: ran == 'oai'
 

@@ -1,7 +1,7 @@
 - name: Get list of AMF pods
   kubernetes.core.k8s_info:
     kind: Pod
-    namespace: open5gs
+    namespace: "{{ core }}"
   register: amf_pods
   no_log: true
 
@@ -9,14 +9,21 @@
   set_fact:
     amf_pod: "{{ item.metadata.name }}"
   loop: "{{ amf_pods.resources }}"
-  when: item.metadata.name is match('^open5gs-amf-')
+  when: item.metadata.name is search('amf')
   no_log: true
+
+# - name: Select AMF pod name
+#   set_fact:
+#     amf_pod: "{{ item.metadata.name }}"
+#   loop: "{{ amf_pods.resources }}"
+#   when: item.metadata.name is match('^open5gs-amf-')
+#   no_log: true
 
 # --- Minimal python install on AMF (no heavy recommends) ---
 
 - name: Ensure python3 + pip present on amf
   shell: |
-    kubectl -n open5gs exec {{ amf_pod }} -- bash -c '
+    kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
       set -euo pipefail
 
       # If python3 already exists, just show version and exit cleanly
@@ -36,36 +43,48 @@
 
 - name: Install redis + pyshark on amf via pip
   shell: |
-    kubectl -n open5gs exec {{ amf_pod }} -- bash -c '
+    kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
       set -euo pipefail
       python3 -m pip install --no-cache-dir --disable-pip-version-check redis pyshark
     '
   register: amf_pip_install
   changed_when: "'Successfully installed' in amf_pip_install.stdout"
 
-# --- Copy sniffer into /open5gs/install/bin on AMF pod ---
+# --- Copy sniffer into /tmp on AMF pod ---
 
-- name: Copy amf_sniffer.py into AMF pod (/open5gs/install/bin/)de&ée&
+- name: Copy amf_sniffer.py into AMF pod (/tmp)
   ansible.builtin.shell: |
-    kubectl -n open5gs cp \
+    kubectl -n {{ core }} cp \
       ~/monitoring/sliceawareness/amfsniffer/amf_sniffer.py \
-      {{ amf_pod }}:/open5gs/install/bin/amf_sniffer.py
+      {{ amf_pod }}:/tmp/amf_sniffer.py
   register: amf_sniffer_copy
   changed_when: amf_sniffer_copy.rc == 0
 
+- name: Select AMF sniffer interface based on core
+  set_fact:
+    amf_sniffer_interface: "{{ 'n3' if core == 'open5gs' else 'n2' }}"
 
-# --- Start sniffer in background from /open5gs/install/bin/ ---
+# --- Start sniffer in background from /tmp ---
 
-- name: Start amf_sniffer on AMF (n3, background)
+- name: Start amf_sniffer on AMF (background)
   ansible.builtin.shell: |
-    kubectl -n open5gs exec {{ amf_pod }} -- bash -c '
-      cd /open5gs/install/bin/
-      nohup python3 amf_sniffer.py n3 \
-        > /var/log/amf_sniffer_n3.log 2>&1 &
+    kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
+      nohup python3 /tmp/amf_sniffer.py {{ amf_sniffer_interface }} \
+        > /var/log/amf_sniffer_{{ amf_sniffer_interface }}.log 2>&1 &
     '
   async: 0
   poll: 0
   changed_when: false
+
+# - name: Start amf_sniffer on AMF (n3, background)
+#   ansible.builtin.shell: |
+#     kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
+#       nohup python3 /tmp/amf_sniffer.py n3 \
+#         > /var/log/amf_sniffer_n3.log 2>&1 &
+#     '
+#   async: 0
+#   poll: 0
+#   changed_when: false
 
 
 # n3 with open5gs / n2 with OAI
