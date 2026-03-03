@@ -51,7 +51,6 @@
     done
   become: true
   changed_when: false
-# END FIX
 
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
@@ -145,18 +144,38 @@
 - name: Wait 5 seconds for containerd to settle
   ansible.builtin.pause:
     seconds: 5
-# END FIX
 
-# FIX: purge partial/corrupted image blobs left by previous kubeadm runs.
-#      Must run AFTER the real disk is mounted and containerd restarted —
-#      otherwise the delete targets the overlay rootfs, not the ext4 disk.
-- name: Purge containerd image content cache to avoid stale blobs
-  ansible.builtin.file:
-    path: /var/lib/containerd/io.containerd.content.v1.content
-    state: absent
+# FIX: full containerd data wipe — partial purges leave metadata/snapshots that
+#      reference deleted blobs, causing kubeadm init to fail with "blob not found".
+#      Stop containerd, wipe all data under /var/lib/containerd, restart clean.
+#      The real disk stays mounted — only the containerd-managed subdirs are removed.
+- name: Stop containerd before full data wipe
+  ansible.builtin.systemd:
+    name: containerd
+    state: stopped
   become: true
-  ignore_errors: true
-# END FIX
+
+- name: Wipe all containerd data (metadata, snapshots, blobs)
+  ansible.builtin.shell: |
+    rm -rf /var/lib/containerd/io.containerd.content.v1.content
+    rm -rf /var/lib/containerd/io.containerd.metadata.v1.bolt
+    rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+    rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.native
+    rm -rf /var/lib/containerd/io.containerd.runtime.v1.linux
+    rm -rf /var/lib/containerd/io.containerd.runtime.v2.task
+    rm -rf /var/lib/containerd/io.containerd.grpc.v1.cri
+    rm -rf /var/lib/containerd/tmpmounts
+  become: true
+
+- name: Restart containerd after full wipe
+  ansible.builtin.systemd:
+    name: containerd
+    state: started
+  become: true
+
+- name: Wait 5 seconds for containerd to settle after wipe
+  ansible.builtin.pause:
+    seconds: 5
 
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
@@ -200,7 +219,6 @@
     state: restarted
     daemon_reload: yes
   become: true
-# END FIX
 
 # === KUBE-PROXY ================================================
 - name: Wait until at least one kube-proxy pod exists

@@ -1,5 +1,5 @@
 ---
-- name: RESTART_K8S_JOIN
+- name: START_K8S_JOIN
   ansible.builtin.meta: noop
 
 # Cleanup if node already joined a k8s cluster
@@ -28,12 +28,31 @@
   become: true
   ignore_errors: true
 
-- name: Restart containerd
+# FIX: full containerd data wipe — metadata/snapshots from previous joins
+#      reference deleted blobs → kubeadm join fails with "blob not found".
+- name: Stop containerd before full data wipe
   ansible.builtin.systemd:
     name: containerd
-    state: restarted
+    state: stopped
   become: true
-  ignore_errors: true
+
+- name: Wipe all containerd data (metadata, snapshots, blobs)
+  ansible.builtin.shell: |
+    rm -rf /var/lib/containerd/io.containerd.content.v1.content
+    rm -rf /var/lib/containerd/io.containerd.metadata.v1.bolt
+    rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+    rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.native
+    rm -rf /var/lib/containerd/io.containerd.runtime.v1.linux
+    rm -rf /var/lib/containerd/io.containerd.runtime.v2.task
+    rm -rf /var/lib/containerd/io.containerd.grpc.v1.cri
+    rm -rf /var/lib/containerd/tmpmounts
+  become: true
+
+- name: Restart containerd after full wipe
+  ansible.builtin.systemd:
+    name: containerd
+    state: started
+  become: true
 
 - name: Wait for containerd to settle
   ansible.builtin.pause:
