@@ -22,7 +22,7 @@ DRY_RUN = 0
 # UE_MAPPER_URL = os.getenv("UE_MAPPER_URL", "http://ue-mapper-api.oai.svc.cluster.local")
 UE_MAPPER_URL = os.getenv("UE_MAPPER_URL", "http://10.244.0.18:8080")
 UE_MAPPER_LIMIT = int(os.getenv("UE_MAPPER_LIMIT", "2000"))  # max UEs returned
-PROBE_IMAGE = os.getenv("PROBE_IMAGE", "r2labuser/ebpf-latency-probe:cleanup")
+PROBE_IMAGE = os.getenv("PROBE_IMAGE", "r2labuser/ebpf-latency-probe:2026")
 
 @kopf.on.startup()
 def configure(settings: kopf.OperatorSettings, **_):
