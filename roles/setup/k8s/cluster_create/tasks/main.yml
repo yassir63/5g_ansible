@@ -1,5 +1,5 @@
 ---
-- name: RESTART_K8S_CREATE
+- name: START_K8S_CREATE
   ansible.builtin.meta: noop
 
 - name: Normalize booleans for current host
@@ -10,7 +10,38 @@
     f3_ran: "{{ f3_ran | default(false) | bool }}"
 
 
-# === CLEANUP PHASE ============================================================
+# === CLEANUP PHASE =========================================================
+- name: Stop kubelet before reset
+  ansible.builtin.systemd:
+    name: kubelet
+    state: stopped
+  become: true
+  ignore_errors: true
+
+- name: Kill static pod containers via crictl (apiserver, controller-manager, scheduler, etcd)
+  ansible.builtin.shell: |
+    if command -v crictl &>/dev/null; then
+      crictl --runtime-endpoint unix:///run/containerd/containerd.sock \
+        ps -q 2>/dev/null | xargs -r crictl \
+        --runtime-endpoint unix:///run/containerd/containerd.sock \
+        stop 2>/dev/null || true
+    fi
+  become: true
+  ignore_errors: true
+
+- name: Wait for ports 6443 and 10259 to be released
+  ansible.builtin.shell: |
+    for port in 6443 10259; do
+      for i in $(seq 1 15); do
+        ss -tlnp | grep -q ":${port} " || break
+        echo "Port $port still in use, waiting... ($i/15)"
+        sleep 2
+      done
+    done
+  become: true
+  changed_when: false
+
+
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
   ignore_errors: true
