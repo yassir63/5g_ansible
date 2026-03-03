@@ -18,12 +18,6 @@
         state: directory
         mode: '0755'
 
-    - name: Check current fstype on /var/lib/containerd
-      ansible.builtin.shell: |
-        findmnt -n -o FSTYPE /var/lib/containerd 2>/dev/null || echo "none"
-      register: containerd_current_fstype
-      changed_when: false
-
     # FIX: purge all /var/lib/containerd entries from fstab — previous runs of
     #      ansible.builtin.mount wrote both tmpfs and ext4 entries here; systemd
     #      replayed both at containerd restart creating a stacked mount → InvalidDiskCapacity.
@@ -38,7 +32,6 @@
       ansible.builtin.systemd:
         name: containerd
         state: stopped
-      when: containerd_current_fstype.stdout not in ['none', 'ext4']
       ignore_errors: true
 
     # FIX: unmount all stacked mounts via shell loop — avoids ansible.builtin.mount
@@ -50,7 +43,6 @@
           umount /var/lib/containerd 2>/dev/null || umount -l /var/lib/containerd 2>/dev/null || break
           sleep 1
         done
-      when: containerd_current_fstype.stdout != "none"
     # END FIX
 
     # Detect whether /dev/{{ storage }} is already mounted elsewhere on this node
@@ -67,7 +59,6 @@
         state: directory
         mode: '0755'
       when:
-        - containerd_current_fstype.stdout | trim != "ext4"
         - storage_existing_mount.stdout | trim != "none"
         - storage_existing_mount.stdout | trim != "/var/lib/containerd"
 
@@ -76,7 +67,6 @@
       ansible.builtin.shell: |
         mount --bind "{{ storage_existing_mount.stdout | trim }}/containerd" /var/lib/containerd
       when:
-        - containerd_current_fstype.stdout | trim != "ext4"
         - storage_existing_mount.stdout | trim != "none"
         - storage_existing_mount.stdout | trim != "/var/lib/containerd"
 
@@ -86,7 +76,6 @@
       ansible.builtin.shell: |
         mount -t ext4 -o defaults,noatime /dev/{{ storage }} /var/lib/containerd
       when:
-        - containerd_current_fstype.stdout | trim != "ext4"
         - storage_existing_mount.stdout | trim == "none"
     # END FIX
 
