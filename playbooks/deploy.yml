@@ -1,14 +1,23 @@
 ---
 - hosts: webshell
   gather_facts: false
+
   vars:
     original_inventory: "{{ inventory_file }}"
+
   tasks:
-    - debug:
+
+    - name: Show used inventory
+      debug:
         msg: "Used inventory for run_pos playbook : {{ original_inventory }}"
 
-    - ansible.builtin.command: >
-        ansible-playbook -i {{ inventory_file }} playbooks/run_pos.yml --extra-vars "node={{ item }} no_boot={{ no_boot | default(false) }}" -c local
+    - name: Launch run_pos asynchronously for each node
+      ansible.builtin.command: >
+        ansible-playbook
+        -i {{ inventory_file }}
+        playbooks/run_pos.yml
+        --extra-vars "node={{ item }} no_boot={{ no_boot | default(false) }}"
+        -c local
       args:
         chdir: "{{ playbook_dir | dirname }}"
       async: 1800
@@ -16,17 +25,59 @@
       loop: "{{ groups['sopnodes'] }}"
       loop_control:
         label: "{{ item }}"
-      register: prepare_jobs
+      register: async_jobs
 
-    - async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: job_result
-      until: job_result.finished
-      retries: 100
-      delay: 10
-      loop: "{{ prepare_jobs.results }}"
-      loop_control:
-        label: "{{ item.item }}"
+    - name: Wait for async jobs with live status
+      block:
+        - name: Check job status
+          async_status:
+            jid: "{{ item.ansible_job_id }}"
+          register: job_status
+          until: job_status.finished
+          retries: 180
+          delay: 10
+          loop: "{{ async_jobs.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: Show live job status
+          debug:
+            msg: |
+              Node {{ item.item }}
+              Started: {{ item.started }}
+              Finished: {{ item.finished }}
+              RC: {{ item.rc | default('N/A') }}
+          loop: "{{ job_status.results }}"
+      rescue:
+        - name: Show failed async job if any exception
+          debug:
+            msg: "Error while waiting for job {{ item.item }}"
+          loop: "{{ async_jobs.results }}"
+
+    - name: Show final job output (head only)
+      debug:
+        msg: |
+          Node {{ item.item }}
+          Finished: {{ item.finished }}
+          RC: {{ item.rc | default('N/A') }}
+          STDOUT (first 10 lines):
+          {{ item.stdout.split('\n')[:10] | join('\n') }}
+          STDERR (first 10 lines):
+          {{ item.stderr.split('\n')[:10] | join('\n') }}
+      loop: "{{ job_status.results }}"
+
+    - name: Fail if any job failed
+      fail:
+        msg: |
+          Job failed for {{ item.item }}
+          RC={{ item.rc }}
+          STDOUT:
+          {{ item.stdout }}
+          STDERR:
+          {{ item.stderr }}
+      when: item.rc != 0
+      loop: "{{ job_status.results }}"
+
 
 # The following task requires all nodes be ssh-reachable
 # so it can't be the first task of the playbook
@@ -35,6 +86,19 @@
   tasks:
     - name: Normalize booleans at playbook start
       import_tasks: ../tasks/reload_booleans.yml
+
+############################################################################
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
+- hosts: localhost,core_node,ran_node
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+#
+############################################################################
 
 - name: Common sopnodes setup
   hosts: sopnodes
@@ -87,7 +151,7 @@
   become: true
   roles:
     - role: setup/k8s/remove_cp_taint
-      when: not fhi72
+      when: not (core_node_name != ran_node_name and fhi72)
 
 - name: Join Kubernetes Cluster on Workers
   hosts: k8s_workers
@@ -147,7 +211,7 @@
       vars:
         target_node: "{{ monitor_node_name }}"
       when: monitoring_enabled and core_node_name != ran_node_name
-      
+
 - name: Setup sniffers on SMFs
   hosts: core_node
   gather_facts: false
@@ -221,27 +285,10 @@
       include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
   roles:
-#   old srsran role not yet removed
-#    - role: 5g/srsRAN
-#      when: ran == 'srsRAN'
     - role: 5g/srsRAN/config
       when: ran == 'srsRAN'
     - role: 5g/srsRAN/deploy
       when: ran == 'srsRAN'
-
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost,core_node,ran_node
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-#
-############################################################################
-
 
 - name: Deploy ueransim
   hosts: core_node # ueransim included on open5gs_k8s on core_node

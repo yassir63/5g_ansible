@@ -6,6 +6,17 @@
     target_server: "{{ hostvars[groups['core_node'][0]].ip }}"
     core_ns: "{{ core }}"
     valid_ues: []
+    ue_name: "{{ ue_name_map[ran] }}"
+    tun_name: "{{ tun_name_map[ran] }}"
+  vars:
+    ue_name_map:
+      oai: oai-nr-ue
+      srsRAN: srsran-ue-srsue-ue
+      ueransim: ueransim-ue
+    tun_name_map:
+      oai: oaitun_ue1
+      srsRAN: tun_srsue
+      ueransim: uesimtun0
 
 - name: Get all pods in namespace
   kubernetes.core.k8s_info:
@@ -15,7 +26,7 @@
 
 - name: Filter UE pods by name
   set_fact:
-    ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^oai-nr-ue') | list }}"
+    ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^' + ue_name) | list }}"
 
 - name: Force Install iperf3 (YUM then APT)
   shell: |
@@ -40,17 +51,17 @@
 - name: Configure UE MTU to 1350
   shell: |
     kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- \
-    ip link set dev oaitun_ue1 mtu 1350
+    ip link set dev {{ tun_name }} mtu 1350
   loop: "{{ ue_resources }}"
   loop_control:
     label: "Setting MTU 1350 on {{ item.metadata.name }}"
   register: mtu_result
   failed_when: false
 
-- name: Get oaitun_ue1 IP
+- name: Get tun IP
   shell: |
     kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- \
-    /bin/bash -c "ip -4 addr show oaitun_ue1 | awk '/inet / {print \$2}' | cut -d/ -f1"
+    /bin/bash -c "ip -4 addr show {{ tun_name }} | awk '/inet / {print \$2}' | cut -d/ -f1"
   loop: "{{ ue_resources }}"
   loop_control:
     label: "Getting IP for {{ item.metadata.name }}"
@@ -76,6 +87,16 @@
   when:
     - item.stdout is defined
     - item.stdout | trim is search('^[0-9.]+$')
+
+- name: Add ip route to target_server
+  shell: |
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- \
+    ip route add {{ target_server }} via {{ item.ip.split('.')[:2] | join('.') }}.1.1 dev {{ tun_name }}
+  loop: "{{ valid_ues }}"
+  loop_control:
+    label: "Setting route to iperf server on {{ item.pod }}"
+  register: route_result
+  failed_when: false
 
 - name: Show iperf uplink command
   debug:

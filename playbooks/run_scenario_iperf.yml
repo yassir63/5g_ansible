@@ -5,7 +5,7 @@
     - name: Normalize booleans at playbook start
       import_tasks: ../tasks/reload_booleans.yml
 
-- name: Run iperf servers on Core node and optionally run NR-UE tests
+- name: Run iperf servers on Core node and optionally run RFSIM UE tests
   hosts: core_node
   become: true
   vars:
@@ -14,7 +14,7 @@
     core_ip: "{{ hostvars[groups['core_node'][0]].ip }}"
   roles:
     - role: scenarios/iperf_server
-    - role: scenarios/iperf/nr-ue-to-core_node
+    - role: scenarios/iperf/rfsim-ue-to-core_node
       when: rru == "rfsim"
 
 - name: Optionally run UE-to-core iperf tests from Faraday

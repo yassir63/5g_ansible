@@ -1,5 +1,4 @@
 ---
-# roles/5g/srsRAN/config/tasks/apply_5g_profile.yaml
 
 - name: Check if yq is already installed
   ansible.builtin.stat:
@@ -89,7 +88,6 @@
     regexp: 'sst: "([0-9]+)"'
     replace: 'sst: \1'
 
-
 - name: Ensure values file has node constraints
   blockinfile:
     path: "{{ values_file }}"
@@ -99,73 +97,3 @@
       nodeSelector:
         kubernetes.io/hostname: "{{ ran_node_name }}"
       nodeName: {{ ran_node_name }}
-
-- name: Deploy srsRAN gNB using Helm
-  kubernetes.core.helm:
-    name: srsran-gnb
-    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
-    release_namespace: "{{ ran_ns }}"
-    values_files:
-      - "{{ values_file }}"
-    state: present
-    wait: True
-    atomic: True
-    timeout: 120s
-
-# --- UE CONFIGURATION ---
-
-- name: Set path to UE configmap template
-  set_fact:
-    ue_cm_template: "{{ [repo_dest_abs, 'charts', 'srsue', 'templates', 'configmap.yaml'] | path_join }}"
-
-- name: Prepare slice variables for UE script logic
-  set_fact:
-    s1_sst: "{{ fiveg.slices[0].sst }}"
-    s1_sd: "{{ '0xffffff' if fiveg.slices[0].sd == 'EMPTY' else '0x' + fiveg.slices[0].sd }}"
-    s1_dnn: "{{ fiveg.slices[0].dnn }}"
-    s2_sst: "{{ fiveg.slices[1].sst }}"
-    s2_sd: "{{ '0xffffff' if fiveg.slices[1].sd == 'EMPTY' else '0x' + fiveg.slices[1].sd }}"
-    s2_dnn: "{{ fiveg.slices[1].dnn }}"
-
-- name: Update K_HEX and OPC_HEX in generate_ue_conf.py
-  ansible.builtin.replace:
-    path: "{{ ue_cm_template }}"
-    regexp: '{{ item.regexp }}'
-    replace: '{{ item.replace }}'
-  loop:
-    - { regexp: 'K_HEX = "[a-fA-F0-9]+"', replace: 'K_HEX = "{{ fiveg.security.full_key }}"' }
-    - { regexp: 'OPC_HEX = "[a-fA-F0-9]+"', replace: 'OPC_HEX = "{{ fiveg.security.opc }}"' }
-
-- name: Update IMSI prefix logic
-  ansible.builtin.replace:
-    path: "{{ ue_cm_template }}"
-    regexp: 'return f"0010100000000\{ue_number:02d\}"'
-    replace: 'return f"{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}0000000{ue_number:02d}"'
-
-- name: Update APN logic with dynamic DNNs
-  ansible.builtin.replace:
-    path: "{{ ue_cm_template }}"
-    regexp: 'return "internet"'
-    replace: 'return "{{ s2_dnn }}" if ue_number == 7 else "{{ s1_dnn }}"'
-
-- name: Add NSSAI placeholders to UE_TEMPLATE section
-  ansible.builtin.replace:
-    path: "{{ ue_cm_template }}"
-    regexp: 'apn_protocol = ipv4'
-    replace: "apn_protocol = ipv4\n    nssai_sst = {sst}\n    nssai_sd = {sd}"
-
-- name: Finalize SST/SD logic in Python formatter
-  ansible.builtin.replace:
-    path: "{{ ue_cm_template }}"
-    regexp: 'apn=apn_for\(ue_number\),'
-    replace: |
-      apn=apn_for(ue_number),
-                  sst={{ s2_sst }} if ue_number == 7 else {{ s1_sst }},
-                  sd="{{ s2_sd }}" if ue_number == 7 else "{{ s1_sd }}",
-
-- name: Deploy srsRAN UE using Helm
-  kubernetes.core.helm:
-    name: srsran-ue
-    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsue'] | path_join }}"
-    release_namespace: "{{ ran_ns }}"
-    state: present

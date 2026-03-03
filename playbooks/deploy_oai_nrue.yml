@@ -1,0 +1,44 @@
+---
+- name: Install OpenAirInterface5G gNB and nrUE with USRP support
+  hosts: core_node
+  become: true
+  vars:
+    uhd_version: "4.8.0.0"
+    oai_branch: "develop"
+    # Set to true to automatically launch UE after build
+    launch_ue: false
+    # UE parameters (customize as needed)
+    ue_numerology: 1
+    ue_band: 78
+    ue_carrier_freq: 3619200000
+    ue_rbs: 106
+    ue_imsi: "001010000000001"
+
+  roles:
+    - role: 5g/oai/oai-gnb-ue
+
+  tasks:
+    - name: Final verification
+      shell: |
+        echo "=========================================="
+        echo "Installation Summary"
+        echo "=========================================="
+        echo ""
+        echo "UHD:"
+        uhd_config_info --version
+        echo ""
+        echo "OAI binaries:"
+        ls -lh {{ oai_src_dir }}/cmake_targets/ran_build/build/nr-* 2>/dev/null || echo "No binaries found"
+        echo ""
+        echo "Launch script:"
+        ls -lh {{ ansible_env.HOME }}/launch_nr_ue.sh
+        echo ""
+      args:
+        executable: /bin/bash
+      register: summary
+      vars:
+        oai_src_dir: "{{ ansible_env.HOME }}/openairinterface5g"
+
+    - name: Display summary
+      debug:
+        msg: "{{ summary.stdout_lines }}"

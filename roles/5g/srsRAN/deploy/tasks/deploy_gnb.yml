@@ -1,24 +1,41 @@
 ---
 
-- name: Set initial retry facts
-  ansible.builtin.set_fact:
-    gnb_startup_success: false
-    max_attempts: 2
-
-- name: Deploy and Monitor srsRAN gNB
+- name: Deploy srsRAN gNB (only when not rfsim)
+  when: rru != 'rfsim'
   block:
-    - name: "Attempt gNB deployment (Attempt {{ item }})"
-      include_tasks: deploy_with_check.yml
-      loop: "{{ range(1, max_attempts + 1) | list }}"
-      when: not gnb_startup_success
 
-  rescue:
-    - name: Final failure message
-      ansible.builtin.fail:
-        msg: "gNB failed to start properly on both IP addresses."
-      when: not gnb_startup_success
+    - name: Set initial retry facts
+      ansible.builtin.set_fact:
+        gnb_startup_success: false
+        max_attempts: 2
 
-- name: Confirm success
-  ansible.builtin.debug:
-    msg: "srsRAN gNB is running successfully!"
-  when: gnb_startup_success
+    - name: Deploy and Monitor srsRAN gNB
+      block:
+        - name: "Attempt gNB deployment (Attempt {{ item }})"
+          include_tasks: deploy_with_check.yml
+          loop: "{{ range(1, max_attempts + 1) | list }}"
+          when: not gnb_startup_success
+
+      rescue:
+        - name: Final failure message
+          ansible.builtin.fail:
+            msg: "gNB failed to start properly on both IP addresses."
+          when: not gnb_startup_success
+
+    - name: Confirm success
+      ansible.builtin.debug:
+        msg: "srsRAN gNB is running successfully!"
+      when: gnb_startup_success
+
+- name: Deploy srsRAN gNB using Helm
+  when: rru == 'rfsim'
+  kubernetes.core.helm:
+    name: srsran-gnb
+    chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
+    release_namespace: "{{ ran_ns }}"
+    values_files:
+      - "{{ values_file }}"
+    state: present
+    wait: True
+    atomic: True
+    timeout: 120s

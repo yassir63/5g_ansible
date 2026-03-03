@@ -1,0 +1,24 @@
+supi: imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ ue_data.imsi_suffix }}
+mcc: '{{ fiveg.plmn.mcc }}'
+mnc: '{{ fiveg.plmn.mnc }}'
+key: '{{ ue_data.key | default("fec86ba6eb707ed08905757b1bb44b8f") }}'
+op: '{{ ue_data.op | default("C42449363BBAD02B66D16BC975D77CC1") }}'
+opType: OPC
+amf: '8000'
+gnbSearchList:
+  - gnb-service
+sessions:
+  - type: IPv4
+    apn: {{ slice_data.dnn }}
+    slice:
+      sst: {{ slice_data.sst }}
+      sd: {{ curr_sd }}
+configured-nssai:
+  - sst: {{ slice_data.sst }}
+    sd: {{ curr_sd }}
+default-nssai:
+  - sst: {{ slice_data.sst }}
+    sd: {{ curr_sd }}
+integrity: { IA1: true, IA2: true, IA3: true }
+ciphering: { EA1: true, EA2: true, EA3: true }
+integrityMaxRate: { uplink: full, downlink: full }

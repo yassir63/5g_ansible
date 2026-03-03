@@ -1,0 +1,173 @@
+---
+
+- name: Install base dependencies
+  apt:
+    name:
+      - autoconf
+      - automake
+      - build-essential
+      - ccache
+      - cmake
+      - cpufrequtils
+      - doxygen
+      - ethtool
+      - g++
+      - git
+      - inetutils-tools
+      - libboost-all-dev
+      - libncurses-dev
+      - libusb-1.0-0
+      - libusb-1.0-0-dev
+      - libusb-dev
+      - python3-dev
+      - python3-mako
+      - python3-numpy
+      - python3-requests
+      - python3-scipy
+      - python3-setuptools
+      - python3-ruamel.yaml
+      - libforms-dev
+      - libforms-bin
+    state: present
+    update_cache: yes
+
+- name: Clean previous UHD installation
+  file:
+    path: "{{ uhd_src_dir }}"
+    state: absent
+
+- name: Clone UHD sources
+  git:
+    repo: "https://github.com/EttusResearch/uhd.git"
+    version: "v{{ uhd_version }}"
+    dest: "{{ uhd_src_dir }}"
+    depth: 1
+
+- name: Build and install UHD
+  shell: |
+    set -e
+    cd {{ uhd_src_dir }}/host
+    mkdir -p build
+    cd build
+    cmake ../
+    make -j{{ build_jobs }}
+    make install
+    ldconfig
+  args:
+    executable: /bin/bash
+  become: yes
+
+- name: Download UHD images
+  shell: uhd_images_downloader
+  args:
+    executable: /bin/bash
+  become: yes
+
+- name: Verify UHD installation
+  shell: uhd_config_info --version
+  args:
+    executable: /bin/bash
+  register: uhd_version_check
+  failed_when: uhd_version_check.rc != 0
+
+- name: Display UHD version
+  debug:
+    msg: "UHD installed: {{ uhd_version_check.stdout }}"
+
+- name: Clean previous OAI installation
+  file:
+    path: "{{ oai_src_dir }}"
+    state: absent
+
+- name: Clone OpenAirInterface5G sources
+  git:
+    repo: "https://gitlab.eurecom.fr/oai/openairinterface5g.git"
+    version: "{{ oai_branch }}"
+    dest: "{{ oai_src_dir }}"
+
+- name: Install OAI dependencies
+  shell: |
+    set -e
+    cd {{ oai_src_dir }}/cmake_targets
+    ./build_oai -I
+  args:
+    executable: /bin/bash
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  become: yes
+
+- name: Build OAI gNB and nrUE with nrscope
+  shell: |
+    set -e
+    cd {{ oai_src_dir }}/cmake_targets
+    ./build_oai -w USRP --ninja --nrUE --gNB --build-lib "nrscope" -C
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ansible_env.HOME }}"
+
+- name: Verify OAI binaries were created
+  stat:
+    path: "{{ oai_src_dir }}/cmake_targets/ran_build/build/nr-uesoftmodem"
+  register: ue_binary
+  failed_when: not ue_binary.stat.exists
+
+- name: Display OAI build success
+  debug:
+    msg: "OpenAirInterface5G built successfully. nrUE binary at {{ oai_src_dir }}/cmake_targets/ran_build/build/nr-uesoftmodem"
+
+- name: Create UE launch script
+  copy:
+    dest: "{{ ansible_env.HOME }}/launch_nr_ue.sh"
+    content: |
+      #!/bin/bash
+      cd {{ oai_src_dir }}/cmake_targets/ran_build/build
+      sudo ./nr-uesoftmodem \
+        -r {{ ue_rbs }} \
+        --numerology {{ ue_numerology }} \
+        --band {{ ue_band }} \
+        -C {{ ue_carrier_freq }} \
+        --uicc0.imsi {{ ue_imsi }} \
+        --rfsim
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+
+- name: Display launch instructions
+  debug:
+    msg: |
+      ========================================
+      Installation completed!
+      ========================================
+      
+      UHD version: {{ uhd_version_check.stdout }}
+      OAI source: {{ oai_src_dir }}
+      
+      To launch the nrUE:
+        cd {{ oai_src_dir }}/cmake_targets/ran_build/build
+        sudo ./nr-uesoftmodem -r {{ ue_rbs }} --numerology {{ ue_numerology }} --band {{ ue_band }} -C {{ ue_carrier_freq }} --uicc0.imsi {{ ue_imsi }} --rfsim
+      
+      Or use the convenience script:
+        {{ ansible_env.HOME }}/launch_nr_ue.sh
+
+- name: Launch UE (optional)
+  shell: |
+    cd {{ oai_src_dir }}/cmake_targets/ran_build/build
+    sudo ./nr-uesoftmodem \
+      -r {{ ue_rbs }} \
+      --numerology {{ ue_numerology }} \
+      --band {{ ue_band }} \
+      -C {{ ue_carrier_freq }} \
+      --uicc0.imsi {{ ue_imsi }} \
+      --rfsim
+  args:
+    executable: /bin/bash
+  when: launch_ue | bool
+  async: 3600
+  poll: 0
+  register: ue_launch
+
+- name: Display UE launch status
+  debug:
+    msg: "UE launched in background (async job {{ ue_launch.ansible_job_id }})"
+  when: launch_ue | bool

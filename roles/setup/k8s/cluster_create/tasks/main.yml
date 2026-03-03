@@ -1,5 +1,5 @@
 ---
-- name: RESTART_K8S_CREATE
+- name: START_K8S_CREATE
   ansible.builtin.meta: noop
 
 - name: Normalize booleans for current host
@@ -11,6 +11,47 @@
 
 
 # === CLEANUP PHASE ============================================================
+
+# FIX: stop kubelet and containerd BEFORE kubeadm reset — otherwise static pods
+#      (apiserver, controller-manager) keep running and hold ports 6443/10259,
+#      causing kubeadm init to fail with [ERROR Port-6443] / [ERROR Port-10259].
+#      The original role deleted /var/lib/kubelet first, which prevented kubelet
+#      from cleanly terminating its pods before reset.
+- name: Stop kubelet before reset
+  ansible.builtin.systemd:
+    name: kubelet
+    state: stopped
+  become: true
+  ignore_errors: true
+
+# FIX: kube-apiserver and other static pod processes can survive as orphan processes
+#      outside containerd (crictl ps returns empty) after kubelet stops — they hold
+#      ports 6443/10259 and block kubeadm init. Kill them directly by name.
+- name: Kill orphan static pod processes (apiserver, controller-manager, scheduler, etcd)
+  ansible.builtin.shell: |
+    for proc in kube-apiserver kube-controller-manager kube-scheduler etcd; do
+      pkill -9 -x "$proc" 2>/dev/null && echo "Killed $proc" || true
+    done
+  become: true
+  ignore_errors: true
+
+- name: Wait for ports 6443 and 10259 to be released (max 30s)
+  ansible.builtin.shell: |
+    for port in 6443 10259; do
+      for i in $(seq 1 15); do
+        ss -tlnp | grep -q ":${port} " || break
+        echo "Port $port still in use ($i/15), waiting..."
+        sleep 2
+      done
+      if ss -tlnp | grep -q ":${port} "; then
+        echo "ERROR: port $port still held after 30s"
+        ss -tlnp | grep ":${port} "
+        exit 1
+      fi
+    done
+  become: true
+  changed_when: false
+
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
   ignore_errors: true
@@ -31,25 +72,70 @@
   become: true
   ignore_errors: true
 
-# Expand /var/lib/containerd to tmpfs (only if not already done) ===
-# === OPTIONAL: Expand /var/lib/containerd to tmpfs (only if not already done) ===
-- name: Ensure /var/lib/containerd is mounted on tmpfs (>=50G)
-  ansible.builtin.shell: |
-    current_mount=$(mountpoint -q /var/lib/containerd && df -h --output=fstype,size /var/lib/containerd | tail -n1 || echo "none 0G")
-    fstype=$(echo "$current_mount" | awk '{print $1}')
-    size=$(echo "$current_mount" | awk '{print $2}' | sed 's/G//')
-    if [ "$fstype" != "tmpfs" ] || [ "${size:-0}" -lt 50 ]; then
-      echo "Mounting tmpfs on /var/lib/containerd (50G)"
-      umount -f /var/lib/containerd 2>/dev/null || true
-      mount -t tmpfs -o size=50G tmpfs /var/lib/containerd
-    else
-      echo "tmpfs already mounted on /var/lib/containerd with ${size}G"
-    fi
+# FIX: kubeadm reset and previous Ansible runs pollute /etc/fstab with tmpfs
+#      and ext4 entries for /var/lib/containerd. systemd replays them at containerd
+#      restart creating stacked mounts. Fix: purge fstab entries, unmount all
+#      stacked mounts, then remount the real disk using direct shell mount (no fstab).
+- name: Remove all /var/lib/containerd entries from fstab after reset
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '.*/var/lib/containerd.*'
+    state: absent
   become: true
-  ignore_errors: true
-  register: containerd_mount
 
-- name: Restart containerd after remount
+- name: Unmount all stacked mounts on /var/lib/containerd after reset
+  ansible.builtin.shell: |
+    for i in $(seq 1 10); do
+      findmnt /var/lib/containerd &>/dev/null || break
+      umount /var/lib/containerd 2>/dev/null || umount -l /var/lib/containerd 2>/dev/null || break
+      sleep 1
+    done
+    findmnt /var/lib/containerd && echo "STILL_MOUNTED" || echo "CLEAN"
+  register: unmount_after_reset
+  changed_when: false
+  become: true
+
+- name: Recreate /var/lib/containerd directory after cleanup
+  ansible.builtin.file:
+    path: /var/lib/containerd
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Detect existing mountpoint for storage device after reset
+  ansible.builtin.shell: |
+    findmnt -n -o TARGET /dev/{{ storage }} 2>/dev/null || echo "none"
+  register: storage_mount_after_reset
+  changed_when: false
+  become: true
+
+- name: "[bind] Remount via bind after reset (disk already mounted elsewhere)"
+  ansible.builtin.shell: |
+    mkdir -p "{{ storage_mount_after_reset.stdout }}/containerd"
+    mount --bind "{{ storage_mount_after_reset.stdout }}/containerd" /var/lib/containerd
+  become: true
+  when:
+    - storage_mount_after_reset.stdout != "none"
+    - storage_mount_after_reset.stdout != "/var/lib/containerd"
+
+- name: "[direct] Remount disk directly after reset"
+  ansible.builtin.shell: |
+    mount -t ext4 -o defaults,noatime /dev/{{ storage }} /var/lib/containerd
+  become: true
+  when: storage_mount_after_reset.stdout == "none"
+
+- name: Assert /var/lib/containerd is on a real FS before kubeadm init
+  ansible.builtin.shell: |
+    fstype=$(findmnt -n -o FSTYPE /var/lib/containerd 2>/dev/null | head -1 || echo "NOT_MOUNTED")
+    echo "fstype=$fstype"
+    case "$fstype" in
+      ext4|xfs|btrfs) exit 0 ;;
+      *) echo "ERROR: /var/lib/containerd is on '$fstype', expected ext4/xfs/btrfs"; exit 1 ;;
+    esac
+  become: true
+  changed_when: false
+
+- name: Restart containerd
   ansible.builtin.systemd:
     name: containerd
     state: restarted
@@ -58,6 +144,53 @@
 - name: Wait 5 seconds for containerd to settle
   ansible.builtin.pause:
     seconds: 5
+
+# FIX: full containerd data wipe — partial purges leave metadata/snapshots that
+#      reference deleted blobs, causing kubeadm init to fail with "blob not found".
+#      Stop containerd, wipe all data under /var/lib/containerd, restart clean.
+#      The real disk stays mounted — only the containerd-managed subdirs are removed.
+- name: Stop containerd before full data wipe
+  ansible.builtin.systemd:
+    name: containerd
+    state: stopped
+  become: true
+
+- name: Wipe all containerd data (metadata, snapshots, blobs)
+  ansible.builtin.shell: |
+    rm -rf /var/lib/containerd/io.containerd.content.v1.content
+    rm -rf /var/lib/containerd/io.containerd.metadata.v1.bolt
+    rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+    rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.native
+    rm -rf /var/lib/containerd/io.containerd.runtime.v1.linux
+    rm -rf /var/lib/containerd/io.containerd.runtime.v2.task
+    rm -rf /var/lib/containerd/io.containerd.grpc.v1.cri
+    rm -rf /var/lib/containerd/tmpmounts
+  become: true
+
+- name: Restart containerd after full wipe
+  ansible.builtin.systemd:
+    name: containerd
+    state: started
+  become: true
+
+- name: Wait 5 seconds for containerd to settle after wipe
+  ansible.builtin.pause:
+    seconds: 5
+
+# FIX: bind-mount overlayfs snapshotter dir so containerd 1.7 reports capacityBytes via CRI
+- name: Create overlayfs snapshotter directory
+  ansible.builtin.file:
+    path: /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Bind-mount overlayfs snapshotter dir as a separate mountpoint (fix CRI capacityBytes)
+  ansible.builtin.shell: |
+    findmnt /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs &>/dev/null || \
+      mount --bind /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs \
+                   /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+  become: true
 
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
@@ -71,7 +204,38 @@
   register: kubeadm_init
   become: true
 
-# === KUBE-PROXY ROBUSTE FINAL ================================================
+# FIX: kubeadm init recreates /var/lib/kubelet with a fresh config.yaml that
+#      does not contain the evictionHard/imageGC settings written by pre_k8s
+#      (pre_k8s ran before the cleanup which deleted /var/lib/kubelet).
+#      Re-apply the storage eviction settings here via lineinfile so they are
+#      merged into the kubeadm-generated config without overwriting it entirely.
+- name: Remove rootDir from kubeadm-generated kubelet config if present
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^\s*rootDir:'
+    state: absent
+  become: true
+
+- name: Patch evictionHard into kubeadm-generated kubelet config
+  ansible.builtin.blockinfile:
+    path: /var/lib/kubelet/config.yaml
+    block: |
+      evictionHard:
+        nodefs.available: "10%"
+        imagefs.available: "10%"
+      imageGCHighThresholdPercent: 85
+      imageGCLowThresholdPercent: 80
+    marker: "# {mark} KUBELET STORAGE PATCH"
+  become: true
+
+- name: Restart kubelet to apply eviction config
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    daemon_reload: yes
+  become: true
+
+# === KUBE-PROXY ================================================
 - name: Wait until at least one kube-proxy pod exists
   ansible.builtin.shell: |
     until kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system get pod -l k8s-app=kube-proxy --no-headers 2>/dev/null | grep .; do
@@ -174,20 +338,39 @@
     mode: '0600'
   become: true
 
-# === TOOLING ==================================================================
-- name: Ensure Helm and Python tooling are available
+# === TOOLING =======================================
+- name: Ensure Python tooling is available
   ansible.builtin.apt:
     name:
+      - python3-venv
       - python3-pip
+      - python3-setuptools
       - curl
     state: present
     update_cache: yes
   become: true
 
-- name: Install kubernetes Python module
-  ansible.builtin.pip:
-    name: kubernetes
+- name: Create Python venv for Kubernetes tasks (idempotent)
+  ansible.builtin.command: python3 -m venv /opt/ansible-venv
+  args:
+    creates: /opt/ansible-venv/bin/activate
   become: true
+
+- name: Upgrade ensurepip in venv
+  ansible.builtin.command: /opt/ansible-venv/bin/python -m ensurepip --upgrade
+  become: true
+
+- name: Bootstrap pip, setuptools and wheel in venv
+  ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+  become: true
+
+- name: Install kubernetes Python module in venv
+  ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade kubernetes
+  become: true
+
+- name: Force Ansible to use venv Python
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/ansible-venv/bin/python
 
 - name: Install Helm if missing
   ansible.builtin.shell: |
@@ -247,11 +430,11 @@
       }
   become: true
 
-- name: Download CNI plugins tarball
-  ansible.builtin.get_url:
-    url: "https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
-    dest: /tmp/cni-plugins.tgz
-    mode: '0644'
+- name: Download CNI plugins tarball via curl (for any Ubuntu 22.04+)
+  ansible.builtin.shell: |
+    curl -fsSL -o /tmp/cni-plugins.tgz https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz
+  args:
+    creates: /tmp/cni-plugins.tgz
   become: true
 
 - name: Extract CNI plugins
