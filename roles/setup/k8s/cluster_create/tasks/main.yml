@@ -18,29 +18,30 @@
   become: true
   ignore_errors: true
 
-- name: Kill static pod containers via crictl (apiserver, controller-manager, scheduler, etcd)
+- name: Kill orphan static pod processes (apiserver, controller-manager, scheduler, etcd)
   ansible.builtin.shell: |
-    if command -v crictl &>/dev/null; then
-      crictl --runtime-endpoint unix:///run/containerd/containerd.sock \
-        ps -q 2>/dev/null | xargs -r crictl \
-        --runtime-endpoint unix:///run/containerd/containerd.sock \
-        stop 2>/dev/null || true
-    fi
+    for proc in kube-apiserver kube-controller-manager kube-scheduler etcd; do
+      pkill -9 -x "$proc" 2>/dev/null && echo "Killed $proc" || true
+    done
   become: true
   ignore_errors: true
 
-- name: Wait for ports 6443 and 10259 to be released
+- name: Wait for ports 6443 and 10259 to be released (max 30s)
   ansible.builtin.shell: |
     for port in 6443 10259; do
       for i in $(seq 1 15); do
         ss -tlnp | grep -q ":${port} " || break
-        echo "Port $port still in use, waiting... ($i/15)"
+        echo "Port $port still in use ($i/15), waiting..."
         sleep 2
       done
+      if ss -tlnp | grep -q ":${port} "; then
+        echo "ERROR: port $port still held after 30s"
+        ss -tlnp | grep ":${port} "
+        exit 1
+      fi
     done
   become: true
   changed_when: false
-
 
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f

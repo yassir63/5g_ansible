@@ -165,6 +165,17 @@
     state: touch
     mode: '0644'
 
+# FIX: remove any existing rootDir line before patching — blockinfile only adds
+#      its own block, it does not clean up lines written by previous role runs
+#      (e.g. k8s_cpu_tuning). rootDir must be absent: it is kubelet's workdir
+#      (default /var/lib/kubelet) and must NOT point to /var/lib/containerd.
+- name: Remove rootDir from kubelet config if present
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^\s*rootDir:'
+    state: absent
+  become: true
+
 - name: Patch kubelet config (Unified)
   ansible.builtin.blockinfile:
     path: /var/lib/kubelet/config.yaml
