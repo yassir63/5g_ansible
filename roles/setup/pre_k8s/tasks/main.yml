@@ -176,14 +176,18 @@
     state: absent
   become: true
 
+- name: Remove stale FIX comment lines previously written into kubelet config by blockinfile
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^\s*#\s*(FIX:|END FIX)'
+    state: absent
+  become: true
+# END FIX
+
 - name: Patch kubelet config (Unified)
   ansible.builtin.blockinfile:
     path: /var/lib/kubelet/config.yaml
     block: |
-      # FIX: removed rootDir — rootDir is kubelet's own working directory
-      #      (default: /var/lib/kubelet). Pointing it to /var/lib/containerd was
-      #      mixing both workspaces. kubelet discovers imageFs automatically via
-      #      containerd CRI stats once containerd root is on a real FS.
       evictionHard:
         nodefs.available: "{{ '2%' if (core_node_name == ran_node_name) else '10%' }}"
         imagefs.available: "{{ '2%' if (core_node_name == ran_node_name) else '10%' }}"
@@ -191,11 +195,8 @@
       evictionMinimumReclaim:
         nodefs.available: "500Mi"
       {% endif %}
-      # FIX: added imageGC thresholds — without these, kubelet uses defaults (85%/80%)
-      #      but they are not explicit, causing unpredictable GC behavior on liveboot nodes.
       imageGCHighThresholdPercent: 85
       imageGCLowThresholdPercent: 80
-      # END FIX
     marker: "# {mark} KUBELET STORAGE PATCH"
   become: true
 
