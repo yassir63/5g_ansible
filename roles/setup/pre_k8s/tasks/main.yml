@@ -26,7 +26,6 @@
         path: /etc/fstab
         regexp: '.*/var/lib/containerd.*'
         state: absent
-    # END FIX
 
     - name: Stop containerd before unmounting
       ansible.builtin.systemd:
@@ -43,7 +42,6 @@
           umount /var/lib/containerd 2>/dev/null || umount -l /var/lib/containerd 2>/dev/null || break
           sleep 1
         done
-    # END FIX
 
     # Detect whether /dev/{{ storage }} is already mounted elsewhere on this node
     - name: Detect existing mountpoint for /dev/{{ storage }}
@@ -77,7 +75,23 @@
         mount -t ext4 -o defaults,noatime /dev/{{ storage }} /var/lib/containerd
       when:
         - storage_existing_mount.stdout | trim == "none"
-    # END FIX
+
+    # FIX: containerd 1.7 does not report capacityBytes via CRI stats when the
+    #      overlayfs snapshotter directory is a plain subdirectory (not a mountpoint).
+    #      kubelet receives capacity=0 → InvalidDiskCapacity warning.
+    #      Bind-mounting the overlayfs dir onto itself makes it a real mountpoint,
+    #      so statfs() returns the correct capacity and containerd forwards it via CRI.
+    - name: Create overlayfs snapshotter directory
+      ansible.builtin.file:
+        path: /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+        state: directory
+        mode: '0755'
+
+    - name: Bind-mount overlayfs snapshotter dir as a separate mountpoint (fix CRI capacityBytes)
+      ansible.builtin.shell: |
+        findmnt /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs &>/dev/null || \
+          mount --bind /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs \
+                       /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
 
     # kubelet on tmpfs is acceptable — kubelet workdir does not need statfs capacity
     - name: Ensure /var/lib/kubelet directory exists
@@ -163,14 +177,6 @@
     state: absent
   become: true
 
-- name: Remove stale FIX comment lines previously written into kubelet config by blockinfile
-  ansible.builtin.lineinfile:
-    path: /var/lib/kubelet/config.yaml
-    regexp: '^\s*#\s*(FIX:|END FIX)'
-    state: absent
-  become: true
-# END FIX
-
 - name: Patch kubelet config (Unified)
   ansible.builtin.blockinfile:
     path: /var/lib/kubelet/config.yaml
@@ -238,7 +244,6 @@
       /var/lib/containerd fstype is '{{ containerd_mount.stdout }}' — kubelet will report
       InvalidDiskCapacity. Ensure /dev/{{ storage }} is ext4-formatted and mounted.
   when: containerd_mount.stdout in ['NOT_MOUNTED', 'tmpfs', 'squashfs', 'ramfs', 'none']
-# END FIX
 
 - name: Verify kubelet evictionHard and imageGC
   ansible.builtin.shell: |
@@ -260,4 +265,3 @@
   ansible.builtin.fail:
     msg: "evictionHard not found in /var/lib/kubelet/config.yaml"
   when: '"evictionHard" not in kubelet_config_check.stdout'
- 

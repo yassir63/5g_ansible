@@ -15,7 +15,56 @@
     current_dnn: "{{ (slices | selectattr('name', 'equalto', current_ue_slice) | map(attribute='dnn') | first) }}"
   when: current_ue_slice is defined
 
+- name: "Get UPF IP for this UE"
+  set_fact:
+    upf_ip: >-
+      {{
+        (fiveg.slices
+         | selectattr('name', 'equalto', fiveg.ues[ue_item].slice)
+         | first).ip_prefix
+      }}.1
+
+- name: "Debug: Show UPF IP for current UE"
+  debug:
+    msg: "UE {{ ue_item }} → UPF IP = {{ upf_ip }}"
+
+- name: Check if {{ ue_item }} already has a wwan0 IP
+  shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ ue_item }} \
+    "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
+  register: check_ip_ready
+  changed_when: false
+  ignore_errors: true
+
 - name: Start UE via jump host
   shell: "ssh root@{{ ue_item }} 'start.sh -F {{ current_dnn }}'"
-  when: current_dnn is defined
+  when: current_dnn is defined and (check_ip_ready.stdout == "" or check_ip_ready.rc != 0)
   ignore_errors: "{{ ignore_errors | default(true) }}"
+
+- name: Retrieve wwan0 IP for {{ ue_item }}
+  shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes root@{{ ue_item }} \
+    "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
+  register: ue_ip_cmd
+  until: ue_ip_cmd.stdout != ""
+  retries: 5
+  delay: 2
+  changed_when: false
+  ignore_errors: "{{ ignore_task_errors | default(false) }}"
+
+- name: Wait until wwan0 interface is fully up
+  shell: ssh root@{{ ue_item }} "ip link show wwan0"
+  register: wwan0_status
+  retries: 10
+  delay: 2
+  until: "'UP' in wwan0_status.stdout"
+  changed_when: false
+
+
+- name: Add route to {{ target_server }} via UPF IP when wwan0 is ready
+  shell: |
+    ssh -o BatchMode=yes root@{{ ue_item }} "
+    	ip route replace {{ upf_ip }} dev wwan0 &&
+    "
+  changed_when: false
+  ignore_errors: true

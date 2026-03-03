@@ -177,6 +177,21 @@
   ansible.builtin.pause:
     seconds: 5
 
+# FIX: bind-mount overlayfs snapshotter dir so containerd 1.7 reports capacityBytes via CRI
+- name: Create overlayfs snapshotter directory
+  ansible.builtin.file:
+    path: /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Bind-mount overlayfs snapshotter dir as a separate mountpoint (fix CRI capacityBytes)
+  ansible.builtin.shell: |
+    findmnt /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs &>/dev/null || \
+      mount --bind /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs \
+                   /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+  become: true
+
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
   ansible.builtin.template:
