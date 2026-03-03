@@ -51,6 +51,7 @@
     done
   become: true
   changed_when: false
+# END FIX
 
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
@@ -144,6 +145,7 @@
 - name: Wait 5 seconds for containerd to settle
   ansible.builtin.pause:
     seconds: 5
+# END FIX
 
 # FIX: purge partial/corrupted image blobs left by previous kubeadm runs.
 #      Must run AFTER the real disk is mounted and containerd restarted —
@@ -154,6 +156,7 @@
     state: absent
   become: true
   ignore_errors: true
+# END FIX
 
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
@@ -197,6 +200,7 @@
     state: restarted
     daemon_reload: yes
   become: true
+# END FIX
 
 # === KUBE-PROXY ================================================
 - name: Wait until at least one kube-proxy pod exists

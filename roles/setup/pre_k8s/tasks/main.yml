@@ -26,6 +26,7 @@
         path: /etc/fstab
         regexp: '.*/var/lib/containerd.*'
         state: absent
+    # END FIX
 
     - name: Stop containerd before unmounting
       ansible.builtin.systemd:
@@ -42,6 +43,7 @@
           umount /var/lib/containerd 2>/dev/null || umount -l /var/lib/containerd 2>/dev/null || break
           sleep 1
         done
+    # END FIX
 
     # Detect whether /dev/{{ storage }} is already mounted elsewhere on this node
     - name: Detect existing mountpoint for /dev/{{ storage }}
@@ -75,6 +77,7 @@
         mount -t ext4 -o defaults,noatime /dev/{{ storage }} /var/lib/containerd
       when:
         - storage_existing_mount.stdout | trim == "none"
+    # END FIX
 
     # kubelet on tmpfs is acceptable — kubelet workdir does not need statfs capacity
     - name: Ensure /var/lib/kubelet directory exists
@@ -166,7 +169,7 @@
     regexp: '^\s*#\s*(FIX:|END FIX)'
     state: absent
   become: true
-
+# END FIX
 
 - name: Patch kubelet config (Unified)
   ansible.builtin.blockinfile:
@@ -186,14 +189,6 @@
 
 
 # --- Restart services only if present ---
-# FIX: purge partial/corrupted image blobs — must run after real disk is mounted.
-- name: Purge containerd image content cache to avoid stale blobs
-  ansible.builtin.file:
-    path: /var/lib/containerd/io.containerd.content.v1.content
-    state: absent
-  become: true
-  ignore_errors: true
-
 - name: Check if containerd service exists
   ansible.builtin.shell: systemctl list-unit-files | grep -q '^containerd\.service'
   register: containerd_service
@@ -243,6 +238,7 @@
       /var/lib/containerd fstype is '{{ containerd_mount.stdout }}' — kubelet will report
       InvalidDiskCapacity. Ensure /dev/{{ storage }} is ext4-formatted and mounted.
   when: containerd_mount.stdout in ['NOT_MOUNTED', 'tmpfs', 'squashfs', 'ramfs', 'none']
+# END FIX
 
 - name: Verify kubelet evictionHard and imageGC
   ansible.builtin.shell: |
@@ -264,3 +260,4 @@
   ansible.builtin.fail:
     msg: "evictionHard not found in /var/lib/kubelet/config.yaml"
   when: '"evictionHard" not in kubelet_config_check.stdout'
+ 
