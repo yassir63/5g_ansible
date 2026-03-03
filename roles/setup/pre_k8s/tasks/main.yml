@@ -18,13 +18,25 @@
         state: directory
         mode: '0755'
 
-    - name: Mount tmpfs on /var/lib/containerd (50G)
+    # FIX: was: mount tmpfs 50G — tmpfs has no real backing device, statfs() returns
+    #      0 blocks → kubelet reports InvalidDiskCapacity.
+    #      Now: mount the real disk partition from inventory (ext4) so kubelet can
+    #      measure imageFs capacity correctly.
+    - name: Check if /var/lib/containerd is already mounted
+      ansible.builtin.command: mountpoint -q /var/lib/containerd
+      register: containerd_already_mounted
+      ignore_errors: true
+      changed_when: false
+
+    - name: Mount real disk on /var/lib/containerd (fix InvalidDiskCapacity)
       ansible.builtin.mount:
         path: /var/lib/containerd
-        src: tmpfs
-        fstype: tmpfs
-        opts: size=50G
+        src: "/dev/{{ storage }}"
+        fstype: ext4
+        opts: defaults,noatime
         state: mounted
+      when: containerd_already_mounted.rc != 0
+
   when: live_image_check.stdout == "live" and (ran_node_name != core_node_name)
   become: true
   tags: ['live-fix']
@@ -40,15 +52,23 @@
         - /var/lib/containerd
         - /var/lib/kubelet
 
-    - name: Mount tmpfs on /var/lib/containerd (50G)
+    # FIX: replace tmpfs with real disk for /var/lib/containerd
+    - name: Check if /var/lib/containerd is already mounted
+      ansible.builtin.command: mountpoint -q /var/lib/containerd
+      register: containerd_already_mounted_shared
+      ignore_errors: true
+      changed_when: false
+
+    - name: Mount real disk on /var/lib/containerd (fix InvalidDiskCapacity)
       ansible.builtin.mount:
         path: /var/lib/containerd
-        src: tmpfs
-        fstype: tmpfs
-        opts: size=50G
+        src: "/dev/{{ storage }}"
+        fstype: ext4
+        opts: defaults,noatime
         state: mounted
-
-    # Add kubelet on RAM to avoid DiskPressure on /
+      when: containerd_already_mounted_shared.rc != 0
+    
+    # kubelet on tmpfs is fine — kubelet workdir does not need statfs capacity reporting
     - name: Mount tmpfs on /var/lib/kubelet (5G)
       ansible.builtin.mount:
         path: /var/lib/kubelet
@@ -116,7 +136,10 @@
   ansible.builtin.blockinfile:
     path: /var/lib/kubelet/config.yaml
     block: |
-      rootDir: /var/lib/containerd
+      # FIX: removed rootDir — rootDir is kubelet's own working directory
+      #      (default: /var/lib/kubelet). Pointing it to /var/lib/containerd was
+      #      mixing both workspaces. kubelet discovers imageFs automatically via
+      #      containerd CRI stats once containerd root is on a real FS.
       evictionHard:
         nodefs.available: "{{ '2%' if (core_node_name == ran_node_name) else '10%' }}"
         imagefs.available: "{{ '2%' if (core_node_name == ran_node_name) else '10%' }}"
@@ -124,9 +147,13 @@
       evictionMinimumReclaim:
         nodefs.available: "500Mi"
       {% endif %}
+      # FIX: added imageGC thresholds — without these, kubelet uses defaults (85%/80%)
+      #      but they are not explicit, causing unpredictable GC behavior on liveboot nodes.
+      imageGCHighThresholdPercent: 85
+      imageGCLowThresholdPercent: 80
+      # END FIX
     marker: "# {mark} KUBELET STORAGE PATCH"
   become: true
-
 
 # --- Restart services only if present ---
 - name: Check if containerd service exists
@@ -168,8 +195,22 @@
   ansible.builtin.debug:
     msg: "{{ containerd_mount.stdout if containerd_mount.stdout else 'not mounted' }}"
 
-- name: Verify kubelet rootDir and evictionHard
-  ansible.builtin.shell: grep -A 3 'evictionHard' /var/lib/kubelet/config.yaml || true; grep 'rootDir' /var/lib/kubelet/config.yaml || true
+# FIX: replaced old validation (checked for rootDir string) with fstype guard —
+#      fail immediately if containerd root is still on a virtual FS.
+- name: Fail if /var/lib/containerd is on a virtual filesystem
+  ansible.builtin.fail:
+    msg: >
+      /var/lib/containerd is on '{{ containerd_mount.stdout }}' — kubelet will report
+      InvalidDiskCapacity. Ensure /dev/{{ storage }} is ext4-formatted and mounted.
+  when: >
+    containerd_mount.stdout == "NOT_MOUNTED" or
+    containerd_mount.stdout is search('tmpfs|squashfs|ramfs')
+
+- name: Verify kubelet evictionHard and imageGC
+  ansible.builtin.shell: |
+    grep -A 3 'evictionHard' /var/lib/kubelet/config.yaml || true
+    grep 'rootDir' /var/lib/kubelet/config.yaml && echo "WARNING: rootDir still present" || echo "OK: rootDir absent"
+    grep 'imageGC' /var/lib/kubelet/config.yaml || true
   register: kubelet_config_check
   changed_when: false
   become: true
