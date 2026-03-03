@@ -63,22 +63,22 @@
     # Strategy A: disk already mounted elsewhere → bind-mount a subdir
     - name: "[bind] Create containerd subdir under existing mountpoint"
       ansible.builtin.file:
-        path: "{{ storage_existing_mount.stdout }}/containerd"
+        path: "{{ storage_existing_mount.stdout | trim }}/containerd"
         state: directory
         mode: '0755'
       when:
-        - containerd_current_fstype.stdout != "ext4"
-        - storage_existing_mount.stdout != "none"
-        - storage_existing_mount.stdout != "/var/lib/containerd"
+        - containerd_current_fstype.stdout | trim != "ext4"
+        - storage_existing_mount.stdout | trim != "none"
+        - storage_existing_mount.stdout | trim != "/var/lib/containerd"
 
     # FIX: use shell mount --bind instead of ansible.builtin.mount to avoid fstab write
-    - name: "[bind] Bind-mount {{ storage_existing_mount.stdout }}/containerd onto /var/lib/containerd"
+    - name: "[bind] Bind-mount {{ storage_existing_mount.stdout | trim }}/containerd onto /var/lib/containerd"
       ansible.builtin.shell: |
-        mount --bind "{{ storage_existing_mount.stdout }}/containerd" /var/lib/containerd
+        mount --bind "{{ storage_existing_mount.stdout | trim }}/containerd" /var/lib/containerd
       when:
-        - containerd_current_fstype.stdout != "ext4"
-        - storage_existing_mount.stdout != "none"
-        - storage_existing_mount.stdout != "/var/lib/containerd"
+        - containerd_current_fstype.stdout | trim != "ext4"
+        - storage_existing_mount.stdout | trim != "none"
+        - storage_existing_mount.stdout | trim != "/var/lib/containerd"
 
     # Strategy B: disk not mounted anywhere → mount directly
     # FIX: use shell mount instead of ansible.builtin.mount to avoid fstab write
@@ -86,8 +86,8 @@
       ansible.builtin.shell: |
         mount -t ext4 -o defaults,noatime /dev/{{ storage }} /var/lib/containerd
       when:
-        - containerd_current_fstype.stdout != "ext4"
-        - storage_existing_mount.stdout == "none"
+        - containerd_current_fstype.stdout | trim != "ext4"
+        - storage_existing_mount.stdout | trim == "none"
     # END FIX
 
     # kubelet on tmpfs is acceptable — kubelet workdir does not need statfs capacity
