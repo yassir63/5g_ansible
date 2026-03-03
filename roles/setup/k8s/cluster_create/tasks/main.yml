@@ -10,7 +10,13 @@
     f3_ran: "{{ f3_ran | default(false) | bool }}"
 
 
-# === CLEANUP PHASE =========================================================
+# === CLEANUP PHASE ============================================================
+
+# FIX: stop kubelet and containerd BEFORE kubeadm reset — otherwise static pods
+#      (apiserver, controller-manager) keep running and hold ports 6443/10259,
+#      causing kubeadm init to fail with [ERROR Port-6443] / [ERROR Port-10259].
+#      The original role deleted /var/lib/kubelet first, which prevented kubelet
+#      from cleanly terminating its pods before reset.
 - name: Stop kubelet before reset
   ansible.builtin.systemd:
     name: kubelet
@@ -18,6 +24,9 @@
   become: true
   ignore_errors: true
 
+# FIX: kube-apiserver and other static pod processes can survive as orphan processes
+#      outside containerd (crictl ps returns empty) after kubelet stops — they hold
+#      ports 6443/10259 and block kubeadm init. Kill them directly by name.
 - name: Kill orphan static pod processes (apiserver, controller-manager, scheduler, etcd)
   ansible.builtin.shell: |
     for proc in kube-apiserver kube-controller-manager kube-scheduler etcd; do
@@ -42,6 +51,7 @@
     done
   become: true
   changed_when: false
+# END FIX
 
 - name: Reset Kubernetes (safe)
   ansible.builtin.command: kubeadm reset -f
@@ -63,25 +73,22 @@
   become: true
   ignore_errors: true
 
-# Expand /var/lib/containerd to tmpfs (only if not already done) ===
-# === OPTIONAL: Expand /var/lib/containerd to tmpfs (only if not already done) ===
-- name: Ensure /var/lib/containerd is mounted on tmpfs (>=50G)
+# FIX: removed tmpfs remount block — pre_k8s already mounted the real disk (ext4)
+#      on /var/lib/containerd. Re-mounting a tmpfs on top was creating a stacked
+#      mount (ext4 + tmpfs), causing findmnt to return both fstypes and kubelet
+#      to still see InvalidDiskCapacity on the image filesystem.
+- name: Assert /var/lib/containerd is on a real FS before kubeadm init
   ansible.builtin.shell: |
-    current_mount=$(mountpoint -q /var/lib/containerd && df -h --output=fstype,size /var/lib/containerd | tail -n1 || echo "none 0G")
-    fstype=$(echo "$current_mount" | awk '{print $1}')
-    size=$(echo "$current_mount" | awk '{print $2}' | sed 's/G//')
-    if [ "$fstype" != "tmpfs" ] || [ "${size:-0}" -lt 50 ]; then
-      echo "Mounting tmpfs on /var/lib/containerd (50G)"
-      umount -f /var/lib/containerd 2>/dev/null || true
-      mount -t tmpfs -o size=50G tmpfs /var/lib/containerd
-    else
-      echo "tmpfs already mounted on /var/lib/containerd with ${size}G"
-    fi
+    fstype=$(findmnt -n -o FSTYPE /var/lib/containerd 2>/dev/null || echo "NOT_MOUNTED")
+    echo "$fstype"
+    case "$fstype" in
+      ext4|xfs|btrfs) exit 0 ;;
+      *) echo "ERROR: /var/lib/containerd is on '$fstype', expected ext4/xfs/btrfs"; exit 1 ;;
+    esac
   become: true
-  ignore_errors: true
-  register: containerd_mount
+  changed_when: false
 
-- name: Restart containerd after remount
+- name: Restart containerd
   ansible.builtin.systemd:
     name: containerd
     state: restarted
@@ -90,6 +97,7 @@
 - name: Wait 5 seconds for containerd to settle
   ansible.builtin.pause:
     seconds: 5
+# END FIX
 
 # === KUBEADM INIT =============================================================
 - name: Upload kubeadm config to master node
@@ -102,6 +110,38 @@
   ansible.builtin.command: kubeadm init --config /root/kubeadm-config.yaml
   register: kubeadm_init
   become: true
+
+# FIX: kubeadm init recreates /var/lib/kubelet with a fresh config.yaml that
+#      does not contain the evictionHard/imageGC settings written by pre_k8s
+#      (pre_k8s ran before the cleanup which deleted /var/lib/kubelet).
+#      Re-apply the storage eviction settings here via lineinfile so they are
+#      merged into the kubeadm-generated config without overwriting it entirely.
+- name: Remove rootDir from kubeadm-generated kubelet config if present
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^\s*rootDir:'
+    state: absent
+  become: true
+
+- name: Patch evictionHard into kubeadm-generated kubelet config
+  ansible.builtin.blockinfile:
+    path: /var/lib/kubelet/config.yaml
+    block: |
+      evictionHard:
+        nodefs.available: "10%"
+        imagefs.available: "10%"
+      imageGCHighThresholdPercent: 85
+      imageGCLowThresholdPercent: 80
+    marker: "# {mark} KUBELET STORAGE PATCH"
+  become: true
+
+- name: Restart kubelet to apply eviction config
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    daemon_reload: yes
+  become: true
+# END FIX
 
 # === KUBE-PROXY ================================================
 - name: Wait until at least one kube-proxy pod exists
