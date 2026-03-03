@@ -253,9 +253,7 @@
 
 - name: Verify kubelet evictionHard and imageGC
   ansible.builtin.shell: |
-    grep -A 3 'evictionHard' /var/lib/kubelet/config.yaml || true
-    grep 'rootDir' /var/lib/kubelet/config.yaml && echo "WARNING: rootDir still present" || echo "OK: rootDir absent"
-    grep 'imageGC' /var/lib/kubelet/config.yaml || true
+    grep 'evictionHard' /var/lib/kubelet/config.yaml && echo "OK" || echo "MISSING"
   register: kubelet_config_check
   changed_when: false
   become: true
@@ -264,10 +262,12 @@
   ansible.builtin.debug:
     msg: "{{ kubelet_config_check.stdout }}"
 
-- name: Fail if disk pressure patch not applied
+- name: Fail if /var/lib/containerd is not on a real filesystem
   ansible.builtin.fail:
-    msg: "Disk pressure fix not applied: check /var/lib/containerd mount or kubelet config"
-  when: >
-    containerd_mount.stdout | trim == "" or
-    containerd_mount.stdout | trim == "NOT_MOUNTED" or
-    kubelet_config_check.stdout is not search("evictionHard")
+    msg: "/var/lib/containerd fstype is '{{ containerd_mount.stdout }}' — kubelet will report InvalidDiskCapacity"
+  when: containerd_mount.stdout | trim in ['', 'NOT_MOUNTED', 'tmpfs', 'squashfs', 'ramfs', 'none']
+
+- name: Fail if evictionHard is missing from kubelet config
+  ansible.builtin.fail:
+    msg: "evictionHard not found in /var/lib/kubelet/config.yaml"
+  when: '"evictionHard" not in kubelet_config_check.stdout'
