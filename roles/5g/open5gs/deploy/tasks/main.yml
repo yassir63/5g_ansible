@@ -281,8 +281,17 @@
   until: >
     webui_pod.resources | length > 0 and
     (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
-  retries: 40
+  retries: 30
   delay: 5
+  failed_when: false
+  changed_when: false
+
+- name: Warn if WebUI not ready
+  ansible.builtin.debug:
+    msg: "WebUI pod not Ready — continuing (optional component)"
+  when: webui_pod is failed or
+        webui_pod.resources | length == 0 or
+        not (webui_pod.resources[0].status.containerStatuses[0].ready | default(false))
 
 - name: Run Python scripts to generate and add subscribers
   ansible.builtin.shell: |
