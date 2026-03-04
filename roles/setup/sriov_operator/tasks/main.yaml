@@ -74,7 +74,7 @@
 
     - name: Install kubernetes Python module in venv
       ansible.builtin.command:
-        cmd: /opt/ansible-venv/bin/pip install --upgrade kubernetes
+        cmd: /opt/ansible-k8s-venv/bin/pip install --upgrade kubernetes
       become: yes
 
     - name: Set ansible_python_interpreter to use venv
