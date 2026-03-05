@@ -206,6 +206,33 @@
   ansible.builtin.shell: kubectl delete pods -n {{ open5gs_ns }} -l app=open5gs --force --grace-period=0 || true
   when: core_node_name == ran_node_name and core == "open5gs"
 
+- name: Write nodeSelector patch for core_node scheduling
+  ansible.builtin.copy:
+    dest: "/tmp/open5gs-node-patch.yaml"
+    content: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: any
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: "{{ core_node_name }}"
+
+- name: Inject nodeSelector patch into kustomization.yaml (idempotent)
+  ansible.builtin.lineinfile:
+    path: "{{ repo_dest }}/{{ deployment_option }}/kustomization.yaml"
+    line: |
+      patches:
+        - path: /tmp/open5gs-node-patch.yaml
+          target:
+            kind: Deployment
+    insertafter: EOF
+    state: present
+  # Rollback: remove after apply to keep repo clean
+  notify: Cleanup node patch from kustomization
+
 - name: Apply Open5GS NFs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
 
