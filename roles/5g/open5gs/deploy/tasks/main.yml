@@ -208,7 +208,7 @@
 
 - name: Write nodeSelector patch for core_node scheduling
   ansible.builtin.copy:
-    dest: "/tmp/open5gs-node-patch.yaml"
+    dest: "{{ repo_dest }}/{{ deployment_option }}/open5gs-node-patch.yaml"
     content: |
       apiVersion: apps/v1
       kind: Deployment
@@ -221,17 +221,15 @@
               kubernetes.io/hostname: "{{ core_node_name }}"
 
 - name: Inject nodeSelector patch into kustomization.yaml (idempotent)
-  ansible.builtin.lineinfile:
+  ansible.builtin.blockinfile:
     path: "{{ repo_dest }}/{{ deployment_option }}/kustomization.yaml"
-    line: |
+    marker: "# {mark} ANSIBLE MANAGED - nodeSelector patch"
+    block: |
       patches:
-        - path: /tmp/open5gs-node-patch.yaml
+        - path: open5gs-node-patch.yaml
           target:
             kind: Deployment
-    insertafter: EOF
     state: present
-  # Rollback: remove after apply to keep repo clean
-  notify: Cleanup node patch from kustomization
 
 - name: Apply Open5GS NFs with Kustomize
   ansible.builtin.command: kubectl apply -k "{{ repo_dest }}/{{ deployment_option }}" -n {{ open5gs_ns }}
