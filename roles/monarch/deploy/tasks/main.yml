@@ -114,10 +114,19 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
+- name: Ensure pip tools installed
+  ansible.builtin.pip:
+    name:
+      - pip
+      - setuptools
+      - wheel
+    virtualenv: /opt/ansible-venv
+    state: latest
+    
 - name: Install Python requirements
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
-    executable: pip3
+    virtualenv: /opt/ansible-venv
 
 - name: Deploy Monarch External Components (SO, NFVO)
   ansible.builtin.debug:
@@ -135,7 +144,7 @@
             nodeSelector:
               kubernetes.io/hostname: {{ groups['monitor_node'][0] }}
 
-- name: Deploy Monarch Core Components (Data, Monitoring)"
+- name: Deploy Monarch Core Components (Data, Monitoring)
   ansible.builtin.debug:
     msg: "Starting deployment of Monarch core components..."
 
