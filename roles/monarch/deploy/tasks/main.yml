@@ -114,6 +114,16 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
+- name: Ensure python venv support installed
+  ansible.builtin.package:
+    name: python3-venv
+    state: present
+
+- name: Ensure ansible virtualenv exists
+  ansible.builtin.command: python3 -m venv /opt/ansible-venv
+  args:
+    creates: /opt/ansible-venv/bin/python
+
 - name: Ensure pip tools installed
   ansible.builtin.pip:
     name:
@@ -121,6 +131,7 @@
       - setuptools
       - wheel
     virtualenv: /opt/ansible-venv
+    virtualenv_command: python3 -m venv
     state: latest
     
 - name: Install Python requirements
