@@ -1,90 +1,182 @@
-- name: Get list of AMF pods
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ core }}"
-  register: amf_pods
-  no_log: true
-
-- name: Select AMF pod name
-  set_fact:
-    amf_pod: "{{ item.metadata.name }}"
-  loop: "{{ amf_pods.resources }}"
-  when: item.metadata.name is search('amf')
-  no_log: true
+# - name: Get list of AMF pods
+#   kubernetes.core.k8s_info:
+#     kind: Pod
+#     namespace: "{{ core }}"
+#   register: amf_pods
+#   no_log: true
 
 # - name: Select AMF pod name
 #   set_fact:
 #     amf_pod: "{{ item.metadata.name }}"
 #   loop: "{{ amf_pods.resources }}"
-#   when: item.metadata.name is match('^open5gs-amf-')
+#   when: item.metadata.name is search('amf')
 #   no_log: true
 
-# --- Minimal python install on AMF (no heavy recommends) ---
+# # - name: Select AMF pod name
+# #   set_fact:
+# #     amf_pod: "{{ item.metadata.name }}"
+# #   loop: "{{ amf_pods.resources }}"
+# #   when: item.metadata.name is match('^open5gs-amf-')
+# #   no_log: true
 
-- name: Ensure python3 + pip present on amf
-  shell: |
-    kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
-      set -euo pipefail
+# # --- Minimal python install on AMF (no heavy recommends) ---
 
-      # If python3 already exists, just show version and exit cleanly
-      if command -v python3 >/dev/null 2>&1; then
-        python3 --version
-        exit 0
-      fi
+# - name: Ensure python3 + pip present on amf
+#   shell: |
+#     kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
+#       set -euo pipefail
 
-      apt-get update -qq
-      DEBIAN_FRONTEND=noninteractive \
-        apt-get install -y -qq --no-install-recommends python3 python3-pip tshark
+#       # If python3 already exists, just show version and exit cleanly
+#       if command -v python3 >/dev/null 2>&1; then
+#         python3 --version
+#         exit 0
+#       fi
 
-      python3 --version
-    '
-  register: amf_install
-  changed_when: "'Setting up python3' in amf_install.stdout or 'install' in amf_install.stdout"
+#       apt-get update -qq
+#       DEBIAN_FRONTEND=noninteractive \
+#         apt-get install -y -qq --no-install-recommends python3 python3-pip tshark
 
-- name: Install redis + pyshark on amf via pip
-  shell: |
-    kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
-      set -euo pipefail
-      python3 -m pip install --no-cache-dir --disable-pip-version-check redis pyshark
-    '
-  register: amf_pip_install
-  changed_when: "'Successfully installed' in amf_pip_install.stdout"
+#       python3 --version
+#     '
+#   register: amf_install
+#   changed_when: "'Setting up python3' in amf_install.stdout or 'install' in amf_install.stdout"
 
-# --- Copy sniffer into /tmp on AMF pod ---
+# - name: Install redis + pyshark on amf via pip
+#   shell: |
+#     kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
+#       set -euo pipefail
+#       python3 -m pip install --no-cache-dir --disable-pip-version-check redis pyshark
+#     '
+#   register: amf_pip_install
+#   changed_when: "'Successfully installed' in amf_pip_install.stdout"
 
-- name: Copy amf_sniffer.py into AMF pod (/tmp)
-  ansible.builtin.shell: |
-    kubectl -n {{ core }} cp \
-      ~/monitoring/sliceawareness/amfsniffer/amf_sniffer.py \
-      {{ amf_pod }}:/tmp/amf_sniffer.py
-  register: amf_sniffer_copy
-  changed_when: amf_sniffer_copy.rc == 0
+# # --- Copy sniffer into /tmp on AMF pod ---
 
-- name: Select AMF sniffer interface based on core
-  set_fact:
-    amf_sniffer_interface: "{{ 'n3' if core == 'open5gs' else 'n2' }}"
+# - name: Copy amf_sniffer.py into AMF pod (/tmp)
+#   ansible.builtin.shell: |
+#     kubectl -n {{ core }} cp \
+#       ~/monitoring/sliceawareness/amfsniffer/amf_sniffer.py \
+#       {{ amf_pod }}:/tmp/amf_sniffer.py
+#   register: amf_sniffer_copy
+#   changed_when: amf_sniffer_copy.rc == 0
 
-# --- Start sniffer in background from /tmp ---
+# - name: Select AMF sniffer interface based on core
+#   set_fact:
+#     amf_sniffer_interface: "{{ 'n3' if core == 'open5gs' else 'n2' }}"
 
-- name: Start amf_sniffer on AMF (background)
-  ansible.builtin.shell: |
-    kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
-      nohup python3 /tmp/amf_sniffer.py {{ amf_sniffer_interface }} \
-        > /var/log/amf_sniffer_{{ amf_sniffer_interface }}.log 2>&1 &
-    '
-  async: 0
-  poll: 0
-  changed_when: false
+# # --- Start sniffer in background from /tmp ---
 
-# - name: Start amf_sniffer on AMF (n3, background)
+# - name: Start amf_sniffer on AMF (background)
 #   ansible.builtin.shell: |
 #     kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
-#       nohup python3 /tmp/amf_sniffer.py n3 \
-#         > /var/log/amf_sniffer_n3.log 2>&1 &
+#       nohup python3 /tmp/amf_sniffer.py {{ amf_sniffer_interface }} \
+#         > /var/log/amf_sniffer_{{ amf_sniffer_interface }}.log 2>&1 &
 #     '
 #   async: 0
 #   poll: 0
 #   changed_when: false
 
+# # - name: Start amf_sniffer on AMF (n3, background)
+# #   ansible.builtin.shell: |
+# #     kubectl -n {{ core }} exec {{ amf_pod }} -- bash -c '
+# #       nohup python3 /tmp/amf_sniffer.py n3 \
+# #         > /var/log/amf_sniffer_n3.log 2>&1 &
+# #     '
+# #   async: 0
+# #   poll: 0
+# #   changed_when: false
 
-# n3 with open5gs / n2 with OAI
+
+# # n3 with open5gs / n2 with OAI
+
+
+
+
+
+
+---
+- name: Get list of pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ core }}"
+  register: amf_pods
+  no_log: true
+
+- name: Build AMF pod list
+  set_fact:
+    amf_pod_list: >-
+      {{
+        amf_pods.resources
+        | selectattr('metadata.name', 'search', 'amf')
+        | list
+      }}
+  no_log: true
+
+- name: Fail if no AMF pod found
+  ansible.builtin.fail:
+    msg: "No AMF pod found in namespace={{ core }}"
+  when: amf_pod_list | length == 0
+
+- name: Select AMF sniffer interface based on core
+  set_fact:
+    amf_sniffer_interface: "{{ 'n3' if core == 'open5gs' else 'n2' }}"
+
+- name: Set AMF Redis host
+  set_fact:
+    amf_redis_host: "{{ redis_host | default('redis') }}"
+
+- name: Inject AMF sniffer ephemeral container
+  vars:
+    pod_name: "{{ item.metadata.name }}"
+    target_container_name: "{{ item.spec.containers[0].name }}"
+    existing_ephemeral: "{{ item.spec.ephemeralContainers | default([]) }}"
+    existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
+    amf_ephemeral_container:
+      name: amf-sniffer
+      image: r2labuser/amf-sniffer:2026w10
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: amf_sniffer_iface
+          value: "{{ amf_sniffer_interface }}"
+        - name: REDIS_HOST
+          value: "{{ amf_redis_host }}"
+      targetContainerName: "{{ target_container_name }}"
+      stdin: true
+      tty: true
+      securityContext:
+        privileged: true
+        allowPrivilegeEscalation: true
+        runAsUser: 0
+        runAsNonRoot: false
+        capabilities:
+          add:
+            - NET_ADMIN
+            - NET_RAW
+            - SYS_ADMIN
+    amf_patch:
+      metadata:
+        name: "{{ pod_name }}"
+      spec:
+        ephemeralContainers: "{{ existing_ephemeral + [amf_ephemeral_container] }}"
+  ansible.builtin.shell: |
+    kubectl -n {{ core }} patch pod {{ pod_name }} \
+      --subresource='ephemeralcontainers' \
+      --type='strategic' \
+      -p '{{ amf_patch | to_json }}'
+  args:
+    executable: /bin/bash
+  when: "'amf-sniffer' not in existing_ephemeral_names"
+  loop: "{{ amf_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: amf_injection_result
+  changed_when: true
+
+- name: Report existing AMF sniffer ephemeral container
+  ansible.builtin.debug:
+    msg: "AMF sniffer already present in pod {{ item.metadata.name }}, skipping injection."
+  when: "'amf-sniffer' in ((item.spec.ephemeralContainers | default([])) | map(attribute='name') | list)"
+  loop: "{{ amf_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"

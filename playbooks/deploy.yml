@@ -318,7 +318,7 @@
 
   tasks:
 
-    - name: Sync monitoring directory from control node (no sudo locally)
+    - name: Sync monitoring directory from control node
       ansible.posix.synchronize:
         src: "{{ lookup('env','HOME') }}/5g_ansible/monitoring/"
         dest: /root/monitoring/
@@ -327,28 +327,67 @@
       delegate_to: localhost
       become: false
 
-    - name: Run slice-aware script (Provisoire)
-      ansible.builtin.shell: CORE_NS="{{ core }}" ./5gsliceaware.sh
-      args:
-        chdir: /root/monitoring/scripts
+    # - name: Run slice-aware script (Provisoire)
+    #   ansible.builtin.shell: CORE_NS="{{ core }}" ./5gsliceaware.sh
+    #   args:
+    #     chdir: /root/monitoring/scripts
       
     # - name: Start kopf controller
     #   ansible.builtin.command: kopf run /path/to/controller.py
     #   environment:
     #     CORE_NS: "{{ core }}"
 
-- name: Setup sniffers on SMFs and AMF (Provisoire)
+- name: Deploy SliceAware Mechanisms
   hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
   gather_facts: false
   roles:
-    - role: monarch/sniffers/smf
+    - role: monarch/sliceawareness
       vars:
-        core_type: "{{ core }}"
+        core_ns: "{{ core }}"
       # when: monitoring_enabled
+
+# - name: Setup sniffers on SMFs and AMF
+#   # hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
+#   hosts: core_node
+#   gather_facts: false
+#   roles:
+#     - role: monarch/sniffers/smf
+#       vars:
+#         core_ns: "{{ core }}"
+#       # when: monitoring_enabled
+#     - role: monarch/sniffers/amf
+#       vars:
+#         core_ns: "{{ core }}"
+#       # when: monitoring_enabled
+
+- name: Setup sniffers on SMFs and AMF (Improved)
+  hosts: core_node
+  gather_facts: false
+  roles:
     - role: monarch/sniffers/amf
       vars:
-        core_type: "{{ core }}"
+        # redis_host: redis
+        redis_host: "redis.{{ core }}.svc.cluster.local"
+    - role: monarch/sniffers/smf
+      vars:
+        # redis_host: redis
+        redis_host: "redis.{{ core }}.svc.cluster.local"
+
+- name: Deploy Kopf Controller and eBPF Probes
+  hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
+  gather_facts: false
+  roles:
+    - role: monarch/controller
+      vars:
+        core_ns: "{{ core }}"
+        kopf_image: "r2labuser/kopf-controller:2026w10"
+        probe_image: "r2labuser/ebpf-latency-probe:2026"
+        exporter_port: "9100"
+        exporter_path: "/latency"
+        ue_mapper_limit: "2000"
+        dry_run: "0"
       # when: monitoring_enabled
+
 
 - name: Deploy OAI RAN
   hosts: ran_node

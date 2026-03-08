@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ core_ns }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kopf-controller
+  namespace: {{ core_ns }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kopf-controller
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/ephemeralcontainers"]
+    verbs: ["patch", "update"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kopf-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kopf-controller
+subjects:
+  - kind: ServiceAccount
+    name: kopf-controller
+    namespace: {{ core_ns }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kopf-controller
+  namespace: {{ core_ns }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kopf-controller
+  template:
+    metadata:
+      labels:
+        app: kopf-controller
+    spec:
+      serviceAccountName: kopf-controller
+      containers:
+        - name: controller
+          image: "{{ kopf_image }}"
+          imagePullPolicy: "{{ image_pull_policy | default('IfNotPresent') }}"
+          env:
+            - name: CORE_NS
+              value: "{{ core_ns }}"
+            - name: UE_MAPPER_LIMIT
+              value: "{{ ue_mapper_limit | default('2000') }}"
+            - name: PROBE_IMAGE
+              value: "{{ probe_image }}"
+            - name: EXPORTER_PORT
+              value: "{{ exporter_port | default('9100') }}"
+            - name: EXPORTER_PATH
+              value: "{{ exporter_path | default('/latency') }}"
+            - name: DRY_RUN
+              value: "{{ dry_run | default('0') }}"
+{% if ue_mapper_url is defined and ue_mapper_url | length > 0 %}
+            - name: UE_MAPPER_URL
+              value: "{{ ue_mapper_url }}"
+{% endif %}
+{% if probe_iface is defined and probe_iface | length > 0 %}
+            - name: PROBE_IFACE
+              value: "{{ probe_iface }}"
+{% endif %}
+          resources:
+            requests:
+              cpu: "{{ cpu_request | default('50m') }}"
+              memory: "{{ mem_request | default('64Mi') }}"
+            limits:
+              cpu: "{{ cpu_limit | default('500m') }}"
+              memory: "{{ mem_limit | default('256Mi') }}"

@@ -1,0 +1,22 @@
+---
+- name: Render Redis manifest to a file
+  ansible.builtin.template:
+    src: redis.yaml.j2
+    dest: /tmp/redis.yaml
+    mode: "0644"
+
+- name: Deploy Redis Database
+  ansible.builtin.command: >
+    kubectl -n {{ core }} apply -f /tmp/redis.yaml
+  changed_when: false
+
+- name: Render UE Mapper manifest to a file
+  ansible.builtin.template:
+    src: ue-mapper.yaml.j2
+    dest: /tmp/ue-mapper.yaml
+    mode: "0644"
+
+- name: Deploy UE Mapper
+  ansible.builtin.command: >
+    kubectl -n {{ core }} apply -f /tmp/ue-mapper.yaml
+  changed_when: false

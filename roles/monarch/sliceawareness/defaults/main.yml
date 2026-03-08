@@ -1,0 +1,6 @@
+core_ns: open5gs
+ue_mapper_api_image: "r2labuser/ue_mapper_api:2026w10"
+ue_mapper_api_port: "8080"
+redis_image: "redis:7"
+redis_port: "6379"
+redis_host: "redis"

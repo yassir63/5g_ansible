@@ -14,7 +14,7 @@ if not interface:
         print("❌ Error: No interface provided. Set amf_sniffer_iface or pass as argument.")
         sys.exit(1)
 
-redis_host = os.getenv("REDIS_HOST", "redis")
+redis_host = os.getenv("REDIS_HOST", "redis.open5gs.svc.cluster.local")
 rdb = redis.Redis(host=redis_host, port=6379, decode_responses=True)
 
 ue_sessions = {}

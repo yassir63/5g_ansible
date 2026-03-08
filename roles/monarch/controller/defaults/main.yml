@@ -1,0 +1,15 @@
+core_ns: open5gs
+# core_type: open5gs
+
+kopf_image: "r2labuser/kopf-controller:2026w10"
+image_pull_policy: IfNotPresent
+
+probe_image: "r2labuser/ebpf-latency-probe:2026"
+exporter_port: "9100"
+exporter_path: "/latency"
+
+ue_mapper_limit: "2000"
+ue_mapper_url: ""      # optional override
+probe_iface: ""        # optional override
+
+dry_run: "0"

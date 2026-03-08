@@ -1,0 +1,11 @@
+---
+- name: Render controller manifest to a file
+  ansible.builtin.template:
+    src: kopf-controller.yaml.j2
+    dest: /tmp/kopf-controller.yaml
+    mode: "0644"
+
+- name: Deploy Kopf controller with kubectl apply
+  ansible.builtin.command: >
+    kubectl apply -f /tmp/kopf-controller.yaml
+  changed_when: false

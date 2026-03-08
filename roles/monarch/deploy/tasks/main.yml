@@ -115,9 +115,8 @@
     create: yes
 
 - name: Install Python requirements
-  ansible.builtin.pip:
-    requirements: "{{ repo_dest }}/requirements.txt"
-    executable: pip3
+  ansible.builtin.command:
+    cmd: /opt/ansible-venv/bin/python -m pip install -r {{ repo_dest }}/requirements.txt
 
 - name: Deploy Monarch External Components (SO, NFVO)
   ansible.builtin.debug:

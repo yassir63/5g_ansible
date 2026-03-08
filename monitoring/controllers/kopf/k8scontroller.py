@@ -6,34 +6,39 @@ import logging
 import subprocess
 import hashlib
 import requests
-
 # -------------------------
-# Config
+# Config (from env / Ansible)
 # -------------------------
 
-# NAMESPACE = os.getenv("CORE_NS", "default")  # fallback default
-NAMESPACE = "oai"  # to be changed and made dynamic
-ALERT_FILE = "/tmp/alert.json"  # kept for later (currently unused)
+CORE_NS = os.getenv("CORE_NS", "default")
 
-# DRY RUN: if set, do not kill or inject; only log what would happen
-DRY_RUN = 0
+DEFAULT_IFACE = "n3" if CORE_NS == "open5gs" else "n2"
+PROBE_IFACE = os.getenv("PROBE_IFACE", DEFAULT_IFACE)
 
-# NEW: ue-mapper config
-# UE_MAPPER_URL = os.getenv("UE_MAPPER_URL", "http://ue-mapper-api.oai.svc.cluster.local")
-UE_MAPPER_URL = os.getenv("UE_MAPPER_URL", "http://10.244.0.18:8080")
-UE_MAPPER_LIMIT = int(os.getenv("UE_MAPPER_LIMIT", "2000"))  # max UEs returned
+EXPORTER_PORT = os.getenv("EXPORTER_PORT", "9100")
+EXPORTER_PATH = os.getenv("EXPORTER_PATH", "/latency")
+
+ALERT_FILE = "/tmp/alert.json"
+
+DRY_RUN = int(os.getenv("DRY_RUN", "0"))
+
+UE_MAPPER_LIMIT = int(os.getenv("UE_MAPPER_LIMIT", "2000"))
 PROBE_IMAGE = os.getenv("PROBE_IMAGE", "r2labuser/ebpf-latency-probe:2026")
+
+DEFAULT_UE_MAPPER_URL = f"http://ue-mapper-api.{CORE_NS}.svc.cluster.local"
+UE_MAPPER_URL = os.getenv("UE_MAPPER_URL", DEFAULT_UE_MAPPER_URL)
 
 @kopf.on.startup()
 def configure(settings: kopf.OperatorSettings, **_):
     print("✅ KOPF startup hook triggered")
     try:
         kubernetes.config.load_incluster_config()
-    except:
+    except Exception:
         kubernetes.config.load_kube_config()
 
     settings.posting.level = logging.INFO
-    settings.watching.namespaces = [NAMESPACE]
+    # Watch only the namespace provided by Ansible/env
+    settings.watching.namespaces = [CORE_NS]
 
 
 # -------------------------
@@ -68,61 +73,51 @@ def fetch_all_teids_from_ue_mapper(logger) -> tuple[str, str]:
         if arg:
             teids.append(arg)
 
-    # Dedup + stable ordering
     teids = sorted(set(teids))
     teids_str = " ".join(teids).strip()
     return teids_str, fingerprint_teids(teids_str)
 
 
 # -------------------------
-# Timer reconcile (now always-on)
+# Timer reconcile (always-on)
 # -------------------------
 
 @kopf.timer('v1', 'pods', interval=15.0)
 def reconcile_probe_always_on(name, namespace, labels, logger, **kwargs):
-    logger.info(f"⏱ Timer running for pod: {name} (labels: {labels})")
+    logger.info(f"⏱ Timer running for pod: {name} in ns={namespace} (labels: {labels})")
 
     if labels.get("app") != "oai-gnb":
         logger.info(f"⛔ Skipping pod {name}: app label is not 'oai-gnb' (got: {labels.get('app')})")
         return
 
-    # Always compute TEIDS for ALL UEs, ALL slices
     teids, teids_fp = fetch_all_teids_from_ue_mapper(logger)
     if not teids:
         logger.warning("⚠️ UE-mapper returned no TEIDS yet. Will not inject probe.")
-        # Optional: if you want "no UEs => no probe", you could kill existing probe here.
-        # In DRY_RUN we never kill anyway.
         return
 
     logger.info(f"📌 Desired TEIDS fingerprint: {teids_fp} (len={len(teids)})")
-    logger.info(f"📌 Desired TEIDS string: {teids}")
+    logger.info(f"📌 Probe IFACE selected: {PROBE_IFACE} (CORE_NS={CORE_NS})")
+    logger.info(f"📌 UE_MAPPER_URL: {UE_MAPPER_URL}")
 
-    # If already running with same fingerprint, do nothing
     if probe_running_with_fingerprint(name, namespace, teids_fp, logger):
         logger.info("✅ Probe already running with matching TEIDS. No action.")
         return
 
     logger.info("🔁 TEIDS changed or no healthy probe. Refreshing probe...")
 
-    # --- DRY RUN BEHAVIOR ---
     if DRY_RUN:
         logger.warning("🟡 DRY_RUN=1 -> Will NOT kill or inject. Printing what would happen.")
-        _ = kill_probe_container(name, logger)  # will only LOG targets; no exec in DRY_RUN
+        _ = kill_probe_container(name, namespace, logger)
         dump_injection_request(name, namespace, logger, teids, teids_fp)
         return
 
-    # --- REAL BEHAVIOR ---
-    kill_probe_container(name, logger)
+    kill_probe_container(name, namespace, logger)
     inject_ephemeral_probe(name, namespace, logger, teids, teids_fp)
 
 
 # -------------------------
 # Kubernetes helpers
 # -------------------------
-
-from kubernetes.client.rest import ApiException
-from kubernetes.client import ApiClient
-
 
 def probe_running_with_fingerprint(pod_name, namespace, desired_fp: str, logger) -> bool:
     """
@@ -135,7 +130,7 @@ def probe_running_with_fingerprint(pod_name, namespace, desired_fp: str, logger)
         core_api = kubernetes.client.CoreV1Api()
         pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace)
     except Exception as e:
-        logger.warning(f"⚠️ Failed to read pod {pod_name}: {e}")
+        logger.warning(f"⚠️ Failed to read pod {pod_name} in ns={namespace}: {e}")
         return False
 
     ecs = pod.spec.ephemeral_containers or []
@@ -145,7 +140,6 @@ def probe_running_with_fingerprint(pod_name, namespace, desired_fp: str, logger)
         if not c.name.startswith("ebpf-latency-probe"):
             continue
 
-        # Check env TEIDS_FP
         fp = ""
         try:
             for env in (c.env or []):
@@ -168,21 +162,19 @@ def probe_running_with_fingerprint(pod_name, namespace, desired_fp: str, logger)
     return False
 
 
-def kill_probe_container(pod_name, logger):
+def kill_probe_container(pod_name, namespace, logger):
     """
     Safer kill:
       - Only attempts kubectl exec if pod is Running
       - Targets only ephemeral containers named ebpf-latency-probe*
       - In DRY_RUN: does not exec, only logs what it would kill
-    Returns True if kill was "possible" (pod running) and attempted; False otherwise.
     """
-    namespace = NAMESPACE
     core_api = kubernetes.client.CoreV1Api()
 
     try:
         pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace)
     except Exception as e:
-        logger.warning(f"⚠️ Failed to read pod {pod_name}: {e}")
+        logger.warning(f"⚠️ Failed to read pod {pod_name} in ns={namespace}: {e}")
         return False
 
     phase = (pod.status.phase or "")
@@ -196,7 +188,6 @@ def kill_probe_container(pod_name, logger):
         logger.info(f"ℹ️ No ephemeral probe containers to kill in {pod_name}")
         return True
 
-    # Optional: only try to kill ones that are actually running
     running = set()
     for st in (pod.status.ephemeral_container_statuses or []):
         if st.name in target_names and st.state and st.state.running:
@@ -205,7 +196,7 @@ def kill_probe_container(pod_name, logger):
     if running:
         target_names = [n for n in target_names if n in running]
     else:
-        logger.info(f"ℹ️ No probe statuses reported running in {pod_name}; will attempt kill anyway (unless DRY_RUN).")
+        logger.info("ℹ️ No probe statuses reported running; will attempt kill anyway (unless DRY_RUN).")
 
     logger.info(f"🧹 Kill targets in {pod_name}: {target_names}")
 
@@ -232,9 +223,6 @@ def kill_probe_container(pod_name, logger):
 
 
 def compute_next_probe_name(existing_ecs) -> str:
-    """
-    Returns next available probe name: ebpf-latency-probe, ebpf-latency-probe2, ...
-    """
     probe_names = [c.name for c in existing_ecs if c.name.startswith("ebpf-latency-probe")]
     i = 1
     base_name = "ebpf-latency-probe"
@@ -246,25 +234,21 @@ def compute_next_probe_name(existing_ecs) -> str:
 
 
 def build_ephemeral_patch_body(pod_name, namespace, logger, teids: str, teids_fp: str):
-    """
-    Build (cname, patch_body) exactly like inject_ephemeral_probe would.
-    """
     core_api = kubernetes.client.CoreV1Api()
-
     pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace)
     existing_ecs = pod.spec.ephemeral_containers or []
 
     cname = compute_next_probe_name(existing_ecs)
-    logger.info(f"🚀 Would inject probe: {cname} (TEIDS_FP={teids_fp})")
+    logger.info(f"🚀 Would inject probe: {cname} (TEIDS_FP={teids_fp}, IFACE={PROBE_IFACE})")
 
     new_container = {
         "name": cname,
         "image": PROBE_IMAGE,
         "command": ["./entrypoint-latency.sh"],
         "env": [
-            {"name": "IFACE", "value": "n2"},
-            {"name": "HANDLE", "value": "9"},
-            {"name": "PRIO", "value": "9"},
+            {"name": "IFACE", "value": PROBE_IFACE},
+            {"name": "HANDLE", "value": "1"},
+            {"name": "PRIO", "value": "1"},
             {"name": "TEIDS", "value": teids},
             {"name": "TEIDS_FP", "value": teids_fp},
             {"name": "EXPORTER_PORT", "value": "9100"},
@@ -290,9 +274,6 @@ def build_ephemeral_patch_body(pod_name, namespace, logger, teids: str, teids_fp
 
 
 def dump_injection_request(pod_name, namespace, logger, teids: str, teids_fp: str):
-    """
-    DRY-RUN helper: dumps the exact API endpoint and patch payload we would use.
-    """
     try:
         cname, patch_body = build_ephemeral_patch_body(pod_name, namespace, logger, teids, teids_fp)
     except Exception as e:
@@ -301,19 +282,15 @@ def dump_injection_request(pod_name, namespace, logger, teids: str, teids_fp: st
 
     endpoint = f"/api/v1/namespaces/{namespace}/pods/{pod_name}/ephemeralcontainers"
     logger.warning("🟡 DRY RUN injection dump:")
-    logger.warning(f"  METHOD: PATCH")
+    logger.warning("  METHOD: PATCH")
     logger.warning(f"  URL:    {endpoint}")
-    logger.warning(f"  HEADER: Content-Type=application/strategic-merge-patch+json")
+    logger.warning("  HEADER: Content-Type=application/strategic-merge-patch+json")
     logger.warning(f"  Would inject container name: {cname}")
     logger.warning("  PATCH BODY JSON:")
     logger.warning(json.dumps(patch_body, indent=2))
 
 
 def inject_ephemeral_probe(pod_name, namespace, logger, teids: str, teids_fp: str):
-    """
-    REAL injection (disabled automatically in DRY_RUN by caller).
-    """
-    core_api = kubernetes.client.CoreV1Api()
     api_client = kubernetes.client.ApiClient()
 
     try:
