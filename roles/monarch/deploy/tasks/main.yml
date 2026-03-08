@@ -114,39 +114,42 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
-# --- Python venv preparation ---
-# Ensure python venv support installed
-- name: Ensure python venv support installed
+# --- Python venv preparation (robust version) ---
+- name: Ensure system packages for Python venv are installed
   ansible.builtin.package:
     name:
       - python3-venv
       - python3-pip
     state: present
+    update_cache: yes
 
-# Remove broken venv if exists
-- name: Remove broken ansible venv
+- name: Remove broken or existing ansible venv
   ansible.builtin.file:
     path: /opt/ansible-venv
     state: absent
 
-- name: Create fresh ansible virtualenv
-  command: /usr/bin/python3 -m venv /opt/ansible-venv
+- name: Create fresh ansible virtualenv (idempotent)
+  ansible.builtin.command: python3 -m venv /opt/ansible-venv
+  args:
+    creates: /opt/ansible-venv/bin/activate
   vars:
     ansible_python_interpreter: /usr/bin/python3
 
-# Bootstrap pip inside venv
 - name: Bootstrap pip in venv
   ansible.builtin.command: /opt/ansible-venv/bin/python -m ensurepip --upgrade
+  args:
+    creates: /opt/ansible-venv/bin/pip
 
-# Upgrade pip/setuptools/wheel
-- name: Upgrade pip tools in venv
-  ansible.builtin.command: >
-    /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+- name: Upgrade pip, setuptools, wheel in venv
+  ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+  args:
+    creates: /opt/ansible-venv/bin/wheel
 
-- name: Install Python requirements
+- name: Install Python requirements inside venv
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
     virtualenv: /opt/ansible-venv
+
 
 # --- Deploy external Monarch components robustly ---
 - name: Stop and remove old Monarch services
