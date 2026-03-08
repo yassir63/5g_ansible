@@ -120,18 +120,27 @@
     name:
       - python3-venv
       - python3-pip
+      - python3-full
     state: present
     update_cache: yes
 
-- name: Remove any existing ansible venv
+- name: Check if valid venv already exists
+  ansible.builtin.stat:
+    path: /opt/ansible-venv/bin/pip
+  register: venv_exists
+
+- name: Remove broken ansible venv if pip missing
   ansible.builtin.file:
     path: /opt/ansible-venv
     state: absent
+  when: not venv_exists.stat.exists
 
 - name: Create ansible venv
-  ansible.builtin.command: python3 -m venv --copies /opt/ansible-venv
+  ansible.builtin.command: python3 -m venv /opt/ansible-venv
   args:
-    creates: /opt/ansible-venv/bin/python3
+    creates: /opt/ansible-venv/bin/pip
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
 
 - name: Symlink python -> python3 in venv
   ansible.builtin.file:
@@ -146,6 +155,8 @@
 - name: Install Python requirements inside venv
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
+    virtualenv: /opt/ansible-venv
+    
     virtualenv: /opt/ansible-venv
     
 # --- Deploy external Monarch components ---
