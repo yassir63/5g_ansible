@@ -114,7 +114,7 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
-# --- Python venv setup ---
+# --- Python venv preparation ---
 - name: Ensure python venv support installed
   ansible.builtin.package:
     name: python3-venv
@@ -125,7 +125,7 @@
   args:
     creates: /opt/ansible-venv/bin/python
 
-- name: Ensure pip tools installed in venv
+- name: Ensure pip tools installed
   ansible.builtin.pip:
     name:
       - pip
@@ -140,7 +140,7 @@
     requirements: "{{ repo_dest }}/requirements.txt"
     virtualenv: /opt/ansible-venv
 
-# --- Robust external components deploy ---
+# --- Deploy external Monarch components robustly ---
 - name: Stop and remove old Monarch services
   ansible.builtin.systemd:
     name: "{{ item }}"
@@ -160,13 +160,21 @@
     - nfv_orchestrator
   ignore_errors: yes
 
-- name: Deploy Monarch External Components (SO, NFVO)
-  ansible.builtin.debug:
-    msg: "Starting deployment of Monarch external components..."
+- name: Deploy external Monarch components (SO / NFVO)
+  ansible.builtin.command:
+    cmd: ./install.sh
+    chdir: "{{ repo_dest }}/{{ item }}"
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  environment:
+    PATH: "/opt/ansible-venv/bin:/usr/bin:/bin"
+  register: install_result
+  failed_when: false
+  changed_when: true
 
-- import_tasks: deploy_external.yml
-
-- name: Ensure Monarch services use correct Python interpreter
+# --- Patch systemd services to use venv Python ---
+- name: Replace Python interpreter in systemd service
   ansible.builtin.replace:
     path: "/etc/systemd/system/{{ item }}.service"
     regexp: "/usr/bin/python3"
@@ -174,7 +182,6 @@
   loop:
     - service_orchestrator
     - nfv_orchestrator
-  ignore_errors: yes
 
 - name: Add PATH environment to systemd services
   lineinfile:
@@ -227,7 +234,7 @@
   when: item.stdout != "active"
   loop: "{{ service_status.results }}"
 
-# --- MongoDB nodeSelector fix ---
+# --- MongoDB nodeSelector patch ---
 - name: Append nodeSelector for MongoDB (exact indent, end of file)
   blockinfile:
     path: "{{ repo_dest }}/data_store/mongodb/mongodb-deployment.yaml"
@@ -238,18 +245,21 @@
             nodeSelector:
               kubernetes.io/hostname: {{ groups['monitor_node'][0] }}
 
+# --- Deploy Monarch core components ---
 - name: Deploy Monarch Core Components (Data, Monitoring)
   ansible.builtin.debug:
     msg: "Starting deployment of Monarch core components..."
 
 - import_tasks: deploy_core.yml
 
+# --- Deploy Monarch NSS components ---
 - name: Deploy Monarch NSS Components (NSSDC, Prometheus)
   ansible.builtin.debug:
     msg: "Starting deployment of Monarch NSS components..."
 
 - import_tasks: deploy_nss.yml
 
+# --- Deploy Kepler (if enabled) ---
 - name: Deploy Kepler for monitoring (if enabled)
   ansible.builtin.debug:
     msg: "Starting deployment of Kepler for monitoring..."
