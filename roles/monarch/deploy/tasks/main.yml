@@ -115,6 +115,10 @@
     create: yes
 
 # --- Python venv preparation ---
+- name: Reset python interpreter to system python3
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /usr/bin/python3
+
 - name: Ensure Python3 venv and pip system packages are installed
   ansible.builtin.package:
     name:
@@ -132,8 +136,6 @@
 
 - name: Create ansible venv using system python3
   ansible.builtin.command: /usr/bin/python3 -m venv /opt/ansible-venv
-  vars:
-    ansible_python_interpreter: /usr/bin/python3
 
 - name: Verify venv python3 binary exists
   ansible.builtin.stat:
@@ -159,7 +161,11 @@
     /opt/ansible-venv/bin/pip install -r {{ repo_dest }}/requirements.txt
   environment:
     PATH: "/opt/ansible-venv/bin:/usr/bin:/bin"
-    
+
+- name: Set ansible_python_interpreter to venv for subsequent tasks
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/ansible-venv/bin/python
+  
 # --- Deploy external Monarch components ---
 - name: Stop and remove old Monarch services
   ansible.builtin.systemd:
