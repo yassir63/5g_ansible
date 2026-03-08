@@ -114,8 +114,8 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
-# --- Python venv preparation (robust version) ---
-# --- Python venv preparation (robust, idempotent) ---
+# --- Python venv preparation ---
+# --- Python venv preparation (Ubuntu 22.04+ robust, idempotent) ---
 - name: Ensure system packages for Python venv are installed
   ansible.builtin.package:
     name:
@@ -129,24 +129,31 @@
     path: /opt/ansible-venv
     state: absent
 
-- name: Create fresh ansible virtualenv (robust)
-  ansible.builtin.pip:
-    virtualenv: /opt/ansible-venv
-    virtualenv_command: /usr/bin/python3 -m venv
-    name: pip
-    state: present
-
-- name: Upgrade pip, setuptools, wheel in venv
-  ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+- name: Create temporary venv in /tmp (safe path)
+  ansible.builtin.command: python3 -m venv /tmp/ansible-venv-temp
   args:
-    creates: /opt/ansible-venv/bin/wheel
+    creates: /tmp/ansible-venv-temp/bin/activate
 
-- name: Install Python requirements inside venv
+- name: Upgrade pip, setuptools, wheel in temporary venv
+  ansible.builtin.command: /tmp/ansible-venv-temp/bin/pip install --upgrade pip setuptools wheel
+  args:
+    creates: /tmp/ansible-venv-temp/bin/wheel
+
+- name: Copy temporary venv to /opt atomically
+  ansible.builtin.command: cp -a /tmp/ansible-venv-temp /opt/ansible-venv
+  args:
+    creates: /opt/ansible-venv/bin/python
+
+- name: Remove temporary venv
+  ansible.builtin.file:
+    path: /tmp/ansible-venv-temp
+    state: absent
+
+- name: Install Python requirements inside /opt venv
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
     virtualenv: /opt/ansible-venv
-
-
+    
 # --- Deploy external Monarch components robustly ---
 - name: Stop and remove old Monarch services
   ansible.builtin.systemd:
