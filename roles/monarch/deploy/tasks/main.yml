@@ -114,33 +114,32 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
-# --- Python venv preparation (Ubuntu 22.04+) ---
-- name: Ensure Python3 packages for venv are installed
+# --- Python venv preparation ---
+- name: Ensure Python3 venv and pip system packages are installed
   ansible.builtin.package:
     name:
       - python3-venv
       - python3-pip
-      - python3-full
+      - python3-setuptools
+      - python3-wheel
     state: present
     update_cache: yes
 
-- name: Check if valid venv already exists
-  ansible.builtin.stat:
-    path: /opt/ansible-venv/bin/pip
-  register: venv_exists
-
-- name: Remove broken ansible venv if pip missing
+- name: Remove any existing ansible venv to ensure clean state
   ansible.builtin.file:
     path: /opt/ansible-venv
     state: absent
-  when: not venv_exists.stat.exists
 
-- name: Create ansible venv
-  ansible.builtin.command: python3 -m venv /opt/ansible-venv
-  args:
-    creates: /opt/ansible-venv/bin/pip
+- name: Create ansible venv using system python3
+  ansible.builtin.command: /usr/bin/python3 -m venv /opt/ansible-venv
   vars:
     ansible_python_interpreter: /usr/bin/python3
+
+- name: Verify venv python3 binary exists
+  ansible.builtin.stat:
+    path: /opt/ansible-venv/bin/python3
+  register: venv_python_stat
+  failed_when: not venv_python_stat.stat.exists
 
 - name: Symlink python -> python3 in venv
   ansible.builtin.file:
@@ -149,15 +148,17 @@
     state: link
     force: yes
 
-- name: Upgrade pip in venv
-  ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+- name: Bootstrap pip and setuptools in venv
+  ansible.builtin.command: >
+    /opt/ansible-venv/bin/python3 -m pip install --upgrade pip setuptools wheel
+  environment:
+    PATH: "/opt/ansible-venv/bin:/usr/bin:/bin"
 
 - name: Install Python requirements inside venv
-  ansible.builtin.pip:
-    requirements: "{{ repo_dest }}/requirements.txt"
-    virtualenv: /opt/ansible-venv
-    
-    virtualenv: /opt/ansible-venv
+  ansible.builtin.command: >
+    /opt/ansible-venv/bin/pip install -r {{ repo_dest }}/requirements.txt
+  environment:
+    PATH: "/opt/ansible-venv/bin:/usr/bin:/bin"
     
 # --- Deploy external Monarch components ---
 - name: Stop and remove old Monarch services
