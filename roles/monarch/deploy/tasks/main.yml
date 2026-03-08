@@ -1,7 +1,7 @@
 ---
 - name: START_MONARCH_DEPLOY
   ansible.builtin.meta: noop
-  
+
 - import_tasks: persist_data.yml
 
 - name: Clone 5G-Monarch repo
@@ -10,7 +10,7 @@
     dest: "{{ repo_dest }}"
     version: "{{ branch }}"
     update: yes
-    force: yes 
+    force: yes
 
 - name: Label {{ groups['monitor_node'][0] }} for Monarch scheduling
   command: kubectl label node {{ groups['monitor_node'][0] }} monarch-node=true --overwrite
@@ -48,7 +48,7 @@
     name: kyverno-admission-controller
     namespace: kyverno
   register: kyverno_adm_deploy
-  until: 
+  until:
     - kyverno_adm_deploy.resources is defined
     - kyverno_adm_deploy.resources | length > 0
     - kyverno_adm_deploy.resources[0].status.readyReplicas | default(0) > 0
@@ -114,6 +114,7 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
+# --- Python venv setup ---
 - name: Ensure python venv support installed
   ansible.builtin.package:
     name: python3-venv
@@ -124,7 +125,7 @@
   args:
     creates: /opt/ansible-venv/bin/python
 
-- name: Ensure pip tools installed
+- name: Ensure pip tools installed in venv
   ansible.builtin.pip:
     name:
       - pip
@@ -133,11 +134,31 @@
     virtualenv: /opt/ansible-venv
     virtualenv_command: python3 -m venv
     state: latest
-    
+
 - name: Install Python requirements
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
     virtualenv: /opt/ansible-venv
+
+# --- Robust external components deploy ---
+- name: Stop and remove old Monarch services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  ignore_errors: yes
+
+- name: Remove old systemd service files
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.service"
+    state: absent
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  ignore_errors: yes
 
 - name: Deploy Monarch External Components (SO, NFVO)
   ansible.builtin.debug:
@@ -145,7 +166,6 @@
 
 - import_tasks: deploy_external.yml
 
-# --- Fix systemd services to use venv Python ---
 - name: Ensure Monarch services use correct Python interpreter
   ansible.builtin.replace:
     path: "/etc/systemd/system/{{ item }}.service"
@@ -155,6 +175,15 @@
     - service_orchestrator
     - nfv_orchestrator
   ignore_errors: yes
+
+- name: Add PATH environment to systemd services
+  lineinfile:
+    path: "/etc/systemd/system/{{ item }}.service"
+    insertafter: 'ExecStart=.*'
+    line: 'Environment="PATH=/opt/ansible-venv/bin:/usr/bin:/bin"'
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
 
 - name: Reload systemd daemon
   ansible.builtin.systemd:
@@ -198,6 +227,7 @@
   when: item.stdout != "active"
   loop: "{{ service_status.results }}"
 
+# --- MongoDB nodeSelector fix ---
 - name: Append nodeSelector for MongoDB (exact indent, end of file)
   blockinfile:
     path: "{{ repo_dest }}/data_store/mongodb/mongodb-deployment.yaml"
