@@ -2,6 +2,10 @@
 - name: START_MONARCH_DEPLOY
   ansible.builtin.meta: noop
 
+- name: Set ansible_python_interpreter to venv
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/ansible-venv/bin/python
+
 - import_tasks: persist_data.yml
 
 - name: Clone 5G-Monarch repo
@@ -115,11 +119,11 @@
     create: yes
 
 # --- Python venv preparation ---
-- name: Reset python interpreter to system python3
+- name: Reset ansible_python_interpreter to system python3
   ansible.builtin.set_fact:
     ansible_python_interpreter: /usr/bin/python3
 
-- name: Ensure Python3 venv and pip system packages are installed
+- name: Ensure Python tooling is available
   ansible.builtin.package:
     name:
       - python3-venv
@@ -129,32 +133,34 @@
     state: present
     update_cache: yes
 
-- name: Remove any existing ansible venv to ensure clean state
-  ansible.builtin.file:
-    path: /opt/ansible-venv
-    state: absent
-
-- name: Create ansible venv using system python3
-  ansible.builtin.command: /usr/bin/python3 -m venv /opt/ansible-venv
-
-- name: Verify venv python3 binary exists
+- name: Check if valid venv exists
   ansible.builtin.stat:
-    path: /opt/ansible-venv/bin/python3
-  register: venv_python_stat
-  failed_when: not venv_python_stat.stat.exists
+    path: /opt/ansible-venv/bin/pip
+  register: venv_exists
 
-- name: Symlink python -> python3 in venv
-  ansible.builtin.file:
-    src: /opt/ansible-venv/bin/python3
-    dest: /opt/ansible-venv/bin/python
-    state: link
-    force: yes
+- name: Recreate venv if missing or broken
+  block:
+    - name: Remove broken venv
+      ansible.builtin.file:
+        path: /opt/ansible-venv
+        state: absent
 
-- name: Bootstrap pip and setuptools in venv
-  ansible.builtin.command: >
-    /opt/ansible-venv/bin/python3 -m pip install --upgrade pip setuptools wheel
-  environment:
-    PATH: "/opt/ansible-venv/bin:/usr/bin:/bin"
+    - name: Create ansible venv
+      ansible.builtin.command: /usr/bin/python3 -m venv /opt/ansible-venv
+
+    - name: Symlink python -> python3 in venv
+      ansible.builtin.file:
+        src: /opt/ansible-venv/bin/python3
+        dest: /opt/ansible-venv/bin/python
+        state: link
+        force: yes
+
+    - name: Bootstrap pip in venv
+      ansible.builtin.command: /opt/ansible-venv/bin/python3 -m pip install --upgrade pip setuptools wheel
+
+    - name: Install kubernetes in venv
+      ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade kubernetes
+  when: not venv_exists.stat.exists
 
 - name: Install Python requirements inside venv
   ansible.builtin.command: >
@@ -162,7 +168,7 @@
   environment:
     PATH: "/opt/ansible-venv/bin:/usr/bin:/bin"
 
-- name: Set ansible_python_interpreter to venv for subsequent tasks
+- name: Set ansible_python_interpreter to venv
   ansible.builtin.set_fact:
     ansible_python_interpreter: /opt/ansible-venv/bin/python
   
@@ -292,3 +298,7 @@
 
 - import_tasks: deploy_kepler.yml
   when: enable_kepler
+
+- name: Reset ansible_python_interpreter to system python3
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /usr/bin/python3
