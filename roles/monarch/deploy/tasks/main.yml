@@ -1,7 +1,7 @@
 ---
 - name: START_MONARCH_DEPLOY
   ansible.builtin.meta: noop
-  
+
 - import_tasks: persist_data.yml
 
 - name: Clone 5G-Monarch repo
@@ -10,7 +10,7 @@
     dest: "{{ repo_dest }}"
     version: "{{ branch }}"
     update: yes
-    force: yes 
+    force: yes
 
 - name: Label {{ groups['monitor_node'][0] }} for Monarch scheduling
   command: kubectl label node {{ groups['monitor_node'][0] }} monarch-node=true --overwrite
@@ -48,7 +48,7 @@
     name: kyverno-admission-controller
     namespace: kyverno
   register: kyverno_adm_deploy
-  until: 
+  until:
     - kyverno_adm_deploy.resources is defined
     - kyverno_adm_deploy.resources | length > 0
     - kyverno_adm_deploy.resources[0].status.readyReplicas | default(0) > 0
@@ -114,17 +114,127 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
+# --- Python venv preparation ---
+- name: Ensure python venv support installed
+  ansible.builtin.package:
+    name: python3-venv
+    state: present
+
+- name: Ensure ansible virtualenv exists
+  ansible.builtin.command: python3 -m venv /opt/ansible-venv
+  args:
+    creates: /opt/ansible-venv/bin/python
+
+- name: Ensure pip tools installed
+  ansible.builtin.pip:
+    name:
+      - pip
+      - setuptools
+      - wheel
+    virtualenv: /opt/ansible-venv
+    virtualenv_command: python3 -m venv
+    state: latest
+
 - name: Install Python requirements
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
-    executable: pip3
+    virtualenv: /opt/ansible-venv
 
-- name: Deploy Monarch External Components (SO, NFVO)
-  ansible.builtin.debug:
-    msg: "Starting deployment of Monarch external components..."
+# --- Deploy external Monarch components robustly ---
+- name: Stop and remove old Monarch services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  ignore_errors: yes
 
-- import_tasks: deploy_external.yml
+- name: Remove old systemd service files
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.service"
+    state: absent
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  ignore_errors: yes
 
+- name: Deploy external Monarch components (SO / NFVO)
+  ansible.builtin.command:
+    cmd: ./install.sh
+    chdir: "{{ repo_dest }}/{{ item }}"
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  environment:
+    PATH: "/opt/ansible-venv/bin:/usr/bin:/bin"
+  register: install_result
+  failed_when: false
+  changed_when: true
+
+# --- Patch systemd services to use venv Python ---
+- name: Replace Python interpreter in systemd service
+  ansible.builtin.replace:
+    path: "/etc/systemd/system/{{ item }}.service"
+    regexp: "/usr/bin/python3"
+    replace: "/opt/ansible-venv/bin/python"
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+
+- name: Add PATH environment to systemd services
+  lineinfile:
+    path: "/etc/systemd/system/{{ item }}.service"
+    insertafter: 'ExecStart=.*'
+    line: 'Environment="PATH=/opt/ansible-venv/bin:/usr/bin:/bin"'
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Restart Monarch services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: restarted
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  register: monarch_services
+  failed_when: false
+  changed_when: false
+
+- name: Wait 5s for services to stabilize
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Check Monarch services status
+  ansible.builtin.command: systemctl is-active {{ item }}
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  register: service_status
+  failed_when: false
+  changed_when: false
+
+- name: Show logs if service failed
+  ansible.builtin.command: journalctl -u {{ item.item }} -n 50 --no-pager
+  when: item.stdout != "active"
+  loop: "{{ service_status.results }}"
+  changed_when: false
+  failed_when: false
+
+- name: Fail if service did not start
+  ansible.builtin.fail:
+    msg: "Service {{ item.item }} failed to start. Check logs above."
+  when: item.stdout != "active"
+  loop: "{{ service_status.results }}"
+
+# --- MongoDB nodeSelector patch ---
 - name: Append nodeSelector for MongoDB (exact indent, end of file)
   blockinfile:
     path: "{{ repo_dest }}/data_store/mongodb/mongodb-deployment.yaml"
@@ -135,18 +245,21 @@
             nodeSelector:
               kubernetes.io/hostname: {{ groups['monitor_node'][0] }}
 
-- name: Deploy Monarch Core Components (Data, Monitoring)"
+# --- Deploy Monarch core components ---
+- name: Deploy Monarch Core Components (Data, Monitoring)
   ansible.builtin.debug:
     msg: "Starting deployment of Monarch core components..."
 
 - import_tasks: deploy_core.yml
 
+# --- Deploy Monarch NSS components ---
 - name: Deploy Monarch NSS Components (NSSDC, Prometheus)
   ansible.builtin.debug:
     msg: "Starting deployment of Monarch NSS components..."
 
 - import_tasks: deploy_nss.yml
 
+# --- Deploy Kepler (if enabled) ---
 - name: Deploy Kepler for monitoring (if enabled)
   ansible.builtin.debug:
     msg: "Starting deployment of Kepler for monitoring..."

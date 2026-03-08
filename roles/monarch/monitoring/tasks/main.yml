@@ -7,6 +7,11 @@
   when: set_gnb_monitoring
   ignore_errors: true
 
+- name: Ensure python-dotenv is installed for Monarch monitoring
+  ansible.builtin.pip:
+    name: python-dotenv
+    executable: pip3
+
 - name: Submit monitoring requests to Monarch
   ansible.builtin.shell: cd {{ repo_dest }}/request_translator && \
     python3 test_api.py --json_file requests/request_slice.json submit && \
