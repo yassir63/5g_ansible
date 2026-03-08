@@ -245,7 +245,7 @@ if [[ "$core" != "oai" && "$ran" != "ueransim" ]]; then
     echo "2) sopnode-f2"
     echo "3) sopnode-f3"
     echo "4) sopnode-w3"
-    read -rp "Enter choice [1-3]: " monitor_node_choice
+    read -rp "Enter choice [1-4]: " monitor_node_choice
     if [[ -z "${monitor_node_choice}" ]]; then
       monitor_node=${DEFAULT_MONITOR_NODE}
     else
