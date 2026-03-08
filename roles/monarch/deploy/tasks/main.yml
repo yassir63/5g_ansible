@@ -115,25 +115,32 @@
     create: yes
 
 # --- Python venv preparation ---
+# Ensure python venv support installed
 - name: Ensure python venv support installed
   ansible.builtin.package:
-    name: python3-venv
+    name:
+      - python3-venv
+      - python3-pip
     state: present
 
-- name: Ensure ansible virtualenv exists
-  ansible.builtin.command: python3 -m venv /opt/ansible-venv
-  args:
-    creates: /opt/ansible-venv/bin/python
+# Remove broken venv if exists
+- name: Remove broken ansible venv
+  ansible.builtin.file:
+    path: /opt/ansible-venv
+    state: absent
 
-- name: Ensure pip tools installed
-  ansible.builtin.pip:
-    name:
-      - pip
-      - setuptools
-      - wheel
-    virtualenv: /opt/ansible-venv
-    virtualenv_command: python3 -m venv
-    state: latest
+# Recreate clean venv
+- name: Create fresh ansible virtualenv
+  ansible.builtin.command: python3 -m venv /opt/ansible-venv
+
+# Bootstrap pip inside venv
+- name: Bootstrap pip in venv
+  ansible.builtin.command: /opt/ansible-venv/bin/python -m ensurepip --upgrade
+
+# Upgrade pip/setuptools/wheel
+- name: Upgrade pip tools in venv
+  ansible.builtin.command: >
+    /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
 
 - name: Install Python requirements
   ansible.builtin.pip:
