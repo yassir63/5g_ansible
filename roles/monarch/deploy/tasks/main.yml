@@ -145,6 +145,59 @@
 
 - import_tasks: deploy_external.yml
 
+# --- Fix systemd services to use venv Python ---
+- name: Ensure Monarch services use correct Python interpreter
+  ansible.builtin.replace:
+    path: "/etc/systemd/system/{{ item }}.service"
+    regexp: "/usr/bin/python3"
+    replace: "/opt/ansible-venv/bin/python"
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  ignore_errors: yes
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Restart Monarch services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: restarted
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  register: monarch_services
+  failed_when: false
+  changed_when: false
+
+- name: Wait 5s for services to stabilize
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Check Monarch services status
+  ansible.builtin.command: systemctl is-active {{ item }}
+  loop:
+    - service_orchestrator
+    - nfv_orchestrator
+  register: service_status
+  failed_when: false
+  changed_when: false
+
+- name: Show logs if service failed
+  ansible.builtin.command: journalctl -u {{ item.item }} -n 50 --no-pager
+  when: item.stdout != "active"
+  loop: "{{ service_status.results }}"
+  changed_when: false
+  failed_when: false
+
+- name: Fail if service did not start
+  ansible.builtin.fail:
+    msg: "Service {{ item.item }} failed to start. Check logs above."
+  when: item.stdout != "active"
+  loop: "{{ service_status.results }}"
+
 - name: Append nodeSelector for MongoDB (exact indent, end of file)
   blockinfile:
     path: "{{ repo_dest }}/data_store/mongodb/mongodb-deployment.yaml"
