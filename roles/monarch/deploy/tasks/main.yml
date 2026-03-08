@@ -114,9 +114,8 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
-# --- Python venv preparation ---
-# --- Python venv preparation (Ubuntu 22.04+ robust, idempotent) ---
-- name: Ensure system packages for Python venv are installed
+# --- Python venv preparation (Ubuntu 22.04+) ---
+- name: Ensure Python3 packages for venv are installed
   ansible.builtin.package:
     name:
       - python3-venv
@@ -124,37 +123,39 @@
     state: present
     update_cache: yes
 
-- name: Remove broken or existing ansible venv
+- name: Remove any existing ansible venv
   ansible.builtin.file:
     path: /opt/ansible-venv
     state: absent
 
-- name: Create temporary venv in /tmp (safe path)
-  ansible.builtin.command: python3 -m venv /tmp/ansible-venv-temp
-  args:
-    creates: /tmp/ansible-venv-temp/bin/activate
-
-- name: Upgrade pip, setuptools, wheel in temporary venv
-  ansible.builtin.command: /tmp/ansible-venv-temp/bin/pip install --upgrade pip setuptools wheel
-  args:
-    creates: /tmp/ansible-venv-temp/bin/wheel
-
-- name: Copy temporary venv to /opt atomically
-  ansible.builtin.command: cp -a /tmp/ansible-venv-temp /opt/ansible-venv
+- name: Create ansible venv with ensurepip attempt
+  ansible.builtin.command: python3 -m venv /opt/ansible-venv
   args:
     creates: /opt/ansible-venv/bin/python
 
-- name: Remove temporary venv
-  ansible.builtin.file:
-    path: /tmp/ansible-venv-temp
-    state: absent
+- name: Check that pip exists in the venv
+  ansible.builtin.stat:
+    path: /opt/ansible-venv/bin/pip
+  register: venv_pip_stat
 
-- name: Install Python requirements inside /opt venv
+- name: Install pip in venv if missing via system pip
+  ansible.builtin.command: /usr/bin/python3 -m pip install --upgrade pip
+  when: not venv_pip_stat.stat.exists
+
+- name: Verify pip now exists in venv
+  ansible.builtin.fail:
+    msg: "pip not found in venv after installation attempts"
+  when: not venv_pip_stat.stat.exists
+
+- name: Upgrade pip, setuptools, wheel in venv
+  ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+
+- name: Install Python requirements inside venv
   ansible.builtin.pip:
     requirements: "{{ repo_dest }}/requirements.txt"
     virtualenv: /opt/ansible-venv
     
-# --- Deploy external Monarch components robustly ---
+# --- Deploy external Monarch components ---
 - name: Stop and remove old Monarch services
   ansible.builtin.systemd:
     name: "{{ item }}"
