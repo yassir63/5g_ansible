@@ -129,9 +129,10 @@
     path: /opt/ansible-venv
     state: absent
 
-# Recreate clean venv
 - name: Create fresh ansible virtualenv
-  ansible.builtin.command: python3 -m venv /opt/ansible-venv
+  command: /usr/bin/python3 -m venv /opt/ansible-venv
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
 
 # Bootstrap pip inside venv
 - name: Bootstrap pip in venv
