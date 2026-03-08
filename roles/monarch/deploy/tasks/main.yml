@@ -115,6 +115,7 @@
     create: yes
 
 # --- Python venv preparation (robust version) ---
+# --- Python venv preparation (robust, idempotent) ---
 - name: Ensure system packages for Python venv are installed
   ansible.builtin.package:
     name:
@@ -128,17 +129,12 @@
     path: /opt/ansible-venv
     state: absent
 
-- name: Create fresh ansible virtualenv (idempotent)
-  ansible.builtin.command: python3 -m venv /opt/ansible-venv
-  args:
-    creates: /opt/ansible-venv/bin/activate
-  vars:
-    ansible_python_interpreter: /usr/bin/python3
-
-- name: Bootstrap pip in venv
-  ansible.builtin.command: /opt/ansible-venv/bin/python -m ensurepip --upgrade
-  args:
-    creates: /opt/ansible-venv/bin/pip
+- name: Create fresh ansible virtualenv (robust)
+  ansible.builtin.pip:
+    virtualenv: /opt/ansible-venv
+    virtualenv_command: /usr/bin/python3 -m venv
+    name: pip
+    state: present
 
 - name: Upgrade pip, setuptools, wheel in venv
   ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
