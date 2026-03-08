@@ -128,26 +128,19 @@
     path: /opt/ansible-venv
     state: absent
 
-- name: Create ansible venv with ensurepip attempt
-  ansible.builtin.command: python3 -m venv /opt/ansible-venv
+- name: Create ansible venv
+  ansible.builtin.command: python3 -m venv --copies /opt/ansible-venv
   args:
-    creates: /opt/ansible-venv/bin/python
+    creates: /opt/ansible-venv/bin/python3
 
-- name: Check that pip exists in the venv
-  ansible.builtin.stat:
-    path: /opt/ansible-venv/bin/pip
-  register: venv_pip_stat
+- name: Symlink python -> python3 in venv
+  ansible.builtin.file:
+    src: /opt/ansible-venv/bin/python3
+    dest: /opt/ansible-venv/bin/python
+    state: link
+    force: yes
 
-- name: Install pip in venv if missing via system pip
-  ansible.builtin.command: /usr/bin/python3 -m pip install --upgrade pip
-  when: not venv_pip_stat.stat.exists
-
-- name: Verify pip now exists in venv
-  ansible.builtin.fail:
-    msg: "pip not found in venv after installation attempts"
-  when: not venv_pip_stat.stat.exists
-
-- name: Upgrade pip, setuptools, wheel in venv
+- name: Upgrade pip in venv
   ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
 
 - name: Install Python requirements inside venv
