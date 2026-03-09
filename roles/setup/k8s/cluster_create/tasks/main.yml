@@ -345,23 +345,32 @@
       - python3-venv
       - python3-pip
       - python3-setuptools
+      - python3-wheel
       - curl
     state: present
     update_cache: yes
   become: true
 
-- name: Create Python venv for Kubernetes tasks (idempotent)
-  ansible.builtin.command: python3 -m venv /opt/ansible-venv
-  args:
-    creates: /opt/ansible-venv/bin/activate
+- name: Remove any existing ansible venv
+  ansible.builtin.file:
+    path: /opt/ansible-venv
+    state: absent
   become: true
 
-- name: Upgrade ensurepip in venv
-  ansible.builtin.command: /opt/ansible-venv/bin/python -m ensurepip --upgrade
+- name: Create Python venv for Kubernetes tasks
+  ansible.builtin.command: /usr/bin/python3 -m venv /opt/ansible-venv
+  become: true
+
+- name: Symlink python -> python3 in venv
+  ansible.builtin.file:
+    src: /opt/ansible-venv/bin/python3
+    dest: /opt/ansible-venv/bin/python
+    state: link
+    force: yes
   become: true
 
 - name: Bootstrap pip, setuptools and wheel in venv
-  ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+  ansible.builtin.command: /opt/ansible-venv/bin/python3 -m pip install --upgrade pip setuptools wheel
   become: true
 
 - name: Install kubernetes Python module in venv
@@ -530,3 +539,7 @@
     mode: '0644'
   delegate_to: localhost
   run_once: true
+
+- name: Reset ansible_python_interpreter to system python3
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /usr/bin/python3

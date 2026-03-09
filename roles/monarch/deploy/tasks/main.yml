@@ -2,6 +2,10 @@
 - name: START_MONARCH_DEPLOY
   ansible.builtin.meta: noop
 
+- name: Set ansible_python_interpreter to venv
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/ansible-venv/bin/python
+
 - import_tasks: persist_data.yml
 
 - name: Clone 5G-Monarch repo
@@ -114,40 +118,61 @@
     line: 'NODE_IP="{{ monarch_node_ip }}"'
     create: yes
 
-# --- Python venv preparation (robust version) ---
-# --- Python venv preparation (robust, idempotent) ---
-- name: Ensure system packages for Python venv are installed
+# --- Python venv preparation ---
+- name: Reset ansible_python_interpreter to system python3
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /usr/bin/python3
+
+- name: Ensure Python tooling is available
   ansible.builtin.package:
     name:
       - python3-venv
       - python3-pip
+      - python3-setuptools
+      - python3-wheel
     state: present
     update_cache: yes
 
-- name: Remove broken or existing ansible venv
-  ansible.builtin.file:
-    path: /opt/ansible-venv
-    state: absent
+- name: Check if valid venv exists
+  ansible.builtin.stat:
+    path: /opt/ansible-venv/bin/pip
+  register: venv_exists
 
-- name: Create fresh ansible virtualenv (robust)
-  ansible.builtin.pip:
-    virtualenv: /opt/ansible-venv
-    virtualenv_command: /usr/bin/python3 -m venv
-    name: pip
-    state: present
+- name: Recreate venv if missing or broken
+  block:
+    - name: Remove broken venv
+      ansible.builtin.file:
+        path: /opt/ansible-venv
+        state: absent
 
-- name: Upgrade pip, setuptools, wheel in venv
-  ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
-  args:
-    creates: /opt/ansible-venv/bin/wheel
+    - name: Create ansible venv
+      ansible.builtin.command: /usr/bin/python3 -m venv /opt/ansible-venv
+
+    - name: Symlink python -> python3 in venv
+      ansible.builtin.file:
+        src: /opt/ansible-venv/bin/python3
+        dest: /opt/ansible-venv/bin/python
+        state: link
+        force: yes
+
+    - name: Bootstrap pip in venv
+      ansible.builtin.command: /opt/ansible-venv/bin/python3 -m pip install --upgrade pip setuptools wheel
+
+    - name: Install kubernetes in venv
+      ansible.builtin.command: /opt/ansible-venv/bin/pip install --upgrade kubernetes
+  when: not venv_exists.stat.exists
 
 - name: Install Python requirements inside venv
-  ansible.builtin.pip:
-    requirements: "{{ repo_dest }}/requirements.txt"
-    virtualenv: /opt/ansible-venv
+  ansible.builtin.command: >
+    /opt/ansible-venv/bin/pip install -r {{ repo_dest }}/requirements.txt
+  environment:
+    PATH: "/opt/ansible-venv/bin:/usr/bin:/bin"
 
-
-# --- Deploy external Monarch components robustly ---
+- name: Set ansible_python_interpreter to venv
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/ansible-venv/bin/python
+  
+# --- Deploy external Monarch components ---
 - name: Stop and remove old Monarch services
   ansible.builtin.systemd:
     name: "{{ item }}"
@@ -273,3 +298,7 @@
 
 - import_tasks: deploy_kepler.yml
   when: enable_kepler
+
+- name: Reset ansible_python_interpreter to system python3
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /usr/bin/python3
