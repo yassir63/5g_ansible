@@ -1,0 +1,176 @@
+---
+- name: Discover AMF pods for churn pcap capture
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ churn_amf_pcap_namespace }}"
+  register: churn_amf_pcap_pods
+
+- name: Build AMF pod list for churn pcap capture
+  ansible.builtin.set_fact:
+    churn_amf_pcap_pod_list: >-
+      {{
+        churn_amf_pcap_pods.resources
+        | selectattr('metadata.name', 'search', 'amf')
+        | list
+      }}
+
+- name: Fail if no AMF pod found for churn pcap capture
+  ansible.builtin.fail:
+    msg: "No AMF pod found in namespace {{ churn_amf_pcap_namespace }} for churn pcap capture."
+  when: churn_amf_pcap_pod_list | length == 0
+
+- name: Inject AMF pcap ephemeral container
+  vars:
+    pod_name: "{{ item.metadata.name }}"
+    target_container_name: "{{ item.spec.containers[0].name }}"
+    existing_ephemeral: "{{ item.spec.ephemeralContainers | default([]) }}"
+    existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
+    churn_amf_pcap_ephemeral_container:
+      name: "{{ churn_amf_pcap_container_name }}"
+      image: "{{ churn_amf_pcap_image }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - while true; do sleep 3600; done
+      targetContainerName: "{{ target_container_name }}"
+      stdin: true
+      tty: true
+      securityContext:
+        privileged: true
+        allowPrivilegeEscalation: true
+        runAsUser: 0
+        runAsNonRoot: false
+        capabilities:
+          add:
+            - NET_ADMIN
+            - NET_RAW
+            - SYS_ADMIN
+    churn_amf_pcap_patch:
+      metadata:
+        name: "{{ pod_name }}"
+      spec:
+        ephemeralContainers: "{{ existing_ephemeral + [churn_amf_pcap_ephemeral_container] }}"
+  ansible.builtin.shell: |
+    kubectl -n {{ churn_amf_pcap_namespace }} patch pod {{ pod_name }} \
+      --subresource='ephemeralcontainers' \
+      --type='strategic' \
+      -p '{{ churn_amf_pcap_patch | to_json }}'
+  args:
+    executable: /bin/bash
+  when: churn_amf_pcap_container_name not in existing_ephemeral_names
+  loop: "{{ churn_amf_pcap_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: churn_amf_pcap_injection
+  changed_when: true
+
+- name: Report existing AMF pcap ephemeral container
+  ansible.builtin.debug:
+    msg: >-
+      AMF pcap container {{ churn_amf_pcap_container_name }} already present in pod
+      {{ item.metadata.name }}, reusing it.
+  when: churn_amf_pcap_container_name in ((item.spec.ephemeralContainers | default([])) | map(attribute='name') | list)
+  loop: "{{ churn_amf_pcap_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Wait for AMF pcap container to be running
+  ansible.builtin.shell: |
+    set -eu
+    ns="{{ churn_amf_pcap_namespace }}"
+    pod="{{ item.metadata.name }}"
+    container="{{ churn_amf_pcap_container_name }}"
+    deadline=$(( $(date +%s) + 120 ))
+    while true; do
+      state="$(
+        kubectl -n "$ns" get pod "$pod" \
+          -o jsonpath='{range .status.ephemeralContainerStatuses[*]}{.name}{"="}{.state.running.startedAt}{"\n"}{end}' \
+          2>/dev/null \
+          | awk -F= -v target="$container" '$1==target && $2!="" {print "running"; exit}'
+      )"
+      if [ "$state" = "running" ]; then
+        exit 0
+      fi
+      if [ "$(date +%s)" -ge "$deadline" ]; then
+        echo "Timed out waiting for $container to run in pod $pod" >&2
+        exit 1
+      fi
+      sleep 2
+    done
+  args:
+    executable: /bin/bash
+  loop: "{{ churn_amf_pcap_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  changed_when: false
+
+- name: Detect packet capture tool in AMF pcap container
+  ansible.builtin.shell: |
+    set -eu
+    kubectl -n "{{ churn_amf_pcap_namespace }}" exec "{{ item.metadata.name }}" -c "{{ churn_amf_pcap_container_name }}" -- sh -c '
+      if command -v tcpdump >/dev/null 2>&1; then
+        echo tcpdump
+      elif command -v tshark >/dev/null 2>&1; then
+        echo tshark
+      else
+        echo "No tcpdump or tshark found in {{ churn_amf_pcap_container_name }}" >&2
+        exit 42
+      fi
+    '
+  args:
+    executable: /bin/bash
+  loop: "{{ churn_amf_pcap_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: churn_amf_pcap_tool_detection
+  changed_when: false
+
+- name: Start AMF pcap capture during churn
+  ansible.builtin.shell: |
+    set -eu
+    ns="{{ churn_amf_pcap_namespace }}"
+    pod="{{ item.item.metadata.name }}"
+    tool="{{ item.stdout | trim }}"
+    safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.-' '_')"
+    kubectl -n "$ns" exec "$pod" -c "{{ churn_amf_pcap_container_name }}" -- sh -c '
+      run_dir="$1"
+      iface="$2"
+      snaplen="$3"
+      capture_filter="$4"
+      capture_tool="$5"
+      capture_base="$6"
+      mkdir -p "$run_dir"
+      pid_file="$run_dir/${capture_base}.pid"
+      log_file="$run_dir/${capture_base}.log"
+      pcap_file="$run_dir/${capture_base}.pcap"
+      if [ -f "$pid_file" ]; then
+        kill -INT "$(cat "$pid_file")" 2>/dev/null || true
+        sleep 2
+      fi
+      : > "$log_file"
+      if [ "$capture_tool" = "tcpdump" ]; then
+        nohup tcpdump \
+          -i "$iface" \
+          -s "$snaplen" \
+          -U \
+          -w "$pcap_file" \
+          "$capture_filter" \
+          >> "$log_file" 2>&1 &
+      else
+        nohup tshark \
+          -i "$iface" \
+          -s "$snaplen" \
+          -f "$capture_filter" \
+          -w "$pcap_file" \
+          >> "$log_file" 2>&1 &
+      fi
+      echo "$!" > "$pid_file"
+    ' sh "/tmp/{{ churn_run_id }}_amf_pcap" "{{ churn_amf_pcap_iface }}" "{{ churn_amf_pcap_snaplen }}" "{{ churn_amf_pcap_filter }}" "$tool" "amf_${safe_pod}_{{ churn_amf_pcap_iface }}"
+  args:
+    executable: /bin/bash
+  loop: "{{ churn_amf_pcap_tool_detection.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.metadata.name if item.item is defined else 'unknown' }}"
+  changed_when: true

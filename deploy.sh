@@ -19,6 +19,9 @@ REQUESTED_PROMETHEUS_URL=""
 REQUESTED_EXPERIMENT_DURATION=""
 REQUESTED_VALIDATION_TCP_BITRATE=""
 REQUESTED_VALIDATION_MTU_PING_SIZE=""
+REQUESTED_CHURN_SUBSCRIBERS=""
+REQUESTED_CHURN_COUNTS=""
+CHURN_RUNS_VIA_DEPLOY=false
 
 usage() {
     echo "Usage: $0 [options]"
@@ -47,6 +50,9 @@ usage() {
     echo "--duration <seconds>     Override TCP scenario/validation traffic duration"
     echo "--validation-tcp-bitrate <rate>  Override validation TCP cap, e.g. 30Mb or 0"
     echo "--validation-mtu-ping-size <bytes>  Override v06 ICMP payload size; 1472 gives a 1500-byte IPv4 packet"
+    echo "--ueransim-churn         Deploy/run the Open5GS UERANSIM attach/detach churn scenario"
+    echo "--churn-subscribers <n> Number of generated churn subscribers"
+    echo "--churn-counts <list>   Space-separated waves, e.g. \"10 50 100 200\""
     echo "-h, --help               Show help"
 }
 
@@ -152,6 +158,20 @@ parse_args() {
           REQUESTED_VALIDATION_SCENARIOS="${1:-all}"
           ;;
 
+        --ueransim-churn)
+          REQUESTED_EXPERIMENT_MODE="ueransim-churn"
+          ;;
+
+        --churn-subscribers)
+          shift
+          REQUESTED_CHURN_SUBSCRIBERS="${1:-}"
+          ;;
+
+        --churn-counts)
+          shift
+          REQUESTED_CHURN_COUNTS="${1:-}"
+          ;;
+
         --target-server)
           shift
           REQUESTED_TARGET_SERVER="${1:-}"
@@ -204,6 +224,37 @@ normalize_validation_tcp_bitrate() {
     fi
 }
 
+extra_var_value() {
+    local key="$1"
+    local ev clean_ev
+    for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
+      clean_ev="${ev#--}"
+      if [[ "$clean_ev" == "$key="* ]]; then
+        printf '%s' "${clean_ev#*=}"
+        return 0
+      fi
+    done
+    return 1
+}
+
+extra_var_defined() {
+    extra_var_value "$1" >/dev/null
+}
+
+append_cli_extra_vars() {
+    local ev clean_ev churn_counts_value
+    for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
+      [[ -z "$ev" ]] && continue
+      clean_ev="${ev#--}"
+      if [[ "$clean_ev" == "ueransim_churn_counts="* ]]; then
+        churn_counts_value="${clean_ev#*=}"
+        ANSIBLE_EXTRA_ARGS+=(-e "{\"ueransim_churn_counts\":\"${churn_counts_value}\"}")
+      else
+        ANSIBLE_EXTRA_ARGS+=(-e "$clean_ev")
+      fi
+    done
+}
+
 ############################
 # FUNCTIONS
 ############################
@@ -229,6 +280,12 @@ init_defaults_and_banner() {
     DEFAULT_PLATFORM="r2lab"
     DEFAULT_RU="n320"
     DEFAULT_LIST_UE="qhat01"
+    DEFAULT_UERANSIM_CHURN_REPO_URL="https://github.com/yassir63/open5gs-k8s.git"
+    DEFAULT_UERANSIM_CHURN_REPO_BRANCH="ueransim-churn"
+    DEFAULT_UERANSIM_CHURN_SUBSCRIBERS="200"
+    DEFAULT_UERANSIM_CHURN_COUNTS="10 50 100 200"
+    DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS="60"
+    DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS="30"
 
     PROFILE_5G="${PROFILE_5G:-$DEFAULT_PROFILE_5G}"
   
@@ -366,14 +423,18 @@ collect_user_inputs() {
     fi
 
     # Select Monitoring
-    # Ask whenever RAN is not UERANSIM.
-    # For open5gs: ask for a monitoring node and enable monarch.
-    # For all other cores: enable monitoring without monarch and without asking for a node.
+    # Open5GS supports Monarch monitoring with both real RANs and UERANSIM.
+    # Other cores keep the existing behavior and are asked only for non-UERANSIM RANs.
+    # For Open5GS, ask for a monitoring node and enable Monarch.
+    # For other supported combinations, enable monitoring without Monarch.
     monitoring_enabled=false
     monarch=false
     monitor_node=""
-    if [[ "$ran" != "ueransim" ]]; then
+    if [[ "$core" == "open5gs" || "$ran" != "ueransim" ]]; then
       echo ""
+      if [[ "$core" == "open5gs" && "$ran" == "ueransim" ]]; then
+        echo "Monitoring is required for UERANSIM churn CPU, memory, and UE-mapper measurements."
+      fi
       read -rp "Do you want to deploy monitoring? [y/N]: " mon_choice
       if [[ "$mon_choice" =~ ^[Yy]$ ]]; then
         monitoring_enabled=true
@@ -510,6 +571,8 @@ EOF
       chmod 600 "$R2LAB_CONFIG"
     fi
     cat > "$DEPLOYMENT_ENV" <<EOF
+core="$core"
+ran="$ran"
 core_node="$core_node"
 ran_node="$ran_node"
 platform="$platform"
@@ -544,6 +607,39 @@ optional_scenarios() {
     validation_duration_override=""
     validation_tcp_bitrate_override=""
     validation_mtu_ping_size_override=""
+    requires_iperf_server=true
+    ueransim_churn_repo_url="${DEFAULT_UERANSIM_CHURN_REPO_URL}"
+    ueransim_churn_repo_branch="${DEFAULT_UERANSIM_CHURN_REPO_BRANCH}"
+    ueransim_churn_subscribers="${DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}"
+    ueransim_churn_counts="${DEFAULT_UERANSIM_CHURN_COUNTS}"
+    ueransim_churn_settle_seconds="${DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}"
+    ueransim_churn_between_seconds="${DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}"
+
+    if churn_override="$(extra_var_value ueransim_churn_repo_url)"; then
+      ueransim_churn_repo_url="$churn_override"
+    fi
+    if churn_override="$(extra_var_value ueransim_churn_repo_branch)"; then
+      ueransim_churn_repo_branch="$churn_override"
+    fi
+    if churn_override="$(extra_var_value ueransim_churn_subscribers)"; then
+      ueransim_churn_subscribers="$churn_override"
+    fi
+    if churn_override="$(extra_var_value ueransim_churn_counts)"; then
+      ueransim_churn_counts="$churn_override"
+    fi
+    if churn_override="$(extra_var_value ueransim_churn_settle_seconds)"; then
+      ueransim_churn_settle_seconds="$churn_override"
+    fi
+    if churn_override="$(extra_var_value ueransim_churn_between_seconds)"; then
+      ueransim_churn_between_seconds="$churn_override"
+    fi
+    if [[ -n "${REQUESTED_CHURN_SUBSCRIBERS:-}" ]]; then
+      ueransim_churn_subscribers="$REQUESTED_CHURN_SUBSCRIBERS"
+    fi
+    if [[ -n "${REQUESTED_CHURN_COUNTS:-}" ]]; then
+      ueransim_churn_counts="$REQUESTED_CHURN_COUNTS"
+    fi
+
     TCP_PAPER_UES=("qhat01" "qhat02" "qhat03" "qhat21" "qhat22")
     TCP_PAPER_SCENARIOS=(
       "01_clean_near_baseline"
@@ -573,7 +669,7 @@ optional_scenarios() {
     )
 
     if [[ -n "${REQUESTED_EXPERIMENT_MODE:-}" ]]; then
-      if [[ "$platform" != "r2lab" ]]; then
+      if [[ "$REQUESTED_EXPERIMENT_MODE" != "ueransim-churn" && "$platform" != "r2lab" ]]; then
         echo "❌ Automated paper/validation workflows currently require platform=r2lab."
         exit 1
       fi
@@ -691,21 +787,58 @@ optional_scenarios() {
           echo "Latency validation selected; ensuring required UEs are in inventory: ${validation_required_ues[*]}"
           ;;
 
+        "ueransim-churn")
+          if [[ "$core" != "open5gs" || "$ran" != "ueransim" ]]; then
+            echo "❌ UERANSIM churn requires core=open5gs and ran=ueransim."
+            exit 1
+          fi
+          scenario="UERANSIM attach/detach churn"
+          requires_iperf_server=false
+          monitoring_enabled=true
+          monarch=true
+          monitor_node="${monitor_node:-$DEFAULT_MONITOR_NODE}"
+          if [[ ! "$ueransim_churn_subscribers" =~ ^[0-9]+$ || "$ueransim_churn_subscribers" -lt 1 ]]; then
+            echo "❌ Invalid churn subscriber count: $ueransim_churn_subscribers"
+            exit 1
+          fi
+          if [[ ! "$ueransim_churn_counts" =~ ^[0-9]+([[:space:]]+[0-9]+)*$ ]]; then
+            echo "❌ Invalid churn counts: $ueransim_churn_counts"
+            exit 1
+          fi
+          churn_max_count=0
+          for churn_count in $ueransim_churn_counts; do
+            if (( churn_count > churn_max_count )); then
+              churn_max_count="$churn_count"
+            fi
+          done
+          if (( churn_max_count > ueransim_churn_subscribers )); then
+            echo "❌ Largest churn wave (${churn_max_count}) exceeds generated subscribers (${ueransim_churn_subscribers})."
+            exit 1
+          fi
+          echo "UERANSIM churn selected."
+          echo "Monitoring node: ${monitor_node}"
+          echo "Kopf controller, packet-pairer, and eBPF latency probes: disabled"
+          echo "Subscribers: ${ueransim_churn_subscribers}"
+          echo "Attach counts: ${ueransim_churn_counts}"
+          ;;
+
         *)
           echo "❌ Unknown requested experiment mode: ${REQUESTED_EXPERIMENT_MODE}"
           exit 1
           ;;
       esac
 
-      iperf_server_node="${REQUESTED_TARGET_SERVER:-sopnode-w3}"
-      echo "iperf server node: ${iperf_server_node}"
-      if [[ "${iperf_server_node}" == "${core_node}" || \
-            "${iperf_server_node}" == "${ran_node}" || \
-            ( -n "${monitor_node}" && "${iperf_server_node}" == "${monitor_node}" ) ]]; then
-        echo "iperf server already part of inventory, no need to add it."
-      else
-        DISTINCT_IPERF_SERVER=true
-        echo "iperf server ${iperf_server_node} will be added in the inventory."
+      if [[ "$requires_iperf_server" == true ]]; then
+        iperf_server_node="${REQUESTED_TARGET_SERVER:-sopnode-w3}"
+        echo "iperf server node: ${iperf_server_node}"
+        if [[ "${iperf_server_node}" == "${core_node}" || \
+              "${iperf_server_node}" == "${ran_node}" || \
+              ( -n "${monitor_node}" && "${iperf_server_node}" == "${monitor_node}" ) ]]; then
+          echo "iperf server already part of inventory, no need to add it."
+        else
+          DISTINCT_IPERF_SERVER=true
+          echo "iperf server ${iperf_server_node} will be added in the inventory."
+        fi
       fi
 
       cat >> "$DEPLOYMENT_ENV" <<EOF
@@ -720,6 +853,13 @@ paper_duration_override="${REQUESTED_EXPERIMENT_DURATION:-}"
 validation_duration_override="${REQUESTED_EXPERIMENT_DURATION:-}"
 validation_tcp_bitrate_override="${REQUESTED_VALIDATION_TCP_BITRATE:-${VALIDATION_TCP_BITRATE:-}}"
 validation_mtu_ping_size_override="${REQUESTED_VALIDATION_MTU_PING_SIZE:-${VALIDATION_MTU_PING_SIZE:-}}"
+requires_iperf_server="$requires_iperf_server"
+ueransim_churn_repo_url="$ueransim_churn_repo_url"
+ueransim_churn_repo_branch="$ueransim_churn_repo_branch"
+ueransim_churn_subscribers="$ueransim_churn_subscribers"
+ueransim_churn_counts="$ueransim_churn_counts"
+ueransim_churn_settle_seconds="$ueransim_churn_settle_seconds"
+ueransim_churn_between_seconds="$ueransim_churn_between_seconds"
 EOF
       return
     fi
@@ -745,6 +885,12 @@ EOF
       fi
       if [[ "$platform" == "r2lab" ]]; then
         options+=("Latency validation pipeline")
+      fi
+      if [[ "$core" == "open5gs" && "$ran" == "ueransim" ]]; then
+        options+=("UERANSIM attach/detach churn")
+      else
+        echo "Note: UERANSIM churn is available only with Open5GS core and UERANSIM RAN."
+        echo "Current selection: core=${core}, ran=${ran}"
       fi
       
       for i in "${!options[@]}"; do
@@ -929,49 +1075,130 @@ EOF
             echo "Validation TCP bitrate cap normalized to: ${validation_tcp_bitrate_override}"
           fi
           read -rp "MTU-sized ICMP ping payload for v06 in bytes [default: 1472, IPv4 packet 1500]: " validation_mtu_ping_size_input
-          if [[ -n "${validation_mtu_ping_size_input}" ]]; then
-            if [[ "$validation_mtu_ping_size_input" =~ ^[0-9]+$ ]]; then
-              validation_mtu_ping_size_override="$validation_mtu_ping_size_input"
-            else
-              echo "❌ Invalid MTU-sized ping payload: $validation_mtu_ping_size_input"
-              exit 1
-            fi
-          fi
-          DEFAULT_IPERF_SERVER_NODE="sopnode-w3"
-        else
-          DEFAULT_IPERF_SERVER_NODE=${core_node}
-        fi
-        echo "By default, iperf will run between UEs and the selected bare-metal target server, i.e., ${DEFAULT_IPERF_SERVER_NODE}"
-        echo ""
-        echo "Select the target node to deploy iperf servers : by default, ${DEFAULT_IPERF_SERVER_NODE}:"
-        echo "1) sopnode-f1"
-        echo "2) sopnode-f2"
-        echo "3) sopnode-f3"
-        echo "4) sopnode-w3"
-        read -rp "Enter choice [1-4]: " iperf_server_choice
-        if [[ -z "${iperf_server_choice}" ]]; then
-          iperf_server_node=${DEFAULT_IPERF_SERVER_NODE}
-        else
-          case "${iperf_server_choice}" in
-            1) iperf_server_node="sopnode-f1" ;;
-            2) iperf_server_node="sopnode-f2" ;;
-            3) iperf_server_node="sopnode-f3" ;;
-            4) iperf_server_node="sopnode-w3" ;;
-            *) echo "❌ Invalid iperf target server choice"; exit 1 ;;
-          esac
-        fi
+	          if [[ -n "${validation_mtu_ping_size_input}" ]]; then
+	            if [[ "$validation_mtu_ping_size_input" =~ ^[0-9]+$ ]]; then
+	              validation_mtu_ping_size_override="$validation_mtu_ping_size_input"
+	            else
+	              echo "❌ Invalid MTU-sized ping payload: $validation_mtu_ping_size_input"
+	              exit 1
+	            fi
+	          fi
+	          DEFAULT_IPERF_SERVER_NODE="sopnode-w3"
+	        elif [[ "$scenario" == "UERANSIM attach/detach churn" ]]; then
+	          requires_iperf_server=false
+	          echo ""
+	          echo "UERANSIM churn selected."
+	          echo "This will deploy Open5GS from ${DEFAULT_UERANSIM_CHURN_REPO_URL} branch ${DEFAULT_UERANSIM_CHURN_REPO_BRANCH}"
+	          echo "and run attach/detach waves against the ueransim-ue-churn StatefulSet."
+	          echo "Each UE container pauses immediately before nr-ue, then the full wave is released as one attach burst."
+	          echo "It will collect Prometheus CPU/memory overhead, pod logs, and UE-mapper API snapshots."
+	          echo "Kopf controller, packet-pairer, and eBPF latency probes are disabled for churn."
+	          echo ""
 
-        echo "iperf server node: ${iperf_server_node}"
-        if [[ "${iperf_server_node}" == "${core_node}" || \
-              "${iperf_server_node}" == "${ran_node}" || \
-              ( -n "${monitor_node}" && "${iperf_server_node}" == "${monitor_node}" ) ]]; then
-          echo "iperf server already part of inventory, no need to add it."
-        else
-          DISTINCT_IPERF_SERVER=true
-          echo "iperf server ${iperf_server_node} will be added in the inventory."
-        fi
-      fi
-    fi
+	          if [[ "${monitoring_enabled:-false}" != true || -z "${monitor_node:-}" ]]; then
+	            monitoring_enabled=true
+	            monarch=true
+	            echo "UERANSIM churn overhead needs a monitoring node for Prometheus/cAdvisor."
+	            echo "Select the node to deploy Monitoring on (default: ${DEFAULT_MONITOR_NODE}):"
+	            echo "1) sopnode-f1"
+	            echo "2) sopnode-f2"
+	            echo "3) sopnode-f3"
+	            echo "4) sopnode-w3"
+	            read -rp "Enter choice [1-4]: " churn_monitor_node_choice
+	            if [[ -z "${churn_monitor_node_choice}" ]]; then
+	              monitor_node=${DEFAULT_MONITOR_NODE}
+	            else
+	              case "${churn_monitor_node_choice}" in
+	                1) monitor_node="sopnode-f1" ;;
+	                2) monitor_node="sopnode-f2" ;;
+	                3) monitor_node="sopnode-f3" ;;
+	                4) monitor_node="sopnode-w3" ;;
+	                *) echo "❌ Invalid Monitoring node"; exit 1 ;;
+	              esac
+	            fi
+	          fi
+
+	          read -rp "Number of churn subscribers to create [default: ${DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}]: " churn_subscribers_input
+	          ueransim_churn_subscribers="${churn_subscribers_input:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}"
+	          if [[ ! "$ueransim_churn_subscribers" =~ ^[0-9]+$ || "$ueransim_churn_subscribers" -lt 1 ]]; then
+	            echo "❌ Invalid churn subscriber count: $ueransim_churn_subscribers"
+	            exit 1
+	          fi
+
+	          read -rp "UE attach counts to test [default: ${DEFAULT_UERANSIM_CHURN_COUNTS}]: " churn_counts_input
+	          ueransim_churn_counts="${churn_counts_input:-$DEFAULT_UERANSIM_CHURN_COUNTS}"
+	          if [[ ! "$ueransim_churn_counts" =~ ^[0-9[:space:]]+$ ]]; then
+	            echo "❌ Invalid churn counts: $ueransim_churn_counts"
+	            exit 1
+	          fi
+
+	          read -rp "Seconds to hold each attached wave [default: ${DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}]: " churn_settle_input
+	          ueransim_churn_settle_seconds="${churn_settle_input:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}"
+	          if [[ ! "$ueransim_churn_settle_seconds" =~ ^[0-9]+$ ]]; then
+	            echo "❌ Invalid settle seconds: $ueransim_churn_settle_seconds"
+	            exit 1
+	          fi
+
+	          read -rp "Seconds to wait between waves after detach [default: ${DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}]: " churn_between_input
+	          ueransim_churn_between_seconds="${churn_between_input:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}"
+	          if [[ ! "$ueransim_churn_between_seconds" =~ ^[0-9]+$ ]]; then
+	            echo "❌ Invalid between-wave seconds: $ueransim_churn_between_seconds"
+	            exit 1
+	          fi
+
+	          churn_max_count=0
+	          for churn_count in $ueransim_churn_counts; do
+	            if (( churn_count > churn_max_count )); then
+	              churn_max_count="$churn_count"
+	            fi
+	          done
+	          if (( churn_max_count > ueransim_churn_subscribers )); then
+	            echo "❌ Largest churn wave (${churn_max_count}) exceeds generated subscribers (${ueransim_churn_subscribers})."
+	            exit 1
+	          fi
+
+	          echo ""
+	          echo "Confirmed UERANSIM churn configuration:"
+	          echo "  Subscribers: ${ueransim_churn_subscribers}"
+	          echo "  Attach waves: ${ueransim_churn_counts}"
+	          echo "  Hold each wave: ${ueransim_churn_settle_seconds}s"
+	          echo "  Wait after detach: ${ueransim_churn_between_seconds}s"
+	        else
+	          DEFAULT_IPERF_SERVER_NODE=${core_node}
+	        fi
+	        if [[ "$requires_iperf_server" == true ]]; then
+	          echo "By default, iperf will run between UEs and the selected bare-metal target server, i.e., ${DEFAULT_IPERF_SERVER_NODE}"
+	          echo ""
+	          echo "Select the target node to deploy iperf servers : by default, ${DEFAULT_IPERF_SERVER_NODE}:"
+	          echo "1) sopnode-f1"
+	          echo "2) sopnode-f2"
+	          echo "3) sopnode-f3"
+	          echo "4) sopnode-w3"
+	          read -rp "Enter choice [1-4]: " iperf_server_choice
+	          if [[ -z "${iperf_server_choice}" ]]; then
+	            iperf_server_node=${DEFAULT_IPERF_SERVER_NODE}
+	          else
+	            case "${iperf_server_choice}" in
+	              1) iperf_server_node="sopnode-f1" ;;
+	              2) iperf_server_node="sopnode-f2" ;;
+	              3) iperf_server_node="sopnode-f3" ;;
+	              4) iperf_server_node="sopnode-w3" ;;
+	              *) echo "❌ Invalid iperf target server choice"; exit 1 ;;
+	            esac
+	          fi
+
+	          echo "iperf server node: ${iperf_server_node}"
+	          if [[ "${iperf_server_node}" == "${core_node}" || \
+	                "${iperf_server_node}" == "${ran_node}" || \
+	                ( -n "${monitor_node}" && "${iperf_server_node}" == "${monitor_node}" ) ]]; then
+	            echo "iperf server already part of inventory, no need to add it."
+	          else
+	            DISTINCT_IPERF_SERVER=true
+	            echo "iperf server ${iperf_server_node} will be added in the inventory."
+	          fi
+	        fi
+	      fi
+	    fi
     cat >> "$DEPLOYMENT_ENV" <<EOF
 run_scenario="$run_scenario"
 scenario="$scenario"
@@ -984,6 +1211,13 @@ paper_duration_override="$paper_duration_override"
 validation_duration_override="$validation_duration_override"
 validation_tcp_bitrate_override="$validation_tcp_bitrate_override"
 validation_mtu_ping_size_override="$validation_mtu_ping_size_override"
+requires_iperf_server="$requires_iperf_server"
+ueransim_churn_repo_url="$ueransim_churn_repo_url"
+ueransim_churn_repo_branch="$ueransim_churn_repo_branch"
+ueransim_churn_subscribers="$ueransim_churn_subscribers"
+ueransim_churn_counts="$ueransim_churn_counts"
+ueransim_churn_settle_seconds="$ueransim_churn_settle_seconds"
+ueransim_churn_between_seconds="$ueransim_churn_between_seconds"
 EOF
 }
 
@@ -1133,9 +1367,13 @@ print_summary() {
       echo "  GAIN: $GAIN"
       echo "  NOISE_BANDWIDTH: $NOISE_BANDWIDTH"
     fi
-    if [[ "${run_scenario}" == true ]]; then
-      echo "Iperf Test: enabled"
-      echo "  Scenario: $scenario"
+	    if [[ "${run_scenario}" == true ]]; then
+	      if [[ "$scenario" == "UERANSIM attach/detach churn" ]]; then
+	        echo "Scenario:    enabled"
+	      else
+	        echo "Iperf Test: enabled"
+	      fi
+	      echo "  Scenario: $scenario"
       case "$scenario" in
         "Iperf R2lab scenario without interference")
           echo "Will run iperf in a sequential way on ${R2LAB_UES[0]} for 30 seconds in downlink then uplink (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
@@ -1152,17 +1390,31 @@ print_summary() {
           [[ -n "${paper_duration_override:-}" ]] && echo "  Duration override: ${paper_duration_override}s"
           [[ -n "${paper_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${paper_prometheus_url}"
         ;;
-        "Latency validation pipeline")
-          echo "Will run latency validation scenario(s): ${validation_scenario_names:-all}. UEs are left connected at the end."
-          echo "Artifacts will include iperf JSON logs, 1s Prometheus CSV, optional pcaps, and experiment_analysis.ipynb."
-          [[ -n "${validation_duration_override:-}" ]] && echo "  Duration override: ${validation_duration_override}s"
-          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  TCP bitrate override: ${validation_tcp_bitrate_override}"
-          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  v06 MTU-sized ping payload override: ${validation_mtu_ping_size_override} bytes"
-          [[ -n "${validation_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${validation_prometheus_url}"
-        ;;
-      esac
-      echo "iperf server will run on the bare-metal ${iperf_server_node} server."
-    fi
+	        "Latency validation pipeline")
+	          echo "Will run latency validation scenario(s): ${validation_scenario_names:-all}. UEs are left connected at the end."
+	          echo "Artifacts will include iperf JSON logs, 1s Prometheus CSV, optional pcaps, and experiment_analysis.ipynb."
+	          [[ -n "${validation_duration_override:-}" ]] && echo "  Duration override: ${validation_duration_override}s"
+	          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  TCP bitrate override: ${validation_tcp_bitrate_override}"
+	          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  v06 MTU-sized ping payload override: ${validation_mtu_ping_size_override} bytes"
+	          [[ -n "${validation_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${validation_prometheus_url}"
+	        ;;
+	        "UERANSIM attach/detach churn")
+	          echo "Will deploy UERANSIM churn from ${ueransim_churn_repo_url:-$DEFAULT_UERANSIM_CHURN_REPO_URL} branch ${ueransim_churn_repo_branch:-$DEFAULT_UERANSIM_CHURN_REPO_BRANCH}."
+	          if [[ "$START_SCENARIO" == true ]]; then
+	            echo "Will run attach/detach waves during deploy with counts: ${ueransim_churn_counts:-$DEFAULT_UERANSIM_CHURN_COUNTS}."
+	          else
+	            echo "Will configure churn deployment; attach/detach waves are not auto-started."
+	          fi
+	          echo "Attach mode: synchronized nr-ue launch after every UE container reaches the shared start gate."
+	          echo "Subscribers: ${ueransim_churn_subscribers:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}"
+	          echo "Kopf controller, packet-pairer, and eBPF latency probes: disabled"
+	          echo "Settle seconds: ${ueransim_churn_settle_seconds:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}; between waves: ${ueransim_churn_between_seconds:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}"
+	        ;;
+	      esac
+	      if [[ "${requires_iperf_server:-true}" == true ]]; then
+	        echo "iperf server will run on the bare-metal ${iperf_server_node} server."
+	      fi
+	    fi
 
     echo "============================="
     echo  
@@ -1579,16 +1831,29 @@ reserve_r2lab() {
 
 deploy() {
 
-    ANSIBLE_EXTRA_ARGS=()
-    local vars="fiveg_profile=${PROFILE_5G}"
+    ANSIBLE_EXTRA_ARGS=(-e "fiveg_profile=${PROFILE_5G}")
+    append_cli_extra_vars
 
-    for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
-      # Clean argument if it starts by -- so that ansible handles it as a variable
-      clean_ev=$(echo "$ev" | sed 's/^--//')
-      vars="$vars $clean_ev"
-    done
-
-    ANSIBLE_EXTRA_ARGS+=(-e "$vars")
+    if [[ "${scenario:-}" == "UERANSIM attach/detach churn" ]]; then
+      extra_var_defined "open5gs_repo_url_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_url_override=${ueransim_churn_repo_url:-$DEFAULT_UERANSIM_CHURN_REPO_URL}")
+      extra_var_defined "open5gs_repo_branch_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_branch_override=${ueransim_churn_repo_branch:-$DEFAULT_UERANSIM_CHURN_REPO_BRANCH}")
+      ANSIBLE_EXTRA_ARGS+=(-e "ueransim_deploy_mode=churn")
+      ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_initial_replicas=0")
+      extra_var_defined "churn_capture_amf_pcap" || ANSIBLE_EXTRA_ARGS+=(-e "churn_capture_amf_pcap=true")
+      extra_var_defined "ueransim_churn_subscribers" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_subscribers=${ueransim_churn_subscribers:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}")
+      extra_var_defined "ueransim_churn_counts" || ANSIBLE_EXTRA_ARGS+=(
+        -e "{\"ueransim_churn_counts\":\"${ueransim_churn_counts:-$DEFAULT_UERANSIM_CHURN_COUNTS}\"}"
+      )
+      extra_var_defined "ueransim_churn_settle_seconds" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_settle_seconds=${ueransim_churn_settle_seconds:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}")
+      extra_var_defined "ueransim_churn_between_seconds" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_between_seconds=${ueransim_churn_between_seconds:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}")
+      if [[ "$START_SCENARIO" == true ]]; then
+        ANSIBLE_EXTRA_ARGS+=(-e "ueransim_run_churn_after_deploy=true")
+        CHURN_RUNS_VIA_DEPLOY=true
+      else
+        ANSIBLE_EXTRA_ARGS+=(-e "ueransim_run_churn_after_deploy=false")
+        CHURN_RUNS_VIA_DEPLOY=false
+      fi
+    fi
 
     echo "Launching deployment..."
 
@@ -1622,20 +1887,8 @@ deploy() {
 
 run_scenario() {
 
-    ANSIBLE_EXTRA_ARGS=()
-
-    # Main variable
-    ANSIBLE_EXTRA_ARGS+=(-e "fiveg_profile=${PROFILE_5G}")
-
-    # Additional variables
-    for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
-      # Skip empty elements
-      [[ -z "$ev" ]] && continue
-
-      clean_ev=$(echo "$ev" | sed 's/^--//')
-      # Only add -e if clean_ev is non-empty
-      [[ -n "$clean_ev" ]] && ANSIBLE_EXTRA_ARGS+=(-e "$clean_ev")
-    done
+    ANSIBLE_EXTRA_ARGS=(-e "fiveg_profile=${PROFILE_5G}")
+    append_cli_extra_vars
 
     if [[ -n "${paper_prometheus_url:-}" ]]; then
       ANSIBLE_EXTRA_ARGS+=(-e "paper_prometheus_url=${paper_prometheus_url}")
@@ -1691,25 +1944,24 @@ run_scenario() {
       ANSIBLE_EXTRA_ARGS+=(-e "{\"validation_tcp_bitrate\":\"${REQUESTED_VALIDATION_TCP_BITRATE}\"}")
     fi
 
-    if [[ -n "${REQUESTED_VALIDATION_MTU_PING_SIZE:-}" && -z "${validation_mtu_ping_size_override:-}" ]]; then
-      if [[ ! "${REQUESTED_VALIDATION_MTU_PING_SIZE}" =~ ^[0-9]+$ ]]; then
-        echo "❌ Invalid MTU-sized ping payload: ${REQUESTED_VALIDATION_MTU_PING_SIZE}"
-        exit 1
-      fi
-      ANSIBLE_EXTRA_ARGS+=(-e "validation_mtu_ping_size=${REQUESTED_VALIDATION_MTU_PING_SIZE}")
-    fi
+	    if [[ -n "${REQUESTED_VALIDATION_MTU_PING_SIZE:-}" && -z "${validation_mtu_ping_size_override:-}" ]]; then
+	      if [[ ! "${REQUESTED_VALIDATION_MTU_PING_SIZE}" =~ ^[0-9]+$ ]]; then
+	        echo "❌ Invalid MTU-sized ping payload: ${REQUESTED_VALIDATION_MTU_PING_SIZE}"
+	        exit 1
+	      fi
+	      ANSIBLE_EXTRA_ARGS+=(-e "validation_mtu_ping_size=${REQUESTED_VALIDATION_MTU_PING_SIZE}")
+	    fi
 
-    extra_var_defined() {
-      local key="$1"
-      local clean_ev=""
-      for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
-        clean_ev=$(echo "$ev" | sed 's/^--//')
-        if [[ "$clean_ev" == "$key="* ]]; then
-          return 0
-        fi
-      done
-      return 1
-    }
+	    if [[ "${scenario:-}" == "UERANSIM attach/detach churn" ]]; then
+	      ANSIBLE_EXTRA_ARGS+=(-e "ueransim_deploy_mode=churn")
+	      extra_var_defined "churn_capture_amf_pcap" || ANSIBLE_EXTRA_ARGS+=(-e "churn_capture_amf_pcap=true")
+	      extra_var_defined "ueransim_churn_subscribers" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_subscribers=${ueransim_churn_subscribers:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}")
+	      extra_var_defined "ueransim_churn_counts" || ANSIBLE_EXTRA_ARGS+=(
+	        -e "{\"ueransim_churn_counts\":\"${ueransim_churn_counts:-$DEFAULT_UERANSIM_CHURN_COUNTS}\"}"
+	      )
+	      extra_var_defined "ueransim_churn_settle_seconds" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_settle_seconds=${ueransim_churn_settle_seconds:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}")
+	      extra_var_defined "ueransim_churn_between_seconds" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_between_seconds=${ueransim_churn_between_seconds:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}")
+	    fi
 
     if [[ -n "${REQUESTED_EXPERIMENT_MODE:-}" ]]; then
       run_scenario=true
@@ -1722,6 +1974,9 @@ run_scenario() {
         "validation")
           scenario="Latency validation pipeline"
           validation_scenario_names="${REQUESTED_VALIDATION_SCENARIOS:-${validation_scenario_names:-all}}"
+          ;;
+        "ueransim-churn")
+          scenario="UERANSIM attach/detach churn"
           ;;
       esac
     fi
@@ -1752,10 +2007,10 @@ run_scenario() {
               playbooks/run_tcp_paper_scenarios.yml
             scenario_status=$?
             ;;
-          "Latency validation pipeline")
-            extra_var_defined "validation_extract_pcap_rtt" || ANSIBLE_EXTRA_ARGS+=(-e "validation_extract_pcap_rtt=false")
-            extra_var_defined "validation_install_tshark" || ANSIBLE_EXTRA_ARGS+=(-e "validation_install_tshark=false")
-            extra_var_defined "validation_create_paper_figures" || ANSIBLE_EXTRA_ARGS+=(-e "validation_create_paper_figures=true")
+	          "Latency validation pipeline")
+	            extra_var_defined "validation_extract_pcap_rtt" || ANSIBLE_EXTRA_ARGS+=(-e "validation_extract_pcap_rtt=false")
+	            extra_var_defined "validation_install_tshark" || ANSIBLE_EXTRA_ARGS+=(-e "validation_install_tshark=false")
+	            extra_var_defined "validation_create_paper_figures" || ANSIBLE_EXTRA_ARGS+=(-e "validation_create_paper_figures=true")
             extra_var_defined "validation_compress_pcaps" || ANSIBLE_EXTRA_ARGS+=(-e "validation_compress_pcaps=true")
             extra_var_defined "validation_compress_prometheus_csv" || ANSIBLE_EXTRA_ARGS+=(-e "validation_compress_prometheus_csv=true")
             if [[ -z "${validation_tcp_bitrate_override:-}" && -z "${REQUESTED_VALIDATION_TCP_BITRATE:-}" ]] && ! extra_var_defined "validation_tcp_bitrate"; then
@@ -1765,13 +2020,28 @@ run_scenario() {
               ansible-playbook -i "$INVENTORY" \
               "${ANSIBLE_EXTRA_ARGS[@]}" \
               -e "target_server_host=${iperf_server_node}" \
-              -e "validation_scenario_names=${validation_scenario_names:-all}" \
-              playbooks/run_latency_validation.yml
-            scenario_status=$?
-            ;;
-          *)
-            echo "❌ Unknown iperf test scenario: $scenario"
-            exit 1
+	              -e "validation_scenario_names=${validation_scenario_names:-all}" \
+	              playbooks/run_latency_validation.yml
+	            scenario_status=$?
+	            ;;
+	          "UERANSIM attach/detach churn")
+	            if [[ "$SCENARIO_ONLY" != true && "$CHURN_RUNS_VIA_DEPLOY" == true ]]; then
+	              echo "UERANSIM churn already ran from deploy.yml because it was selected in deploy.sh."
+	              scenario_status=0
+	            else
+	              churn_console_log="${TMPDIR:-/tmp}/5g_ansible_logs/logs-scenario_ueransim-churn.txt"
+	              mkdir -p "$(dirname "$churn_console_log")"
+	              echo "UERANSIM churn console log: ${churn_console_log}"
+	              run_logged_cmd "$churn_console_log" \
+	                ansible-playbook -i "$INVENTORY" \
+	                "${ANSIBLE_EXTRA_ARGS[@]}" \
+	                playbooks/run_ueransim_churn.yml
+	              scenario_status=$?
+	            fi
+	            ;;
+	          *)
+	            echo "❌ Unknown scenario: $scenario"
+	            exit 1
             ;;
         esac
         if [[ "$scenario_status" -ne 0 ]]; then
@@ -1795,16 +2065,19 @@ run_scenario() {
           echo "ansible-playbook -i ${INVENTORY} -e fiveg_profile=${PROFILE_5G} -e target_server_host=${iperf_server_node} -e paper_scenario_names=${paper_scenario_names:-all} playbooks/run_tcp_paper_scenarios.yml"
           [[ -n "${paper_duration_override:-}" ]] && echo "  add: -e paper_duration=${paper_duration_override}"
           [[ -n "${paper_prometheus_url:-}" ]] && echo "  add: -e paper_prometheus_url=${paper_prometheus_url}"
-        elif [[ "$scenario" == "Latency validation pipeline" ]]; then
-          echo "Just launch:"
-          echo "ansible-playbook -i ${INVENTORY} -e fiveg_profile=${PROFILE_5G} -e target_server_host=${iperf_server_node} -e validation_scenario_names=${validation_scenario_names:-all} playbooks/run_latency_validation.yml"
-          [[ -n "${validation_duration_override:-}" ]] && echo "  add: -e validation_duration=${validation_duration_override}"
-          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  add: -e validation_tcp_bitrate=${validation_tcp_bitrate_override}"
-          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  add: -e validation_mtu_ping_size=${validation_mtu_ping_size_override}"
-          [[ -n "${validation_prometheus_url:-}" ]] && echo "  add: -e validation_prometheus_url=${validation_prometheus_url}"
-        else
-          echo "Just launch ./run_scenario.sh to start it !"
-        fi
+	        elif [[ "$scenario" == "Latency validation pipeline" ]]; then
+	          echo "Just launch:"
+	          echo "ansible-playbook -i ${INVENTORY} -e fiveg_profile=${PROFILE_5G} -e target_server_host=${iperf_server_node} -e validation_scenario_names=${validation_scenario_names:-all} playbooks/run_latency_validation.yml"
+	          [[ -n "${validation_duration_override:-}" ]] && echo "  add: -e validation_duration=${validation_duration_override}"
+	          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  add: -e validation_tcp_bitrate=${validation_tcp_bitrate_override}"
+	          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  add: -e validation_mtu_ping_size=${validation_mtu_ping_size_override}"
+	          [[ -n "${validation_prometheus_url:-}" ]] && echo "  add: -e validation_prometheus_url=${validation_prometheus_url}"
+	        elif [[ "$scenario" == "UERANSIM attach/detach churn" ]]; then
+	          echo "Just launch:"
+	          echo "ansible-playbook -i ${INVENTORY} -e fiveg_profile=${PROFILE_5G} -e ueransim_deploy_mode=churn -e \"ueransim_churn_counts=${ueransim_churn_counts:-$DEFAULT_UERANSIM_CHURN_COUNTS}\" -e ueransim_churn_settle_seconds=${ueransim_churn_settle_seconds:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS} -e ueransim_churn_between_seconds=${ueransim_churn_between_seconds:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS} playbooks/run_ueransim_churn.yml"
+	        else
+	          echo "Just launch ./run_scenario.sh to start it !"
+	        fi
         echo ""
       fi
     fi
@@ -1877,11 +2150,20 @@ init_defaults_and_banner
 if [[ "$SKIP_INPUTS" == true ]]; then
   echo "Skipped User Inputs"
   echo "Using $INVENTORY as inventory"
+  if [[ -z "${core:-}" ]]; then
+    core="$(awk -F= '$1 == "core" {gsub(/"/, "", $2); print $2; exit}' "$INVENTORY")"
+  fi
+  if [[ -z "${ran:-}" ]]; then
+    ran="$(awk -F= '$1 == "ran" {gsub(/"/, "", $2); print $2; exit}' "$INVENTORY")"
+  fi
   if [[ -f "$R2LAB_CONFIG" ]]; then
     source "$R2LAB_CONFIG"
-  else
+  elif [[ "${platform:-}" == "r2lab" ]]; then
     echo "R2lab config doesn't exist. Exiting."
     exit 1
+  fi
+  if [[ -n "${REQUESTED_EXPERIMENT_MODE:-}" ]]; then
+    optional_scenarios
   fi
 else
   collect_user_inputs

@@ -1,0 +1,1862 @@
+---
+- name: Initialize UERANSIM churn overhead run
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_remote_tmp: "/tmp/.ansible-{{ lookup('env', 'USER') | default('controller', true) }}/tmp"
+  tasks:
+    - name: Set churn run id
+      ansible.builtin.set_fact:
+        churn_run_id: "{{ churn_run_id | default(lookup('pipe', 'date +%Y%m%d_%H%M%S')) }}"
+
+    - name: Set churn defaults
+      ansible.builtin.set_fact:
+        churn_results_dir: "{{ churn_results_dir | default(playbook_dir + '/../results/ueransim-churn-' + churn_run_id) }}"
+        churn_local_timezone: "{{ churn_local_timezone | default(lookup('env', 'TZ') | default('Europe/Paris', true)) }}"
+        churn_collect_prometheus: "{{ churn_collect_prometheus | default(true) }}"
+        churn_require_monitoring_ready: "{{ churn_require_monitoring_ready | default(true) }}"
+        churn_require_ue_mapper_ready: "{{ churn_require_ue_mapper_ready | default(true) }}"
+        churn_prometheus_step: "{{ churn_prometheus_step | default('1s') }}"
+        churn_prometheus_queries_json: "{{ churn_prometheus_queries_json | default(playbook_dir + '/../scripts/validation/ueransim_churn_prometheus_queries.json') }}"
+        churn_discover_metrics_regex: "{{ churn_discover_metrics_regex | default('(?i)(ue.?mapper|mapper|amf|smf|upf|ueransim|statefulset|pod_status|container_cpu|container_memory)') }}"
+        churn_discover_metrics_limit: "{{ churn_discover_metrics_limit | default(0) }}"
+        churn_query_padding_seconds: "{{ churn_query_padding_seconds | default(30) }}"
+        churn_prometheus_work_csv: "{{ churn_prometheus_work_csv | default('/tmp/' + churn_run_id + '_prometheus_timeseries.csv') }}"
+        churn_collect_ue_mapper_api: "{{ churn_collect_ue_mapper_api | default(true) }}"
+        churn_collect_ue_mapper_samples: "{{ churn_collect_ue_mapper_samples | default(true) }}"
+        churn_enforce_complete_mapper_wave: "{{ churn_enforce_complete_mapper_wave | default(false) }}"
+        churn_ue_mapper_sample_interval_seconds: "{{ churn_ue_mapper_sample_interval_seconds | default(1) }}"
+        churn_ue_mapper_sample_max_seconds: "{{ churn_ue_mapper_sample_max_seconds | default(7200) }}"
+        churn_ue_mapper_inventory_limit: "{{ churn_ue_mapper_inventory_limit | default(2000) }}"
+        churn_ue_mapper_teid_limit: "{{ churn_ue_mapper_teid_limit | default(5000) }}"
+        churn_imsi_prefix: "{{ churn_imsi_prefix | default('001010000100') }}"
+        churn_imsi_ordinal_width: "{{ churn_imsi_ordinal_width | default(3) }}"
+        churn_collect_pod_logs: "{{ churn_collect_pod_logs | default(true) }}"
+        churn_pod_log_namespaces: "{{ churn_pod_log_namespaces | default([core | default('open5gs'), 'monarch']) }}"
+        churn_pod_log_since: "{{ churn_pod_log_since | default('4h') }}"
+        churn_pod_log_tail_lines: "{{ churn_pod_log_tail_lines | default(200000) }}"
+        churn_pod_log_include_previous: "{{ churn_pod_log_include_previous | default(true) }}"
+        churn_pod_log_ueransim_sample_limit: "{{ churn_pod_log_ueransim_sample_limit | default(5) }}"
+        churn_capture_amf_pcap: "{{ churn_capture_amf_pcap | default(false) }}"
+        churn_amf_pcap_namespace: "{{ churn_amf_pcap_namespace | default(core | default('open5gs')) }}"
+        churn_amf_pcap_iface: "{{ churn_amf_pcap_iface | default('n3' if churn_amf_pcap_namespace == 'open5gs' else 'n2') }}"
+        churn_amf_pcap_filter: "{{ churn_amf_pcap_filter | default('sctp port 38412') }}"
+        churn_amf_pcap_snaplen: "{{ churn_amf_pcap_snaplen | default(0) | int }}"
+        churn_amf_pcap_image: "{{ churn_amf_pcap_image | default('r2labuser/amf-sniffer:2026w10') }}"
+        churn_amf_pcap_container_name: "{{ churn_amf_pcap_container_name | default('amf-pcap') }}"
+        churn_results_min_free_mb: "{{ churn_results_min_free_mb | default(512) }}"
+        ueransim_churn_kubelet_max_pods: "{{ ueransim_churn_kubelet_max_pods | default(200) }}"
+        ueransim_churn_synchronized_attach: "{{ ueransim_churn_synchronized_attach | default(true) }}"
+        ueransim_churn_attach_gate_timeout_seconds: "{{ ueransim_churn_attach_gate_timeout_seconds | default(600) }}"
+        churn_kubeconfig: "{{ churn_kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+        churn_start_epoch: "{{ lookup('pipe', 'date +%s') }}"
+
+    - name: Check local result quota before starting churn
+      ansible.builtin.shell: |
+        set -u
+        RESULTS_PARENT="$(dirname "{{ churn_results_dir }}")"
+        REQUIRED_MB="{{ churn_results_min_free_mb | int }}"
+        PROBE="$RESULTS_PARENT/.churn-quota-probe-{{ churn_run_id }}"
+        mkdir -p "$RESULTS_PARENT" || exit 20
+        rm -f "$PROBE"
+        trap 'rm -f "$PROBE"' EXIT
+        if ! command -v fallocate >/dev/null 2>&1 || ! fallocate -l "${REQUIRED_MB}M" "$PROBE"; then
+          rm -f "$PROBE"
+          dd if=/dev/zero of="$PROBE" bs=1M count="$REQUIRED_MB" conv=fsync status=none || exit 21
+        fi
+        rm -f "$PROBE"
+        trap - EXIT
+        df -h "$RESULTS_PARENT"
+        quota -s 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      register: churn_results_quota_preflight
+      changed_when: false
+      failed_when: false
+
+    - name: Fail early when local result quota is insufficient
+      ansible.builtin.fail:
+        msg: |
+          Not enough writable quota for a churn run under {{ churn_results_dir }}.
+          The preflight could not reserve {{ churn_results_min_free_mb }} MB.
+          Move or delete old results/LOGS artifacts, then rerun.
+
+          {{ churn_results_quota_preflight.stdout | default('') }}
+          {{ churn_results_quota_preflight.stderr | default('') }}
+      when: churn_results_quota_preflight.rc | int != 0
+
+    - name: Resolve churn monitor host
+      ansible.builtin.set_fact:
+        churn_monitor_host: "{{ groups['monitor_node'][0] if (groups['monitor_node'] | default([]) | length > 0) else '' }}"
+
+    - name: Resolve churn Prometheus URL
+      ansible.builtin.set_fact:
+        churn_prometheus_url_effective: >-
+          {{
+            churn_prometheus_url | default('')
+            if (churn_prometheus_url | default('') | length > 0)
+            else (
+              'http://' ~ (hostvars[churn_monitor_host].ip | default(hostvars[churn_monitor_host].ansible_host | default(churn_monitor_host))) ~ ':30095'
+              if churn_monitor_host | length > 0
+              else ''
+            )
+          }}
+
+    - name: Fail when churn monitoring has no Prometheus endpoint
+      ansible.builtin.fail:
+        msg: >-
+          UERANSIM churn overhead requires Prometheus. Add a monitor_node to the
+          inventory or pass -e churn_prometheus_url=http://HOST:PORT.
+      when:
+        - churn_require_monitoring_ready | bool
+        - churn_prometheus_url_effective | length == 0
+
+    - name: Wait for Prometheus and cAdvisor metrics
+      ansible.builtin.uri:
+        url: "{{ churn_prometheus_url_effective }}/api/v1/query?query=count%28container_cpu_usage_seconds_total%29"
+        method: GET
+        return_content: true
+        status_code: 200
+        timeout: 10
+      register: churn_prometheus_preflight
+      until:
+        - churn_prometheus_preflight.json is defined
+        - churn_prometheus_preflight.json.status | default('') == 'success'
+        - churn_prometheus_preflight.json.data.result | default([]) | length > 0
+      retries: 30
+      delay: 5
+      when:
+        - churn_require_monitoring_ready | bool
+        - churn_prometheus_url_effective | length > 0
+
+    - name: Create local churn results directory
+      ansible.builtin.file:
+        path: "{{ churn_results_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create local churn pcap results directory
+      ansible.builtin.file:
+        path: "{{ churn_results_dir }}/pcaps"
+        state: directory
+        mode: "0755"
+      when: churn_capture_amf_pcap | bool
+
+    - name: Initialize churn timeline event log
+      ansible.builtin.copy:
+        dest: "{{ churn_results_dir }}/timeline_events.jsonl"
+        mode: "0644"
+        content: ""
+
+    - name: Record churn campaign start
+      ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+      vars:
+        paper_run_id: "{{ churn_run_id }}"
+        paper_results_dir: "{{ churn_results_dir }}"
+        paper_local_timezone: "{{ churn_local_timezone }}"
+        paper_timeline_event:
+          level: "campaign"
+          phase: "start"
+          name: "ueransim-churn-overhead"
+          kind: "ueransim-churn-overhead"
+          counts: "{{ ueransim_churn_counts | default('10 25 50') }}"
+          settle_seconds: "{{ ueransim_churn_settle_seconds | default(60) | int }}"
+          between_seconds: "{{ ueransim_churn_between_seconds | default(30) | int }}"
+
+    - name: Save churn run metadata
+      ansible.builtin.copy:
+        dest: "{{ churn_results_dir }}/run_metadata.yml"
+        mode: "0644"
+        content: |
+          run_id: {{ churn_run_id }}
+          kind: ueransim-churn-overhead
+          counts: {{ ueransim_churn_counts | default('10 25 50') }}
+          settle_seconds: {{ ueransim_churn_settle_seconds | default(60) }}
+          between_seconds: {{ ueransim_churn_between_seconds | default(30) }}
+          statefulset: {{ ueransim_churn_statefulset | default('ueransim-ue-churn') }}
+          namespace: {{ ueransim_churn_namespace | default('open5gs') }}
+          collect_prometheus: {{ churn_collect_prometheus }}
+          require_monitoring_ready: {{ churn_require_monitoring_ready }}
+          require_ue_mapper_ready: {{ churn_require_ue_mapper_ready }}
+          enforce_complete_mapper_wave: {{ churn_enforce_complete_mapper_wave }}
+          prometheus_url: {{ churn_prometheus_url_effective }}
+          prometheus_step: {{ churn_prometheus_step }}
+          prometheus_queries_json: {{ churn_prometheus_queries_json }}
+          prometheus_work_csv: {{ churn_prometheus_work_csv }}
+          discover_metrics_regex: {{ churn_discover_metrics_regex }}
+          discover_metrics_limit: {{ churn_discover_metrics_limit }}
+          collect_ue_mapper_api: {{ churn_collect_ue_mapper_api }}
+          collect_ue_mapper_samples: {{ churn_collect_ue_mapper_samples }}
+          ue_mapper_sample_interval_seconds: {{ churn_ue_mapper_sample_interval_seconds }}
+          ue_mapper_sample_max_seconds: {{ churn_ue_mapper_sample_max_seconds }}
+          ue_mapper_inventory_limit: {{ churn_ue_mapper_inventory_limit }}
+          ue_mapper_teid_limit: {{ churn_ue_mapper_teid_limit }}
+          imsi_prefix: {{ churn_imsi_prefix }}
+          imsi_ordinal_width: {{ churn_imsi_ordinal_width }}
+          collect_pod_logs: {{ churn_collect_pod_logs }}
+          pod_log_ueransim_sample_limit: {{ churn_pod_log_ueransim_sample_limit }}
+          capture_amf_pcap: {{ churn_capture_amf_pcap }}
+          amf_pcap_namespace: {{ churn_amf_pcap_namespace }}
+          amf_pcap_iface: {{ churn_amf_pcap_iface }}
+          amf_pcap_filter: {{ churn_amf_pcap_filter }}
+          amf_pcap_snaplen: {{ churn_amf_pcap_snaplen }}
+          amf_pcap_image: {{ churn_amf_pcap_image }}
+          amf_pcap_container_name: {{ churn_amf_pcap_container_name }}
+          results_min_free_mb: {{ churn_results_min_free_mb }}
+          kubelet_max_pods: {{ ueransim_churn_kubelet_max_pods }}
+          synchronized_attach: {{ ueransim_churn_synchronized_attach }}
+          attach_gate_timeout_seconds: {{ ueransim_churn_attach_gate_timeout_seconds }}
+          pod_log_namespaces: {{ churn_pod_log_namespaces | to_json }}
+          kubeconfig: {{ churn_kubeconfig }}
+          start_epoch: {{ churn_start_epoch }}
+
+- name: Ensure workload nodes can schedule the largest churn wave
+  hosts: core_node:ran_node
+  gather_facts: false
+  become: true
+  vars:
+    ueransim_churn_kubelet_max_pods: "{{ hostvars['localhost'].ueransim_churn_kubelet_max_pods | int }}"
+  tasks:
+    - name: Check kubelet configuration exists
+      ansible.builtin.stat:
+        path: /var/lib/kubelet/config.yaml
+      register: churn_kubelet_config
+
+    - name: Fail when kubelet configuration is missing
+      ansible.builtin.fail:
+        msg: "Missing /var/lib/kubelet/config.yaml on {{ inventory_hostname }}."
+      when: not churn_kubelet_config.stat.exists
+
+    - name: Set kubelet pod capacity for UERANSIM churn
+      ansible.builtin.lineinfile:
+        path: /var/lib/kubelet/config.yaml
+        regexp: '^maxPods:'
+        line: "maxPods: {{ ueransim_churn_kubelet_max_pods }}"
+        insertafter: EOF
+      register: churn_kubelet_max_pods_config
+
+    - name: Restart kubelet after changing pod capacity
+      ansible.builtin.systemd:
+        name: kubelet
+        state: restarted
+        daemon_reload: true
+      when: churn_kubelet_max_pods_config.changed
+
+    - name: Wait for kubelet service
+      ansible.builtin.command: systemctl is-active kubelet
+      register: churn_kubelet_service
+      until: churn_kubelet_service.stdout | trim == 'active'
+      retries: 30
+      delay: 2
+      changed_when: false
+
+- name: Run UERANSIM attach/detach churn
+  hosts: core_node
+  gather_facts: false
+  vars:
+    ueransim_churn_counts: "10 25 50"
+    ueransim_churn_settle_seconds: 60
+    ueransim_churn_between_seconds: 30
+    ueransim_churn_statefulset: "ueransim-ue-churn"
+    ueransim_churn_namespace: "{{ ran_ns | default('open5gs') }}"
+    ueransim_churn_script: "{{ repo_ueransim_dest | default('/root/open5gs-k8s') }}/scripts/ueransim-churn/run-churn.sh"
+    churn_run_id: "{{ hostvars['localhost'].churn_run_id }}"
+    churn_results_dir: "{{ hostvars['localhost'].churn_results_dir }}"
+    churn_local_timezone: "{{ hostvars['localhost'].churn_local_timezone }}"
+    churn_collect_ue_mapper_api: "{{ hostvars['localhost'].churn_collect_ue_mapper_api | bool }}"
+    churn_collect_ue_mapper_samples: "{{ hostvars['localhost'].churn_collect_ue_mapper_samples | bool }}"
+    churn_require_ue_mapper_ready: "{{ hostvars['localhost'].churn_require_ue_mapper_ready | bool }}"
+    churn_enforce_complete_mapper_wave: "{{ hostvars['localhost'].churn_enforce_complete_mapper_wave | bool }}"
+    churn_ue_mapper_sample_interval_seconds: "{{ hostvars['localhost'].churn_ue_mapper_sample_interval_seconds | int }}"
+    churn_ue_mapper_sample_max_seconds: "{{ hostvars['localhost'].churn_ue_mapper_sample_max_seconds | int }}"
+    churn_ue_mapper_inventory_limit: "{{ hostvars['localhost'].churn_ue_mapper_inventory_limit | int }}"
+    churn_ue_mapper_teid_limit: "{{ hostvars['localhost'].churn_ue_mapper_teid_limit | int }}"
+    ueransim_churn_kubelet_max_pods: "{{ hostvars['localhost'].ueransim_churn_kubelet_max_pods | int }}"
+    ueransim_churn_synchronized_attach: "{{ hostvars['localhost'].ueransim_churn_synchronized_attach | bool }}"
+    ueransim_churn_attach_gate_timeout_seconds: "{{ hostvars['localhost'].ueransim_churn_attach_gate_timeout_seconds | int }}"
+    ueransim_churn_attach_gate_name: "attach-wave-gate"
+    churn_kubeconfig: "{{ hostvars['localhost'].churn_kubeconfig }}"
+    churn_capture_amf_pcap: "{{ hostvars['localhost'].churn_capture_amf_pcap | bool }}"
+    churn_amf_pcap_namespace: "{{ hostvars['localhost'].churn_amf_pcap_namespace }}"
+    churn_amf_pcap_iface: "{{ hostvars['localhost'].churn_amf_pcap_iface }}"
+    churn_amf_pcap_filter: "{{ hostvars['localhost'].churn_amf_pcap_filter }}"
+    churn_amf_pcap_snaplen: "{{ hostvars['localhost'].churn_amf_pcap_snaplen | int }}"
+    churn_amf_pcap_image: "{{ hostvars['localhost'].churn_amf_pcap_image }}"
+    churn_amf_pcap_container_name: "{{ hostvars['localhost'].churn_amf_pcap_container_name }}"
+    churn_ue_mapper_namespace_effective: >-
+      {{
+        churn_ue_mapper_namespace
+        | default(hostvars[inventory_hostname].core | default('open5gs'))
+      }}
+    churn_ue_mapper_service_effective: "{{ churn_ue_mapper_service | default('ue-mapper-api') }}"
+    churn_ue_mapper_local_port_effective: "{{ churn_ue_mapper_local_port | default(18080) }}"
+
+  tasks:
+    - name: Validate churn deployment target
+      ansible.builtin.fail:
+        msg: "UERANSIM churn requires core=open5gs and ran=ueransim."
+      when: core != 'open5gs' or ran != 'ueransim'
+
+    - name: Wait for workload node pod capacity
+      ansible.builtin.shell: |
+        set -e
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        for node in {{ (groups['core_node'] + groups['ran_node']) | unique | join(' ') }}; do
+          for attempt in $(seq 1 60); do
+            ready="$(kubectl get node "$node" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
+            pods="$(kubectl get node "$node" -o jsonpath='{.status.allocatable.pods}' 2>/dev/null || true)"
+            if [ "$ready" = "True" ] && [ "${pods:-0}" -ge "{{ ueransim_churn_kubelet_max_pods }}" ]; then
+              echo "$node Ready with allocatable.pods=$pods"
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo "$node did not advertise allocatable.pods >= {{ ueransim_churn_kubelet_max_pods }} (ready=$ready pods=${pods:-unknown})" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Check churn runner exists
+      ansible.builtin.stat:
+        path: "{{ ueransim_churn_script }}"
+      register: churn_runner
+
+    - name: Fail if churn runner is missing
+      ansible.builtin.fail:
+        msg: >-
+          Missing {{ ueransim_churn_script }}. Deploy with
+          open5gs_k8s_repo_url=https://github.com/yassir63/open5gs-k8s.git,
+          open5gs_k8s_repo_branch=ueransim-churn, and ueransim_deploy_mode=churn.
+      when: not churn_runner.stat.exists
+
+    - name: Remove controller and packet pairer resources before churn
+      ansible.builtin.shell: |
+        set -e
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        kubectl -n "$NS" delete deployment/kopf-controller --ignore-not-found=true
+        kubectl -n "$NS" delete deployment/packet-pairer service/packet-pairer-service --ignore-not-found=true
+        kubectl -n "$NS" wait --for=delete pod -l app=kopf-controller --timeout=120s || true
+        kubectl -n "$NS" wait --for=delete pod -l app=packet-pairer --timeout=120s || true
+        if kubectl -n "$NS" get pods -o name | grep -E '/(kopf-controller|packet-pairer)-'; then
+          echo "Controller or packet-pairer pods are still running." >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Reject stale eBPF latency probes
+      ansible.builtin.shell: |
+        set -e
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        stale="$(kubectl -n "$NS" get pods -o json | python3 -c '
+        import json
+        import sys
+
+        data = json.load(sys.stdin)
+        for pod in data.get("items", []):
+            for container in pod.get("spec", {}).get("ephemeralContainers", []):
+                name = container.get("name", "")
+                image = container.get("image", "")
+                if name.startswith("ebpf-latency-probe") or "ebpf-latency-probe" in image:
+                    print("{}:{}".format(pod.get("metadata", {}).get("name", ""), name))
+        ')"
+        if [ -n "$stale" ]; then
+          echo "Stale latency probes are still embedded in these pods:" >&2
+          echo "$stale" >&2
+          echo "Ephemeral containers cannot be removed; recreate the listed pods before churn." >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Ensure Redis and UE mapper are deployed for churn
+      ansible.builtin.include_role:
+        name: monarch/sliceawareness
+        apply:
+          environment:
+            KUBECONFIG: "{{ churn_kubeconfig }}"
+      vars:
+        core: "{{ churn_ue_mapper_namespace_effective }}"
+      when: churn_require_ue_mapper_ready | bool
+
+    - name: Wait for Redis and UE mapper
+      ansible.builtin.shell: |
+        set -e
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        kubectl -n "$NS" wait --for=condition=Available deployment/redis --timeout=180s
+        kubectl -n "$NS" wait --for=condition=Available deployment/ue-mapper-api --timeout=180s
+      args:
+        executable: /bin/bash
+      when: churn_require_ue_mapper_ready | bool
+      changed_when: false
+
+    - name: Ensure AMF mapper sniffer is injected
+      ansible.builtin.include_role:
+        name: monarch/sniffers/amf
+        apply:
+          environment:
+            KUBECONFIG: "{{ churn_kubeconfig }}"
+      vars:
+        core: "{{ churn_ue_mapper_namespace_effective }}"
+        redis_host: "redis.{{ churn_ue_mapper_namespace_effective }}.svc.cluster.local"
+      when: churn_require_ue_mapper_ready | bool
+
+    - name: Ensure SMF mapper sniffers are injected
+      ansible.builtin.include_role:
+        name: monarch/sniffers/smf
+        apply:
+          environment:
+            KUBECONFIG: "{{ churn_kubeconfig }}"
+      vars:
+        core: "{{ churn_ue_mapper_namespace_effective }}"
+        redis_host: "redis.{{ churn_ue_mapper_namespace_effective }}.svc.cluster.local"
+      when: churn_require_ue_mapper_ready | bool
+
+    - name: Verify AMF and SMF mapper sniffers are injected
+      ansible.builtin.shell: |
+        set -e
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        INVENTORY="$(kubectl -n "$NS" get pods \
+          -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.ephemeralContainers[*]}{.name}{" "}{end}{"\n"}{end}')"
+        printf '%s\n' "$INVENTORY"
+        printf '%s\n' "$INVENTORY" | grep -E 'amf.*amf-sniffer'
+        printf '%s\n' "$INVENTORY" | grep -E 'smf.*smf-sniffer'
+      args:
+        executable: /bin/bash
+      register: churn_sniffer_preflight
+      when: churn_require_ue_mapper_ready | bool
+      changed_when: false
+
+    - name: Capture sniffer network counters before churn
+      ansible.builtin.shell: |
+        set -u
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        OUT="/tmp/{{ churn_run_id }}_sniffer_network_stats.txt"
+        : > "$OUT"
+        {
+          echo "==== phase=before collected_at=$(date -Is) ===="
+          kubectl -n "$NS" get pods -o json | python3 -c '
+        import json
+        import sys
+
+        data = json.load(sys.stdin)
+        for pod in data.get("items", []):
+            pod_name = pod.get("metadata", {}).get("name", "")
+            for container in pod.get("spec", {}).get("ephemeralContainers", []):
+                name = container.get("name", "")
+                if name not in {"amf-sniffer", "smf-sniffer"}:
+                    continue
+                env = {
+                    item.get("name"): item.get("value", "")
+                    for item in container.get("env", [])
+                }
+                iface = env.get("amf_sniffer_iface") or env.get("smf_sniffer_iface")
+                print(f"{pod_name}|{name}|{iface}")
+        ' | while IFS='|' read -r pod container iface; do
+            echo
+            echo "---- pod=$pod container=$container iface=$iface ----"
+            kubectl -n "$NS" exec "$pod" -c "$container" -- sh -c '
+              date -Is
+              echo "[proc_net_dev]"
+              cat /proc/net/dev
+              echo "[proc_net_packet]"
+              cat /proc/net/packet 2>/dev/null || true
+              echo "[ip_link]"
+              ip -s link show "$1" 2>/dev/null || true
+            ' sh "$iface" 2>&1 || true
+          done
+        } >> "$OUT" 2>&1
+      args:
+        executable: /bin/bash
+      when: churn_require_ue_mapper_ready | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Verify UE mapper inventory endpoint
+      ansible.builtin.shell: |
+        set -e
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        SVC="{{ churn_ue_mapper_service_effective }}"
+        OUT="/tmp/{{ churn_run_id }}_ue_mapper_preflight.json"
+        kubectl -n "$NS" port-forward "svc/$SVC" "{{ churn_ue_mapper_local_port_effective }}:80" \
+          > /tmp/{{ churn_run_id }}_ue_mapper_preflight_port_forward.log 2>&1 &
+        PF_PID=$!
+        trap 'kill "$PF_PID" >/dev/null 2>&1 || true; wait "$PF_PID" >/dev/null 2>&1 || true' EXIT
+        sleep 3
+        curl -fsS -m 10 \
+          "http://127.0.0.1:{{ churn_ue_mapper_local_port_effective }}/inventory/ues?limit=1" \
+          > "$OUT"
+        python3 -c 'import json, sys; data=json.load(open(sys.argv[1])); assert "count" in data and "ues" in data' "$OUT"
+      args:
+        executable: /bin/bash
+      when: churn_require_ue_mapper_ready | bool
+      changed_when: false
+
+    - name: Prepare synchronized UE attach gate
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ ueransim_churn_namespace }}"
+        STS="{{ ueransim_churn_statefulset }}"
+        GATE="{{ ueransim_churn_attach_gate_name }}"
+        TIMEOUT="{{ ueransim_churn_attach_gate_timeout_seconds }}"
+        SELECTOR="app=ueransim,component=ue,profile=churn"
+        STS_JSON="/tmp/{{ churn_run_id }}_churn_sts_before_gate.json"
+        PATCH_JSON="/tmp/{{ churn_run_id }}_churn_sts_gate_patch.json"
+        CONFIGMAP_JSON="/tmp/{{ churn_run_id }}_churn_configmap_before_gate.json"
+        CONFIGMAP_PATCH_JSON="/tmp/{{ churn_run_id }}_churn_configmap_gate_patch.json"
+        ENTRYPOINT_ORIGINAL="/tmp/{{ churn_run_id }}_churn_entrypoint_before_gate.sh"
+
+        kubectl -n "$NS" scale "statefulset/$STS" --replicas=0
+        kubectl -n "$NS" wait --for=delete pod -l "$SELECTOR" --timeout=180s || true
+
+        policy="$(kubectl -n "$NS" get "statefulset/$STS" -o jsonpath='{.spec.podManagementPolicy}')"
+        if [ "$policy" != "Parallel" ]; then
+          echo "Synchronized churn requires $STS podManagementPolicy=Parallel; found ${policy:-OrderedReady}." >&2
+          exit 1
+        fi
+
+        kubectl -n "$NS" apply -f - <<EOF
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${GATE}
+          labels:
+            app: ${GATE}
+            experiment-component: attach-gate
+        spec:
+          selector:
+            app: ${GATE}
+          ports:
+            - name: http
+              port: 8080
+              targetPort: 8080
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${GATE}
+          labels:
+            app: ${GATE}
+            experiment-component: attach-gate
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: ${GATE}
+          template:
+            metadata:
+              labels:
+                app: ${GATE}
+                experiment-component: attach-gate
+            spec:
+              tolerations:
+                - key: test-eviction
+                  operator: Equal
+                  value: "true"
+                  effect: NoSchedule
+              containers:
+                - name: gate
+                  image: busybox:1.32.0
+                  imagePullPolicy: IfNotPresent
+                  command:
+                    - sh
+                    - -c
+                    - mkdir -p /www; echo ready > /www/index.html; rm -f /www/release; exec httpd -f -p 8080 -h /www
+                  ports:
+                    - name: http
+                      containerPort: 8080
+                  readinessProbe:
+                    httpGet:
+                      path: /
+                      port: http
+                    periodSeconds: 1
+                  resources:
+                    requests:
+                      cpu: 1m
+                      memory: 4Mi
+                    limits:
+                      cpu: 20m
+                      memory: 16Mi
+        EOF
+        kubectl -n "$NS" scale "deployment/$GATE" --replicas=1
+        kubectl -n "$NS" wait --for=condition=Available "deployment/$GATE" --timeout=120s
+        kubectl -n "$NS" exec "deployment/$GATE" -- rm -f /www/release
+
+        kubectl -n "$NS" get "statefulset/$STS" -o json > "$STS_JSON"
+        CONFIGMAP="$(
+          kubectl -n "$NS" get "statefulset/$STS" \
+            -o jsonpath='{.spec.template.spec.volumes[?(@.name=="ue-churn-volume")].configMap.name}'
+        )"
+        if [ -z "$CONFIGMAP" ]; then
+          echo "Could not discover the churn entrypoint ConfigMap from $STS volume ue-churn-volume." >&2
+          exit 1
+        fi
+        echo "Using churn entrypoint ConfigMap: $CONFIGMAP"
+        kubectl -n "$NS" get "configmap/$CONFIGMAP" -o json > "$CONFIGMAP_JSON"
+        python3 - "$CONFIGMAP_JSON" "$CONFIGMAP_PATCH_JSON" "$ENTRYPOINT_ORIGINAL" <<'PY'
+        import json
+        import sys
+
+        source, destination, original_path = sys.argv[1:]
+        with open(source, encoding="utf-8") as stream:
+            configmap = json.load(stream)
+
+        entrypoint = configmap.get("data", {}).get("entrypoint.sh")
+        if not entrypoint:
+            raise SystemExit("ConfigMap is missing data.entrypoint.sh")
+        with open(original_path, "w", encoding="utf-8") as stream:
+            stream.write(entrypoint)
+
+        begin = "# BEGIN 5g_ansible synchronized attach gate"
+        end = "# END 5g_ansible synchronized attach gate"
+        if begin in entrypoint:
+            before, remainder = entrypoint.split(begin, 1)
+            _, after = remainder.split(end, 1)
+            entrypoint = before + after.lstrip("\n")
+
+        marker = 'echo "Starting UERANSIM UE ordinal=${ordinal}'
+        if marker not in entrypoint:
+            raise SystemExit("Could not find the nr-ue launch marker in entrypoint.sh")
+
+        gate = r'''# BEGIN 5g_ansible synchronized attach gate
+        if [ "${UE_ATTACH_GATE_ENABLED:-false}" = "true" ]; then
+          gate_host="${UE_ATTACH_GATE_HOST:-attach-wave-gate}"
+          gate_port="${UE_ATTACH_GATE_PORT:-8080}"
+          touch /tmp/attach-gate-ready
+          echo "$(date -Is) UE ordinal=${ordinal} ready at synchronized attach gate"
+          while true; do
+            gate_status=""
+            if {
+              exec 9<>"/dev/tcp/${gate_host}/${gate_port}"
+              printf 'GET /release HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n' "${gate_host}" >&9
+              IFS= read -r gate_status <&9
+              exec 9<&-
+              exec 9>&-
+            } 2>/dev/null && [[ "${gate_status}" == *" 200 "* ]]; then
+              break
+            fi
+            exec 9<&- 2>/dev/null || true
+            exec 9>&- 2>/dev/null || true
+            sleep 0.1
+          done
+          echo "$(date -Is) UE ordinal=${ordinal} synchronized attach released"
+        fi
+        # END 5g_ansible synchronized attach gate
+
+        '''
+        entrypoint = entrypoint.replace(marker, gate + marker, 1)
+        patch = {"data": {"entrypoint.sh": entrypoint}}
+        with open(destination, "w", encoding="utf-8") as stream:
+            json.dump(patch, stream)
+        PY
+        kubectl -n "$NS" patch "configmap/$CONFIGMAP" --type=merge --patch-file "$CONFIGMAP_PATCH_JSON"
+
+        python3 - "$STS_JSON" "$PATCH_JSON" "$GATE" "$TIMEOUT" <<'PY'
+        import json
+        import sys
+
+        source, destination, gate, timeout = sys.argv[1:]
+        with open(source, encoding="utf-8") as stream:
+            statefulset = json.load(stream)
+
+        pod_spec = statefulset["spec"]["template"]["spec"]
+        init_containers = [
+            container
+            for container in pod_spec.get("initContainers", [])
+            if container.get("name") != "wait-attach-gate"
+        ]
+        containers = pod_spec["containers"]
+        for container in containers:
+            if container.get("name") != "ue":
+                continue
+            env = [
+                item
+                for item in container.get("env", [])
+                if item.get("name")
+                not in {
+                    "UE_ATTACH_GATE_ENABLED",
+                    "UE_ATTACH_GATE_HOST",
+                    "UE_ATTACH_GATE_PORT",
+                }
+            ]
+            env.extend(
+                [
+                    {"name": "UE_ATTACH_GATE_ENABLED", "value": "true"},
+                    {"name": "UE_ATTACH_GATE_HOST", "value": gate},
+                    {"name": "UE_ATTACH_GATE_PORT", "value": "8080"},
+                ]
+            )
+            container["env"] = env
+            container["startupProbe"] = {
+                "exec": {
+                    "command": [
+                        "/bin/bash",
+                        "-c",
+                        "test -f /tmp/attach-gate-ready",
+                    ]
+                },
+                "periodSeconds": 1,
+                "timeoutSeconds": 1,
+                "failureThreshold": max(60, int(timeout)),
+            }
+            break
+        else:
+            raise SystemExit("StatefulSet is missing the ue container")
+
+        patch = {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "initContainers": init_containers,
+                        "containers": containers,
+                    }
+                }
+            }
+        }
+        with open(destination, "w", encoding="utf-8") as stream:
+            json.dump(patch, stream)
+        PY
+        kubectl -n "$NS" patch "statefulset/$STS" --type=merge --patch-file "$PATCH_JSON"
+        kubectl -n "$NS" get "statefulset/$STS" -o jsonpath='{.spec.template.spec.containers[?(@.name=="ue")].startupProbe.exec.command}'
+        echo
+      args:
+        executable: /bin/bash
+      when: ueransim_churn_synchronized_attach | bool
+      register: ueransim_churn_attach_gate_setup
+      changed_when: true
+
+    - name: Show UERANSIM churn parameters
+      ansible.builtin.debug:
+        msg:
+          - "Namespace: {{ ueransim_churn_namespace }}"
+          - "StatefulSet: {{ ueransim_churn_statefulset }}"
+          - "Counts: {{ ueransim_churn_counts }}"
+          - "Settle seconds: {{ ueransim_churn_settle_seconds }}"
+          - "Between waves seconds: {{ ueransim_churn_between_seconds }}"
+          - "Synchronized attach: {{ ueransim_churn_synchronized_attach }}"
+          - "Results: {{ churn_results_dir }}"
+
+    - name: Record churn scenario start
+      ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+      vars:
+        paper_run_id: "{{ churn_run_id }}"
+        paper_results_dir: "{{ churn_results_dir }}"
+        paper_local_timezone: "{{ churn_local_timezone }}"
+        paper_timeline_event:
+          level: "scenario"
+          phase: "start"
+          name: "ueransim-churn"
+          scenario: "ueransim_churn"
+          scenario_title: "UERANSIM attach/detach churn overhead"
+          counts: "{{ ueransim_churn_counts }}"
+          settle_seconds: "{{ ueransim_churn_settle_seconds | int }}"
+          between_seconds: "{{ ueransim_churn_between_seconds | int }}"
+          synchronized_attach: "{{ ueransim_churn_synchronized_attach | bool }}"
+          statefulset: "{{ ueransim_churn_statefulset }}"
+          namespace: "{{ ueransim_churn_namespace }}"
+
+    - name: Collect UE mapper API snapshot before churn
+      ansible.builtin.shell: |
+        set -u
+        OUT="/tmp/{{ churn_run_id }}_ue_mapper_snapshots/before"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        SVC="{{ churn_ue_mapper_service_effective }}"
+        PORT="{{ churn_ue_mapper_local_port_effective }}"
+        rm -rf "$OUT"
+        mkdir -p "$OUT"
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        {
+          echo "phase=before"
+          echo "namespace=$NS"
+          echo "service=$SVC"
+          echo "collected_at=$(date -Is)"
+        } > "$OUT/info.txt"
+        kubectl -n "$NS" get deploy,svc,pods -l app=ue-mapper-api -o wide > "$OUT/k8s_objects.txt" 2>&1 || true
+        if ! kubectl -n "$NS" get svc "$SVC" > "$OUT/service.txt" 2>&1; then
+          echo "UE mapper service not found" > "$OUT/SKIPPED.txt"
+          exit 0
+        fi
+        kubectl -n "$NS" port-forward "svc/$SVC" "${PORT}:80" > "$OUT/port_forward.log" 2>&1 &
+        PF_PID=$!
+        sleep 3
+        endpoints=(
+          "/"
+          "/health"
+          "/metrics"
+          "/inventory/ues?limit={{ churn_ue_mapper_inventory_limit }}"
+          "/all-teids?limit={{ churn_ue_mapper_teid_limit }}"
+          "/resolve/slice?sst=01&sd=ffffff"
+          "/resolve/slice?sst=01&sd=100000"
+          "/ues"
+          "/mappings"
+          "/ue-mapping"
+          "/api/ues"
+        )
+        for path in "${endpoints[@]}"; do
+          safe="$(printf '%s' "$path" | sed 's#[/?&=]#_#g; s#^_*$#root#; s#^_*##')"
+          if command -v curl >/dev/null 2>&1; then
+            curl -sS -m 5 -w "\nHTTP_STATUS=%{http_code}\n" "http://127.0.0.1:${PORT}${path}" > "$OUT/${safe}.txt" 2>&1 || true
+          else
+            echo "curl not found" > "$OUT/${safe}.txt"
+          fi
+        done
+        kill "$PF_PID" >/dev/null 2>&1 || true
+        wait "$PF_PID" >/dev/null 2>&1 || true
+      args:
+        executable: /bin/bash
+      when: churn_collect_ue_mapper_api | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Start UE mapper API sampler during churn
+      ansible.builtin.shell: |
+        set -u
+        OUT="/tmp/{{ churn_run_id }}_ue_mapper_snapshots/samples"
+        STOP="/tmp/{{ churn_run_id }}_ue_mapper_snapshots/STOP"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        SVC="{{ churn_ue_mapper_service_effective }}"
+        PORT="{{ churn_ue_mapper_local_port_effective }}"
+        INTERVAL="{{ churn_ue_mapper_sample_interval_seconds }}"
+        MAX_SECONDS="{{ churn_ue_mapper_sample_max_seconds }}"
+        INVENTORY_LIMIT="{{ churn_ue_mapper_inventory_limit }}"
+        TEID_LIMIT="{{ churn_ue_mapper_teid_limit }}"
+        rm -f "$STOP"
+        mkdir -p "$OUT"
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        {
+          echo "namespace=$NS"
+          echo "service=$SVC"
+          echo "interval_seconds=$INTERVAL"
+          echo "max_seconds=$MAX_SECONDS"
+          echo "inventory_limit=$INVENTORY_LIMIT"
+          echo "teid_limit=$TEID_LIMIT"
+          echo "started_at=$(date -Is)"
+        } > "$OUT/sampler_info.txt"
+        if ! kubectl -n "$NS" get svc "$SVC" > "$OUT/service.txt" 2>&1; then
+          echo "UE mapper service not found" > "$OUT/SKIPPED.txt"
+          exit 0
+        fi
+        kubectl -n "$NS" port-forward "svc/$SVC" "${PORT}:80" > "$OUT/port_forward.log" 2>&1 &
+        PF_PID=$!
+        trap 'kill "$PF_PID" >/dev/null 2>&1 || true; wait "$PF_PID" >/dev/null 2>&1 || true' EXIT
+        sleep 3
+        deadline=$(( $(date +%s) + MAX_SECONDS ))
+        while [ "$(date +%s)" -lt "$deadline" ] && [ ! -f "$STOP" ]; do
+          ts="$(date -u '+%Y%m%dT%H%M%SZ')"
+          sdir="$OUT/$ts"
+          mkdir -p "$sdir"
+          date -Is > "$sdir/collected_at.txt"
+          endpoints=(
+            "/"
+            "/inventory/ues?limit=${INVENTORY_LIMIT}"
+            "/all-teids?limit=${TEID_LIMIT}"
+            "/resolve/slice?sst=01&sd=ffffff"
+            "/resolve/slice?sst=01&sd=100000"
+          )
+          for path in "${endpoints[@]}"; do
+            safe="$(printf '%s' "$path" | sed 's#[/?&=]#_#g; s#^_*$#root#; s#^_*##')"
+            if command -v curl >/dev/null 2>&1; then
+              curl -sS -m 5 -w "\nHTTP_STATUS=%{http_code}\n" "http://127.0.0.1:${PORT}${path}" > "$sdir/${safe}.txt" 2>&1 || true
+            else
+              echo "curl not found" > "$sdir/${safe}.txt"
+            fi
+          done
+          remaining="$INTERVAL"
+          while [ "$remaining" -gt 0 ] && [ ! -f "$STOP" ]; do
+            sleep 1
+            remaining=$((remaining - 1))
+          done
+        done
+        echo "stopped_at=$(date -Is)" >> "$OUT/sampler_info.txt"
+      args:
+        executable: /bin/bash
+      async: "{{ churn_ue_mapper_sample_max_seconds | int + 120 }}"
+      poll: 0
+      register: churn_ue_mapper_sampler
+      when:
+        - churn_collect_ue_mapper_api | bool
+        - churn_collect_ue_mapper_samples | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Start raw AMF pcap capture for churn
+      ansible.builtin.include_tasks: ../tasks/churn_amf_pcap_start.yml
+      when: churn_capture_amf_pcap | bool
+
+    - name: Prepare synchronized churn runner with best-effort deregistration
+      ansible.builtin.shell: |
+        set -euo pipefail
+        SOURCE="{{ ueransim_churn_script }}"
+        DESTINATION="/tmp/{{ churn_run_id }}_run-churn.sh"
+        python3 - "$SOURCE" "$DESTINATION" <<'PY'
+        import sys
+
+        source, destination = sys.argv[1:]
+        with open(source, encoding="utf-8") as stream:
+            script = stream.read()
+
+        replacements = {
+            'kubectl exec -n "$NAMESPACE" "$pod" -- /bin/bash -c': (
+                'kubectl exec -n "$NAMESPACE" -c ue "$pod" -- /bin/bash -c'
+            ),
+            '''        if [ -z "$NODE" ]; then
+                  echo "No active UERANSIM UE node found" >&2
+                  exit 1
+                fi''': '''        if [ -z "$NODE" ]; then
+                  echo "No active UERANSIM UE node found; skipping deregistration"
+                  exit 0
+                fi''',
+            '''  if [ "$failed" -ne 0 ]; then
+            echo "At least one UERANSIM UE failed graceful deregistration" >&2
+            return 1
+          fi''': '''  if [ "$failed" -ne 0 ]; then
+            echo "Warning: at least one UERANSIM UE failed graceful deregistration; continuing with scale-down" >&2
+          fi''',
+        }
+        for old, new in replacements.items():
+            if old not in script:
+                raise SystemExit(f"Could not find expected churn runner block: {old.splitlines()[0]}")
+            script = script.replace(old, new, 1)
+
+        with open(destination, "w", encoding="utf-8") as stream:
+            stream.write(script)
+        PY
+        chmod 0755 "$DESTINATION"
+        bash -n "$DESTINATION"
+      args:
+        executable: /bin/bash
+      when: ueransim_churn_synchronized_attach | bool
+      changed_when: true
+
+    - name: Run synchronized UERANSIM attach/detach churn
+      ansible.builtin.shell: |
+        set -uo pipefail
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ ueransim_churn_namespace }}"
+        STS="{{ ueransim_churn_statefulset }}"
+        GATE="{{ ueransim_churn_attach_gate_name }}"
+        SELECTOR="app=ueransim,component=ue,profile=churn"
+        TIMEOUT="{{ ueransim_churn_attach_gate_timeout_seconds }}"
+        STOP="/tmp/{{ churn_run_id }}_attach_gate.STOP"
+        LOG="/tmp/{{ churn_run_id }}_attach_gate.log"
+        COUNTS=( {{ ueransim_churn_counts }} )
+        rm -f "$STOP" "$LOG"
+
+        gate_coordinator() {
+          for count in "${COUNTS[@]}"; do
+            kubectl -n "$NS" exec "deployment/$GATE" -- rm -f /www/release
+
+            deadline=$(( $(date +%s) + TIMEOUT ))
+            while true; do
+              [ -f "$STOP" ] && return 0
+              desired="$(kubectl -n "$NS" get "statefulset/$STS" \
+                -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+              if [ "${desired:-0}" -eq "$count" ]; then
+                echo "$(date -Is) wave=$count desired replicas observed"
+                break
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "$(date -Is) wave=$count timed out waiting for desired replicas" >&2
+                return 1
+              fi
+              sleep 1
+            done
+
+            deadline=$(( $(date +%s) + TIMEOUT ))
+            while true; do
+              [ -f "$STOP" ] && return 0
+              parked="$(
+                kubectl -n "$NS" get pods -l "$SELECTOR" -o json 2>/dev/null |
+                  python3 -c '
+        import json
+        import sys
+
+        data = json.load(sys.stdin)
+        parked = 0
+        for pod in data.get("items", []):
+            statuses = pod.get("status", {}).get("containerStatuses", [])
+            for status in statuses:
+                if (
+                    status.get("name") == "ue"
+                    and status.get("state", {}).get("running") is not None
+                    and status.get("started") is True
+                ):
+                    parked += 1
+                    break
+        print(parked)
+        ' 2>/dev/null || echo 0
+              )"
+              echo "$(date -Is) wave=$count UE containers ready at attach gate=${parked:-0}/$count"
+              if [ "${parked:-0}" -eq "$count" ]; then
+                break
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "$(date -Is) wave=$count timed out with ${parked:-0}/$count pods at attach gate" >&2
+                return 1
+              fi
+              sleep 2
+            done
+
+            echo "$(date -Is) wave=$count releasing synchronized UE attach"
+            kubectl -n "$NS" exec "deployment/$GATE" -- sh -c 'date -Is > /www/release'
+            echo "$(date -Is) wave=$count attach release token published"
+
+            deadline=$(( $(date +%s) + TIMEOUT ))
+            while true; do
+              [ -f "$STOP" ] && return 0
+              desired="$(kubectl -n "$NS" get "statefulset/$STS" \
+                -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+              if [ "${desired:-0}" -eq 0 ]; then
+                echo "$(date -Is) wave=$count scale-down observed"
+                break
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "$(date -Is) wave=$count timed out waiting for scale-down" >&2
+                return 1
+              fi
+              sleep 1
+            done
+            kubectl -n "$NS" exec "deployment/$GATE" -- rm -f /www/release
+          done
+
+          kubectl -n "$NS" exec "deployment/$GATE" -- rm -f /www/release
+        }
+
+        gate_coordinator > "$LOG" 2>&1 &
+        gate_pid=$!
+
+        "/tmp/{{ churn_run_id }}_run-churn.sh" \
+          --counts "{{ ueransim_churn_counts }}" \
+          --settle-seconds "{{ ueransim_churn_settle_seconds }}" \
+          --between-seconds "{{ ueransim_churn_between_seconds }}"
+        runner_rc=$?
+
+        if [ "$runner_rc" -ne 0 ]; then
+          touch "$STOP"
+        fi
+        wait "$gate_pid"
+        gate_rc=$?
+
+        echo
+        echo "==== synchronized attach gate log ===="
+        cat "$LOG"
+
+        if [ "$runner_rc" -ne 0 ]; then
+          exit "$runner_rc"
+        fi
+        exit "$gate_rc"
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ churn_kubeconfig }}"
+        NAMESPACE: "{{ ueransim_churn_namespace }}"
+        STATEFULSET: "{{ ueransim_churn_statefulset }}"
+        MAPPER_NAMESPACE: "{{ churn_ue_mapper_namespace_effective }}"
+        MAPPER_SERVICE: "{{ churn_ue_mapper_service_effective }}"
+        MAPPER_LOCAL_PORT: "{{ churn_ue_mapper_local_port_effective | int + 1 }}"
+        REQUIRE_MAPPER_REGISTRATION: "{{ 'true' if (churn_enforce_complete_mapper_wave | bool) else 'false' }}"
+      register: ueransim_churn_synchronized_run
+      when: ueransim_churn_synchronized_attach | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Run regular UERANSIM attach/detach churn
+      ansible.builtin.command:
+        argv:
+          - "{{ ueransim_churn_script }}"
+          - "--counts"
+          - "{{ ueransim_churn_counts }}"
+          - "--settle-seconds"
+          - "{{ ueransim_churn_settle_seconds | string }}"
+          - "--between-seconds"
+          - "{{ ueransim_churn_between_seconds | string }}"
+      environment:
+        KUBECONFIG: "{{ churn_kubeconfig }}"
+        NAMESPACE: "{{ ueransim_churn_namespace }}"
+        STATEFULSET: "{{ ueransim_churn_statefulset }}"
+        MAPPER_NAMESPACE: "{{ churn_ue_mapper_namespace_effective }}"
+        MAPPER_SERVICE: "{{ churn_ue_mapper_service_effective }}"
+        MAPPER_LOCAL_PORT: "{{ churn_ue_mapper_local_port_effective | int + 1 }}"
+        REQUIRE_MAPPER_REGISTRATION: "{{ 'true' if (churn_require_ue_mapper_ready | bool) else 'false' }}"
+      register: ueransim_churn_regular_run
+      when: not (ueransim_churn_synchronized_attach | bool)
+      changed_when: true
+      failed_when: false
+
+    - name: Select UERANSIM churn command result
+      ansible.builtin.set_fact:
+        ueransim_churn_run: >-
+          {{
+            ueransim_churn_synchronized_run
+            if (ueransim_churn_synchronized_attach | bool)
+            else ueransim_churn_regular_run
+          }}
+
+    - name: Stop and fetch raw AMF pcap capture for churn
+      ansible.builtin.include_tasks: ../tasks/churn_amf_pcap_stop_fetch.yml
+      when: churn_capture_amf_pcap | bool
+
+    - name: Capture sniffer network counters after churn
+      ansible.builtin.shell: |
+        set -u
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        OUT="/tmp/{{ churn_run_id }}_sniffer_network_stats.txt"
+        {
+          echo
+          echo "==== phase=after collected_at=$(date -Is) ===="
+          kubectl -n "$NS" get pods -o json | python3 -c '
+        import json
+        import sys
+
+        data = json.load(sys.stdin)
+        for pod in data.get("items", []):
+            pod_name = pod.get("metadata", {}).get("name", "")
+            for container in pod.get("spec", {}).get("ephemeralContainers", []):
+                name = container.get("name", "")
+                if name not in {"amf-sniffer", "smf-sniffer"}:
+                    continue
+                env = {
+                    item.get("name"): item.get("value", "")
+                    for item in container.get("env", [])
+                }
+                iface = env.get("amf_sniffer_iface") or env.get("smf_sniffer_iface")
+                print(f"{pod_name}|{name}|{iface}")
+        ' | while IFS='|' read -r pod container iface; do
+            echo
+            echo "---- pod=$pod container=$container iface=$iface ----"
+            kubectl -n "$NS" exec "$pod" -c "$container" -- sh -c '
+              date -Is
+              echo "[proc_net_dev]"
+              cat /proc/net/dev
+              echo "[proc_net_packet]"
+              cat /proc/net/packet 2>/dev/null || true
+              echo "[ip_link]"
+              ip -s link show "$1" 2>/dev/null || true
+            ' sh "$iface" 2>&1 || true
+          done
+        } >> "$OUT" 2>&1
+      args:
+        executable: /bin/bash
+      when: churn_require_ue_mapper_ready | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Fetch sniffer network counter snapshots
+      ansible.builtin.fetch:
+        src: "/tmp/{{ churn_run_id }}_sniffer_network_stats.txt"
+        dest: "{{ churn_results_dir }}/sniffer_network_stats.txt"
+        flat: true
+      when: churn_require_ue_mapper_ready | bool
+      failed_when: false
+
+    - name: Fetch synchronized attach gate log
+      ansible.builtin.fetch:
+        src: "/tmp/{{ churn_run_id }}_attach_gate.log"
+        dest: "{{ churn_results_dir }}/synchronized_attach_gate.log"
+        flat: true
+      when: ueransim_churn_synchronized_attach | bool
+      failed_when: false
+
+    - name: Collect churn failure diagnostics
+      ansible.builtin.shell: |
+        set -u
+        OUT="/tmp/{{ churn_run_id }}_failure_diagnostics.txt"
+        NS="{{ ueransim_churn_namespace }}"
+        SELECTOR="app=ueransim,component=ue,profile=churn"
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        {
+          echo "==== collected_at ===="
+          date -Is
+          echo
+          echo "==== UE pod status ===="
+          kubectl -n "$NS" get pods -l "$SELECTOR" -o wide || true
+          echo
+          echo "==== UE pod phase/reason summary ===="
+          kubectl -n "$NS" get pods -l "$SELECTOR" -o json | python3 -c '
+        import collections
+        import json
+        import sys
+
+        data = json.load(sys.stdin)
+        counts = collections.Counter()
+        for pod in data.get("items", []):
+            status = pod.get("status", {})
+            phase = status.get("phase", "Unknown")
+            statuses = status.get("initContainerStatuses", []) + status.get("containerStatuses", [])
+            reason = ""
+            for container in statuses:
+                state = container.get("state", {})
+                waiting = state.get("waiting")
+                if waiting:
+                    reason = waiting.get("reason", "")
+                    break
+            counts[(phase, reason or "-")] += 1
+        for (phase, reason), count in sorted(counts.items()):
+            print(f"{count:4d} phase={phase} reason={reason}")
+        ' || true
+          echo
+          echo "==== Recent namespace events ===="
+          kubectl -n "$NS" get events --sort-by=.lastTimestamp | tail -n 120 || true
+          echo
+          echo "==== Node allocatable ===="
+          kubectl get nodes \
+            -o custom-columns='NAME:.metadata.name,CPU:.status.allocatable.cpu,MEMORY:.status.allocatable.memory,PODS:.status.allocatable.pods' || true
+          echo
+          echo "==== Node requested resources ===="
+          for node in $(kubectl get nodes -o name 2>/dev/null); do
+            kubectl describe "$node" | sed -n '/^Name:/p;/^Allocated resources:/,/^Events:/p'
+          done
+        } > "$OUT" 2>&1
+      args:
+        executable: /bin/bash
+      when: (ueransim_churn_run.rc | default(0) | int) != 0
+      changed_when: true
+      failed_when: false
+
+    - name: Fetch churn failure diagnostics
+      ansible.builtin.fetch:
+        src: "/tmp/{{ churn_run_id }}_failure_diagnostics.txt"
+        dest: "{{ churn_results_dir }}/churn_failure_diagnostics.txt"
+        flat: true
+      when: (ueransim_churn_run.rc | default(0) | int) != 0
+      failed_when: false
+
+    - name: Stop UE mapper API sampler
+      ansible.builtin.shell: |
+        touch /tmp/{{ churn_run_id }}_ue_mapper_snapshots/STOP
+      when:
+        - churn_collect_ue_mapper_api | bool
+        - churn_collect_ue_mapper_samples | bool
+        - churn_ue_mapper_sampler.ansible_job_id is defined
+      changed_when: true
+      failed_when: false
+
+    - name: Wait for UE mapper API sampler to stop
+      ansible.builtin.async_status:
+        jid: "{{ churn_ue_mapper_sampler.ansible_job_id }}"
+      register: churn_ue_mapper_sampler_wait
+      until: churn_ue_mapper_sampler_wait.finished
+      retries: 15
+      delay: 2
+      when:
+        - churn_collect_ue_mapper_api | bool
+        - churn_collect_ue_mapper_samples | bool
+        - churn_ue_mapper_sampler.ansible_job_id is defined
+      failed_when: false
+
+    - name: Save churn command output locally
+      ansible.builtin.copy:
+        dest: "{{ churn_results_dir }}/churn_command_output.json"
+        mode: "0644"
+        content: "{{ ueransim_churn_run | to_nice_json }}"
+      delegate_to: localhost
+
+    - name: Collect UE mapper API snapshot after churn
+      ansible.builtin.shell: |
+        set -u
+        OUT="/tmp/{{ churn_run_id }}_ue_mapper_snapshots/after"
+        NS="{{ churn_ue_mapper_namespace_effective }}"
+        SVC="{{ churn_ue_mapper_service_effective }}"
+        PORT="{{ churn_ue_mapper_local_port_effective }}"
+        rm -rf "$OUT"
+        mkdir -p "$OUT"
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        {
+          echo "phase=after"
+          echo "namespace=$NS"
+          echo "service=$SVC"
+          echo "collected_at=$(date -Is)"
+        } > "$OUT/info.txt"
+        kubectl -n "$NS" get deploy,svc,pods -l app=ue-mapper-api -o wide > "$OUT/k8s_objects.txt" 2>&1 || true
+        if ! kubectl -n "$NS" get svc "$SVC" > "$OUT/service.txt" 2>&1; then
+          echo "UE mapper service not found" > "$OUT/SKIPPED.txt"
+          exit 0
+        fi
+        kubectl -n "$NS" port-forward "svc/$SVC" "${PORT}:80" > "$OUT/port_forward.log" 2>&1 &
+        PF_PID=$!
+        sleep 3
+        endpoints=(
+          "/"
+          "/health"
+          "/metrics"
+          "/inventory/ues?limit={{ churn_ue_mapper_inventory_limit }}"
+          "/all-teids?limit={{ churn_ue_mapper_teid_limit }}"
+          "/resolve/slice?sst=01&sd=ffffff"
+          "/resolve/slice?sst=01&sd=100000"
+          "/ues"
+          "/mappings"
+          "/ue-mapping"
+          "/api/ues"
+        )
+        for path in "${endpoints[@]}"; do
+          safe="$(printf '%s' "$path" | sed 's#[/?&=]#_#g; s#^_*$#root#; s#^_*##')"
+          if command -v curl >/dev/null 2>&1; then
+            curl -sS -m 5 -w "\nHTTP_STATUS=%{http_code}\n" "http://127.0.0.1:${PORT}${path}" > "$OUT/${safe}.txt" 2>&1 || true
+          else
+            echo "curl not found" > "$OUT/${safe}.txt"
+          fi
+        done
+        kill "$PF_PID" >/dev/null 2>&1 || true
+        wait "$PF_PID" >/dev/null 2>&1 || true
+      args:
+        executable: /bin/bash
+      when: churn_collect_ue_mapper_api | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Archive UE mapper API snapshots
+      ansible.builtin.shell: |
+        tar -C /tmp -czf /tmp/{{ churn_run_id }}_ue_mapper_snapshots.tgz {{ churn_run_id }}_ue_mapper_snapshots 2>/dev/null || true
+      when: churn_collect_ue_mapper_api | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Fetch UE mapper API snapshots
+      ansible.builtin.fetch:
+        src: "/tmp/{{ churn_run_id }}_ue_mapper_snapshots.tgz"
+        dest: "{{ churn_results_dir }}/ue_mapper_snapshots.tgz"
+        flat: true
+      when: churn_collect_ue_mapper_api | bool
+      failed_when: false
+
+    - name: Record churn scenario end
+      ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+      vars:
+        paper_run_id: "{{ churn_run_id }}"
+        paper_results_dir: "{{ churn_results_dir }}"
+        paper_local_timezone: "{{ churn_local_timezone }}"
+        paper_timeline_event:
+          level: "scenario"
+          phase: "end"
+          name: "ueransim-churn"
+          scenario: "ueransim_churn"
+          scenario_title: "UERANSIM attach/detach churn overhead"
+          rc: "{{ ueransim_churn_run.rc | default('unknown') }}"
+
+    - name: Show UERANSIM churn output
+      ansible.builtin.debug:
+        msg: "{{ ueransim_churn_run.stdout_lines | default([]) }}"
+
+- name: Collect UERANSIM churn Kubernetes pod logs
+  hosts: "{{ groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else 'localhost' }}"
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+  vars:
+    ansible_remote_tmp: "/tmp/.ansible-{{ lookup('env', 'USER') | default('controller', true) }}/tmp"
+    churn_run_id: "{{ hostvars['localhost'].churn_run_id }}"
+    churn_results_dir: "{{ hostvars['localhost'].churn_results_dir }}"
+    churn_collect_pod_logs: "{{ hostvars['localhost'].churn_collect_pod_logs | bool }}"
+    churn_pod_log_namespaces_raw: "{{ hostvars['localhost'].churn_pod_log_namespaces }}"
+    churn_kubeconfig: "{{ hostvars['localhost'].churn_kubeconfig }}"
+    churn_pod_log_since: "{{ hostvars['localhost'].churn_pod_log_since }}"
+    churn_pod_log_tail_lines: "{{ hostvars['localhost'].churn_pod_log_tail_lines }}"
+    churn_pod_log_include_previous: "{{ hostvars['localhost'].churn_pod_log_include_previous | bool }}"
+    churn_pod_log_ueransim_sample_limit: "{{ hostvars['localhost'].churn_pod_log_ueransim_sample_limit | int }}"
+  tasks:
+    - name: Normalize Kubernetes pod log namespaces
+      ansible.builtin.set_fact:
+        churn_pod_log_namespaces_effective: >-
+          {{
+            (churn_pod_log_namespaces_raw.split(',') | map('trim') | reject('equalto', '') | list)
+            if (churn_pod_log_namespaces_raw is string)
+            else churn_pod_log_namespaces_raw
+          }}
+      when: churn_collect_pod_logs | bool
+
+    - name: Collect Kubernetes pod logs for churn
+      ansible.builtin.shell: |
+        set -u
+        OUT="/tmp/{{ churn_run_id }}_pod_logs"
+        ARCHIVE="/tmp/{{ churn_run_id }}_pod_logs.tgz"
+        NAMESPACES="{{ churn_pod_log_namespaces_effective | join(' ') }}"
+        SINCE="{{ churn_pod_log_since }}"
+        TAIL="{{ churn_pod_log_tail_lines | int }}"
+        INCLUDE_PREVIOUS="{{ (churn_pod_log_include_previous | bool) | ternary('1', '0') }}"
+        UERANSIM_SAMPLE_LIMIT="{{ churn_pod_log_ueransim_sample_limit | int }}"
+
+        rm -rf "$OUT" "$ARCHIVE"
+        mkdir -p "$OUT"
+        {
+          echo "run_id={{ churn_run_id }}"
+          echo "host=$(hostname -f 2>/dev/null || hostname)"
+          echo "namespaces=${NAMESPACES}"
+          echo "kubeconfig={{ churn_kubeconfig }}"
+          echo "since=${SINCE}"
+          echo "tail=${TAIL}"
+          echo "include_previous=${INCLUDE_PREVIOUS}"
+          echo "ueransim_sample_limit=${UERANSIM_SAMPLE_LIMIT}"
+          echo "collected_at=$(date -Is)"
+        } > "$OUT/collection_info.txt"
+
+        if ! command -v kubectl >/dev/null 2>&1; then
+          echo "kubectl not found on $(hostname)" > "$OUT/ERROR.txt"
+          tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
+          exit 0
+        fi
+
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        kubectl get nodes -o wide > "$OUT/nodes.txt" 2>&1 || true
+        kubectl get pods -A -o wide > "$OUT/all_pods.txt" 2>&1 || true
+
+        for ns in $NAMESPACES; do
+          nsdir="$OUT/$ns"
+          mkdir -p "$nsdir"
+          if ! kubectl get namespace "$ns" > "$nsdir/namespace.txt" 2> "$nsdir/namespace.err"; then
+            echo "namespace $ns not found or not readable" > "$nsdir/SKIPPED.txt"
+            continue
+          fi
+          kubectl -n "$ns" get pods -o wide > "$nsdir/pods.txt" 2>&1 || true
+          kubectl -n "$ns" get events --sort-by=.lastTimestamp > "$nsdir/events.txt" 2>&1 || true
+          pods="$(kubectl -n "$ns" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+          ueransim_sampled=0
+          for pod in $pods; do
+            case "$pod" in
+              ueransim-ue-churn-*)
+                if [ "$ueransim_sampled" -ge "$UERANSIM_SAMPLE_LIMIT" ]; then
+                  continue
+                fi
+                ueransim_sampled=$((ueransim_sampled + 1))
+                ;;
+            esac
+            safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.=-' '_')"
+            pdir="$nsdir/$safe_pod"
+            mkdir -p "$pdir"
+            kubectl -n "$ns" get pod "$pod" -o yaml > "$pdir/pod.yaml" 2>&1 || true
+            kubectl -n "$ns" describe pod "$pod" > "$pdir/describe.txt" 2>&1 || true
+            containers="$(kubectl -n "$ns" get pod "$pod" -o jsonpath='{range .spec.initContainers[*]}{.name}{"\n"}{end}{range .spec.containers[*]}{.name}{"\n"}{end}{range .spec.ephemeralContainers[*]}{.name}{"\n"}{end}' 2>/dev/null || true)"
+            for container in $containers; do
+              safe_container="$(printf '%s' "$container" | tr -c 'A-Za-z0-9_.=-' '_')"
+              kubectl -n "$ns" logs "$pod" -c "$container" --timestamps --since="$SINCE" --tail="$TAIL" \
+                > "$pdir/${safe_container}.log" 2> "$pdir/${safe_container}.log.err" || true
+              if [ "$INCLUDE_PREVIOUS" = "1" ]; then
+                kubectl -n "$ns" logs "$pod" -c "$container" --previous --timestamps --since="$SINCE" --tail="$TAIL" \
+                  > "$pdir/${safe_container}.previous.log" 2> "$pdir/${safe_container}.previous.log.err" || true
+              fi
+            done
+          done
+        done
+        tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
+      args:
+        executable: /bin/bash
+      register: churn_pod_logs_collect_output
+      when: churn_collect_pod_logs | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Fetch Kubernetes pod log archive
+      ansible.builtin.fetch:
+        src: "/tmp/{{ churn_run_id }}_pod_logs.tgz"
+        dest: "{{ churn_results_dir }}/pod_logs.tgz"
+        flat: true
+      when: churn_collect_pod_logs | bool
+      failed_when: false
+
+- name: Clean up UERANSIM pods after a failed churn wave
+  hosts: "{{ groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else 'localhost' }}"
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+  vars:
+    churn_core_host: "{{ groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else '' }}"
+    churn_kubeconfig: "{{ hostvars['localhost'].churn_kubeconfig }}"
+    ueransim_churn_namespace: "{{ hostvars['localhost'].ueransim_churn_namespace | default(ran_ns | default('open5gs')) }}"
+    ueransim_churn_statefulset: "{{ hostvars['localhost'].ueransim_churn_statefulset | default('ueransim-ue-churn') }}"
+  tasks:
+    - name: Gracefully deregister active UEs and scale failed wave to zero
+      ansible.builtin.shell: |
+        set -u
+        NS="{{ ueransim_churn_namespace }}"
+        STS="{{ ueransim_churn_statefulset }}"
+        SELECTOR="app=ueransim,component=ue,profile=churn"
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+
+        pods="$(kubectl -n "$NS" get pods -l "$SELECTOR" \
+          --field-selector=status.phase=Running \
+          -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+        pids=()
+        for pod in $pods; do
+          (
+            kubectl exec -n "$NS" -c ue "$pod" -- /bin/bash -c '
+              CLI="/ueransim/nr-cli"
+              [ -x "$CLI" ] || CLI="$(command -v nr-cli)"
+              NODE="$("$CLI" --dump 2>/dev/null | awk "/^imsi-/ { print \$1; exit }")"
+              [ -z "$NODE" ] || "$CLI" "$NODE" --exec "deregister disable-5g"
+            ' >/dev/null 2>&1 || true
+          ) &
+          pids+=("$!")
+        done
+        for pid in "${pids[@]}"; do
+          wait "$pid" || true
+        done
+        sleep 10
+        kubectl scale "statefulset/$STS" -n "$NS" --replicas=0
+      args:
+        executable: /bin/bash
+      when:
+        - churn_core_host | length > 0
+        - (hostvars[churn_core_host].ueransim_churn_run.rc | default(0) | int) != 0
+      changed_when: true
+      failed_when: false
+
+- name: Remove synchronized UERANSIM attach gate
+  hosts: "{{ groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else 'localhost' }}"
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+  vars:
+    churn_kubeconfig: "{{ hostvars['localhost'].churn_kubeconfig }}"
+    ueransim_churn_namespace: "{{ hostvars['localhost'].ueransim_churn_namespace | default(ran_ns | default('open5gs')) }}"
+    ueransim_churn_statefulset: "{{ hostvars['localhost'].ueransim_churn_statefulset | default('ueransim-ue-churn') }}"
+    ueransim_churn_synchronized_attach: "{{ hostvars['localhost'].ueransim_churn_synchronized_attach | default(true) | bool }}"
+    ueransim_churn_attach_gate_name: "attach-wave-gate"
+    churn_run_id: "{{ hostvars['localhost'].churn_run_id }}"
+  tasks:
+    - name: Restore churn StatefulSet and delete attach gate resources
+      ansible.builtin.shell: |
+        set -u
+        export KUBECONFIG="{{ churn_kubeconfig }}"
+        NS="{{ ueransim_churn_namespace }}"
+        STS="{{ ueransim_churn_statefulset }}"
+        GATE="{{ ueransim_churn_attach_gate_name }}"
+        SELECTOR="app=ueransim,component=ue,profile=churn"
+        STS_ORIGINAL="/tmp/{{ churn_run_id }}_churn_sts_before_gate.json"
+        STS_JSON="/tmp/{{ churn_run_id }}_churn_sts_cleanup.json"
+        PATCH_JSON="/tmp/{{ churn_run_id }}_churn_sts_cleanup_patch.json"
+        ENTRYPOINT_ORIGINAL="/tmp/{{ churn_run_id }}_churn_entrypoint_before_gate.sh"
+        CONFIGMAP_PATCH_JSON="/tmp/{{ churn_run_id }}_churn_configmap_cleanup_patch.json"
+
+        CONFIGMAP="$(
+          kubectl -n "$NS" get "statefulset/$STS" \
+            -o jsonpath='{.spec.template.spec.volumes[?(@.name=="ue-churn-volume")].configMap.name}' \
+            2>/dev/null || true
+        )"
+        kubectl -n "$NS" scale "statefulset/$STS" --replicas=0 >/dev/null 2>&1 || true
+        kubectl -n "$NS" wait --for=delete pod -l "$SELECTOR" --timeout=240s >/dev/null 2>&1 || true
+        kubectl -n "$NS" scale "deployment/$GATE" --replicas=0 >/dev/null 2>&1 || true
+        kubectl -n "$NS" wait --for=delete pod -l "app=$GATE" --timeout=60s >/dev/null 2>&1 || true
+
+        if kubectl -n "$NS" get "statefulset/$STS" -o json > "$STS_JSON" 2>/dev/null; then
+          python3 - "$STS_ORIGINAL" "$STS_JSON" "$PATCH_JSON" <<'PY'
+        import json
+        import os
+        import sys
+
+        original, current, destination = sys.argv[1:]
+        source = original if os.path.exists(original) else current
+        with open(source, encoding="utf-8") as stream:
+            statefulset = json.load(stream)
+        pod_spec = statefulset["spec"]["template"]["spec"]
+        init_containers = [
+            container
+            for container in pod_spec.get("initContainers", [])
+            if container.get("name") != "wait-attach-gate"
+        ]
+        containers = pod_spec["containers"]
+        if source == current:
+            for container in containers:
+                if container.get("name") != "ue":
+                    continue
+                container["env"] = [
+                    item
+                    for item in container.get("env", [])
+                    if item.get("name")
+                    not in {
+                        "UE_ATTACH_GATE_ENABLED",
+                        "UE_ATTACH_GATE_HOST",
+                        "UE_ATTACH_GATE_PORT",
+                    }
+                ]
+                container.pop("startupProbe", None)
+        patch = {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "initContainers": init_containers,
+                        "containers": containers,
+                    }
+                }
+            }
+        }
+        with open(destination, "w", encoding="utf-8") as stream:
+            json.dump(patch, stream)
+        PY
+          kubectl -n "$NS" patch "statefulset/$STS" --type=merge --patch-file "$PATCH_JSON"
+        fi
+
+        if [ -n "$CONFIGMAP" ] && [ -f "$ENTRYPOINT_ORIGINAL" ] && kubectl -n "$NS" get "configmap/$CONFIGMAP" >/dev/null 2>&1; then
+          python3 - "$ENTRYPOINT_ORIGINAL" "$CONFIGMAP_PATCH_JSON" <<'PY'
+        import json
+        import sys
+
+        source, destination = sys.argv[1:]
+        with open(source, encoding="utf-8") as stream:
+            entrypoint = stream.read()
+        with open(destination, "w", encoding="utf-8") as stream:
+            json.dump({"data": {"entrypoint.sh": entrypoint}}, stream)
+        PY
+          kubectl -n "$NS" patch "configmap/$CONFIGMAP" --type=merge --patch-file "$CONFIGMAP_PATCH_JSON"
+        fi
+
+        kubectl -n "$NS" delete "deployment/$GATE" "service/$GATE" --ignore-not-found=true
+        rm -f \
+          "$STS_ORIGINAL" "$STS_JSON" "$PATCH_JSON" \
+          "$ENTRYPOINT_ORIGINAL" "$CONFIGMAP_PATCH_JSON" \
+          "/tmp/{{ churn_run_id }}_churn_configmap_before_gate.json" \
+          "/tmp/{{ churn_run_id }}_churn_configmap_gate_patch.json" \
+          "/tmp/{{ churn_run_id }}_attach_gate.STOP" \
+          "/tmp/{{ churn_run_id }}_run-churn.sh"
+      args:
+        executable: /bin/bash
+      when: ueransim_churn_synchronized_attach | bool
+      changed_when: true
+      failed_when: false
+
+- name: Collect UERANSIM churn overhead metrics
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_remote_tmp: "/tmp/.ansible-{{ lookup('env', 'USER') | default('controller', true) }}/tmp"
+  tasks:
+    - name: Set churn run end epoch
+      ansible.builtin.set_fact:
+        churn_end_epoch: "{{ lookup('pipe', 'date +%s') }}"
+
+    - name: Record churn campaign end
+      ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+      vars:
+        paper_run_id: "{{ churn_run_id }}"
+        paper_results_dir: "{{ churn_results_dir }}"
+        paper_local_timezone: "{{ churn_local_timezone }}"
+        paper_timeline_event:
+          level: "campaign"
+          phase: "end"
+          name: "ueransim-churn-overhead"
+          kind: "ueransim-churn-overhead"
+
+    - name: Write churn experiment metadata
+      ansible.builtin.copy:
+        dest: "{{ churn_results_dir }}/experiment_metadata.json"
+        mode: "0644"
+        content: "{{ churn_metadata | to_nice_json }}"
+      vars:
+        churn_core_host: "{{ groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else '' }}"
+        churn_metadata:
+          kind: "ueransim-churn-overhead"
+          run_id: "{{ churn_run_id }}"
+          results_dir: "{{ churn_results_dir }}"
+          start_epoch: "{{ churn_start_epoch }}"
+          end_epoch: "{{ churn_end_epoch }}"
+          core_host: "{{ churn_core_host }}"
+          counts: "{{ ueransim_churn_counts | default('10 25 50') }}"
+          settle_seconds: "{{ ueransim_churn_settle_seconds | default(60) }}"
+          between_seconds: "{{ ueransim_churn_between_seconds | default(30) }}"
+          synchronized_attach: "{{ ueransim_churn_synchronized_attach | default(true) }}"
+          attach_gate_timeout_seconds: "{{ ueransim_churn_attach_gate_timeout_seconds | default(600) }}"
+          enforce_complete_mapper_wave: "{{ churn_enforce_complete_mapper_wave }}"
+          prometheus_url: "{{ churn_prometheus_url_effective }}"
+          prometheus_step: "{{ churn_prometheus_step }}"
+          prometheus_queries_json: "{{ churn_prometheus_queries_json }}"
+          discover_metrics_regex: "{{ churn_discover_metrics_regex }}"
+          discover_metrics_limit: "{{ churn_discover_metrics_limit }}"
+          ue_mapper_api_snapshots: "{{ churn_collect_ue_mapper_api }}"
+          ue_mapper_api_samples: "{{ churn_collect_ue_mapper_samples }}"
+          ue_mapper_sample_interval_seconds: "{{ churn_ue_mapper_sample_interval_seconds }}"
+          ue_mapper_inventory_limit: "{{ churn_ue_mapper_inventory_limit }}"
+          ue_mapper_teid_limit: "{{ churn_ue_mapper_teid_limit }}"
+          capture_amf_pcap: "{{ churn_capture_amf_pcap }}"
+          amf_pcap_namespace: "{{ churn_amf_pcap_namespace }}"
+          amf_pcap_iface: "{{ churn_amf_pcap_iface }}"
+          amf_pcap_filter: "{{ churn_amf_pcap_filter }}"
+          amf_pcap_snaplen: "{{ churn_amf_pcap_snaplen }}"
+          amf_pcap_image: "{{ churn_amf_pcap_image }}"
+          amf_pcap_container_name: "{{ churn_amf_pcap_container_name }}"
+          pod_logs: "{{ churn_collect_pod_logs }}"
+          notes:
+            - "No user-plane traffic is generated by this churn workflow."
+            - "UE containers wait immediately before nr-ue and are released as one attach burst when synchronized_attach is enabled."
+            - "Synchronized waves record incomplete mapper coverage as a result instead of aborting unless enforce_complete_mapper_wave is enabled."
+            - "CPU/memory are container-level cAdvisor metrics."
+            - "UE mapper API snapshots sample /inventory/ues for connected IMSI, UE IP, slice, and TEID values."
+
+    - name: Export Prometheus churn overhead time series
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/validation/prometheus_range_export.py"
+          - "--prometheus-url"
+          - "{{ churn_prometheus_url_effective }}"
+          - "--start"
+          - "{{ ([churn_start_epoch | int - churn_query_padding_seconds | int, 0] | max) }}"
+          - "--end"
+          - "{{ churn_end_epoch | int + churn_query_padding_seconds | int }}"
+          - "--step"
+          - "{{ churn_prometheus_step }}"
+          - "--queries-json"
+          - "{{ churn_prometheus_queries_json }}"
+          - "--discover-metrics-regex"
+          - "{{ churn_discover_metrics_regex }}"
+          - "--discover-metrics-limit"
+          - "{{ churn_discover_metrics_limit | string }}"
+          - "--out"
+          - "{{ churn_prometheus_work_csv }}"
+          - "--summary-json"
+          - "{{ churn_results_dir }}/prometheus_export_summary.json"
+      when:
+        - churn_collect_prometheus | bool
+        - churn_prometheus_url_effective | length > 0
+      changed_when: true
+      failed_when: false
+
+    - name: Summarize churn overhead metrics
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/validation/summarize_churn_overhead.py"
+          - "--csv"
+          - "{{ churn_prometheus_work_csv }}"
+          - "--out-dir"
+          - "{{ churn_results_dir }}"
+      when: churn_collect_prometheus | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Compress Prometheus churn time series into results
+      ansible.builtin.shell: |
+        set -e
+        if [ -s "{{ churn_prometheus_work_csv }}" ]; then
+          gzip -c "{{ churn_prometheus_work_csv }}" > "{{ churn_results_dir }}/prometheus_timeseries.csv.gz"
+          rm -f "{{ churn_prometheus_work_csv }}"
+        fi
+      args:
+        executable: /bin/bash
+      when: churn_collect_prometheus | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Summarize UE mapper inventory samples
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/validation/summarize_ue_mapper_samples.py"
+          - "--snapshots-tgz"
+          - "{{ churn_results_dir }}/ue_mapper_snapshots.tgz"
+          - "--out-dir"
+          - "{{ churn_results_dir }}"
+      when: churn_collect_ue_mapper_api | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Correlate churn stages across core, sniffers, and UE mapper
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/validation/correlate_ueransim_churn.py"
+          - "--results-dir"
+          - "{{ churn_results_dir }}"
+          - "--imsi-prefix"
+          - "{{ churn_imsi_prefix }}"
+          - "--ordinal-width"
+          - "{{ churn_imsi_ordinal_width | string }}"
+      changed_when: true
+      failed_when: false
+
+    - name: Finalize churn timeline
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/validation/paper_timeline_finalize.py"
+          - "--timeline-jsonl"
+          - "{{ churn_results_dir }}/timeline_events.jsonl"
+          - "--out-dir"
+          - "{{ churn_results_dir }}"
+          - "--run-id"
+          - "{{ churn_run_id }}"
+          - "--timezone"
+          - "{{ churn_local_timezone }}"
+      register: churn_timeline_finalize_output
+      changed_when: true
+      failed_when: false
+
+    - name: Write UERANSIM churn README
+      ansible.builtin.copy:
+        dest: "{{ churn_results_dir }}/README.md"
+        mode: "0644"
+        content: |
+          # UERANSIM Churn Overhead Run {{ churn_run_id }}
+
+          This run starts every `ueransim-ue-churn` container, pauses it immediately before `nr-ue`, releases the full wave as one registration burst, and then detaches it. It does not generate user-plane traffic.
+
+          Main artifacts:
+          - `prometheus_timeseries.csv.gz`: gzip-compressed CPU, memory, churn, UE mapper, readiness, restart, and probe-loss metrics.
+          - `overhead_summary.csv`: mean/p50/p95/max by query, pod, and container.
+          - `focused_overhead_summary.csv`: focused AMF, SMF, UPF, UERANSIM, and UE mapper rows.
+          - `ue_mapper_overhead_summary.csv`: UE mapper CPU/memory summary.
+          - `sniffer_overhead_summary.csv`: AMF/SMF mapper-sniffer CPU/memory summary.
+          - `ue_mapper_snapshots.tgz`: UE mapper API snapshots before, during, and after churn.
+          - `ue_mapper_inventory_samples.csv`: sampled connected UE rows from `/inventory/ues`, including IMSI, UE IP, slice, RAN UE ID, and UL/DL TEIDs.
+          - `ue_mapper_inventory_counts.csv`: sampled connected UE count over time from `/inventory/ues`.
+          - `churn_stage_correlation.csv`: per-wave, per-IMSI evidence from AMF, SMF, both sniffers, and the mapper.
+          - `churn_stage_summary.csv`: checkpoint totals for each attach wave.
+          - `churn_diagnosis.md/json`: first missing pipeline stage for every incomplete IMSI.
+          - `pcaps/amf_*_{{ hostvars['localhost'].churn_amf_pcap_iface }}.pcap`: optional raw AMF packet captures gathered during churn when `churn_capture_amf_pcap=true`.
+          - `pcaps/amf_*_{{ hostvars['localhost'].churn_amf_pcap_iface }}.log`: capture-tool logs paired with those AMF pcaps.
+          - `sniffer_network_stats.txt`: before/after interface and packet-socket counters from every AMF/SMF sniffer.
+          - `synchronized_attach_gate.log`: timestamps for pod parking, wave release, and scale-down.
+          - `pod_logs.tgz`: Kubernetes inventory/events, control-plane logs, ephemeral sniffer logs, and a bounded sample of UERANSIM UE pod details.
+          - `timeline_summary.md/csv/json`: local-time campaign and churn window recap.
+
+          UE mapper note:
+          Prometheus gives container CPU/memory if cAdvisor is scraped. UE inventory values come from the UE mapper API `/inventory/ues` endpoint. During synchronized bursts, incomplete inventory is retained as an experimental result instead of aborting later waves.
+
+    - name: Show UERANSIM churn output paths
+      ansible.builtin.debug:
+        msg:
+          - "UERANSIM churn results: {{ churn_results_dir }}"
+          - "Prometheus CSV: {{ churn_results_dir }}/prometheus_timeseries.csv.gz"
+          - "Focused overhead summary: {{ churn_results_dir }}/focused_overhead_summary.csv"
+          - "UE mapper overhead summary: {{ churn_results_dir }}/ue_mapper_overhead_summary.csv"
+          - "Mapper sniffer overhead summary: {{ churn_results_dir }}/sniffer_overhead_summary.csv"
+          - "UE mapper API snapshots: {{ churn_results_dir }}/ue_mapper_snapshots.tgz"
+          - "UE mapper inventory samples: {{ churn_results_dir }}/ue_mapper_inventory_samples.csv"
+          - "UE mapper inventory counts: {{ churn_results_dir }}/ue_mapper_inventory_counts.csv"
+          - "Churn stage diagnosis: {{ churn_results_dir }}/churn_diagnosis.md"
+          - "AMF pcaps: {{ churn_results_dir }}/pcaps"
+          - "Pod logs: {{ churn_results_dir }}/pod_logs.tgz"
+          - "Timeline recap: {{ churn_results_dir }}/timeline_summary.md"
+
+    - name: Fail after collecting artifacts if churn command failed
+      ansible.builtin.fail:
+        msg: |
+          UERANSIM churn failed with rc={{ hostvars[churn_core_host].ueransim_churn_run.rc | default('unknown') }}.
+          Partial overhead artifacts were collected in {{ churn_results_dir }}.
+
+          Runner stdout:
+          {{ hostvars[churn_core_host].ueransim_churn_run.stdout | default('') }}
+
+          Runner stderr:
+          {{ hostvars[churn_core_host].ueransim_churn_run.stderr | default('') }}
+
+          Full command result:
+          {{ churn_results_dir }}/churn_command_output.json
+      vars:
+        churn_core_host: "{{ groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else '' }}"
+      when:
+        - churn_core_host | length > 0
+        - (hostvars[churn_core_host].ueransim_churn_run.rc | default(0) | int) != 0

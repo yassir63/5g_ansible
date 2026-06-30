@@ -1,0 +1,79 @@
+---
+- name: Stop AMF pcap capture after churn
+  ansible.builtin.shell: |
+    set -eu
+    ns="{{ churn_amf_pcap_namespace }}"
+    pod="{{ item.metadata.name }}"
+    safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.-' '_')"
+    kubectl -n "$ns" exec "$pod" -c "{{ churn_amf_pcap_container_name }}" -- sh -c '
+      run_dir="$1"
+      capture_base="$2"
+      pid_file="$run_dir/${capture_base}.pid"
+      if [ -f "$pid_file" ]; then
+        kill -INT "$(cat "$pid_file")" 2>/dev/null || true
+        sleep 3
+      fi
+    ' sh "/tmp/{{ churn_run_id }}_amf_pcap" "amf_${safe_pod}_{{ churn_amf_pcap_iface }}"
+  args:
+    executable: /bin/bash
+  loop: "{{ churn_amf_pcap_pod_list | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  changed_when: false
+  failed_when: false
+
+- name: Copy AMF pcap files to core-node staging
+  ansible.builtin.shell: |
+    set -eu
+    ns="{{ churn_amf_pcap_namespace }}"
+    pod="{{ item.metadata.name }}"
+    safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.-' '_')"
+    mkdir -p "/tmp/{{ churn_run_id }}_amf_pcap"
+    kubectl -n "$ns" exec "$pod" -c "{{ churn_amf_pcap_container_name }}" -- \
+      cat "/tmp/{{ churn_run_id }}_amf_pcap/amf_${safe_pod}_{{ churn_amf_pcap_iface }}.pcap" \
+      > "/tmp/{{ churn_run_id }}_amf_pcap/amf_${safe_pod}_{{ churn_amf_pcap_iface }}.pcap"
+  args:
+    executable: /bin/bash
+  loop: "{{ churn_amf_pcap_pod_list | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  changed_when: true
+  failed_when: false
+
+- name: Copy AMF pcap logs to core-node staging
+  ansible.builtin.shell: |
+    set -eu
+    ns="{{ churn_amf_pcap_namespace }}"
+    pod="{{ item.metadata.name }}"
+    safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.-' '_')"
+    mkdir -p "/tmp/{{ churn_run_id }}_amf_pcap"
+    kubectl -n "$ns" exec "$pod" -c "{{ churn_amf_pcap_container_name }}" -- \
+      cat "/tmp/{{ churn_run_id }}_amf_pcap/amf_${safe_pod}_{{ churn_amf_pcap_iface }}.log" \
+      > "/tmp/{{ churn_run_id }}_amf_pcap/amf_${safe_pod}_{{ churn_amf_pcap_iface }}.log"
+  args:
+    executable: /bin/bash
+  loop: "{{ churn_amf_pcap_pod_list | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  changed_when: true
+  failed_when: false
+
+- name: Fetch AMF pcap files into churn results
+  ansible.builtin.fetch:
+    src: "/tmp/{{ churn_run_id }}_amf_pcap/amf_{{ item.metadata.name | regex_replace('[^A-Za-z0-9_.-]', '_') }}_{{ churn_amf_pcap_iface }}.pcap"
+    dest: "{{ churn_results_dir }}/pcaps/amf_{{ item.metadata.name | regex_replace('[^A-Za-z0-9_.-]', '_') }}_{{ churn_amf_pcap_iface }}.pcap"
+    flat: true
+  loop: "{{ churn_amf_pcap_pod_list | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  failed_when: false
+
+- name: Fetch AMF pcap logs into churn results
+  ansible.builtin.fetch:
+    src: "/tmp/{{ churn_run_id }}_amf_pcap/amf_{{ item.metadata.name | regex_replace('[^A-Za-z0-9_.-]', '_') }}_{{ churn_amf_pcap_iface }}.log"
+    dest: "{{ churn_results_dir }}/pcaps/amf_{{ item.metadata.name | regex_replace('[^A-Za-z0-9_.-]', '_') }}_{{ churn_amf_pcap_iface }}.log"
+    flat: true
+  loop: "{{ churn_amf_pcap_pod_list | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  failed_when: false

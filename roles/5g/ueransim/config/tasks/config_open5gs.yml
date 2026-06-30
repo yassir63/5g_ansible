@@ -55,6 +55,11 @@
       .slices = {{ ueransim_slices | to_json }}
     ' "{{ ueransim_root }}/ueransim-gnb/config/open5gs-gnb.yaml"
 
+- name: Validate ueransim deployment mode
+  ansible.builtin.fail:
+    msg: "Invalid ueransim_deploy_mode={{ ueransim_deploy_mode }}. Use static or churn."
+  when: (ueransim_deploy_mode | default('static')) not in ['static', 'churn']
+
 - name: Rewrite ueransim UE configs (open5gs)
   ansible.builtin.copy:
     dest: "{{ ueransim_root }}/ueransim-ue/ue{{ ue_num }}/ue{{ ue_num }}.yaml"
@@ -65,9 +70,11 @@
     curr_sd: "{{ lookup('template', 'slice_sd.j2', template_vars={'sl_item': slice_data}) | trim }}"
     ue_num: "{{ '1' if item.key == 'uesim01' else '2' if item.key == 'uesim02' else '3' }}"
   loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['uesim01', 'uesim02', 'uesim03']) | list }}"
+  when: (ueransim_deploy_mode | default('static')) == 'static'
 
 - name: Set replicas to 0 for all UE deployments
   ansible.builtin.shell: >
     {{ yq_bin_path }} eval -i '.spec.replicas = 0'
     "{{ ueransim_root }}/ueransim-ue/ue{{ item }}/ue-deployment.yaml"
   loop: [1, 2, 3]
+  when: (ueransim_deploy_mode | default('static')) == 'static'

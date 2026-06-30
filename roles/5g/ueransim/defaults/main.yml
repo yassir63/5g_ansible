@@ -1,6 +1,24 @@
 ---
 repo_ueransim_dest: "/root/open5gs-k8s"
 ueransim_root: "{{ repo_ueransim_dest }}/ueransim"
+ueransim_deploy_mode: "static"
+ueransim_churn_initial_replicas: 0
+ueransim_churn_subscribers: 100
+ueransim_churn_counts: "10 25 50"
+ueransim_churn_settle_seconds: 60
+ueransim_churn_between_seconds: 30
+ueransim_churn_statefulset: "ueransim-ue-churn"
+ueransim_churn_kubelet_max_pods: 200
+ueransim_churn_synchronized_attach: true
+ueransim_churn_attach_gate_timeout_seconds: 600
+ueransim_run_churn_after_deploy: false
+churn_capture_amf_pcap: false
+churn_amf_pcap_namespace: "open5gs"
+churn_amf_pcap_iface: "n3"
+churn_amf_pcap_filter: "sctp port 38412"
+churn_amf_pcap_snaplen: 0
+churn_amf_pcap_image: "r2labuser/amf-sniffer:2026w10"
+churn_amf_pcap_container_name: "amf-pcap"
 yq_version: "v4.45.1"
 yq_bin_path: "/usr/local/bin/yq"
 yq_url: "https://github.com/mikefarah/yq/releases/download/{{ yq_version }}/yq_linux_amd64"
