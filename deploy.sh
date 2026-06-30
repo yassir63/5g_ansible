@@ -27,6 +27,10 @@ SCENARIO_R2LAB_MULTI="Iperf R2lab scenario without interference, with multiple s
 SCENARIO_R2LAB_PING="Ping R2lab scenario without interference, with multiple simultaneous UEs"
 REQUESTED_CHURN_SUBSCRIBERS=""
 REQUESTED_CHURN_COUNTS=""
+REQUESTED_GENERIC_EXPERIMENT_SCENARIO=""
+REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS=""
+REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED=""
+GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS=""
 CHURN_RUNS_VIA_DEPLOY=false
 
 usage() {
@@ -59,6 +63,12 @@ usage() {
     echo "--ueransim-churn         Deploy/run the Open5GS UERANSIM attach/detach churn scenario"
     echo "--churn-subscribers <n> Number of generated churn subscribers"
     echo "--churn-counts <list>   Space-separated waves, e.g. \"10 50 100 200\""
+    echo "--experiment <file|name> Run a generic experiment scenario through playbooks/run_experiment.yml"
+    echo "                         Names resolve from scenarios/experiment_examples/<name>.yml"
+    echo "--experiment-artifacts <file|name>"
+    echo "                         Artifact profile for --experiment; names resolve from configs/artifacts/profiles/<name>.yml"
+    echo "--no-experiment-artifacts"
+    echo "                         Run --experiment with only timeline/section logs, no Prometheus/pod-log/pcap collection"
     echo "-h, --help               Show help"
 }
 
@@ -168,6 +178,21 @@ parse_args() {
           REQUESTED_EXPERIMENT_MODE="ueransim-churn"
           ;;
 
+        --experiment|--generic-experiment)
+          shift
+          REQUESTED_EXPERIMENT_MODE="generic-experiment"
+          REQUESTED_GENERIC_EXPERIMENT_SCENARIO="${1:-}"
+          ;;
+
+        --experiment-artifacts|--artifact-profile)
+          shift
+          REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS="${1:-}"
+          ;;
+
+        --no-experiment-artifacts)
+          REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED=false
+          ;;
+
         --churn-subscribers)
           shift
           REQUESTED_CHURN_SUBSCRIBERS="${1:-}"
@@ -259,6 +284,123 @@ append_cli_extra_vars() {
         ANSIBLE_EXTRA_ARGS+=(-e "$clean_ev")
       fi
     done
+}
+
+resolve_generic_experiment_scenario_file() {
+    local input="${1:-}"
+    local candidate=""
+
+    if [[ -z "$input" ]]; then
+      echo "❌ Missing generic experiment scenario. Use --experiment <file|name>." >&2
+      echo "Examples: artifact_smoke_test, two_ue_iperf_40m, two_ue_direction_matrix_40m" >&2
+      return 1
+    fi
+
+    if [[ -f "$input" ]]; then
+      printf '%s' "$input"
+      return 0
+    fi
+
+    candidate="scenarios/experiment_examples/${input}.yml"
+    if [[ -f "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+
+    candidate="scenarios/experiment_templates/${input}.yml"
+    if [[ -f "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+
+    echo "❌ Generic experiment scenario not found: $input" >&2
+    echo "Tried: $input, scenarios/experiment_examples/${input}.yml, scenarios/experiment_templates/${input}.yml" >&2
+    return 1
+}
+
+resolve_generic_experiment_artifacts_file() {
+    local input="${1:-default_5g_observability}"
+    local candidate=""
+
+    if [[ -z "$input" || "$input" == "none" || "$input" == "false" ]]; then
+      printf ''
+      return 0
+    fi
+
+    if [[ -f "$input" ]]; then
+      printf '%s' "$input"
+      return 0
+    fi
+
+    candidate="configs/artifacts/profiles/${input}.yml"
+    if [[ -f "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+
+    echo "❌ Generic experiment artifact profile not found: $input" >&2
+    echo "Tried: $input and configs/artifacts/profiles/${input}.yml" >&2
+    return 1
+}
+
+generic_experiment_has_sections() {
+    local file="$1"
+    local detector_status=0
+
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "$file" <<'PY' >/dev/null 2>&1
+import sys
+
+try:
+    import yaml
+except Exception:
+    sys.exit(3)
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+
+sections = data.get("sections") or []
+sys.exit(0 if isinstance(sections, list) and len(sections) > 0 else 2)
+PY
+      detector_status=$?
+      if [[ "$detector_status" -eq 0 ]]; then
+        return 0
+      fi
+      if [[ "$detector_status" -eq 2 ]]; then
+        return 1
+      fi
+    fi
+
+    # A lightweight deploy.sh-side check. The Ansible runner still owns the
+    # authoritative YAML parsing; this is only to decide whether to ask for the
+    # default full_run observation duration.
+    grep -Eq '^[[:space:]]*sections:[[:space:]]*($|#)' "$file"
+}
+
+prompt_generic_default_section_seconds_if_needed() {
+    local duration_input=""
+
+    if [[ "${experiment_artifacts_enabled:-true}" != true ]]; then
+      return
+    fi
+
+    if generic_experiment_has_sections "$experiment_scenario_file"; then
+      return
+    fi
+
+    echo ""
+    echo "No sections were found in ${experiment_scenario_file}."
+    echo "The runner will create one default full_run artifact window."
+    read -rp "How long should that full_run window last in seconds? [default: 60]: " duration_input
+
+    if [[ -z "$duration_input" ]]; then
+      GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS="60"
+    elif [[ "$duration_input" =~ ^[0-9]+$ && "$duration_input" -gt 0 ]]; then
+      GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS="$duration_input"
+    else
+      echo "❌ Invalid full_run duration: $duration_input"
+      exit 1
+    fi
 }
 
 ############################
@@ -607,6 +749,9 @@ optional_scenarios() {
     validation_duration_override=""
     validation_tcp_bitrate_override=""
     validation_mtu_ping_size_override=""
+    experiment_scenario_file=""
+    experiment_artifacts_file=""
+    experiment_artifacts_enabled=true
     requires_iperf_server=true
     ueransim_churn_repo_url="${DEFAULT_UERANSIM_CHURN_REPO_URL}"
     ueransim_churn_repo_branch="${DEFAULT_UERANSIM_CHURN_REPO_BRANCH}"
@@ -669,13 +814,36 @@ optional_scenarios() {
     )
 
     if [[ -n "${REQUESTED_EXPERIMENT_MODE:-}" ]]; then
-      if [[ "$REQUESTED_EXPERIMENT_MODE" != "ueransim-churn" && "$platform" != "r2lab" ]]; then
+      if [[ "$REQUESTED_EXPERIMENT_MODE" != "ueransim-churn" && "$REQUESTED_EXPERIMENT_MODE" != "generic-experiment" && "$platform" != "r2lab" ]]; then
         echo "❌ Automated paper/validation workflows currently require platform=r2lab."
         exit 1
       fi
 
       run_scenario=true
       case "$REQUESTED_EXPERIMENT_MODE" in
+        "generic-experiment")
+          scenario="Generic experiment"
+          requires_iperf_server=false
+          experiment_scenario_file="$(resolve_generic_experiment_scenario_file "$REQUESTED_GENERIC_EXPERIMENT_SCENARIO")" || exit 1
+          if [[ "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED:-true}" == false ]]; then
+            experiment_artifacts_enabled=false
+            experiment_artifacts_file=""
+          else
+            experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-default_5g_observability}")" || exit 1
+          fi
+          if [[ "$SKIP_INPUTS" != true ]]; then
+            prompt_generic_default_section_seconds_if_needed
+          fi
+          echo "Generic experiment scenario file: ${experiment_scenario_file}"
+          if [[ "${experiment_artifacts_enabled}" == true && -n "${experiment_artifacts_file:-}" ]]; then
+            echo "Generic experiment artifact profile: ${experiment_artifacts_file}"
+          elif [[ "${experiment_artifacts_enabled}" == true ]]; then
+            echo "Generic experiment artifact profile: none (scenario/default collection settings only)"
+          else
+            echo "Generic experiment artifact collection: disabled"
+          fi
+          ;;
+
         "tcp-paper")
           scenario="TCP paper scenarios"
           paper_scenario_names="${REQUESTED_TCP_PAPER_SCENARIOS:-all}"
@@ -853,6 +1021,10 @@ paper_duration_override="${REQUESTED_EXPERIMENT_DURATION:-}"
 validation_duration_override="${REQUESTED_EXPERIMENT_DURATION:-}"
 validation_tcp_bitrate_override="${REQUESTED_VALIDATION_TCP_BITRATE:-${VALIDATION_TCP_BITRATE:-}}"
 validation_mtu_ping_size_override="${REQUESTED_VALIDATION_MTU_PING_SIZE:-${VALIDATION_MTU_PING_SIZE:-}}"
+experiment_scenario_file="$experiment_scenario_file"
+experiment_artifacts_file="$experiment_artifacts_file"
+experiment_artifacts_enabled="$experiment_artifacts_enabled"
+generic_experiment_default_section_seconds="$GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS"
 requires_iperf_server="$requires_iperf_server"
 ueransim_churn_repo_url="$ueransim_churn_repo_url"
 ueransim_churn_repo_branch="$ueransim_churn_repo_branch"
@@ -886,6 +1058,7 @@ EOF
       if [[ "$platform" == "r2lab" ]]; then
         options+=("Latency validation pipeline")
       fi
+      options+=("Generic experiment")
       if [[ "$core" == "open5gs" && "$ran" == "ueransim" ]]; then
         options+=("UERANSIM attach/detach churn")
       else
@@ -911,7 +1084,39 @@ EOF
       # Simply use the run_iperf_test.sh script to run the selected iperf test scenario after deployment.
 
       if [[ "$run_scenario" == true ]]; then
-        if [[ "$scenario" == "TCP paper scenarios" ]]; then
+        if [[ "$scenario" == "Generic experiment" ]]; then
+          requires_iperf_server=false
+          echo ""
+          echo "Generic experiment selected."
+          echo "This runs your experiment YAML through deploy.sh, then optionally collects artifacts."
+          echo "Available example names:"
+          echo "  artifact_smoke_test"
+          echo "  two_ue_iperf_40m"
+          echo "  two_ue_direction_matrix_40m"
+          read -rp "Experiment scenario file or example name [default: artifact_smoke_test]: " experiment_scenario_input
+          experiment_scenario_file="$(resolve_generic_experiment_scenario_file "${experiment_scenario_input:-artifact_smoke_test}")" || exit 1
+          read -rp "Collect artifacts after the experiment? [Y/n]: " experiment_artifacts_choice
+          if [[ "$experiment_artifacts_choice" =~ ^[Nn]$ ]]; then
+            experiment_artifacts_enabled=false
+            experiment_artifacts_file=""
+          else
+            experiment_artifacts_enabled=true
+            echo "Artifact profiles:"
+            echo "  default_5g_observability"
+            echo "  pod_logs_and_pcaps"
+            read -rp "Artifact profile file or name [default: default_5g_observability; use none for scenario/default collection settings only]: " experiment_artifacts_input
+            experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${experiment_artifacts_input:-default_5g_observability}")" || exit 1
+          fi
+          prompt_generic_default_section_seconds_if_needed
+          echo "Generic experiment scenario file: ${experiment_scenario_file}"
+          if [[ "${experiment_artifacts_enabled}" == true && -n "${experiment_artifacts_file:-}" ]]; then
+            echo "Generic experiment artifact profile: ${experiment_artifacts_file}"
+          elif [[ "${experiment_artifacts_enabled}" == true ]]; then
+            echo "Generic experiment artifact profile: none (scenario/default collection settings only)"
+          else
+            echo "Generic experiment artifact collection: disabled"
+          fi
+        elif [[ "$scenario" == "TCP paper scenarios" ]]; then
           echo ""
           echo "Select TCP paper scenario(s) to run (default: all):"
           echo "0) all TCP paper scenarios"
@@ -1211,6 +1416,10 @@ paper_duration_override="$paper_duration_override"
 validation_duration_override="$validation_duration_override"
 validation_tcp_bitrate_override="$validation_tcp_bitrate_override"
 validation_mtu_ping_size_override="$validation_mtu_ping_size_override"
+experiment_scenario_file="$experiment_scenario_file"
+experiment_artifacts_file="$experiment_artifacts_file"
+experiment_artifacts_enabled="$experiment_artifacts_enabled"
+generic_experiment_default_section_seconds="$GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS"
 requires_iperf_server="$requires_iperf_server"
 ueransim_churn_repo_url="$ueransim_churn_repo_url"
 ueransim_churn_repo_branch="$ueransim_churn_repo_branch"
@@ -1390,13 +1599,29 @@ print_summary() {
           [[ -n "${paper_duration_override:-}" ]] && echo "  Duration override: ${paper_duration_override}s"
           [[ -n "${paper_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${paper_prometheus_url}"
         ;;
+        "Generic experiment")
+          echo "Will run generic experiment through playbooks/run_experiment.yml."
+          echo "  Scenario file: ${experiment_scenario_file:-unset}"
+          if [[ "${experiment_artifacts_enabled:-true}" == true && -n "${experiment_artifacts_file:-}" ]]; then
+            echo "  Artifact profile: ${experiment_artifacts_file}"
+          elif [[ "${experiment_artifacts_enabled:-true}" == true ]]; then
+            echo "  Artifact profile: none (scenario/default collection settings only)"
+          else
+            echo "  Artifact collection: disabled"
+          fi
+          [[ -n "${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}" ]] && echo "  Default full_run window: ${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}s"
+          [[ -n "${REQUESTED_EXPERIMENT_DURATION:-}" ]] && echo "  Duration override passed as iperf_duration: ${REQUESTED_EXPERIMENT_DURATION}s"
+          [[ -n "${REQUESTED_PROMETHEUS_URL:-}" ]] && echo "  Prometheus URL override: ${REQUESTED_PROMETHEUS_URL}"
+          [[ -n "${REQUESTED_TARGET_SERVER:-}" ]] && echo "  Target server override: ${REQUESTED_TARGET_SERVER}"
+        ;;
 	        "Latency validation pipeline")
 	          echo "Will run latency validation scenario(s): ${validation_scenario_names:-all}. UEs are left connected at the end."
 	          echo "Artifacts will include iperf JSON logs, 1s Prometheus CSV, optional pcaps, and experiment_analysis.ipynb."
 	          [[ -n "${validation_duration_override:-}" ]] && echo "  Duration override: ${validation_duration_override}s"
-	          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  TCP bitrate override: ${validation_tcp_bitrate_override}"
-	          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  v06 MTU-sized ping payload override: ${validation_mtu_ping_size_override} bytes"
-	          [[ -n "${validation_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${validation_prometheus_url}"
+		          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  TCP bitrate override: ${validation_tcp_bitrate_override}"
+		          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  v06 MTU-sized ping payload override: ${validation_mtu_ping_size_override} bytes"
+		          [[ -n "${validation_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${validation_prometheus_url}"
+	        ;;
         "$SCENARIO_R2LAB_MULTI")
           echo "Will run iperf on each UE individually (${R2LAB_UES[0]}), and then all UEs simultaneously.  Will test uplink and downlink for both TCP and UDP.  Each test lasts 30s (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
         ;;
@@ -1927,6 +2152,7 @@ run_scenario() {
     if [[ -n "${REQUESTED_PROMETHEUS_URL:-}" && -z "${paper_prometheus_url:-}" && -z "${validation_prometheus_url:-}" ]]; then
       ANSIBLE_EXTRA_ARGS+=(-e "paper_prometheus_url=${REQUESTED_PROMETHEUS_URL}")
       ANSIBLE_EXTRA_ARGS+=(-e "validation_prometheus_url=${REQUESTED_PROMETHEUS_URL}")
+      ANSIBLE_EXTRA_ARGS+=(-e "experiment_prometheus_url=${REQUESTED_PROMETHEUS_URL}")
     fi
 
     if [[ -n "${REQUESTED_EXPERIMENT_DURATION:-}" && -z "${paper_duration_override:-}" && -z "${validation_duration_override:-}" ]]; then
@@ -1936,6 +2162,10 @@ run_scenario() {
           ;;
         "validation")
           ANSIBLE_EXTRA_ARGS+=(-e "validation_duration=${REQUESTED_EXPERIMENT_DURATION}")
+          ;;
+        "generic-experiment")
+          ANSIBLE_EXTRA_ARGS+=(-e "iperf_duration=${REQUESTED_EXPERIMENT_DURATION}")
+          ANSIBLE_EXTRA_ARGS+=(-e "experiment_default_section_seconds=${REQUESTED_EXPERIMENT_DURATION}")
           ;;
         *)
           ANSIBLE_EXTRA_ARGS+=(-e "paper_duration=${REQUESTED_EXPERIMENT_DURATION}")
@@ -1980,6 +2210,18 @@ run_scenario() {
           scenario="Latency validation pipeline"
           validation_scenario_names="${REQUESTED_VALIDATION_SCENARIOS:-${validation_scenario_names:-all}}"
           ;;
+        "generic-experiment")
+          scenario="Generic experiment"
+          requires_iperf_server=false
+          experiment_scenario_file="${experiment_scenario_file:-$(resolve_generic_experiment_scenario_file "$REQUESTED_GENERIC_EXPERIMENT_SCENARIO")}" || exit 1
+          if [[ "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED:-${experiment_artifacts_enabled:-true}}" == false ]]; then
+            experiment_artifacts_enabled=false
+            experiment_artifacts_file=""
+          else
+            experiment_artifacts_enabled=true
+            experiment_artifacts_file="${experiment_artifacts_file:-$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-default_5g_observability}")}" || exit 1
+          fi
+          ;;
         "ueransim-churn")
           scenario="UERANSIM attach/detach churn"
           ;;
@@ -2012,6 +2254,27 @@ run_scenario() {
               playbooks/run_tcp_paper_scenarios.yml
             scenario_status=$?
             ;;
+          "Generic experiment")
+            GENERIC_EXPERIMENT_ARGS=(-e "experiment_scenario_file=${experiment_scenario_file}")
+            if [[ "${experiment_artifacts_enabled:-true}" == true && -n "${experiment_artifacts_file:-}" ]]; then
+              GENERIC_EXPERIMENT_ARGS+=(-e "experiment_artifacts_file=${experiment_artifacts_file}")
+            fi
+            if [[ "${experiment_artifacts_enabled:-true}" != true ]]; then
+              GENERIC_EXPERIMENT_ARGS+=(-e "experiment_collect_artifacts=false")
+            fi
+            if [[ -n "${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}" ]]; then
+              GENERIC_EXPERIMENT_ARGS+=(-e "experiment_default_section_seconds=${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}")
+            fi
+            if [[ -n "${REQUESTED_TARGET_SERVER:-}" ]]; then
+              GENERIC_EXPERIMENT_ARGS+=(-e "target_server_host=${REQUESTED_TARGET_SERVER}")
+            fi
+            run_logged_cmd "${DIR_LOGS}/logs-scenario_generic-experiment.txt" \
+              ansible-playbook -i "$INVENTORY" \
+              "${ANSIBLE_EXTRA_ARGS[@]}" \
+              "${GENERIC_EXPERIMENT_ARGS[@]}" \
+              playbooks/run_experiment.yml
+            scenario_status=$?
+            ;;
 	          "Latency validation pipeline")
 	            extra_var_defined "validation_extract_pcap_rtt" || ANSIBLE_EXTRA_ARGS+=(-e "validation_extract_pcap_rtt=false")
 	            extra_var_defined "validation_install_tshark" || ANSIBLE_EXTRA_ARGS+=(-e "validation_install_tshark=false")
@@ -2028,6 +2291,7 @@ run_scenario() {
 	              -e "validation_scenario_names=${validation_scenario_names:-all}" \
 	              playbooks/run_latency_validation.yml
 	            scenario_status=$?
+            ;;
           "$SCENARIO_R2LAB"|"$SCENARIO_RFSIM")
             run_cmd ./run_scenario.sh -d --inventory="${NAME_INVENTORY}" \
               "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee ${DIR_LOGS}/logs-scenario_iperf.txt
@@ -2085,6 +2349,17 @@ run_scenario() {
           echo "ansible-playbook -i ${INVENTORY} -e fiveg_profile=${PROFILE_5G} -e target_server_host=${iperf_server_node} -e paper_scenario_names=${paper_scenario_names:-all} playbooks/run_tcp_paper_scenarios.yml"
           [[ -n "${paper_duration_override:-}" ]] && echo "  add: -e paper_duration=${paper_duration_override}"
           [[ -n "${paper_prometheus_url:-}" ]] && echo "  add: -e paper_prometheus_url=${paper_prometheus_url}"
+        elif [[ "$scenario" == "Generic experiment" ]]; then
+          echo "Just launch through deploy.sh:"
+          if [[ "${experiment_artifacts_enabled:-true}" == true ]]; then
+            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-artifact_smoke_test} --experiment-artifacts ${experiment_artifacts_file:-default_5g_observability}"
+          else
+            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-artifact_smoke_test} --no-experiment-artifacts"
+          fi
+          [[ -n "${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}" ]] && echo "  add: -e experiment_default_section_seconds=${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}"
+          [[ -n "${REQUESTED_TARGET_SERVER:-}" ]] && echo "  add: --target-server ${REQUESTED_TARGET_SERVER}"
+          [[ -n "${REQUESTED_EXPERIMENT_DURATION:-}" ]] && echo "  add: --duration ${REQUESTED_EXPERIMENT_DURATION}"
+          [[ -n "${REQUESTED_PROMETHEUS_URL:-}" ]] && echo "  add: --prometheus-url ${REQUESTED_PROMETHEUS_URL}"
 	        elif [[ "$scenario" == "Latency validation pipeline" ]]; then
 	          echo "Just launch:"
 	          echo "ansible-playbook -i ${INVENTORY} -e fiveg_profile=${PROFILE_5G} -e target_server_host=${iperf_server_node} -e validation_scenario_names=${validation_scenario_names:-all} playbooks/run_latency_validation.yml"

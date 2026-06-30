@@ -46,12 +46,17 @@
 
     - name: Set experiment collection defaults
       ansible.builtin.set_fact:
-        experiment_collect_enabled: "{{ experiment_collect_config.enabled | default(true) | bool }}"
+        experiment_collect_enabled: "{{ (experiment_collect_artifacts | default(true) | bool) and (experiment_collect_config.enabled | default(true) | bool) }}"
         experiment_collect_prometheus: "{{ experiment_collect_config.prometheus.enabled | default(experiment_collect_config.prometheus | default(true)) | bool }}"
         experiment_collect_pod_logs: "{{ experiment_collect_config.pod_logs.enabled | default(experiment_collect_config.pod_logs | default(false)) | bool }}"
         experiment_collect_pcaps: "{{ experiment_collect_config.pcaps.enabled | default(experiment_collect_config.pcaps | default(false)) | bool }}"
         experiment_split_prometheus_by_timeline: "{{ experiment_collect_config.split_by_windows | default(true) | bool }}"
-        experiment_prometheus_url: "{{ experiment_collect_config.prometheus.url | default(experiment_prometheus_url | default('')) }}"
+        experiment_prometheus_url: >-
+          {{
+            experiment_prometheus_url
+            if (experiment_prometheus_url | default('') | length > 0)
+            else experiment_collect_config.prometheus.url | default('')
+          }}
         experiment_prometheus_step: "{{ experiment_collect_config.prometheus.step | default(experiment_prometheus_step | default('1s')) }}"
         experiment_prometheus_queries_json: "{{ experiment_collect_config.prometheus.queries_file | default(playbook_dir + '/../configs/artifacts/default_prometheus_queries.json') }}"
         experiment_query_padding_seconds: "{{ experiment_collect_config.prometheus.padding_seconds | default(30) | int }}"
@@ -65,6 +70,40 @@
         experiment_pod_log_tail_lines: "{{ experiment_collect_config.pod_logs.tail_lines | default(5000) | int }}"
         experiment_pod_log_include_previous: "{{ experiment_collect_config.pod_logs.include_previous | default(true) | bool }}"
         experiment_kubeconfig: "{{ experiment_scenario.kubeconfig | default(experiment_collect_config.kubeconfig | default('/etc/kubernetes/admin.conf')) }}"
+
+    - name: Set effective experiment sections
+      ansible.builtin.set_fact:
+        experiment_sections_effective: >-
+          {{
+            experiment_scenario.sections
+            if (experiment_scenario.sections | default([]) | length > 0)
+            else (
+              [{
+                'name': 'full_run',
+                'title': 'Full run observation window',
+                'runner': {
+                  'type': 'pause',
+                  'seconds': (
+                    experiment_scenario.default_section_seconds
+                    | default(experiment_collect_config.default_section_seconds | default(experiment_default_section_seconds | default(60)))
+                    | int
+                  )
+                }
+              }]
+              if (experiment_collect_enabled | bool)
+              else []
+            )
+          }}
+
+    - name: Show default section message
+      ansible.builtin.debug:
+        msg:
+          - "No sections were defined in {{ experiment_scenario_file }}."
+          - "Artifacts are enabled, so a default full_run section will collect a general observation window."
+          - "Override its duration with -e experiment_default_section_seconds=<seconds> or scenario default_section_seconds."
+      when:
+        - experiment_scenario.sections | default([]) | length == 0
+        - experiment_collect_enabled | bool
 
     - name: Set inline experiment Prometheus queries when provided
       ansible.builtin.set_fact:
@@ -157,7 +196,7 @@
               "timezone": experiment_local_timezone,
               "collect": experiment_collect_config,
               "pcap": experiment_pcap_config,
-              "sections": experiment_scenario.sections | default([])
+              "sections": experiment_sections_effective
             } | to_nice_json
           }}
 
@@ -175,7 +214,7 @@
 
     - name: Run experiment sections
       ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_run_section.yml"
-      loop: "{{ experiment_scenario.sections | default([]) }}"
+      loop: "{{ experiment_sections_effective }}"
       loop_control:
         loop_var: experiment_section
         index_var: experiment_section_index

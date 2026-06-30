@@ -16,9 +16,9 @@ Style A: self-contained scenario file. Put both the experiment sections and
 the `collect` / `pcap` artifact settings in one YAML file:
 
 ```bash
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/my_self_contained_experiment.yml \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment scenarios/my_self_contained_experiment.yml \
+  --experiment-artifacts none
 ```
 
 Style B: separated experiment and artifact profile. This keeps the scenario
@@ -38,10 +38,9 @@ configs/artifacts/profiles/pod_logs_and_pcaps.yml
 Edit `scenarios/my_experiment.yml`, then run both files together:
 
 ```bash
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/my_experiment.yml \
-  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment scenarios/my_experiment.yml \
+  --experiment-artifacts default_5g_observability
 ```
 
 The output is written to:
@@ -54,10 +53,9 @@ To test the mechanism without changing your paper scenarios, run the included
 smoke-test scenario:
 
 ```bash
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/experiment_examples/artifact_smoke_test.yml \
-  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment artifact_smoke_test \
+  --experiment-artifacts default_5g_observability
 ```
 
 It creates three short section windows and writes the command section output
@@ -67,11 +65,10 @@ For a real traffic example, run `qhat01` and `qhat03` uplink/downlink TCP iperf
 at 40 Mb/s:
 
 ```bash
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/experiment_examples/two_ue_iperf_40m.yml \
-  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
-  -e target_server_host=sopnode-f2 \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment two_ue_iperf_40m \
+  --experiment-artifacts default_5g_observability \
+  --target-server sopnode-f2
 ```
 
 This creates separate artifact windows for server preparation, uplink traffic,
@@ -83,11 +80,10 @@ There is also a direction-matrix example where every traffic combination is a
 separate section:
 
 ```bash
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/experiment_examples/two_ue_direction_matrix_40m.yml \
-  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
-  -e target_server_host=sopnode-f2 \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment two_ue_direction_matrix_40m \
+  --experiment-artifacts default_5g_observability \
+  --target-server sopnode-f2
 ```
 
 It includes:
@@ -134,7 +130,7 @@ collect:
     queries_file: "configs/artifacts/default_prometheus_queries.json"
   split_by_windows: true
   pod_logs:
-    enabled: false
+    enabled: true
   pcaps:
     enabled: false
 ```
@@ -145,6 +141,23 @@ runner creates:
 ```text
 by_window/section/<section>/prometheus_timeseries.csv.gz
 ```
+
+If artifact collection is enabled and no `sections` are defined, the runner
+creates one default section:
+
+```text
+full_run
+```
+
+In interactive mode, `deploy.sh` asks how long this default window should last.
+For non-interactive runs, the fallback is 60 seconds. Override the duration
+with:
+
+```bash
+-e experiment_default_section_seconds=120
+```
+
+or set `default_section_seconds` in the scenario YAML.
 
 ## Runner Types
 
@@ -384,4 +397,5 @@ Start with:
 ```text
 basic_sections.yml
 playbook_sections.yml
+artifacts_only_observation.yml
 ```

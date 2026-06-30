@@ -65,40 +65,51 @@ profile:
 ```bash
 cp scenarios/experiment_templates/basic_sections.yml scenarios/my_experiment.yml
 
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/my_experiment.yml \
-  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment scenarios/my_experiment.yml \
+  --experiment-artifacts default_5g_observability
 ```
 
 Or run the small smoke-test scenario to verify the artifact layout:
 
 ```bash
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/experiment_examples/artifact_smoke_test.yml \
-  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment artifact_smoke_test \
+  --experiment-artifacts default_5g_observability
 ```
+
+In interactive mode, select `Generic experiment`; the script then asks whether
+to collect artifacts and lets you keep the default profile or point to another
+profile. For non-interactive runs without artifact collection, use:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment artifact_smoke_test \
+  --no-experiment-artifacts
+```
+
+If artifacts are enabled but the experiment file has no `sections`, the runner
+creates a default `full_run` section. That gives you a general Prometheus window
+and pod logs instead of an empty artifact folder. In interactive mode,
+`deploy.sh` asks how long this default observation window should last.
 
 For a real traffic example, run `qhat01` and `qhat03` uplink/downlink TCP iperf
 at 40 Mb/s:
 
 ```bash
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/experiment_examples/two_ue_iperf_40m.yml \
-  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
-  -e target_server_host=sopnode-f2 \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment two_ue_iperf_40m \
+  --experiment-artifacts default_5g_observability \
+  --target-server sopnode-f2
 ```
 
 To exercise mixed direction and per-section artifact overrides, run:
 
 ```bash
-ansible-playbook -i inventory/default/hosts.ini \
-  -e experiment_scenario_file=scenarios/experiment_examples/two_ue_direction_matrix_40m.yml \
-  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
-  -e target_server_host=sopnode-f2 \
-  playbooks/run_experiment.yml
+./deploy.sh -n --scenario-only \
+  --experiment two_ue_direction_matrix_40m \
+  --experiment-artifacts default_5g_observability \
+  --target-server sopnode-f2
 ```
 
 Artifact collection can be disabled entirely:

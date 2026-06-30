@@ -12,7 +12,7 @@ collect:
   split_compress: true
   window_types: "campaign,section"
   pod_logs:
-    enabled: false
+    enabled: true
     namespaces: ["open5gs", "monarch"]
     since: "2h"
     tail_lines: 5000

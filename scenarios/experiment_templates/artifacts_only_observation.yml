@@ -1,0 +1,7 @@
+---
+name: artifacts_only_observation
+title: Artifact-only observation
+
+# No sections are required here. When artifacts are enabled, run_experiment.yml
+# automatically creates one full_run section with this duration.
+default_section_seconds: 60
