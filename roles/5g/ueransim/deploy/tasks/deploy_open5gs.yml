@@ -3,17 +3,132 @@
 # ueransim deploy for open5gs (kustomize)
 # ============================================================
 
-- name: Apply ueransim base configurations
+- name: Apply ueransim gNB configuration
   ansible.builtin.shell: |
     kubectl apply -k {{ ueransim_root }}/ueransim-gnb -n {{ ran_ns | default('open5gs') }}
-    kubectl apply -k {{ ueransim_root }}/ueransim-ue  -n {{ ran_ns | default('open5gs') }}
   environment:
     KUBECONFIG: "{{ kubeconfig | default('/root/.kube/config') }}"
 
-- name: Force scale down all UEs
+- name: Apply static ueransim UE configurations
+  ansible.builtin.shell: |
+    kubectl apply -k {{ ueransim_root }}/ueransim-ue -n {{ ran_ns | default('open5gs') }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig | default('/root/.kube/config') }}"
+  when: (ueransim_deploy_mode | default('static')) == 'static'
+
+- name: Apply churn ueransim UE configuration
+  ansible.builtin.shell: |
+    kubectl apply -k {{ ueransim_root }}/ueransim-ue-churn -n {{ ran_ns | default('open5gs') }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig | default('/root/.kube/config') }}"
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
+
+- name: Validate active profile slices for UERANSIM churn
+  ansible.builtin.assert:
+    that:
+      - fiveg.slices | length >= 2
+      - fiveg.slices[0].sst is defined
+      - fiveg.slices[0].sd is defined
+      - fiveg.slices[0].dnn is defined
+      - fiveg.slices[1].sst is defined
+      - fiveg.slices[1].sd is defined
+      - fiveg.slices[1].dnn is defined
+    fail_msg: "UERANSIM churn requires at least two fully defined slices in the active 5G profile."
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
+
+- name: Normalize active profile slices for UERANSIM churn UEs
+  ansible.builtin.set_fact:
+    ueransim_churn_slice1_sd: >-
+      {{
+        'ffffff'
+        if (fiveg.slices[0].sd | string | upper) in ['EMPTY', '', 'NONE', 'NULL']
+        else ('%06s' | format(fiveg.slices[0].sd | string | lower | replace('0x', '')) | replace(' ', '0'))
+      }}
+    ueransim_churn_slice2_sd: >-
+      {{
+        'ffffff'
+        if (fiveg.slices[1].sd | string | upper) in ['EMPTY', '', 'NONE', 'NULL']
+        else ('%06s' | format(fiveg.slices[1].sd | string | lower | replace('0x', '')) | replace(' ', '0'))
+      }}
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
+
+- name: Apply active profile slices to churn UE StatefulSet
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - set
+      - env
+      - "statefulset/{{ ueransim_churn_statefulset | default('ueransim-ue-churn') }}"
+      - -n
+      - "{{ ran_ns | default('open5gs') }}"
+      - "UE_SLICE1_APN={{ fiveg.slices[0].dnn }}"
+      - "UE_SLICE1_SST={{ fiveg.slices[0].sst | int }}"
+      - "UE_SLICE1_SD={{ ueransim_churn_slice1_sd }}"
+      - "UE_SLICE2_APN={{ fiveg.slices[1].dnn }}"
+      - "UE_SLICE2_SST={{ fiveg.slices[1].sst | int }}"
+      - "UE_SLICE2_SD={{ ueransim_churn_slice2_sd }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig | default('/root/.kube/config') }}"
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
+
+- name: Read churn UE StatefulSet slice environment
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - "statefulset/{{ ueransim_churn_statefulset | default('ueransim-ue-churn') }}"
+      - -n
+      - "{{ ran_ns | default('open5gs') }}"
+      - -o
+      - json
+  environment:
+    KUBECONFIG: "{{ kubeconfig | default('/root/.kube/config') }}"
+  register: ueransim_churn_statefulset_json
+  changed_when: false
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
+
+- name: Validate churn UE StatefulSet uses active profile slices
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          (
+            (ueransim_churn_statefulset_json.stdout | from_json).spec.template.spec.containers
+            | selectattr('name', 'equalto', 'ue')
+            | first
+          ).env
+          | selectattr('name', 'equalto', 'UE_SLICE1_SD')
+          | map(attribute='value')
+          | first
+        ) == ueransim_churn_slice1_sd
+      - >-
+        (
+          (
+            (ueransim_churn_statefulset_json.stdout | from_json).spec.template.spec.containers
+            | selectattr('name', 'equalto', 'ue')
+            | first
+          ).env
+          | selectattr('name', 'equalto', 'UE_SLICE2_SD')
+          | map(attribute='value')
+          | first
+        ) == ueransim_churn_slice2_sd
+    fail_msg: "The churn UE StatefulSet does not contain the expected slice settings."
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
+
+- name: Force scale down all static UEs
   ansible.builtin.shell: >
     kubectl scale deployment -n {{ ran_ns | default('open5gs') }} -l component=ue --replicas=0
   failed_when: false
+  when: (ueransim_deploy_mode | default('static')) == 'static'
+
+- name: Set churn UE replicas
+  ansible.builtin.shell: >
+    kubectl scale statefulset/{{ ueransim_churn_statefulset | default('ueransim-ue-churn') }}
+    -n {{ ran_ns | default('open5gs') }}
+    --replicas={{ ueransim_churn_initial_replicas | default(0) | int }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig | default('/root/.kube/config') }}"
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
 
 - name: Wait for gNB to be Ready
   ansible.builtin.shell: >
@@ -30,3 +145,4 @@
   loop_control:
     loop_var: ue_item
     index_var: ue_idx
+  when: (ueransim_deploy_mode | default('static')) == 'static'

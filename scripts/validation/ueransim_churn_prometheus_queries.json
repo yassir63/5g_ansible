@@ -1,0 +1,54 @@
+[
+  {
+    "name": "overhead_cpu_cores_5s",
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monarch\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}[5s]))"
+  },
+  {
+    "name": "overhead_cpu_cores_30s",
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monarch\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}[30s]))"
+  },
+  {
+    "name": "overhead_memory_mib",
+    "query": "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monarch\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}) / 1024 / 1024"
+  },
+  {
+    "name": "ue_mapper_cpu_cores_5s",
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", pod=~\".*ue-mapper.*\"}[5s]))"
+  },
+  {
+    "name": "ue_mapper_memory_mib",
+    "query": "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"POD\", container!=\"\", pod=~\".*ue-mapper.*\"}) / 1024 / 1024"
+  },
+  {
+    "name": "mapper_sniffer_cpu_cores_5s",
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{namespace=\"open5gs\", container=~\".*sniffer.*\"}[5s]))"
+  },
+  {
+    "name": "mapper_sniffer_memory_mib",
+    "query": "sum by (namespace, pod, container) (container_memory_working_set_bytes{namespace=\"open5gs\", container=~\".*sniffer.*\"}) / 1024 / 1024"
+  },
+  {
+    "name": "open5gs_control_cpu_cores_5s",
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", namespace=\"open5gs\", pod=~\".*(amf|smf|nrf|scp|udm|udr|ausf|bsf|pcf|nssf|mongo|mongodb|redis).*\"}[5s]))"
+  },
+  {
+    "name": "open5gs_upf_cpu_cores_5s",
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", namespace=\"open5gs\", pod=~\".*upf.*\"}[5s]))"
+  },
+  {
+    "name": "ueransim_churn_pod_ready",
+    "query": "kube_pod_status_ready{namespace=\"open5gs\", pod=~\"ueransim-ue-churn-.*\", condition=\"true\"}"
+  },
+  {
+    "name": "ueransim_churn_statefulset_ready_replicas",
+    "query": "kube_statefulset_status_replicas_ready{namespace=\"open5gs\", statefulset=\"ueransim-ue-churn\"}"
+  },
+  {
+    "name": "ueransim_churn_statefulset_desired_replicas",
+    "query": "kube_statefulset_replicas{namespace=\"open5gs\", statefulset=\"ueransim-ue-churn\"}"
+  },
+  {
+    "name": "container_restarts_total",
+    "query": "kube_pod_container_status_restarts_total{namespace=~\"open5gs|monarch\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}"
+  }
+]

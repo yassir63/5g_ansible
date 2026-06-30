@@ -409,6 +409,55 @@
     {{ repo_dest }}/venv/bin/python {{ repo_dest }}/mongo-tools/add-subscribers.py
   args:
     chdir: "{{ repo_dest }}"
+  when: (ueransim_deploy_mode | default('static')) != 'churn'
+
+- name: Validate profile slices for UERANSIM churn
+  ansible.builtin.assert:
+    that:
+      - fiveg.slices | length >= 2
+      - fiveg.slices[0].sst is defined
+      - fiveg.slices[0].sd is defined
+      - fiveg.slices[0].dnn is defined
+      - fiveg.slices[1].sst is defined
+      - fiveg.slices[1].sd is defined
+      - fiveg.slices[1].dnn is defined
+    fail_msg: "UERANSIM churn requires at least two fully defined slices in the active 5G profile."
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
+
+- name: Normalize active profile slices for UERANSIM churn subscribers
+  ansible.builtin.set_fact:
+    ueransim_churn_slice1_sd: >-
+      {{
+        'ffffff'
+        if (fiveg.slices[0].sd | string | upper) in ['EMPTY', '', 'NONE', 'NULL']
+        else ('%06s' | format(fiveg.slices[0].sd | string | lower | replace('0x', '')) | replace(' ', '0'))
+      }}
+    ueransim_churn_slice2_sd: >-
+      {{
+        'ffffff'
+        if (fiveg.slices[1].sd | string | upper) in ['EMPTY', '', 'NONE', 'NULL']
+        else ('%06s' | format(fiveg.slices[1].sd | string | lower | replace('0x', '')) | replace(' ', '0'))
+      }}
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
+
+- name: Run Python scripts to generate and add UERANSIM churn subscribers
+  ansible.builtin.shell: |
+    set -e
+    test -f {{ repo_dest }}/mongo-tools/generate-ueransim-churn-data.py
+    {{ repo_dest }}/venv/bin/python {{ repo_dest }}/mongo-tools/generate-ueransim-churn-data.py \
+      --count {{ ueransim_churn_subscribers | default(100) | int }} \
+      --slice1-sst {{ fiveg.slices[0].sst | int }} \
+      --slice1-sd {{ ueransim_churn_slice1_sd | quote }} \
+      --slice1-dnn {{ fiveg.slices[0].dnn | quote }} \
+      --slice2-sst {{ fiveg.slices[1].sst | int }} \
+      --slice2-sd {{ ueransim_churn_slice2_sd | quote }} \
+      --slice2-dnn {{ fiveg.slices[1].dnn | quote }}
+    {{ repo_dest }}/venv/bin/python {{ repo_dest }}/mongo-tools/add-subscribers.py \
+      --replace-existing
+  args:
+    chdir: "{{ repo_dest }}"
+    executable: /bin/bash
+  when: (ueransim_deploy_mode | default('static')) == 'churn'
 
 - name: Run add-admin-account.py
   ansible.builtin.command: >

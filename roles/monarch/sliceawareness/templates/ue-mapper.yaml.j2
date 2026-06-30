@@ -11,6 +11,10 @@ spec:
     metadata:
       labels:
         app: ue-mapper-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "{{ ue_mapper_api_port | default(8080) }}"
     spec:
       containers:
       - name: ue-mapper-api
@@ -26,6 +30,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ue-mapper-api
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "80"
 spec:
   selector:
     app: ue-mapper-api

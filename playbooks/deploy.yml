@@ -175,6 +175,8 @@
       include_role:
         name: monarch/deploy
       vars:
+        repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
+        repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
         branch: srsRAN_metrics
       when: monitoring_enabled and ran == 'srsRAN' and monarch
 
@@ -182,8 +184,19 @@
       include_role:
         name: monarch/deploy
       vars:
+        repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
+        repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
         branch: with_data_persistance_for_sopnodes
       when: monitoring_enabled and ran == 'oai' and monarch
+
+    - name: Deploy Monarch for UERANSIM
+      include_role:
+        name: monarch/deploy
+      vars:
+        repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
+        repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
+        branch: with_data_persistance_for_sopnodes
+      when: monitoring_enabled and ran == 'ueransim' and monarch
 
 
 
@@ -232,10 +245,21 @@
     - name: Load 5G profile
       include_vars:
         file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
-  roles:
-    - role: 5g/open5gs/config
+  tasks:
+    - name: Run Open5GS config role
+      include_role:
+        name: 5g/open5gs/config
+      vars:
+        repo_url: "{{ open5gs_repo_url_override | default('https://github.com/sopnode/open5gs-k8s.git') }}"
+        repo_dest: "{{ open5gs_repo_dest_override | default('~/open5gs-k8s') }}"
+        repo_branch: "{{ open5gs_repo_branch_override | default('develop') }}"
       when: core == 'open5gs'
-    - role: 5g/open5gs/deploy
+
+    - name: Run Open5GS deploy role
+      include_role:
+        name: 5g/open5gs/deploy
+      vars:
+        repo_dest: "{{ open5gs_repo_dest_override | default('~/open5gs-k8s') }}"
       when: core == 'open5gs'
 
 - name: Deploy Free5gc
@@ -290,19 +314,6 @@
 #         rsync_path: "sudo rsync"
 #       delegate_to: localhost
 #       become: false
-
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost,core_node,ran_node
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-#
-############################################################################
 
 - name: Setup sniffers on SMFs and AMF (Improved)
   hosts: core_node
@@ -359,6 +370,19 @@
       vars:
         core_ns: "{{ core }}"
 
+############################################################################
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
+- hosts: localhost,core_node,ran_node
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+#
+############################################################################
+
 - name: Deploy Kopf Controller and eBPF Probes
   hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
   gather_facts: false
@@ -380,25 +404,39 @@
     match_debug: "0"
 
   tasks:
-    - name: Deploy Kopf Controller and eBPF Probes
+    - name: Render controller manifest for cleanup
+      ansible.builtin.template:
+        src: ../roles/monarch/controller/templates/kopf-controller.yaml.j2
+        dest: /tmp/kopf-controller.yaml
+        mode: "0644"
       when: monitoring_enabled | bool
-      block:
-        - name: Render controller manifest for cleanup
-          ansible.builtin.template:
-            src: ../roles/monarch/controller/templates/kopf-controller.yaml.j2
-            dest: /tmp/kopf-controller.yaml
-            mode: "0644"
 
-        - name: Delete existing controller resources if present
-          ansible.builtin.command: >
-            kubectl delete -f /tmp/kopf-controller.yaml --ignore-not-found=true
-          register: cleanup_result
-          changed_when: "'deleted' in cleanup_result.stdout"
-          failed_when: false
+    - name: Delete existing controller resources if present
+      ansible.builtin.command: >
+        kubectl delete -f /tmp/kopf-controller.yaml --ignore-not-found=true
+      register: cleanup_result
+      changed_when: "'deleted' in cleanup_result.stdout"
+      failed_when: false
+      when: monitoring_enabled | bool
 
-        - name: Run monarch controller role
-          ansible.builtin.include_role:
-            name: monarch/controller
+    - name: Delete packet pairer resources for UERANSIM churn
+      ansible.builtin.command: >
+        kubectl -n {{ core }} delete
+        deployment/packet-pairer service/packet-pairer-service
+        --ignore-not-found=true
+      register: packet_pairer_cleanup
+      changed_when: "'deleted' in packet_pairer_cleanup.stdout"
+      failed_when: false
+      when:
+        - monitoring_enabled | bool
+        - (ueransim_deploy_mode | default('static')) == 'churn'
+
+    - name: Run monarch controller role
+      ansible.builtin.include_role:
+        name: monarch/controller
+      when:
+        - monitoring_enabled | bool
+        - (ueransim_deploy_mode | default('static')) != 'churn'
 
 
 
@@ -491,7 +529,6 @@
         - (monitor_node_name | default('')) | length > 0
         - core_node_name != ran_node_name
         - core_node_name != (monitor_node_name | default(''))
-      
 
 - name: 5G-Monarch Final Operations
   hosts: monitor_node
@@ -507,3 +544,117 @@
       include_role:
         name: monarch/monitoring
       when: monitoring_enabled and ran == 'srsRAN' and monarch
+
+    # UERANSIM churn uses Prometheus/cAdvisor plus Redis, UE mapper, and the
+    # AMF/SMF mapper sniffers. Kopf, packet-pairer, and latency probes are
+    # intentionally disabled for this scenario.
+
+- name: Optionally run UERANSIM churn scenario after deploy
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    deploy_inventory_path: "{{ inventory_file | default(playbook_dir + '/../inventory/default/hosts.ini') }}"
+  tasks:
+    - name: Create temp vars file for nested churn playbook
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .yml
+        path: /tmp
+      register: deploy_churn_vars_temp
+      when:
+        - ran == 'ueransim'
+        - core == 'open5gs'
+        - (ueransim_deploy_mode | default('static')) == 'churn'
+        - (ueransim_run_churn_after_deploy | default(false) | bool)
+
+    - name: Build forwarded churn variables for nested playbook
+      ansible.builtin.copy:
+        dest: "{{ deploy_churn_vars_temp.path }}"
+        mode: "0644"
+        content: |
+          core: {{ core | to_json }}
+          ran: {{ ran | to_json }}
+          fiveg_profile: {{ fiveg_profile | default('default') | to_json }}
+          monarch: {{ monarch | default(false) | bool | to_json }}
+          monitoring_enabled: {{ monitoring_enabled | default(false) | bool | to_json }}
+          {% if churn_run_id is defined and (churn_run_id | string | length > 0) %}
+          churn_run_id: {{ churn_run_id | to_json }}
+          {% endif %}
+          churn_kubeconfig: {{ churn_kubeconfig | default('/etc/kubernetes/admin.conf') | to_json }}
+          churn_local_timezone: {{ churn_local_timezone | default('Europe/Paris') | to_json }}
+          {% if churn_results_dir is defined and (churn_results_dir | string | length > 0) %}
+          churn_results_dir: {{ churn_results_dir | to_json }}
+          {% endif %}
+          churn_results_min_free_mb: {{ churn_results_min_free_mb | default(512) | int | to_json }}
+          churn_require_monitoring_ready: {{ churn_require_monitoring_ready | default(true) | bool | to_json }}
+          churn_require_ue_mapper_ready: {{ churn_require_ue_mapper_ready | default(true) | bool | to_json }}
+          churn_collect_prometheus: {{ churn_collect_prometheus | default(true) | bool | to_json }}
+          churn_prometheus_url: {{ churn_prometheus_url | default('') | to_json }}
+          churn_prometheus_step: {{ churn_prometheus_step | default('1s') | to_json }}
+          churn_prometheus_queries_json: {{ churn_prometheus_queries_json | default(playbook_dir + '/../scripts/validation/ueransim_churn_prometheus_queries.json') | to_json }}
+          churn_discover_metrics_regex: {{ churn_discover_metrics_regex | default('(?i)(ue.?mapper|mapper|amf|smf|upf|ueransim|statefulset|pod_status|container_cpu|container_memory)') | to_json }}
+          churn_discover_metrics_limit: {{ churn_discover_metrics_limit | default(0) | int | to_json }}
+          churn_query_padding_seconds: {{ churn_query_padding_seconds | default(30) | int | to_json }}
+          churn_collect_ue_mapper_api: {{ churn_collect_ue_mapper_api | default(true) | bool | to_json }}
+          churn_collect_ue_mapper_samples: {{ churn_collect_ue_mapper_samples | default(true) | bool | to_json }}
+          churn_enforce_complete_mapper_wave: {{ churn_enforce_complete_mapper_wave | default(false) | bool | to_json }}
+          churn_ue_mapper_sample_interval_seconds: {{ churn_ue_mapper_sample_interval_seconds | default(1) | int | to_json }}
+          churn_ue_mapper_sample_max_seconds: {{ churn_ue_mapper_sample_max_seconds | default(7200) | int | to_json }}
+          churn_ue_mapper_inventory_limit: {{ churn_ue_mapper_inventory_limit | default(2000) | int | to_json }}
+          churn_ue_mapper_teid_limit: {{ churn_ue_mapper_teid_limit | default(5000) | int | to_json }}
+          churn_imsi_prefix: {{ churn_imsi_prefix | default('001010000100') | to_json }}
+          churn_imsi_ordinal_width: {{ churn_imsi_ordinal_width | default(3) | int | to_json }}
+          churn_collect_pod_logs: {{ churn_collect_pod_logs | default(true) | bool | to_json }}
+          churn_pod_log_namespaces: {{ churn_pod_log_namespaces | default([core | default('open5gs'), 'monarch']) | to_json }}
+          churn_pod_log_since: {{ churn_pod_log_since | default('4h') | to_json }}
+          churn_pod_log_tail_lines: {{ churn_pod_log_tail_lines | default(200000) | int | to_json }}
+          churn_pod_log_include_previous: {{ churn_pod_log_include_previous | default(true) | bool | to_json }}
+          churn_pod_log_ueransim_sample_limit: {{ churn_pod_log_ueransim_sample_limit | default(5) | int | to_json }}
+          ueransim_churn_counts: {{ ueransim_churn_counts | default('10 25 50') | to_json }}
+          ueransim_churn_settle_seconds: {{ ueransim_churn_settle_seconds | default(60) | int | to_json }}
+          ueransim_churn_between_seconds: {{ ueransim_churn_between_seconds | default(30) | int | to_json }}
+          ueransim_churn_statefulset: {{ ueransim_churn_statefulset | default('ueransim-ue-churn') | to_json }}
+          ueransim_churn_kubelet_max_pods: {{ ueransim_churn_kubelet_max_pods | default(200) | int | to_json }}
+          ueransim_churn_synchronized_attach: {{ ueransim_churn_synchronized_attach | default(true) | bool | to_json }}
+          ueransim_churn_attach_gate_timeout_seconds: {{ ueransim_churn_attach_gate_timeout_seconds | default(600) | int | to_json }}
+          churn_capture_amf_pcap: {{ churn_capture_amf_pcap | default(false) | bool | to_json }}
+          churn_amf_pcap_namespace: {{ churn_amf_pcap_namespace | default(core | default('open5gs')) | to_json }}
+          churn_amf_pcap_iface: {{ churn_amf_pcap_iface | default('n3') | to_json }}
+          churn_amf_pcap_filter: {{ churn_amf_pcap_filter | default('sctp port 38412') | to_json }}
+          churn_amf_pcap_snaplen: {{ churn_amf_pcap_snaplen | default(0) | int | to_json }}
+          churn_amf_pcap_image: {{ churn_amf_pcap_image | default('r2labuser/amf-sniffer:2026w10') | to_json }}
+          churn_amf_pcap_container_name: {{ churn_amf_pcap_container_name | default('amf-pcap') | to_json }}
+      when:
+        - ran == 'ueransim'
+        - core == 'open5gs'
+        - (ueransim_deploy_mode | default('static')) == 'churn'
+        - (ueransim_run_churn_after_deploy | default(false) | bool)
+
+    - name: Run UERANSIM churn playbook from deploy
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - -i
+          - "{{ deploy_inventory_path }}"
+          - "{{ playbook_dir }}/run_ueransim_churn.yml"
+          - -e
+          - "@{{ deploy_churn_vars_temp.path }}"
+      args:
+        chdir: "{{ playbook_dir | dirname }}"
+      when:
+        - ran == 'ueransim'
+        - core == 'open5gs'
+        - (ueransim_deploy_mode | default('static')) == 'churn'
+        - (ueransim_run_churn_after_deploy | default(false) | bool)
+      changed_when: true
+
+    - name: Remove forwarded churn variable file
+      ansible.builtin.file:
+        path: "{{ deploy_churn_vars_temp.path }}"
+        state: absent
+      when:
+        - ran == 'ueransim'
+        - core == 'open5gs'
+        - (ueransim_deploy_mode | default('static')) == 'churn'
+        - (ueransim_run_churn_after_deploy | default(false) | bool)
