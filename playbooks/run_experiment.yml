@@ -1,0 +1,205 @@
+---
+- name: Run generic experiment with artifact collection
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_remote_tmp: "/tmp/.ansible-{{ lookup('env', 'USER') | default('controller', true) }}/tmp"
+  tasks:
+    - name: Require experiment scenario file
+      ansible.builtin.fail:
+        msg: "Pass -e experiment_scenario_file=scenarios/experiment_templates/basic_sections.yml"
+      when: experiment_scenario_file | default('') | length == 0
+
+    - name: Load experiment scenario YAML
+      ansible.builtin.include_vars:
+        file: "{{ experiment_scenario_file }}"
+        name: experiment_scenario_source
+
+    - name: Load experiment artifact profile YAML
+      ansible.builtin.include_vars:
+        file: "{{ experiment_artifacts_file }}"
+        name: experiment_artifacts
+      when: experiment_artifacts_file | default('') | length > 0
+
+    - name: Merge experiment scenario with artifact profile
+      ansible.builtin.set_fact:
+        experiment_scenario: "{{ (experiment_artifacts | default({})) | combine(experiment_scenario_source, recursive=True, list_merge='replace') }}"
+
+    - name: Set normalized experiment config blocks
+      ansible.builtin.set_fact:
+        experiment_collect_config: "{{ experiment_scenario.collect | default({}) }}"
+        experiment_pcap_config: "{{ experiment_scenario.pcap | default({}) }}"
+
+    - name: Set experiment run id
+      ansible.builtin.set_fact:
+        experiment_run_id: "{{ experiment_run_id | default(lookup('pipe', 'date +%Y%m%d_%H%M%S')) }}"
+
+    - name: Set experiment base defaults
+      ansible.builtin.set_fact:
+        experiment_name: "{{ experiment_scenario.name | default('experiment') }}"
+        experiment_title: "{{ experiment_scenario.title | default(experiment_scenario.name | default('Experiment')) }}"
+        experiment_inventory: "{{ experiment_inventory | default(inventory_file | default(playbook_dir + '/../inventory/default/hosts.ini')) }}"
+        experiment_results_dir: "{{ experiment_results_dir | default(playbook_dir + '/../results/experiment-' + experiment_run_id) }}"
+        experiment_local_timezone: "{{ experiment_scenario.timezone | default(experiment_local_timezone | default(lookup('env', 'TZ') | default('Europe/Paris', true))) }}"
+        experiment_start_epoch: "{{ lookup('pipe', 'date +%s') }}"
+
+    - name: Set experiment collection defaults
+      ansible.builtin.set_fact:
+        experiment_collect_enabled: "{{ experiment_collect_config.enabled | default(true) | bool }}"
+        experiment_collect_prometheus: "{{ experiment_collect_config.prometheus.enabled | default(experiment_collect_config.prometheus | default(true)) | bool }}"
+        experiment_collect_pod_logs: "{{ experiment_collect_config.pod_logs.enabled | default(experiment_collect_config.pod_logs | default(false)) | bool }}"
+        experiment_collect_pcaps: "{{ experiment_collect_config.pcaps.enabled | default(experiment_collect_config.pcaps | default(false)) | bool }}"
+        experiment_split_prometheus_by_timeline: "{{ experiment_collect_config.split_by_windows | default(true) | bool }}"
+        experiment_prometheus_url: "{{ experiment_collect_config.prometheus.url | default(experiment_prometheus_url | default('')) }}"
+        experiment_prometheus_step: "{{ experiment_collect_config.prometheus.step | default(experiment_prometheus_step | default('1s')) }}"
+        experiment_prometheus_queries_json: "{{ experiment_collect_config.prometheus.queries_file | default(playbook_dir + '/../configs/artifacts/default_prometheus_queries.json') }}"
+        experiment_query_padding_seconds: "{{ experiment_collect_config.prometheus.padding_seconds | default(30) | int }}"
+        experiment_discover_metrics_regex: "{{ experiment_collect_config.prometheus.discover_metrics_regex | default('(?i)(mcs|bler|harq|rounds|cqi|rsrp|rsrq|sinr|snr|mac_throughput|slice_throughput|prach|saturation|number_ues|i0_noise|prb|gtp_tcp|tcp_)') }}"
+        experiment_discover_metrics_limit: "{{ experiment_collect_config.prometheus.discover_metrics_limit | default(80) | int }}"
+        experiment_split_window_types: "{{ experiment_collect_config.window_types | default('campaign,section,scenario,step,direction,interference_phase,stress_phase') }}"
+        experiment_split_padding_seconds: "{{ experiment_collect_config.split_padding_seconds | default(0) | int }}"
+        experiment_split_compress: "{{ experiment_collect_config.split_compress | default(true) | bool }}"
+        experiment_pod_log_namespaces: "{{ experiment_collect_config.pod_logs.namespaces | default(['open5gs', 'monarch']) }}"
+        experiment_pod_log_since: "{{ experiment_collect_config.pod_logs.since | default('8h') }}"
+        experiment_pod_log_tail_lines: "{{ experiment_collect_config.pod_logs.tail_lines | default(5000) | int }}"
+        experiment_pod_log_include_previous: "{{ experiment_collect_config.pod_logs.include_previous | default(true) | bool }}"
+        experiment_kubeconfig: "{{ experiment_scenario.kubeconfig | default(experiment_collect_config.kubeconfig | default('/etc/kubernetes/admin.conf')) }}"
+
+    - name: Set inline experiment Prometheus queries when provided
+      ansible.builtin.set_fact:
+        experiment_prometheus_queries: "{{ experiment_collect_config.prometheus.queries }}"
+      when: experiment_collect_config.prometheus.queries is defined
+
+    - name: Resolve experiment pod log control host
+      ansible.builtin.set_fact:
+        experiment_pod_log_control_host_effective: >-
+          {{
+            experiment_collect_config.pod_logs.control_host | default(
+              groups['core_node'][0]
+              if (groups['core_node'] | default([]) | length > 0)
+              else 'localhost'
+            )
+          }}
+
+    - name: Build default experiment pcap targets
+      ansible.builtin.set_fact:
+        experiment_default_pcap_targets: >-
+          {{
+            []
+            + (
+              [{
+                'name': 'core_n3',
+                'type': 'host',
+                'host': groups['core_node'][0],
+                'interface': 'any',
+                'filter': ''
+              }]
+              if (groups['core_node'] | default([]) | length > 0) else []
+            )
+            + (
+              [{
+                'name': 'ran_n3',
+                'type': 'host',
+                'host': groups['ran_node'][0],
+                'interface': 'any',
+                'filter': ''
+              }]
+              if (groups['ran_node'] | default([]) | length > 0) else []
+            )
+          }}
+
+    - name: Set experiment pcap defaults
+      ansible.builtin.set_fact:
+        experiment_pcap_targets: "{{ experiment_pcap_config.targets | default(experiment_default_pcap_targets) }}"
+        experiment_pcap_capture_seconds: "{{ experiment_pcap_config.capture_seconds | default(30) | int }}"
+        experiment_pcap_strict: "{{ experiment_pcap_config.strict | default(false) | bool }}"
+        experiment_pcap_auto_install_tcpdump: "{{ experiment_pcap_config.auto_install_tcpdump | default(true) | bool }}"
+        experiment_pcap_interface: "{{ experiment_pcap_config.interface | default('any') }}"
+        experiment_pcap_pod_interface: "{{ experiment_pcap_config.pod_interface | default(experiment_pcap_config.interface | default('any')) }}"
+        experiment_pcap_filter: "{{ experiment_pcap_config.filter | default('') }}"
+        experiment_pcap_snaplen: "{{ experiment_pcap_config.snaplen | default(192) | int }}"
+        experiment_pcap_k8s_control_host: >-
+          {{
+            experiment_pcap_config.k8s_control_host | default(
+              groups['core_node'][0]
+              if (groups['core_node'] | default([]) | length > 0)
+              else 'localhost'
+            )
+          }}
+
+    - name: Create experiment results directory
+      ansible.builtin.file:
+        path: "{{ experiment_results_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Initialize experiment timeline event log
+      ansible.builtin.copy:
+        dest: "{{ experiment_results_dir }}/timeline_events.jsonl"
+        content: ""
+        force: false
+        mode: "0644"
+
+    - name: Write experiment run metadata
+      ansible.builtin.copy:
+        dest: "{{ experiment_results_dir }}/experiment_metadata.json"
+        mode: "0644"
+        content: |
+          {{
+            {
+              "run_id": experiment_run_id,
+              "name": experiment_name,
+              "title": experiment_title,
+              "scenario_file": experiment_scenario_file,
+              "artifacts_file": experiment_artifacts_file | default(""),
+              "results_dir": experiment_results_dir,
+              "timezone": experiment_local_timezone,
+              "collect": experiment_collect_config,
+              "pcap": experiment_pcap_config,
+              "sections": experiment_scenario.sections | default([])
+            } | to_nice_json
+          }}
+
+    - name: Record experiment campaign start
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
+      vars:
+        experiment_timeline_event:
+          level: "campaign"
+          phase: "start"
+          name: "{{ experiment_name }}"
+          title: "{{ experiment_title }}"
+          kind: "generic-experiment"
+          scenario_file: "{{ experiment_scenario_file }}"
+          artifacts_file: "{{ experiment_artifacts_file | default('') }}"
+
+    - name: Run experiment sections
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_run_section.yml"
+      loop: "{{ experiment_scenario.sections | default([]) }}"
+      loop_control:
+        loop_var: experiment_section
+        index_var: experiment_section_index
+        label: "{{ experiment_section.name | default('unnamed') }}"
+
+    - name: Record experiment campaign end
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
+      vars:
+        experiment_timeline_event:
+          level: "campaign"
+          phase: "end"
+          name: "{{ experiment_name }}"
+          title: "{{ experiment_title }}"
+          kind: "generic-experiment"
+          scenario_file: "{{ experiment_scenario_file }}"
+          artifacts_file: "{{ experiment_artifacts_file | default('') }}"
+
+    - name: Collect experiment artifacts
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_collect_artifacts.yml"
+      when: experiment_collect_enabled | bool
+
+    - name: Show artifacts-disabled message
+      ansible.builtin.debug:
+        msg:
+          - "Experiment finished with artifact collection disabled."
+          - "Timeline events, metadata, and section command output remain in {{ experiment_results_dir }}."
+      when: not (experiment_collect_enabled | bool)

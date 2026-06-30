@@ -53,6 +53,12 @@ def to_float(value, default: float = 0.0) -> float:
         return default
 
 
+def is_false(value) -> bool:
+    if isinstance(value, bool):
+        return value is False
+    return str(value).strip().lower() in {"false", "0", "no", "off"}
+
+
 def open_csv_text(path: Path, mode: str):
     if path.suffix == ".gz":
         return gzip.open(path, mode, newline="", encoding="utf-8")
@@ -91,8 +97,26 @@ def main() -> int:
         return 0
 
     windows = load_windows(timeline_json, selected_levels)
+    skipped_windows = [
+        window for window in windows if is_false(window.get("prometheus_enabled", ""))
+    ]
+    windows = [
+        window for window in windows if not is_false(window.get("prometheus_enabled", ""))
+    ]
     if not windows:
-        summary = {"error": "no matching windows", "windows": []}
+        summary = {
+            "error": "no matching windows",
+            "windows": [],
+            "skipped_windows": [
+                {
+                    "window_id": item.get("window_id"),
+                    "level": item.get("level"),
+                    "name": item.get("name"),
+                    "reason": "prometheus_disabled_for_window",
+                }
+                for item in skipped_windows
+            ],
+        }
         (out_dir / "split_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
         print(summary["error"])
         return 0
@@ -165,6 +189,15 @@ def main() -> int:
         "padding_seconds": args.padding_seconds,
         "compressed": bool(args.compress),
         "windows": summary_windows,
+        "skipped_windows": [
+            {
+                "window_id": item.get("window_id"),
+                "level": item.get("level"),
+                "name": item.get("name"),
+                "reason": "prometheus_disabled_for_window",
+            }
+            for item in skipped_windows
+        ],
     }
     (out_dir / "split_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     total_rows = sum(item["rows"] for item in summary_windows)

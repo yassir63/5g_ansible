@@ -1,0 +1,211 @@
+---
+- name: Set experiment section facts
+  ansible.builtin.set_fact:
+    experiment_section_name: "{{ experiment_section.name }}"
+    experiment_section_title: "{{ experiment_section.title | default(experiment_section.name) }}"
+    experiment_section_runner: "{{ experiment_section.runner | default({'type': 'pause', 'seconds': 0}) }}"
+    experiment_section_collect_config: "{{ experiment_section.collect | default({}) }}"
+    experiment_section_artifacts_config: "{{ experiment_section.artifacts | default({}) }}"
+    experiment_section_pcap_config: "{{ experiment_section.pcap | default({}) }}"
+    experiment_window_label: "{{ experiment_section.name | regex_replace('[^A-Za-z0-9_.=-]+', '_') }}"
+
+- name: Set experiment section artifact override facts
+  ansible.builtin.set_fact:
+    experiment_section_prometheus_enabled_effective: >-
+      {{
+        (
+          (experiment_section_collect_config.prometheus | default({})).enabled
+          | default((experiment_section_artifacts_config.prometheus | default({})).enabled | default(true))
+        ) | bool
+      }}
+    experiment_pcap_enabled_effective: >-
+      {{
+        (
+          experiment_section_pcap_config.enabled
+          | default((experiment_section_artifacts_config.pcap | default({})).enabled | default(experiment_collect_pcaps))
+        ) | bool
+      }}
+    experiment_pcap_capture_seconds_effective: >-
+      {{
+        (
+          experiment_section_pcap_config.capture_seconds
+          | default((experiment_section_artifacts_config.pcap | default({})).capture_seconds | default(experiment_pcap_capture_seconds))
+        ) | int
+      }}
+    experiment_pcap_targets_effective: "{{ experiment_section_pcap_config.targets | default((experiment_section_artifacts_config.pcap | default({})).targets | default(experiment_pcap_targets)) }}"
+
+- name: Record experiment section start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
+  vars:
+    experiment_timeline_event:
+      level: "section"
+      phase: "start"
+      name: "{{ experiment_section_name }}"
+      title: "{{ experiment_section_title }}"
+      section_index: "{{ experiment_section_index | int }}"
+      runner_type: "{{ experiment_section_runner.type | default('pause') }}"
+      prometheus_enabled: "{{ experiment_section_prometheus_enabled_effective }}"
+      pcap_enabled: "{{ experiment_pcap_enabled_effective }}"
+      artifacts_file: "{{ experiment_artifacts_file | default('') }}"
+      artifact_overrides: "{{ experiment_section_artifacts_config }}"
+
+- name: Create experiment section log directory
+  ansible.builtin.file:
+    path: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+
+- name: Start experiment pcaps for section
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_start_pcaps.yml"
+  when: experiment_pcap_enabled_effective | bool
+
+- name: Run experiment section command
+  ansible.builtin.shell: "{{ experiment_section_runner.command }}"
+  args:
+    executable: /bin/bash
+    chdir: "{{ experiment_section_runner.chdir | default(playbook_dir + '/..') }}"
+  delegate_to: "{{ experiment_section_runner.host | default('localhost') }}"
+  register: experiment_section_command_output
+  when: experiment_section_runner.type | default('pause') == 'command'
+  failed_when: false
+
+- name: Write experiment section command result
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/command_result.json"
+    mode: "0644"
+    content: |
+      {{
+        {
+          "section": experiment_section_name,
+          "title": experiment_section_title,
+          "runner": experiment_section_runner,
+          "result": experiment_section_command_output
+        } | to_nice_json
+      }}
+  delegate_to: localhost
+  when: experiment_section_runner.type | default('pause') == 'command'
+
+- name: Write experiment section command stdout
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/stdout.log"
+    mode: "0644"
+    content: "{{ experiment_section_command_output.stdout | default('') }}\n"
+  delegate_to: localhost
+  when: experiment_section_runner.type | default('pause') == 'command'
+
+- name: Write experiment section command stderr
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/stderr.log"
+    mode: "0644"
+    content: "{{ experiment_section_command_output.stderr | default('') }}\n"
+  delegate_to: localhost
+  when: experiment_section_runner.type | default('pause') == 'command'
+
+- name: Run experiment section playbook
+  ansible.builtin.shell: |
+    set -e
+    ansible-playbook \
+      -i "{{ experiment_inventory }}" \
+      "{{ experiment_section_runner.file }}" \
+      {% if experiment_section_runner.extra_vars is defined %}--extra-vars '{{ experiment_section_runner.extra_vars | to_json }}'{% endif %}
+  args:
+    executable: /bin/bash
+    chdir: "{{ experiment_section_runner.chdir | default(playbook_dir + '/..') }}"
+  register: experiment_section_playbook_output
+  when: experiment_section_runner.type | default('pause') == 'playbook'
+  failed_when: false
+
+- name: Write experiment section playbook result
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/playbook_result.json"
+    mode: "0644"
+    content: |
+      {{
+        {
+          "section": experiment_section_name,
+          "title": experiment_section_title,
+          "runner": experiment_section_runner,
+          "result": experiment_section_playbook_output
+        } | to_nice_json
+      }}
+  delegate_to: localhost
+  when: experiment_section_runner.type | default('pause') == 'playbook'
+
+- name: Write experiment section playbook stdout
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/stdout.log"
+    mode: "0644"
+    content: "{{ experiment_section_playbook_output.stdout | default('') }}\n"
+  delegate_to: localhost
+  when: experiment_section_runner.type | default('pause') == 'playbook'
+
+- name: Write experiment section playbook stderr
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/stderr.log"
+    mode: "0644"
+    content: "{{ experiment_section_playbook_output.stderr | default('') }}\n"
+  delegate_to: localhost
+  when: experiment_section_runner.type | default('pause') == 'playbook'
+
+- name: Include experiment section task file
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../{{ experiment_section_runner.file }}"
+  vars:
+    experiment_section_vars: "{{ experiment_section_runner.vars | default({}) }}"
+  when: experiment_section_runner.type | default('pause') == 'tasks'
+
+- name: Pause for experiment section
+  ansible.builtin.pause:
+    seconds: "{{ experiment_section_runner.seconds | default(experiment_section.seconds | default(0)) | int }}"
+  when: experiment_section_runner.type | default('pause') == 'pause'
+
+- name: Fetch experiment section runner artifacts
+  ansible.builtin.fetch:
+    src: "{{ item.src }}"
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/{{ item.dest | default(item.src | basename) }}"
+    flat: true
+  delegate_to: "{{ experiment_section_runner.host | default('localhost') }}"
+  loop: "{{ experiment_section_runner.fetch | default([]) }}"
+  loop_control:
+    label: "{{ item.src }}"
+  failed_when: false
+  when: experiment_section_runner.fetch is defined
+
+- name: Stop and fetch experiment pcaps for section
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_stop_fetch_pcaps.yml"
+  when: experiment_pcap_enabled_effective | bool
+
+- name: Record experiment section end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
+  vars:
+    experiment_timeline_event:
+      level: "section"
+      phase: "end"
+      name: "{{ experiment_section_name }}"
+      title: "{{ experiment_section_title }}"
+      section_index: "{{ experiment_section_index | int }}"
+      runner_type: "{{ experiment_section_runner.type | default('pause') }}"
+      prometheus_enabled: "{{ experiment_section_prometheus_enabled_effective }}"
+      pcap_enabled: "{{ experiment_pcap_enabled_effective }}"
+      artifacts_file: "{{ experiment_artifacts_file | default('') }}"
+      artifact_overrides: "{{ experiment_section_artifacts_config }}"
+
+- name: Fail when experiment section command failed
+  ansible.builtin.fail:
+    msg: >-
+      Experiment section {{ experiment_section_name }} command failed with rc={{ experiment_section_command_output.rc }}.
+      stdout={{ experiment_section_command_output.stdout | default('') }}
+      stderr={{ experiment_section_command_output.stderr | default('') }}
+  when:
+    - experiment_section_runner.type | default('pause') == 'command'
+    - experiment_section_command_output.rc | default(0) != 0
+
+- name: Fail when experiment section playbook failed
+  ansible.builtin.fail:
+    msg: >-
+      Experiment section {{ experiment_section_name }} playbook failed with rc={{ experiment_section_playbook_output.rc }}.
+      stdout={{ experiment_section_playbook_output.stdout | default('') }}
+      stderr={{ experiment_section_playbook_output.stderr | default('') }}
+  when:
+    - experiment_section_runner.type | default('pause') == 'playbook'
+    - experiment_section_playbook_output.rc | default(0) != 0

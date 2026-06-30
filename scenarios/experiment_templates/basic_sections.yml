@@ -1,0 +1,22 @@
+---
+name: basic_artifact_sections
+title: Basic artifact-collection experiment
+
+sections:
+  - name: baseline
+    title: Baseline wait with artifact window
+    runner:
+      type: pause
+      seconds: 30
+
+  - name: workload
+    title: Replace this with a command, task file, or playbook
+    runner:
+      type: command
+      command: "echo replace-me && sleep 30"
+
+  - name: recovery
+    title: Recovery wait
+    runner:
+      type: pause
+      seconds: 30

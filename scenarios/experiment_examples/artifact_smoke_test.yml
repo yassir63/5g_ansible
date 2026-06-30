@@ -1,0 +1,29 @@
+---
+name: artifact_smoke_test
+title: Generic artifact smoke test
+timezone: Europe/Paris
+
+sections:
+  - name: baseline_wait
+    title: Baseline wait window
+    runner:
+      type: pause
+      seconds: 10
+
+  - name: local_command
+    title: Local command window
+    runner:
+      type: command
+      command: |
+        set -e
+        echo "generic artifact smoke test"
+        echo "hostname=$(hostname)"
+        echo "started_at=$(date -Is)"
+        sleep 10
+        echo "finished_at=$(date -Is)"
+
+  - name: recovery_wait
+    title: Recovery wait window
+    runner:
+      type: pause
+      seconds: 10

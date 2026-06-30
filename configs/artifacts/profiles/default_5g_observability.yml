@@ -1,0 +1,29 @@
+---
+collect:
+  enabled: true
+  prometheus:
+    enabled: true
+    url: "http://127.0.0.1:30095"
+    step: "1s"
+    queries_file: "configs/artifacts/default_prometheus_queries.json"
+    padding_seconds: 30
+  split_by_windows: true
+  split_padding_seconds: 0
+  split_compress: true
+  window_types: "campaign,section"
+  pod_logs:
+    enabled: false
+    namespaces: ["open5gs", "monarch"]
+    since: "2h"
+    tail_lines: 5000
+    include_previous: true
+  pcaps:
+    enabled: false
+
+pcap:
+  strict: false
+  auto_install_tcpdump: true
+  capture_seconds: 30
+  interface: any
+  filter: ""
+  snaplen: 192

@@ -48,6 +48,75 @@ This repo **5g_ansible** [sopnode/5g_ansible](https://github.com/sopnode/5g_ansi
 ## Available Test Scenarios
 The `deploy.sh` can be used to configure and deploy a scenario (iperf or interference). If such a scenario option is selected, the `deploy.sh`  script will execute, once the 5G CORE+CN deployement is ready, another script `run_scenario.sh` that can also be run manually, provided that the inventory is already configured for the target scenario.
 
+## Generic Experiment Artifact Collection
+
+In addition to the built-in scenarios, the repository can run arbitrary
+user-defined experiments and collect observability artifacts around named time
+windows. A scenario YAML defines sections such as `baseline`, `stress`, or
+`recovery`; the runner records their start/end times and can export
+Prometheus/Grafana-query CSVs, split metrics by section, collect Kubernetes pod
+logs, and optionally collect short pcaps.
+
+You can use either a self-contained scenario file with both `sections` and
+`collect` / `pcap` settings inside it, or a cleaner split with an experiment
+file plus an artifact profile. Start from an experiment template and an artifact
+profile:
+
+```bash
+cp scenarios/experiment_templates/basic_sections.yml scenarios/my_experiment.yml
+
+ansible-playbook -i inventory/default/hosts.ini \
+  -e experiment_scenario_file=scenarios/my_experiment.yml \
+  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
+  playbooks/run_experiment.yml
+```
+
+Or run the small smoke-test scenario to verify the artifact layout:
+
+```bash
+ansible-playbook -i inventory/default/hosts.ini \
+  -e experiment_scenario_file=scenarios/experiment_examples/artifact_smoke_test.yml \
+  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
+  playbooks/run_experiment.yml
+```
+
+For a real traffic example, run `qhat01` and `qhat03` uplink/downlink TCP iperf
+at 40 Mb/s:
+
+```bash
+ansible-playbook -i inventory/default/hosts.ini \
+  -e experiment_scenario_file=scenarios/experiment_examples/two_ue_iperf_40m.yml \
+  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
+  -e target_server_host=sopnode-f2 \
+  playbooks/run_experiment.yml
+```
+
+To exercise mixed direction and per-section artifact overrides, run:
+
+```bash
+ansible-playbook -i inventory/default/hosts.ini \
+  -e experiment_scenario_file=scenarios/experiment_examples/two_ue_direction_matrix_40m.yml \
+  -e experiment_artifacts_file=configs/artifacts/profiles/default_5g_observability.yml \
+  -e target_server_host=sopnode-f2 \
+  playbooks/run_experiment.yml
+```
+
+Artifact collection can be disabled entirely:
+
+```yaml
+collect:
+  enabled: false
+```
+
+Prometheus queries and pcap targets are configurable through the scenario YAML
+or through files in `configs/artifacts/`. Pcap capture is disabled by default;
+when enabled, the runner attempts to install `tcpdump` using `apt-get`, `dnf`,
+`yum`, `microdnf`, or `apk`, then continues with a clear summary if capture is
+not possible unless strict mode is requested.
+
+See [docs/experiment_artifacts.md](docs/experiment_artifacts.md) for the full
+tutorial and templates.
+
 #### Command Overview
 
 ```bash
