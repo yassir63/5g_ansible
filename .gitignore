@@ -7,3 +7,6 @@ admin.conf
 inventory/default/hosts.ini
 results
 include
+.DS_Store
+__pycache__/
+*.py[cod]
