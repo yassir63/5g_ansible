@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kpi-calculator-oai
+  namespace: {{ monitoring_namespace }}
+  labels:
+    app: monitoring-kpi
+    component: kpi-calculator-oai
+spec:
+  selector:
+    matchLabels:
+      app: monitoring-kpi
+      component: kpi-calculator-oai
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: monitoring-kpi
+        component: kpi-calculator-oai
+    spec:
+      containers:
+        - image: {{ monitoring_oai_ran_kpi_image }}
+          name: kpi-calculator-oai
+          imagePullPolicy: {{ monitoring_kpi_image_pull_policy }}
+          ports:
+            - name: metrics
+              containerPort: 9000
+          env:
+            - name: UPDATE_PERIOD
+              value: "{{ monitoring_kpi_update_period }}"
+            - name: MONARCH_THANOS_URL
+              value: "{{ monitoring_prometheus_url }}"
+            - name: TIME_RANGE
+              value: "{{ monitoring_kpi_time_range }}"
+          command: ["/bin/bash", "-c", "--"]
+          args: ["python -u kpi_calculator.py"]
+          resources:
+            requests:
+              memory: "{{ monitoring_kpi_memory_request }}"
+              cpu: "{{ monitoring_kpi_cpu_request }}"
+            limits:
+              memory: "{{ monitoring_kpi_memory_limit }}"
+              cpu: "{{ monitoring_kpi_cpu_limit }}"
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kpi-calculator-oai-service
+  namespace: {{ monitoring_namespace }}
+  labels:
+    app: monitoring-kpi
+    component: kpi-calculator-oai
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "9000"
+spec:
+  ports:
+    - name: metrics
+      port: 9000
+      targetPort: metrics
+  selector:
+    app: monitoring-kpi
+    component: kpi-calculator-oai

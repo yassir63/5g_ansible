@@ -1,0 +1,24 @@
+---
+monitoring_namespace: monitoring
+monitoring_prometheus_service_name: monitoring-prometheus
+monitoring_prometheus_url: "http://{{ monitoring_prometheus_service_name }}.{{ monitoring_namespace }}.svc:9090"
+
+monitoring_core_namespace: "{{ core | default('open5gs') }}"
+monitoring_ran_namespace: "{{ ran_ns | default(monitoring_core_namespace) }}"
+
+monitoring_kpi_update_period: "1"
+monitoring_kpi_time_range: "30s"
+monitoring_kpi_image_pull_policy: Always
+
+monitoring_core_mde_enabled: "{{ core | default('') == 'open5gs' }}"
+monitoring_ran_mde_enabled: "{{ ran | default('') == 'oai' }}"
+monitoring_core_kpi_enabled: "{{ core | default('') == 'open5gs' }}"
+monitoring_oai_ran_kpi_enabled: "{{ ran | default('') == 'oai' }}"
+
+monitoring_open5gs_kpi_image: "ghcr.io/ziyad-mabrouk/kpi-calculator-open5gs:v1.0.0-standard"
+monitoring_oai_ran_kpi_image: "ghcr.io/ziyad-mabrouk/kpi-calculator-oai:v1.0.1-standard"
+
+monitoring_kpi_cpu_request: 100m
+monitoring_kpi_cpu_limit: 200m
+monitoring_kpi_memory_request: 100Mi
+monitoring_kpi_memory_limit: 200Mi

@@ -177,7 +177,8 @@
 # Legacy full-Monarch deployment is intentionally left here as commented
 # reference. The active monitoring path above now deploys only Prometheus and
 # Grafana, using the useful NSSDC/data-visualization settings from the
-# Ziyad-Mabrouk/5g-monarch branches without the SO/NFVO/Thanos/MinIO/KPI stack.
+# Ziyad-Mabrouk/5g-monarch branches without the SO/NFVO/Thanos/MinIO stack.
+# The KPI-only exporters are restored later through monitoring/kpi_calculators.
 #
 # - name: Deploy 5G-Monarch for monitoring
 #   hosts: monitor_node
@@ -521,6 +522,18 @@
       when:
         - ran == 'ueransim'
         - core != 'oai'
+
+
+- name: Deploy lightweight monitoring KPI calculators
+  hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
+  gather_facts: false
+  roles:
+    - role: monitoring/kpi_calculators
+      when: monitoring_enabled | bool
+      vars:
+        monitoring_core_namespace: "{{ core }}"
+        monitoring_ran_namespace: "{{ ran_ns | default(core) }}"
+        monitoring_prometheus_url: "http://{{ monitoring_prometheus_service_name | default('monitoring-prometheus') }}.{{ monitoring_namespace | default('monitoring') }}.svc:9090"
 
 
 

@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: amf-metrics-service
+  namespace: {{ monitoring_core_namespace }}
+  labels:
+    nf: amf
+    app: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "9090"
+spec:
+  ports:
+    - name: metrics
+      port: 9090
+  selector:
+    nf: amf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: smf-metrics-service
+  namespace: {{ monitoring_core_namespace }}
+  labels:
+    nf: smf
+    app: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "9090"
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 9090
+  selector:
+    nf: smf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: upf-metrics-service
+  namespace: {{ monitoring_core_namespace }}
+  labels:
+    nf: upf
+    app: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "9090"
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 9090
+  selector:
+    nf: upf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: upf-latency-service
+  namespace: {{ monitoring_core_namespace }}
+  labels:
+    nf: upf
+    app: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/latency"
+    prometheus.io/port: "9100"
+spec:
+  clusterIP: None
+  ports:
+    - name: latency
+      port: 9100
+  selector:
+    nf: upf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: upf-latency-service2
+  namespace: {{ monitoring_core_namespace }}
+  labels:
+    nf: upf
+    app: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/latency"
+    prometheus.io/port: "9101"
+spec:
+  clusterIP: None
+  ports:
+    - name: latency
+      port: 9101
+  selector:
+    nf: upf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: packet-pairer-metrics-service
+  namespace: {{ monitoring_core_namespace }}
+  labels:
+    app: packet-pairer
+    component: same-packet-pairer
+    app.kubernetes.io/part-of: lightweight-monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "9200"
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 9200
+      targetPort: 9200
+      protocol: TCP
+  selector:
+    app: packet-pairer
+    component: same-packet-pairer
+    managed-by: kopf-ebpf-controller
