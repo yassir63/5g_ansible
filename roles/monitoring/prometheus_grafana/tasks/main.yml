@@ -11,19 +11,17 @@
       metadata:
         name: "{{ monitoring_namespace }}"
 
+- name: Render Monarch Grafana dashboard ConfigMap
+  ansible.builtin.template:
+    src: monarch-dashboard-configmap.yml.j2
+    dest: /tmp/lightweight-monitoring-grafana-dashboard.yml
+    mode: "0644"
+  when: monitoring_grafana_dashboard_enabled | bool
+
 - name: Install Monarch Grafana dashboard ConfigMap
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: "{{ monitoring_grafana_dashboard_configmap }}"
-        namespace: "{{ monitoring_namespace }}"
-        labels:
-          grafana_dashboard: "1"
-      data:
-        "{{ monitoring_grafana_dashboard_file }}": "{{ lookup('file', monitoring_grafana_dashboard_source) }}"
+  ansible.builtin.command: kubectl apply -f /tmp/lightweight-monitoring-grafana-dashboard.yml
+  register: monitoring_grafana_dashboard_apply
+  changed_when: "'created' in monitoring_grafana_dashboard_apply.stdout or 'configured' in monitoring_grafana_dashboard_apply.stdout"
   when: monitoring_grafana_dashboard_enabled | bool
 
 - name: Ensure /mnt/data mount point exists for monitoring persistence
