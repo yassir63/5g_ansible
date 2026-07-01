@@ -422,10 +422,9 @@ collect_user_inputs() {
     fi
 
     # Select Monitoring
-    # Open5GS supports Monarch monitoring with both real RANs and UERANSIM.
-    # Other cores keep the existing behavior and are asked only for non-UERANSIM RANs.
-    # For Open5GS, ask for a monitoring node and enable Monarch.
-    # For other supported combinations, enable monitoring without Monarch.
+    # Monitoring now deploys a lightweight Prometheus/Grafana stack. The legacy
+    # Monarch roles remain in the repository, but deploy.sh no longer enables
+    # the full Monarch stack.
     monitoring_enabled=false
     monarch=false
     monitor_node=""
@@ -437,30 +436,24 @@ collect_user_inputs() {
       read -rp "Do you want to deploy monitoring? [y/N]: " mon_choice
       if [[ "$mon_choice" =~ ^[Yy]$ ]]; then
         monitoring_enabled=true
-
-        if [[ "$core" == "open5gs" ]]; then
-          monarch=true
-          echo ""
-          echo "Select the node to deploy Monitoring on (default: ${DEFAULT_MONITOR_NODE}):"
-          echo "1) sopnode-f1"
-          echo "2) sopnode-f2"
-          echo "3) sopnode-f3"
-          echo "4) sopnode-w3"
-          read -rp "Enter choice [1-4]: " monitor_node_choice
-          if [[ -z "${monitor_node_choice}" ]]; then
-            monitor_node=${DEFAULT_MONITOR_NODE}
-          else
-            case "${monitor_node_choice}" in
-              1) monitor_node="sopnode-f1" ;;
-              2) monitor_node="sopnode-f2" ;;
-              3) monitor_node="sopnode-f3" ;;
-              4) monitor_node="sopnode-w3" ;;
-              *) echo "❌ Invalid Monitoring node"; exit 1 ;;
-            esac
-          fi
+        monarch=false
+        echo ""
+        echo "Select the node to deploy lightweight Prometheus/Grafana on (default: ${DEFAULT_MONITOR_NODE}):"
+        echo "1) sopnode-f1"
+        echo "2) sopnode-f2"
+        echo "3) sopnode-f3"
+        echo "4) sopnode-w3"
+        read -rp "Enter choice [1-4]: " monitor_node_choice
+        if [[ -z "${monitor_node_choice}" ]]; then
+          monitor_node=${DEFAULT_MONITOR_NODE}
         else
-          monarch=false
-          # No node prompt here: monitoring is enabled, but monarch is not used.
+          case "${monitor_node_choice}" in
+            1) monitor_node="sopnode-f1" ;;
+            2) monitor_node="sopnode-f2" ;;
+            3) monitor_node="sopnode-f3" ;;
+            4) monitor_node="sopnode-w3" ;;
+            *) echo "❌ Invalid Monitoring node"; exit 1 ;;
+          esac
         fi
       fi
     fi
@@ -795,7 +788,7 @@ optional_scenarios() {
           scenario="UERANSIM attach/detach churn"
           requires_iperf_server=false
           monitoring_enabled=true
-          monarch=true
+          monarch=false
           monitor_node="${monitor_node:-$DEFAULT_MONITOR_NODE}"
           if [[ ! "$ueransim_churn_subscribers" =~ ^[0-9]+$ || "$ueransim_churn_subscribers" -lt 1 ]]; then
             echo "❌ Invalid churn subscriber count: $ueransim_churn_subscribers"
@@ -1097,9 +1090,9 @@ EOF
 
 	          if [[ "${monitoring_enabled:-false}" != true || -z "${monitor_node:-}" ]]; then
 	            monitoring_enabled=true
-	            monarch=true
+	            monarch=false
 	            echo "UERANSIM churn overhead needs a monitoring node for Prometheus/cAdvisor."
-	            echo "Select the node to deploy Monitoring on (default: ${DEFAULT_MONITOR_NODE}):"
+	            echo "Select the node to deploy lightweight Prometheus/Grafana on (default: ${DEFAULT_MONITOR_NODE}):"
 	            echo "1) sopnode-f1"
 	            echo "2) sopnode-f2"
 	            echo "3) sopnode-f3"
@@ -1346,7 +1339,7 @@ print_summary() {
       else
         echo "Monitoring:  enabled (automatic mode)"
       fi
-      echo "Monarch:     $monarch"
+      echo "Monarch:     disabled (legacy roles kept, not deployed)"
     else
       echo "Monitoring:  disabled"
       echo "Monarch:     false"
@@ -1397,6 +1390,7 @@ print_summary() {
 	          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  TCP bitrate override: ${validation_tcp_bitrate_override}"
 	          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  v06 MTU-sized ping payload override: ${validation_mtu_ping_size_override} bytes"
 	          [[ -n "${validation_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${validation_prometheus_url}"
+	        ;;
         "$SCENARIO_R2LAB_MULTI")
           echo "Will run iperf on each UE individually (${R2LAB_UES[0]}), and then all UEs simultaneously.  Will test uplink and downlink for both TCP and UDP.  Each test lasts 30s (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
         ;;
@@ -2028,6 +2022,7 @@ run_scenario() {
 	              -e "validation_scenario_names=${validation_scenario_names:-all}" \
 	              playbooks/run_latency_validation.yml
 	            scenario_status=$?
+            ;;
           "$SCENARIO_R2LAB"|"$SCENARIO_RFSIM")
             run_cmd ./run_scenario.sh -d --inventory="${NAME_INVENTORY}" \
               "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee ${DIR_LOGS}/logs-scenario_iperf.txt

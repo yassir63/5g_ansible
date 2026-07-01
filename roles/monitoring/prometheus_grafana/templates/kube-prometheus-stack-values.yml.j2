@@ -1,0 +1,135 @@
+fullnameOverride: monitoring
+
+alertmanager:
+  enabled: false
+
+grafana:
+  enabled: false
+
+prometheus:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: {{ monitoring_prometheus_node_port }}
+  serviceMonitor:
+    interval: "{{ monitoring_interval }}"
+    selfMonitor: true
+  prometheusSpec:
+    externalLabels:
+      cluster: core
+    scrapeInterval: "{{ monitoring_interval }}"
+    evaluationInterval: "{{ monitoring_interval }}"
+    retention: "{{ monitoring_retention }}"
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector: {}
+    podMonitorNamespaceSelector: {}
+    nodeSelector:
+      {{ monitoring_node_label_key }}: "{{ monitoring_node_label_value }}"
+    tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+{% if monitoring_persistence_enabled | bool %}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "{{ monitoring_storage_class }}"
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "{{ monitoring_prometheus_storage_size }}"
+{% endif %}
+    additionalScrapeConfigs:
+      - job_name: "kubernetes-annotated-services"
+        scrape_interval: "{{ monitoring_interval }}"
+        kubernetes_sd_configs:
+          - role: service
+            namespaces:
+              names:
+{% for namespace in monitoring_scrape_namespaces %}
+                - "{{ namespace }}"
+{% endfor %}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: "(.+)"
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: "([^:]+)(?::\\d+)?;(\\d+)"
+            replacement: "$1:$2"
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: service
+      - job_name: "kubernetes-annotated-pods"
+        scrape_interval: "{{ monitoring_interval }}"
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+{% for namespace in monitoring_scrape_namespaces %}
+                - "{{ namespace }}"
+{% endfor %}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: "(.+)"
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: "([^:]+)(?::\\d+)?;(\\d+)"
+            replacement: "$1:$2"
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+
+nodeExporter:
+  enabled: false
+
+kubeStateMetrics:
+  enabled: true
+
+kubeApiServer:
+  enabled: false
+
+coreDns:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+kubeProxy:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubelet:
+  enabled: true
+
+prometheusOperator:
+  kubeletService:
+    enabled: true

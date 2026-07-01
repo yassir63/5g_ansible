@@ -168,36 +168,46 @@
 
 
 
-- name: Deploy 5G-Monarch for monitoring
+- name: Deploy lightweight Prometheus/Grafana monitoring
   hosts: monitor_node
-  tasks:
-    - name: Deploy Monarch for srsRAN
-      include_role:
-        name: monarch/deploy
-      vars:
-        repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
-        repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
-        branch: srsRAN_metrics
-      when: monitoring_enabled and ran == 'srsRAN' and monarch
+  roles:
+    - role: monitoring/prometheus_grafana
+      when: monitoring_enabled | bool
 
-    - name: Deploy Monarch for OAI
-      include_role:
-        name: monarch/deploy
-      vars:
-        repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
-        repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
-        branch: with_data_persistance_for_sopnodes
-      when: monitoring_enabled and ran == 'oai' and monarch
-
-    - name: Deploy Monarch for UERANSIM
-      include_role:
-        name: monarch/deploy
-      vars:
-        repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
-        repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
-        branch: with_data_persistance_for_sopnodes
-      when: monitoring_enabled and ran == 'ueransim' and monarch
-
+# Legacy full-Monarch deployment is intentionally left here as commented
+# reference. The active monitoring path above now deploys only Prometheus and
+# Grafana, using the useful NSSDC/data-visualization settings from the
+# Ziyad-Mabrouk/5g-monarch branches without the SO/NFVO/Thanos/MinIO/KPI stack.
+#
+# - name: Deploy 5G-Monarch for monitoring
+#   hosts: monitor_node
+#   tasks:
+#     - name: Deploy Monarch for srsRAN
+#       include_role:
+#         name: monarch/deploy
+#       vars:
+#         repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
+#         repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
+#         branch: srsRAN_metrics
+#       when: monitoring_enabled and ran == 'srsRAN' and monarch
+#
+#     - name: Deploy Monarch for OAI
+#       include_role:
+#         name: monarch/deploy
+#       vars:
+#         repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
+#         repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
+#         branch: with_data_persistance_for_sopnodes
+#       when: monitoring_enabled and ran == 'oai' and monarch
+#
+#     - name: Deploy Monarch for UERANSIM
+#       include_role:
+#         name: monarch/deploy
+#       vars:
+#         repo_url: "{{ monarch_repo_url_override | default('https://github.com/yassir63/5g-monarch.git') }}"
+#         repo_dest: "{{ monarch_repo_dest_override | default('~/5g-monarch') }}"
+#         branch: with_data_persistance_for_sopnodes
+#       when: monitoring_enabled and ran == 'ueransim' and monarch
 
 
 - name: Add NoSchedule taint on Monitor node (core/ran pods should not run on monitor_node)
@@ -209,7 +219,6 @@
         target_node: "{{ monitor_node_name | default('') }}"
       when:
         - monitoring_enabled | bool
-        - monarch | bool
         - (monitor_node_name | default('')) | length > 0
         - core_node_name != ran_node_name
         - core_node_name != (monitor_node_name | default(''))
@@ -525,29 +534,28 @@
       when:
         - monitoring_enabled | bool
         - bridge_enabled | bool
-        - monarch | bool
         - (monitor_node_name | default('')) | length > 0
         - core_node_name != ran_node_name
         - core_node_name != (monitor_node_name | default(''))
 
-- name: 5G-Monarch Final Operations
-  hosts: monitor_node
-  tasks:
-    - name: Launch monitoring for OAI
-      include_role:
-        name: monarch/monitoring
-      vars:
-        set_gnb_monitoring: false
-      when: monitoring_enabled and ran == 'oai' and monarch
-
-    - name: Launch monitoring for srsRAN
-      include_role:
-        name: monarch/monitoring
-      when: monitoring_enabled and ran == 'srsRAN' and monarch
-
-    # UERANSIM churn uses Prometheus/cAdvisor plus Redis, UE mapper, and the
-    # AMF/SMF mapper sniffers. Kopf, packet-pairer, and latency probes are
-    # intentionally disabled for this scenario.
+# - name: 5G-Monarch Final Operations
+#   hosts: monitor_node
+#   tasks:
+#     - name: Launch monitoring for OAI
+#       include_role:
+#         name: monarch/monitoring
+#       vars:
+#         set_gnb_monitoring: false
+#       when: monitoring_enabled and ran == 'oai' and monarch
+#
+#     - name: Launch monitoring for srsRAN
+#       include_role:
+#         name: monarch/monitoring
+#       when: monitoring_enabled and ran == 'srsRAN' and monarch
+#
+#     # UERANSIM churn uses Prometheus/cAdvisor plus Redis, UE mapper, and the
+#     # AMF/SMF mapper sniffers. Kopf, packet-pairer, and latency probes are
+#     # intentionally disabled for this scenario.
 
 - name: Optionally run UERANSIM churn scenario after deploy
   hosts: localhost
@@ -606,7 +614,7 @@
           churn_imsi_prefix: {{ churn_imsi_prefix | default('001010000100') | to_json }}
           churn_imsi_ordinal_width: {{ churn_imsi_ordinal_width | default(3) | int | to_json }}
           churn_collect_pod_logs: {{ churn_collect_pod_logs | default(true) | bool | to_json }}
-          churn_pod_log_namespaces: {{ churn_pod_log_namespaces | default([core | default('open5gs'), 'monarch']) | to_json }}
+          churn_pod_log_namespaces: {{ churn_pod_log_namespaces | default([core | default('open5gs'), 'monitoring']) | to_json }}
           churn_pod_log_since: {{ churn_pod_log_since | default('4h') | to_json }}
           churn_pod_log_tail_lines: {{ churn_pod_log_tail_lines | default(200000) | int | to_json }}
           churn_pod_log_include_previous: {{ churn_pod_log_include_previous | default(true) | bool | to_json }}

@@ -21,7 +21,7 @@ cd 5g_ansible
 ./deploy.sh
 ```
 
-This script helps you interactively configure a 5G deployment scenario by allowing you to choose the type of core network, the type of RAN, monitoring functions (partly based on Monarch), and an optional test scenario once the deployment is completed. It also allows you to select the servers on which the 5G pods will run, or to choose the default ones. This will generate a reservation for server(s) such as  `sopnode-f1`, `sopnode-f2`, `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
+This script helps you interactively configure a 5G deployment scenario by allowing you to choose the type of core network, the type of RAN, a lightweight Prometheus/Grafana monitoring stack, and an optional test scenario once the deployment is completed. It also allows you to select the servers on which the 5G pods will run, or to choose the default ones. This will generate a reservation for server(s) such as  `sopnode-f1`, `sopnode-f2`, `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
 
 
 This script will first attempt to reserve the servers and possibly the 5G RAN nodes you selected for your 5G deployment. Then it will :
@@ -30,7 +30,7 @@ This script will first attempt to reserve the servers and possibly the 5G RAN no
 - Install all required packages on the server(s).
 - Set up a Kubernetes cluster across the nodes.
 - Deploy a 5G Core Network (CN). Currently 3 options are possible : Free5GC, OAI or Open5GS. 
-- Optionally deploy the *Monarch monitoring framework* in case Open5GS CN is selected. 
+- Optionally deploy a lightweight Prometheus/Grafana monitoring stack. The legacy Monarch roles remain in the repository for reference and for existing UE-mapper/sniffer/controller mechanisms, but the full Monarch platform is not deployed by default.
 - Deploy a 5G Radio Access network (RAN). Currently, 3 options are possible : OAI, srsRAN and UERANSIM. OAI and srsRAN supports both real 5G network devices in the R2lab testbed and emulation mode while UERANSIM is a pure 5G RAN emulation system. In case the R2lab platform is selected, a specific R2lab playbook will run in parallel to configure the R2lab resources: RRU, UEs and FIT R2lab nodes.
 - Optionally deploy a test scenario at the end of the deployment, see more details below.
 
@@ -41,7 +41,7 @@ This repo **5g_ansible** [sopnode/5g_ansible](https://github.com/sopnode/5g_ansi
 - **OAI OpenAirInterface Core and RAN** : [sopnode/oai5g-rru](https://github.com/sopnode/oai5g-rru) and [charts](https://gitlab.eurecom.fr/turletti/charts) that leverage [oai/cn5g/oai-cn5g-fed](https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed) and [openairinterface5G](https://gitlab.eurecom.fr/oai/openairinterface5g)
 - **Free5gc Core** : [sopnode/free5gc-helm](https://github.com/sopnode/free5gc-helm), forked from [free5gc/free5gc-helm](https://github.com/free5gc/free5gc-helm)
 - **srsran-helm** : [turletti/srsan-helm](https://github.com/turletti/srsran-helm), forked from [Ziyad-Mabrouk/srsran-helm](https://github.com/Ziyad-Mabrouk/srsran-helm)
-- **Monarch monitoring framework** : [Ziyad-Mabrouk/5g-monarch](https://github.com/Ziyad-Mabrouk/5g-monarch), forked from [niloysh/5g-monarch](https://github.com/niloysh/5g-monarch).
+- **Prometheus/Grafana monitoring references** : the lightweight monitoring values are based on the useful Prometheus and Grafana parts from [Ziyad-Mabrouk/5g-monarch](https://github.com/Ziyad-Mabrouk/5g-monarch), especially the `srsRAN_metrics` and `with_data_persistance_for_sopnodes` branches. The full Monarch SO/NFVO/KPI/Thanos/MinIO stack is intentionally not deployed by default.
 
 ---
 
@@ -260,7 +260,7 @@ ues:
 
 ## Monitoring Dashboard Access
 
-After deployment, instructions will be printed to your terminal with the SSH command required to access the **Monarch monitoring dashboard**.
+After deployment, instructions will be printed to your terminal with the SSH command required to access the **Grafana monitoring dashboard**.
 
 **Note:** To access Duckburg nodes from your local machine, you must configure your local environment to connect to the SLICES infrastructure. See:
 👉 [SLICES CLI and SSH access guide](https://doc.slices-ri.eu/SupportingServices/slicescli.html)
@@ -284,11 +284,16 @@ After deployment, instructions will be printed to your terminal with the SSH com
 
 ## Data Persistence
 
-All of Monarch's monitoring data is automatically persisted to the block storage device specified under the storage variable in your `hosts.ini` file (e.g., `sda1` for `sopnode-f1`). This device is mounted under `/mnt/data`, and all monitoring data flushed by Prometheus to the MinIO bucket is stored under `/mnt/data/minio/monarch-thanos/`.
+The lightweight Prometheus/Grafana stack uses persistent storage when monitoring persistence is enabled. Prometheus and Grafana are deployed in the `monitoring` namespace and exposed with the same familiar NodePorts:
+
+- Prometheus: `30095`
+- Grafana: `32005`
+
+The stack scrapes Kubernetes services and pods annotated with `prometheus.io/scrape: "true"` in the configured monitoring namespaces, so latency exporters, UE mapper metrics, and other exporters can be discovered without deploying the full Monarch platform.
 
 **Note on Prometheus persistence:** Prometheus writes all incoming metrics data to an in-memory *head block* and only flushes this data to disk every **2 hours**. At the moment, this interval cannot be changed in our setup. As a result:
 > ⚠️ If the monitor node is terminated or redeployed before 2 hours have passed, any collected data will be lost.
 
 To ensure metrics are actually written to disk and persist across redeployments, you must wait **at least 2 hours** after starting data collection, in which case extending your reservation is needed. Once this threshold is reached, Prometheus will flush the in-memory block to the permanent on-disk block that survives restarts.
 
-As long as the same monitor node and mounted storage are reused, previously flushed data will remain available in the monitoring dashboard.
+As long as the same monitor node and persistent volume are reused, previously flushed data will remain available in the monitoring dashboard.

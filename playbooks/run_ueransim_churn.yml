@@ -33,7 +33,7 @@
         churn_imsi_prefix: "{{ churn_imsi_prefix | default('001010000100') }}"
         churn_imsi_ordinal_width: "{{ churn_imsi_ordinal_width | default(3) }}"
         churn_collect_pod_logs: "{{ churn_collect_pod_logs | default(true) }}"
-        churn_pod_log_namespaces: "{{ churn_pod_log_namespaces | default([core | default('open5gs'), 'monarch']) }}"
+        churn_pod_log_namespaces: "{{ churn_pod_log_namespaces | default([core | default('open5gs'), 'monitoring']) }}"
         churn_pod_log_since: "{{ churn_pod_log_since | default('4h') }}"
         churn_pod_log_tail_lines: "{{ churn_pod_log_tail_lines | default(200000) }}"
         churn_pod_log_include_previous: "{{ churn_pod_log_include_previous | default(true) }}"
