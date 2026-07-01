@@ -2080,7 +2080,7 @@ show_access_info() {
       echo "Step 3: Now open your browser and go to http://localhost:8888 to access Grafana, using these credentials: "
       echo ""
       echo "Username: admin"
-      echo "Password: monarch-operator"
+      echo "Password: admin"
       echo ""
     fi
 

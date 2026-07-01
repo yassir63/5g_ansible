@@ -33,10 +33,39 @@ datasources:
         editable: true
         jsonData:
           timeInterval: "{{ monitoring_interval }}"
+      - name: monarch-thanos
+        type: prometheus
+        url: "http://{{ monitoring_prometheus_service_name }}.{{ monitoring_namespace }}.svc:9090"
+        isDefault: false
+        uid: monarch-thanos
+        editable: true
+        jsonData:
+          timeInterval: "{{ monitoring_interval }}"
+
+{% if monitoring_grafana_dashboard_enabled | bool %}
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+dashboardsConfigMaps:
+  default: "{{ monitoring_grafana_dashboard_configmap }}"
+{% endif %}
 
 grafana.ini:
   dashboards:
     min_refresh_interval: 1s
+{% if monitoring_grafana_dashboard_enabled | bool %}
+    default_home_dashboard_path: /var/lib/grafana/dashboards/default/{{ monitoring_grafana_dashboard_file }}
+{% endif %}
   users:
     default_theme: light
     viewers_can_edit: true

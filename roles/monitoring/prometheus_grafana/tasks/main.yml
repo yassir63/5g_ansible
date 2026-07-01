@@ -11,6 +11,21 @@
       metadata:
         name: "{{ monitoring_namespace }}"
 
+- name: Install Monarch Grafana dashboard ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ monitoring_grafana_dashboard_configmap }}"
+        namespace: "{{ monitoring_namespace }}"
+        labels:
+          grafana_dashboard: "1"
+      data:
+        "{{ monitoring_grafana_dashboard_file }}": "{{ lookup('file', monitoring_grafana_dashboard_source) }}"
+  when: monitoring_grafana_dashboard_enabled | bool
+
 - name: Ensure /mnt/data mount point exists for monitoring persistence
   ansible.builtin.file:
     path: /mnt/data

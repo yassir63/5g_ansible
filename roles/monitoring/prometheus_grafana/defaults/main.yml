@@ -14,7 +14,13 @@ monitoring_retention: "5d"
 monitoring_prometheus_node_port: 30095
 monitoring_grafana_node_port: 32005
 monitoring_grafana_admin_user: admin
-monitoring_grafana_admin_password: monarch-operator
+monitoring_grafana_admin_password: admin
+
+monitoring_grafana_dashboard_enabled: true
+monitoring_grafana_dashboard_configmap: monarch-dashboard-configmap
+monitoring_grafana_dashboard_file: monarch-dashboard.json
+monitoring_grafana_dashboard_variant: "{{ 'srsran' if (ran | default('')) == 'srsRAN' else 'oai' }}"
+monitoring_grafana_dashboard_source: "{{ role_path }}/files/monarch-dashboard-{{ monitoring_grafana_dashboard_variant }}.json"
 
 monitoring_scrape_namespaces:
   - open5gs
