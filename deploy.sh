@@ -45,6 +45,13 @@ usage() {
     echo "--scenario-only          Skip reservation/deployment and only run the selected scenario workflow"
     echo "--tcp-paper <names>      Run TCP paper scenarios and create experiment_analysis.ipynb"
     echo "                         <names> can be all or a comma-separated scenario list"
+    echo "                         Current TCP paper scenarios:"
+    echo "                         01_decomp_baseline_all_ues"
+    echo "                         02_decomp_far_ue_radio"
+    echo "                         03_decomp_upf_cpu_stress"
+    echo "                         04_decomp_target_server_netem_delay"
+    echo "                         05_fit02_interference_near_ul_dl"
+    echo "                         06_fit28_spatial_control_near_ul_dl"
     echo "--validation <names>     Run latency validation and create paper figures/notebooks"
     echo "                         <names> can be all, v01_candidate_signal_baseline,"
     echo "                         v02_icmp_ping_correctness, v03_controlled_delay,"
@@ -633,24 +640,14 @@ optional_scenarios() {
       ueransim_churn_counts="$REQUESTED_CHURN_COUNTS"
     fi
 
-    TCP_PAPER_UES=("qhat01" "qhat02" "qhat03" "qhat21" "qhat22")
+    TCP_PAPER_UES=("qhat01" "qhat02" "qhat03")
     TCP_PAPER_SCENARIOS=(
-      "01_clean_near_baseline"
-      "02_near_vs_far_radio_condition"
-      "03_tcp_load_ramp"
-      "04_cross_slice_contention"
-      "05_far_ue_stress_with_near_load"
-      "06_mixed_ul_dl_near"
-      "07_fit02_interference_near_ul_dl"
-      "09_fit28_spatial_control_near_ul_dl"
-      "10_fit02_bidir_interference_near_trio"
-      "11_fit28_bidir_interference_near_trio"
-      "12_physical_near_far_qhat02"
-      "13_far_light_under_near_heavy_load"
-      "20_decomp_baseline_all_ues"
-      "21_decomp_far_ue_radio"
-      "22_decomp_upf_cpu_stress"
-      "23_decomp_target_server_netem_delay"
+      "01_decomp_baseline_all_ues"
+      "02_decomp_far_ue_radio"
+      "03_decomp_upf_cpu_stress"
+      "04_decomp_target_server_netem_delay"
+      "05_fit02_interference_near_ul_dl"
+      "06_fit28_spatial_control_near_ul_dl"
     )
     VALIDATION_SCENARIOS=(
       "v01_candidate_signal_baseline"
@@ -690,29 +687,9 @@ optional_scenarios() {
             IFS=',' read -ra selected_tcp_paper_scenarios_for_ues <<< "$paper_scenario_names"
             for selected_tcp_paper_scenario in "${selected_tcp_paper_scenarios_for_ues[@]}"; do
               case "$selected_tcp_paper_scenario" in
-                "01_clean_near_baseline")
-                  add_tcp_paper_required_ue "qhat01"
-                  add_tcp_paper_required_ue "qhat03"
-                  ;;
-                "03_tcp_load_ramp")
+                "01_decomp_baseline_all_ues"|"02_decomp_far_ue_radio"|"03_decomp_upf_cpu_stress"|"04_decomp_target_server_netem_delay"|"05_fit02_interference_near_ul_dl"|"06_fit28_spatial_control_near_ul_dl")
                   add_tcp_paper_required_ue "qhat01"
                   add_tcp_paper_required_ue "qhat02"
-                  add_tcp_paper_required_ue "qhat03"
-                  ;;
-                "02_near_vs_far_radio_condition")
-                  add_tcp_paper_required_ue "qhat01"
-                  add_tcp_paper_required_ue "qhat02"
-                  add_tcp_paper_required_ue "qhat21"
-                  add_tcp_paper_required_ue "qhat22"
-                  ;;
-                "04_cross_slice_contention"|"06_mixed_ul_dl_near"|"07_fit02_interference_near_ul_dl"|"09_fit28_spatial_control_near_ul_dl"|"10_fit02_bidir_interference_near_trio"|"11_fit28_bidir_interference_near_trio"|"12_physical_near_far_qhat02"|"13_far_light_under_near_heavy_load"|"20_decomp_baseline_all_ues"|"21_decomp_far_ue_radio"|"22_decomp_upf_cpu_stress"|"23_decomp_target_server_netem_delay")
-                  add_tcp_paper_required_ue "qhat01"
-                  add_tcp_paper_required_ue "qhat02"
-                  add_tcp_paper_required_ue "qhat03"
-                  ;;
-                "05_far_ue_stress_with_near_load")
-                  add_tcp_paper_required_ue "qhat21"
-                  add_tcp_paper_required_ue "qhat22"
                   add_tcp_paper_required_ue "qhat03"
                   ;;
                 *)
@@ -944,29 +921,9 @@ EOF
             IFS=',' read -ra selected_tcp_paper_scenarios_for_ues <<< "$paper_scenario_names"
             for selected_tcp_paper_scenario in "${selected_tcp_paper_scenarios_for_ues[@]}"; do
               case "$selected_tcp_paper_scenario" in
-                "01_clean_near_baseline")
-                  add_tcp_paper_required_ue "qhat01"
-                  add_tcp_paper_required_ue "qhat03"
-                  ;;
-                "03_tcp_load_ramp")
+                "01_decomp_baseline_all_ues"|"02_decomp_far_ue_radio"|"03_decomp_upf_cpu_stress"|"04_decomp_target_server_netem_delay"|"05_fit02_interference_near_ul_dl"|"06_fit28_spatial_control_near_ul_dl")
                   add_tcp_paper_required_ue "qhat01"
                   add_tcp_paper_required_ue "qhat02"
-                  add_tcp_paper_required_ue "qhat03"
-                  ;;
-                "02_near_vs_far_radio_condition")
-                  add_tcp_paper_required_ue "qhat01"
-                  add_tcp_paper_required_ue "qhat02"
-                  add_tcp_paper_required_ue "qhat21"
-                  add_tcp_paper_required_ue "qhat22"
-                  ;;
-                "04_cross_slice_contention"|"06_mixed_ul_dl_near"|"07_fit02_interference_near_ul_dl"|"09_fit28_spatial_control_near_ul_dl"|"10_fit02_bidir_interference_near_trio"|"11_fit28_bidir_interference_near_trio"|"12_physical_near_far_qhat02"|"13_far_light_under_near_heavy_load"|"20_decomp_baseline_all_ues"|"21_decomp_far_ue_radio"|"22_decomp_upf_cpu_stress"|"23_decomp_target_server_netem_delay")
-                  add_tcp_paper_required_ue "qhat01"
-                  add_tcp_paper_required_ue "qhat02"
-                  add_tcp_paper_required_ue "qhat03"
-                  ;;
-                "05_far_ue_stress_with_near_load")
-                  add_tcp_paper_required_ue "qhat21"
-                  add_tcp_paper_required_ue "qhat22"
                   add_tcp_paper_required_ue "qhat03"
                   ;;
               esac

@@ -52,15 +52,15 @@ Run only selected TCP scenarios:
 
 ```bash
 ./deploy.sh \
-  --tcp-paper 01_clean_near_baseline,03_tcp_load_ramp \
+  --tcp-paper 01_decomp_baseline_all_ues,02_decomp_far_ue_radio \
   --target-server sopnode-w3
 ```
 
-Run the combined TCP load ramp. It includes qhat01/qhat03 and physically far qhat02 at P1, P4, and P8:
+Run only the UPF CPU stress decomposition scenario:
 
 ```bash
 ./deploy.sh \
-  --tcp-paper 03_tcp_load_ramp \
+  --tcp-paper 03_decomp_upf_cpu_stress \
   --target-server sopnode-w3
 ```
 
@@ -175,7 +175,7 @@ Override iperf duration:
 
 ```bash
 ./deploy.sh \
-  --tcp-paper 03_tcp_load_ramp \
+  --tcp-paper 01_decomp_baseline_all_ues \
   --target-server sopnode-w3 \
   --duration 180
 ```

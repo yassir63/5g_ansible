@@ -231,136 +231,98 @@
     target_server: "{{ paper_target_server_ip }}"
     ignore_task_errors: true
     paper_scenarios:
-      - name: "01_clean_near_baseline"
-        title: "Clean near-UE baseline"
+      - name: "01_decomp_baseline_all_ues"
+        title: "Decomposition baseline with qhat01, qhat02, and qhat03"
         pause_after: true
         steps:
-          - name: "near_pair_p1"
-            ues: ["qhat01", "qhat03"]
+          - name: "all_qhat_p1"
+            ues: ["qhat01", "qhat02", "qhat03"]
             parallel_streams: 1
             directions: ["ul", "dl"]
-          - name: "near_pair_p4"
-            ues: ["qhat01", "qhat03"]
-            parallel_streams: 4
+            ue_roles:
+              qhat01: "baseline"
+              qhat02: "baseline"
+              qhat03: "baseline"
+          - name: "all_qhat_p2"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 2
             directions: ["ul", "dl"]
+            ue_roles:
+              qhat01: "baseline"
+              qhat02: "baseline"
+              qhat03: "baseline"
 
-      - name: "02_near_vs_far_radio_condition"
-        title: "Near vs far radio condition"
+      - name: "02_decomp_far_ue_radio"
+        title: "RF/RAN degradation from physically far qhat02"
         pause_after: true
         steps:
-          - name: "near_pair_p1"
-            ues: ["qhat01", "qhat02"]
-            parallel_streams: 1
-            directions: ["ul", "dl"]
-          - name: "far_pair_p1"
-            ues: ["qhat21", "qhat22"]
-            parallel_streams: 1
-            directions: ["ul", "dl"]
-          - name: "near_pair_p4"
-            ues: ["qhat01", "qhat02"]
-            parallel_streams: 4
-            directions: ["ul", "dl"]
-          - name: "far_pair_p4"
-            ues: ["qhat21", "qhat22"]
-            parallel_streams: 4
-            directions: ["ul", "dl"]
-
-      - name: "03_tcp_load_ramp"
-        title: "TCP load ramp on qhat01/qhat03 and physically far qhat02"
-        pause_after: true
-        steps:
-          - name: "qhat01_qhat03_p1"
+          - name: "near_reference_qhat01_qhat03_p2"
             ues: ["qhat01", "qhat03"]
-            parallel_streams: 1
+            parallel_streams: 2
+            directions: ["ul", "dl"]
+            ue_roles:
+              qhat01: "near-reference"
+              qhat03: "near-reference"
+          - name: "far_reference_qhat02_p2"
+            ues: ["qhat02"]
+            parallel_streams: 2
+            directions: ["ul", "dl"]
+            ue_roles:
+              qhat02: "far-radio"
+          - name: "near_far_together_qhat02_far_p2"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 2
             directions: ["ul", "dl"]
             ue_roles:
               qhat01: "near"
+              qhat02: "far-radio"
               qhat03: "near"
-          - name: "qhat01_qhat03_p4"
-            ues: ["qhat01", "qhat03"]
-            parallel_streams: 4
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "near"
-              qhat03: "near"
-          - name: "qhat01_qhat03_p8"
-            ues: ["qhat01", "qhat03"]
-            parallel_streams: 8
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "near"
-              qhat03: "near"
-          - name: "far_qhat02_p1"
-            ues: ["qhat02"]
-            parallel_streams: 1
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat02: "far"
-          - name: "far_qhat02_p4"
-            ues: ["qhat02"]
-            parallel_streams: 4
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat02: "far"
-          - name: "far_qhat02_p8"
-            ues: ["qhat02"]
-            parallel_streams: 8
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat02: "far"
 
-      - name: "04_cross_slice_contention"
-        title: "Cross-slice contention with physically far qhat02 as heavy slice1 load against near qhat01/qhat03 on slice2"
+      - name: "03_decomp_upf_cpu_stress"
+        title: "UPF CPU stress to localize core/user-plane latency"
         pause_after: true
         steps:
-          - name: "slice2_qhat01_qhat03_normal_slice1_qhat02_heavy"
+          - name: "all_qhat_upf_clean_stress_recovery_p2"
             ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 1
-            parallel_by_ue:
-              qhat02: 8
+            parallel_streams: 2
             directions: ["ul", "dl"]
+            stress: true
+            stress_target: "upf"
+            stress_workers: "{{ paper_upf_stress_workers }}"
+            stress_namespace: "{{ paper_stress_namespace }}"
+            stress_pod_regex: "{{ paper_stress_pod_regex }}"
+            stress_container_regex: "{{ paper_stress_container_regex }}"
+            stress_note: "CPU workers are launched inside matching UPF pod containers during the middle third of each iperf direction."
+            ue_roles:
+              qhat01: "probe-traffic"
+              qhat02: "probe-traffic"
+              qhat03: "probe-traffic"
 
-      - name: "05_far_ue_stress_with_near_load"
-        title: "Far UE stress with optional near heavy load"
+      - name: "04_decomp_target_server_netem_delay"
+        title: "Target-server ingress delay to localize endpoint-side latency"
         pause_after: true
         steps:
-          - name: "far_pair_p1"
-            ues: ["qhat21", "qhat22"]
-            parallel_streams: 1
-            directions: ["ul", "dl"]
-          - name: "far_pair_p4"
-            ues: ["qhat21", "qhat22"]
-            parallel_streams: 4
-            directions: ["ul", "dl"]
-          - name: "far_pair_p4_qhat03_p8"
-            ues: ["qhat21", "qhat22", "qhat03"]
-            parallel_streams: 4
-            parallel_by_ue:
-              qhat03: 8
-            directions: ["ul", "dl"]
-
-      - name: "06_mixed_ul_dl_near"
-        title: "Mixed uplink/downlink contention across near qhat01/qhat03 and physically far qhat02"
-        pause_after: true
-        steps:
-          - name: "slice2_downlink_slice1_uplink_p4"
+          - name: "all_qhat_server_netem_clean_delay_recovery_p2"
             ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 4
-            directions_by_ue:
-              qhat01: "dl"
-              qhat02: "ul"
-              qhat03: "dl"
-          - name: "slice2_uplink_slice1_downlink_p4"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 4
-            directions_by_ue:
-              qhat01: "ul"
-              qhat02: "dl"
-              qhat03: "ul"
+            parallel_streams: 2
+            directions: ["ul"]
+            stress: true
+            stress_target: "server_netem"
+            stress_workers: 0
+            server_netem_delay_ms: "{{ paper_server_netem_delay_ms }}"
+            server_netem_iface: "{{ paper_server_netem_iface }}"
+            server_netem_ifb: "{{ paper_server_netem_ifb }}"
+            server_netem_filter_prio: "{{ paper_server_netem_filter_prio }}"
+            server_netem_match_all: "{{ paper_server_netem_match_all }}"
+            stress_note: "A temporary ingress IFB netem delay is applied on the target-server interface during the middle third of uplink iperf traffic."
+            ue_roles:
+              qhat01: "probe-traffic"
+              qhat02: "probe-traffic"
+              qhat03: "probe-traffic"
 
-      - name: "07_fit02_interference_near_ul_dl"
+      - name: "05_fit02_interference_near_ul_dl"
         title: "FIT02 controlled Gaussian interference during separate uplink and downlink near-UE TCP"
-        pause_after: false
+        pause_after: true
         steps:
           - name: "near_trio_ul_clean_noise_recovery_p4"
             ues: ["qhat01", "qhat02", "qhat03"]
@@ -387,7 +349,7 @@
             interference_focus_ue: "qhat03"
             interference_note: "FIT02 gain 70 is the controlled degradation point; higher gains were observed to disconnect UEs."
 
-      - name: "09_fit28_spatial_control_near_ul_dl"
+      - name: "06_fit28_spatial_control_near_ul_dl"
         title: "FIT28 spatial control Gaussian interference during separate uplink and downlink near-UE TCP"
         pause_after: false
         steps:
@@ -417,184 +379,6 @@
             interference_noise_bandwidth: "5M"
             interference_focus_ue: "qhat03"
             interference_note: "FIT28 spatial control with softer Gaussian noise: gain 50, bandwidth 5M."
-
-      - name: "10_fit02_bidir_interference_near_trio"
-        title: "FIT02 controlled Gaussian interference during bidirectional near-UE TCP"
-        pause_after: false
-        steps:
-          - name: "near_trio_bidir_clean_noise_recovery_p4"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 4
-            interference: true
-            interference_direction: "bidir"
-            traffic_type: "tcp"
-            interference_node: "fit02"
-            interference_fit_number: 2
-            interference_fit_usrp: "b210"
-            interference_gain: 70
-            interference_focus_ue: "qhat03"
-            interference_note: "FIT02 bidirectional stress; iperf3 --bidir runs uplink and downlink at the same time on every UE."
-
-      - name: "11_fit28_bidir_interference_near_trio"
-        title: "FIT28 spatial-control Gaussian interference during bidirectional near-UE TCP"
-        pause_after: false
-        steps:
-          - name: "near_trio_bidir_clean_noise_recovery_p4"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 4
-            interference: true
-            interference_direction: "bidir"
-            traffic_type: "tcp"
-            interference_node: "fit28"
-            interference_fit_number: 28
-            interference_fit_usrp: "b205mini"
-            interference_gain: 50
-            interference_noise_bandwidth: "5M"
-            interference_focus_ue: "qhat03"
-            interference_note: "FIT28 bidirectional spatial-control stress with softer Gaussian noise: gain 50, bandwidth 5M."
-
-      - name: "12_physical_near_far_qhat02"
-        title: "Physical near-vs-far UE comparison with qhat02 placed far away"
-        pause_after: false
-        steps:
-          - name: "near_pair_qhat01_qhat03_p4"
-            ues: ["qhat01", "qhat03"]
-            parallel_streams: 4
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "near"
-              qhat03: "near"
-          - name: "far_qhat02_solo_p4"
-            ues: ["qhat02"]
-            parallel_streams: 4
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat02: "far"
-          - name: "near_far_trio_qhat02_far_p4"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 4
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "near"
-              qhat02: "far"
-              qhat03: "near"
-
-      - name: "13_far_light_under_near_heavy_load"
-        title: "Light far qhat02 under heavy near-UE contention from qhat01/qhat03"
-        pause_after: false
-        steps:
-          - name: "near_pair_qhat01_qhat03_heavy_p8"
-            ues: ["qhat01", "qhat03"]
-            parallel_streams: 8
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "near-heavy"
-              qhat03: "near-heavy"
-          - name: "far_qhat02_light_solo_p1"
-            ues: ["qhat02"]
-            parallel_streams: 1
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat02: "far-light"
-          - name: "near_heavy_far_light_qhat02_p1"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 8
-            parallel_by_ue:
-              qhat02: 1
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "near-heavy"
-              qhat02: "far-light"
-              qhat03: "near-heavy"
-
-      - name: "20_decomp_baseline_all_ues"
-        title: "Decomposition baseline with qhat01, qhat02, and qhat03"
-        pause_after: true
-        steps:
-          - name: "all_qhat_p1"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 1
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "baseline"
-              qhat02: "baseline"
-              qhat03: "baseline"
-          - name: "all_qhat_p2"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 2
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "baseline"
-              qhat02: "baseline"
-              qhat03: "baseline"
-
-      - name: "21_decomp_far_ue_radio"
-        title: "RF/RAN degradation from physically far qhat02"
-        pause_after: true
-        steps:
-          - name: "near_reference_qhat01_qhat03_p2"
-            ues: ["qhat01", "qhat03"]
-            parallel_streams: 2
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "near-reference"
-              qhat03: "near-reference"
-          - name: "far_reference_qhat02_p2"
-            ues: ["qhat02"]
-            parallel_streams: 2
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat02: "far-radio"
-          - name: "near_far_together_qhat02_far_p2"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 2
-            directions: ["ul", "dl"]
-            ue_roles:
-              qhat01: "near"
-              qhat02: "far-radio"
-              qhat03: "near"
-
-      - name: "22_decomp_upf_cpu_stress"
-        title: "UPF CPU stress to localize core/user-plane latency"
-        pause_after: true
-        steps:
-          - name: "all_qhat_upf_clean_stress_recovery_p2"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 2
-            directions: ["ul", "dl"]
-            stress: true
-            stress_target: "upf"
-            stress_workers: "{{ paper_upf_stress_workers }}"
-            stress_namespace: "{{ paper_stress_namespace }}"
-            stress_pod_regex: "{{ paper_stress_pod_regex }}"
-            stress_container_regex: "{{ paper_stress_container_regex }}"
-            stress_note: "CPU workers are launched inside matching UPF pod containers during the middle third of each iperf direction."
-            ue_roles:
-              qhat01: "probe-traffic"
-              qhat02: "probe-traffic"
-              qhat03: "probe-traffic"
-
-      - name: "23_decomp_target_server_netem_delay"
-        title: "Target-server ingress delay to localize endpoint-side latency"
-        pause_after: false
-        steps:
-          - name: "all_qhat_server_netem_clean_delay_recovery_p2"
-            ues: ["qhat01", "qhat02", "qhat03"]
-            parallel_streams: 2
-            directions: ["ul"]
-            stress: true
-            stress_target: "server_netem"
-            stress_workers: 0
-            server_netem_delay_ms: "{{ paper_server_netem_delay_ms }}"
-            server_netem_iface: "{{ paper_server_netem_iface }}"
-            server_netem_ifb: "{{ paper_server_netem_ifb }}"
-            server_netem_filter_prio: "{{ paper_server_netem_filter_prio }}"
-            server_netem_match_all: "{{ paper_server_netem_match_all }}"
-            stress_note: "A temporary ingress IFB netem delay is applied on the target-server interface during the middle third of uplink iperf traffic."
-            ue_roles:
-              qhat01: "probe-traffic"
-              qhat02: "probe-traffic"
-              qhat03: "probe-traffic"
 
   tasks:
     - name: Load active 5G profile
