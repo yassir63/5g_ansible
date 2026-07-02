@@ -21,6 +21,8 @@ WINDOW_FIELDS = [
     "step",
     "direction",
     "ue",
+    "section_index",
+    "runner_type",
     "parallel_streams",
     "traffic_type",
     "ping_count",
@@ -154,6 +156,8 @@ def make_window(start: dict, end: dict, tz_name: str) -> dict:
         "step": step,
         "direction": direction,
         "ue": "",
+        "section_index": to_int(start.get("section_index"), -1),
+        "runner_type": start.get("runner_type", ""),
         "parallel_streams": to_int(start.get("parallel_streams"), 0),
         "traffic_type": start.get("traffic_type", "tcp"),
         "ping_count": start.get("ping_count", ""),
@@ -275,6 +279,25 @@ def recap_lines(run_id: str, tz_name: str, windows: list[dict], iperf_tasks: lis
             f"({duration_text(traffic['duration_s'])})"
         )
 
+    sections = [w for w in windows if w["level"] == "section"]
+    if sections:
+        lines.append("Sections:")
+        for section in sections:
+            title = f" - {section['scenario_title']}" if section.get("scenario_title") else ""
+            details = []
+            if section.get("runner_type"):
+                details.append(f"runner={section.get('runner_type')}")
+            if section.get("prometheus_enabled") != "":
+                details.append(f"prometheus={section.get('prometheus_enabled')}")
+            if section.get("pcap_enabled") != "":
+                details.append(f"pcap={section.get('pcap_enabled')}")
+            detail_text = f" [{' '.join(details)}]" if details else ""
+            lines.append(
+                f"- section {section['name']}{title}{detail_text}: "
+                f"{section['start_local']} -> {section['end_local']} "
+                f"({duration_text(section['duration_s'])})"
+            )
+
     scenarios = [w for w in windows if w["level"] == "scenario"]
     for scenario in scenarios:
         title = f" - {scenario['scenario_title']}" if scenario.get("scenario_title") else ""
@@ -340,6 +363,8 @@ def write_markdown(path: Path, lines: list[str], summary_json: dict) -> None:
             "- `timeline_summary.csv`: paired scenario, step, direction, iperf-task, and ping-task windows.",
             "- `timeline_summary.json`: same data for scripts.",
             "- `timeline_recap.txt`: terminal-friendly recap.",
+            "- `by_window/campaign/*/prometheus_timeseries.csv(.gz)`: full campaign metric slices when Prometheus export exists.",
+            "- `by_window/section/*/prometheus_timeseries.csv(.gz)`: per-section metric slices for generic experiments.",
             "- `by_window/scenario/*/prometheus_timeseries.csv(.gz)`: per-scenario metric slices when Prometheus export exists.",
             "- `by_window/task/*/prometheus_timeseries.csv(.gz)`: per-step/direction metric slices when Prometheus export exists.",
             "- `by_window/interference_phase/*/prometheus_timeseries.csv(.gz)`: clean/noise/recovery slices for interference scenarios.",
