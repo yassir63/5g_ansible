@@ -23,6 +23,8 @@ monitoring_grafana_dashboard_variant: "{{ 'srsran' if (ran | default('')) == 'sr
 monitoring_grafana_dashboard_source: "{{ role_path }}/files/monarch-dashboard-{{ monitoring_grafana_dashboard_variant }}.json"
 
 monitoring_scrape_namespaces:
+  - "{{ core | default('open5gs') }}"
+  - "{{ ran_ns | default(core | default('open5gs')) }}"
   - open5gs
   - oai
   - oail1

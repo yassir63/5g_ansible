@@ -24,15 +24,15 @@
   changed_when: "'created' in monitoring_open5gs_mde_apply.stdout or 'configured' in monitoring_open5gs_mde_apply.stdout"
   when: monitoring_core_mde_enabled | bool
 
-- name: Render OAI RAN MDE services
+- name: Render RAN MDE services
   ansible.builtin.template:
     src: oai-ran-mde-services.yml.j2
-    dest: /tmp/lightweight-oai-ran-mde-services.yml
+    dest: /tmp/lightweight-ran-mde-services.yml
     mode: "0644"
   when: monitoring_ran_mde_enabled | bool
 
-- name: Apply OAI RAN MDE services
-  ansible.builtin.command: kubectl apply -f /tmp/lightweight-oai-ran-mde-services.yml
+- name: Apply RAN MDE services
+  ansible.builtin.command: kubectl apply -f /tmp/lightweight-ran-mde-services.yml
   register: monitoring_oai_ran_mde_apply
   changed_when: "'created' in monitoring_oai_ran_mde_apply.stdout or 'configured' in monitoring_oai_ran_mde_apply.stdout"
   when: monitoring_ran_mde_enabled | bool
@@ -82,6 +82,7 @@
     msg:
       - "Prometheus query endpoint for KPI calculators: {{ monitoring_prometheus_url }}"
       - "Open5GS core KPI enabled: {{ monitoring_core_kpi_enabled | bool }}"
+      - "RAN MDE services enabled: {{ monitoring_ran_mde_enabled | bool }}"
       - "OAI RAN KPI enabled: {{ monitoring_oai_ran_kpi_enabled | bool }}"
       - "Open5GS KPI metric restored: slice_throughput"
       - "OAI RAN KPI metrics restored: mac_throughput, number_ues, saturation_percentage"

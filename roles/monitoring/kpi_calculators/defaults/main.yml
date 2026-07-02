@@ -11,7 +11,7 @@ monitoring_kpi_time_range: "30s"
 monitoring_kpi_image_pull_policy: Always
 
 monitoring_core_mde_enabled: "{{ core | default('') == 'open5gs' }}"
-monitoring_ran_mde_enabled: "{{ ran | default('') == 'oai' }}"
+monitoring_ran_mde_enabled: "{{ ran | default('') in ['oai', 'srsRAN'] }}"
 monitoring_core_kpi_enabled: "{{ core | default('') == 'open5gs' }}"
 monitoring_oai_ran_kpi_enabled: "{{ ran | default('') == 'oai' }}"
 

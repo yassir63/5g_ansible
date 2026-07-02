@@ -48,7 +48,7 @@ prometheus:
           - role: service
             namespaces:
               names:
-{% for namespace in monitoring_scrape_namespaces %}
+{% for namespace in monitoring_scrape_namespaces | unique %}
                 - "{{ namespace }}"
 {% endfor %}
         relabel_configs:
@@ -78,7 +78,7 @@ prometheus:
           - role: pod
             namespaces:
               names:
-{% for namespace in monitoring_scrape_namespaces %}
+{% for namespace in monitoring_scrape_namespaces | unique %}
                 - "{{ namespace }}"
 {% endfor %}
         relabel_configs:
