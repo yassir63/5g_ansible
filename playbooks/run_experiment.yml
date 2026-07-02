@@ -11,14 +11,33 @@
         msg: "Pass -e experiment_scenario_file=scenarios/experiment_templates/basic_sections.yml"
       when: experiment_scenario_file | default('') | length == 0
 
+    - name: Resolve experiment input file paths
+      ansible.builtin.set_fact:
+        experiment_scenario_file_resolved: >-
+          {{
+            experiment_scenario_file
+            if (experiment_scenario_file | regex_search('^/'))
+            else playbook_dir + '/../' + experiment_scenario_file
+          }}
+        experiment_artifacts_file_resolved: >-
+          {{
+            ''
+            if (experiment_artifacts_file | default('') | length == 0)
+            else (
+              (experiment_artifacts_file | default(''))
+              if ((experiment_artifacts_file | default('')) | regex_search('^/'))
+              else playbook_dir + '/../' + (experiment_artifacts_file | default(''))
+            )
+          }}
+
     - name: Load experiment scenario YAML
       ansible.builtin.include_vars:
-        file: "{{ experiment_scenario_file }}"
+        file: "{{ experiment_scenario_file_resolved }}"
         name: experiment_scenario_source
 
     - name: Load experiment artifact profile YAML
       ansible.builtin.include_vars:
-        file: "{{ experiment_artifacts_file }}"
+        file: "{{ experiment_artifacts_file_resolved }}"
         name: experiment_artifacts
       when: experiment_artifacts_file | default('') | length > 0
 
@@ -30,6 +49,18 @@
       ansible.builtin.set_fact:
         experiment_collect_config: "{{ experiment_scenario.collect | default({}) }}"
         experiment_pcap_config: "{{ experiment_scenario.pcap | default({}) }}"
+
+    - name: Resolve experiment collection file paths
+      ansible.builtin.set_fact:
+        experiment_prometheus_queries_json: >-
+          {{
+            experiment_collect_config.prometheus.queries_file
+            if (
+              experiment_collect_config.prometheus.queries_file is defined
+              and (experiment_collect_config.prometheus.queries_file | regex_search('^/'))
+            )
+            else playbook_dir + '/../' + (experiment_collect_config.prometheus.queries_file | default('configs/artifacts/default_prometheus_queries.json'))
+          }}
 
     - name: Set experiment run id
       ansible.builtin.set_fact:
@@ -58,7 +89,6 @@
             else experiment_collect_config.prometheus.url | default('')
           }}
         experiment_prometheus_step: "{{ experiment_collect_config.prometheus.step | default(experiment_prometheus_step | default('1s')) }}"
-        experiment_prometheus_queries_json: "{{ experiment_collect_config.prometheus.queries_file | default(playbook_dir + '/../configs/artifacts/default_prometheus_queries.json') }}"
         experiment_query_padding_seconds: "{{ experiment_collect_config.prometheus.padding_seconds | default(30) | int }}"
         experiment_discover_metrics_regex: "{{ experiment_collect_config.prometheus.discover_metrics_regex | default('(?i)(mcs|bler|harq|rounds|cqi|rsrp|rsrq|sinr|snr|mac_throughput|slice_throughput|prach|saturation|number_ues|i0_noise|prb|gtp_tcp|tcp_)') }}"
         experiment_discover_metrics_limit: "{{ experiment_collect_config.prometheus.discover_metrics_limit | default(80) | int }}"
@@ -191,7 +221,9 @@
               "name": experiment_name,
               "title": experiment_title,
               "scenario_file": experiment_scenario_file,
+              "scenario_file_resolved": experiment_scenario_file_resolved,
               "artifacts_file": experiment_artifacts_file | default(""),
+              "artifacts_file_resolved": experiment_artifacts_file_resolved | default(""),
               "results_dir": experiment_results_dir,
               "timezone": experiment_local_timezone,
               "collect": experiment_collect_config,
