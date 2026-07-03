@@ -6,9 +6,25 @@ import logging
 import subprocess
 import hashlib
 import requests
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # -------------------------
 # Config (from env / Ansible)
 # -------------------------
+
+def env_int(name, default):
+    value = os.getenv(name, str(default))
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        lowered = str(value).strip().lower()
+        if lowered in {"true", "yes", "on"}:
+            return 1
+        if lowered in {"false", "no", "off"}:
+            return 0
+        return int(default)
+
 
 CORE_NS = os.getenv("CORE_NS", "default")
 
@@ -20,13 +36,39 @@ EXPORTER_PATH = os.getenv("EXPORTER_PATH", "/latency")
 
 ALERT_FILE = "/tmp/alert.json"
 
-DRY_RUN = int(os.getenv("DRY_RUN", "0"))
+DRY_RUN = env_int("DRY_RUN", 0)
 
-UE_MAPPER_LIMIT = int(os.getenv("UE_MAPPER_LIMIT", "2000"))
+UE_MAPPER_LIMIT = env_int("UE_MAPPER_LIMIT", 2000)
 PROBE_IMAGE = os.getenv("PROBE_IMAGE", "r2labuser/ebpf-latency-probe:2026")
 
 DEFAULT_UE_MAPPER_URL = f"http://ue-mapper-api.{CORE_NS}.svc.cluster.local"
 UE_MAPPER_URL = os.getenv("UE_MAPPER_URL", DEFAULT_UE_MAPPER_URL)
+
+ALERT_WEBHOOK_ENABLED = env_int("ALERT_WEBHOOK_ENABLED", 0)
+ALERT_WEBHOOK_PORT = env_int("ALERT_WEBHOOK_PORT", 5000)
+
+UPF_SCALING_ENABLED = env_int("UPF_SCALING_ENABLED", 0)
+UPF_SCALING_NAMESPACE = os.getenv("UPF_SCALING_NAMESPACE", CORE_NS)
+UPF_SCALING_ANCHOR_DEPLOYMENT = os.getenv("UPF_SCALING_ANCHOR_DEPLOYMENT", "kopf-controller")
+UPF_SCALING_ALERT_FILE = os.getenv("UPF_SCALING_ALERT_FILE", ALERT_FILE)
+UPF_SCALING_SCALE_OUT_ALERTS = {
+    item.strip()
+    for item in os.getenv(
+        "UPF_SCALING_SCALE_OUT_ALERTS",
+        "UPFOverload,HighUPFCPU,HighUPFLatency,LowGTPThroughput",
+    ).split(",")
+    if item.strip()
+}
+UPF_SCALING_TARGETS = [
+    item.strip()
+    for item in os.getenv("UPF_SCALING_TARGETS", "deployment/upf2,deployment/smf2").split(",")
+    if item.strip()
+]
+UPF_SCALING_SCALE_OUT_REPLICAS = env_int("UPF_SCALING_SCALE_OUT_REPLICAS", 1)
+UPF_SCALING_SCALE_IN_REPLICAS = env_int("UPF_SCALING_SCALE_IN_REPLICAS", 0)
+UPF_SCALING_STABLE_SECONDS = env_int("UPF_SCALING_STABLE_SECONDS", 60)
+UPF_SCALING_STATE_FILE = os.getenv("UPF_SCALING_STATE_FILE", "/tmp/upf_scaling_state.json")
+UPF_SCALING_ENABLE_SCALE_IN = env_int("UPF_SCALING_ENABLE_SCALE_IN", 1)
 
 @kopf.on.startup()
 def configure(settings: kopf.OperatorSettings, **_):
@@ -37,8 +79,56 @@ def configure(settings: kopf.OperatorSettings, **_):
         kubernetes.config.load_kube_config()
 
     settings.posting.level = logging.INFO
-    # Watch only the namespace provided by Ansible/env
-    settings.watching.namespaces = [CORE_NS]
+    watched_namespaces = {CORE_NS}
+    if UPF_SCALING_ENABLED:
+        watched_namespaces.add(UPF_SCALING_NAMESPACE)
+    settings.watching.namespaces = sorted(watched_namespaces)
+
+    if ALERT_WEBHOOK_ENABLED:
+        start_alert_webhook_server()
+
+
+# -------------------------
+# Alertmanager webhook helpers
+# -------------------------
+
+def start_alert_webhook_server():
+    """Start a tiny Alertmanager webhook receiver in the controller process."""
+    class AlertWebhookHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            if self.path.rstrip("/") != "/alert":
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = self.rfile.read(length).decode("utf-8")
+                data = json.loads(payload or "{}")
+                with open(UPF_SCALING_ALERT_FILE, "w") as f:
+                    json.dump(data, f)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "error": str(e)}).encode("utf-8"))
+
+        def log_message(self, fmt, *args):
+            logging.getLogger("alert-webhook").info(fmt, *args)
+
+    def serve():
+        server = ThreadingHTTPServer(("0.0.0.0", ALERT_WEBHOOK_PORT), AlertWebhookHandler)
+        logging.getLogger("alert-webhook").info(
+            "Alertmanager webhook listening on 0.0.0.0:%s/alert", ALERT_WEBHOOK_PORT
+        )
+        server.serve_forever()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
 
 
 # -------------------------
@@ -113,6 +203,158 @@ def reconcile_probe_always_on(name, namespace, labels, logger, **kwargs):
 
     kill_probe_container(name, namespace, logger)
     inject_ephemeral_probe(name, namespace, logger, teids, teids_fp)
+
+
+# -------------------------
+# UPF scaling from Alertmanager alerts
+# -------------------------
+
+def load_upf_scaling_state():
+    try:
+        with open(UPF_SCALING_STATE_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {
+            "phase": "normal",
+            "scaled_out": False,
+            "clear_since": None,
+            "last_decision": None,
+        }
+
+
+def save_upf_scaling_state(state):
+    try:
+        with open(UPF_SCALING_STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2, sort_keys=True)
+    except Exception as e:
+        logging.getLogger("upf-scaling").warning("Could not save UPF scaling state: %s", e)
+
+
+def load_alertmanager_payload(logger):
+    if not os.path.exists(UPF_SCALING_ALERT_FILE):
+        logger.info("UPF scaling alert file not found yet: %s", UPF_SCALING_ALERT_FILE)
+        return {}
+    try:
+        with open(UPF_SCALING_ALERT_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning("Could not read UPF scaling alert payload: %s", e)
+        return {}
+
+
+def firing_scale_out_alerts(payload):
+    matches = []
+    for alert in payload.get("alerts", []) or []:
+        labels = alert.get("labels", {}) or {}
+        alertname = labels.get("alertname", "")
+        action = labels.get("upf_scaling_action", "")
+        if alert.get("status") == "firing" and (
+            alertname in UPF_SCALING_SCALE_OUT_ALERTS or action == "scale_out"
+        ):
+            matches.append(alert)
+    return matches
+
+
+def patch_deployment_replicas(namespace, name, replicas, logger):
+    if DRY_RUN:
+        logger.warning("DRY_RUN=1 -> Would scale deployment/%s in ns=%s to %s", name, namespace, replicas)
+        return
+    apps_api = kubernetes.client.AppsV1Api()
+    body = {"spec": {"replicas": replicas}}
+    apps_api.patch_namespaced_deployment(name=name, namespace=namespace, body=body)
+    logger.info("Scaled deployment/%s in ns=%s to replicas=%s", name, namespace, replicas)
+
+
+def scale_upf_targets(namespace, replicas, logger):
+    for target in UPF_SCALING_TARGETS:
+        try:
+            kind, name = target.split("/", 1)
+        except ValueError:
+            logger.warning("Skipping invalid UPF scaling target %r. Expected kind/name.", target)
+            continue
+        if kind != "deployment":
+            logger.warning("Skipping unsupported UPF scaling target %s. Only deployment/* is supported now.", target)
+            continue
+        patch_deployment_replicas(namespace, name, replicas, logger)
+
+
+@kopf.timer("apps", "v1", "deployments", interval=10.0)
+def reconcile_upf_scaling(name, namespace, logger, **kwargs):
+    if not UPF_SCALING_ENABLED:
+        return
+    if namespace != UPF_SCALING_NAMESPACE:
+        return
+    if name != UPF_SCALING_ANCHOR_DEPLOYMENT:
+        return
+
+    payload = load_alertmanager_payload(logger)
+    firing = firing_scale_out_alerts(payload)
+    state = load_upf_scaling_state()
+    now = int(time.time())
+
+    if firing:
+        alert_names = sorted({
+            (alert.get("labels", {}) or {}).get("alertname", "unknown")
+            for alert in firing
+        })
+        logger.warning("UPF scale-out condition active from alerts: %s", alert_names)
+        state["clear_since"] = None
+        if not state.get("scaled_out", False):
+            scale_upf_targets(UPF_SCALING_NAMESPACE, UPF_SCALING_SCALE_OUT_REPLICAS, logger)
+            state.update({
+                "phase": "scaled_out",
+                "scaled_out": True,
+                "last_decision": "scale_out",
+                "last_decision_ts": now,
+                "last_alerts": alert_names,
+                "ue_reestablishment_required": True,
+            })
+            logger.warning(
+                "UPF secondary path scaled out. Controlled UE/PDU session re-establishment is required."
+            )
+        else:
+            state.update({"phase": "scaled_out", "last_alerts": alert_names})
+        save_upf_scaling_state(state)
+        return
+
+    if not state.get("scaled_out", False):
+        state.update({"phase": "normal", "clear_since": None})
+        save_upf_scaling_state(state)
+        return
+
+    if not UPF_SCALING_ENABLE_SCALE_IN:
+        state.update({"phase": "scaled_out_waiting_manual_scale_in"})
+        save_upf_scaling_state(state)
+        logger.info("UPF scale-in disabled; holding secondary path online.")
+        return
+
+    if state.get("clear_since") is None:
+        state["clear_since"] = now
+        save_upf_scaling_state(state)
+        logger.info("UPF scale-out alerts cleared; starting scale-in hysteresis timer.")
+        return
+
+    clear_for = now - int(state["clear_since"])
+    if clear_for < UPF_SCALING_STABLE_SECONDS:
+        logger.info(
+            "UPF scale-out alerts clear for %ss/%ss; waiting before scale-in.",
+            clear_for,
+            UPF_SCALING_STABLE_SECONDS,
+        )
+        save_upf_scaling_state(state)
+        return
+
+    scale_upf_targets(UPF_SCALING_NAMESPACE, UPF_SCALING_SCALE_IN_REPLICAS, logger)
+    state.update({
+        "phase": "normal",
+        "scaled_out": False,
+        "clear_since": None,
+        "last_decision": "scale_in",
+        "last_decision_ts": now,
+        "ue_reestablishment_required": False,
+    })
+    save_upf_scaling_state(state)
+    logger.warning("UPF secondary path scaled in after stable clear period.")
 
 
 # -------------------------

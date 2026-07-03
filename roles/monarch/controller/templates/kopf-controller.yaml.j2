@@ -35,6 +35,10 @@ rules:
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "patch", "update"]
 
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "patch", "update"]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -89,6 +93,30 @@ spec:
               value: "{{ packet_pairing | default('0') }}"
             - name: DRY_RUN
               value: "{{ dry_run | default('0') }}"
+            - name: ALERT_WEBHOOK_ENABLED
+              value: "{{ alert_webhook_enabled | default('0') }}"
+            - name: ALERT_WEBHOOK_PORT
+              value: "{{ alert_webhook_port | default('5000') }}"
+            - name: UPF_SCALING_ENABLED
+              value: "{{ upf_scaling_enabled | default('0') }}"
+            - name: UPF_SCALING_NAMESPACE
+              value: "{{ upf_scaling_namespace | default(core_ns) }}"
+            - name: UPF_SCALING_ANCHOR_DEPLOYMENT
+              value: "{{ upf_scaling_anchor_deployment | default('kopf-controller') }}"
+            - name: UPF_SCALING_ALERT_FILE
+              value: "{{ upf_scaling_alert_file | default('/tmp/alert.json') }}"
+            - name: UPF_SCALING_SCALE_OUT_ALERTS
+              value: "{{ upf_scaling_scale_out_alerts | default('UPFOverload,HighUPFCPU,HighUPFLatency,LowGTPThroughput') }}"
+            - name: UPF_SCALING_TARGETS
+              value: "{{ upf_scaling_targets | default('deployment/upf2,deployment/smf2') }}"
+            - name: UPF_SCALING_SCALE_OUT_REPLICAS
+              value: "{{ upf_scaling_scale_out_replicas | default('1') }}"
+            - name: UPF_SCALING_SCALE_IN_REPLICAS
+              value: "{{ upf_scaling_scale_in_replicas | default('0') }}"
+            - name: UPF_SCALING_STABLE_SECONDS
+              value: "{{ upf_scaling_stable_seconds | default('60') }}"
+            - name: UPF_SCALING_ENABLE_SCALE_IN
+              value: "{{ upf_scaling_enable_scale_in | default('1') }}"
             - name: GNB_LATENCY_MODE
               value: "{{ gnb_latency_mode | default('E2E') }}"
             - name: UPF_LATENCY_MODE
@@ -115,6 +143,9 @@ spec:
             - name: PROBE_IFACE
               value: "{{ probe_iface }}"
 {% endif %}
+          ports:
+            - name: alert-webhook
+              containerPort: {{ alert_webhook_port | default('5000') }}
           resources:
             requests:
               cpu: "{{ cpu_request | default('50m') }}"
@@ -122,3 +153,16 @@ spec:
             limits:
               cpu: "{{ cpu_limit | default('500m') }}"
               memory: "{{ mem_limit | default('256Mi') }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kopf-controller-alerts
+  namespace: {{ core_ns }}
+spec:
+  selector:
+    app: kopf-controller
+  ports:
+    - name: alert-webhook
+      port: {{ alert_webhook_port | default('5000') }}
+      targetPort: alert-webhook
