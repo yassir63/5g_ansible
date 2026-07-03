@@ -4,7 +4,6 @@ title: Two-UE 40 Mb/s TCP iperf artifact example
 timezone: Europe/Paris
 
 iperf:
-  control_host: faraday.inria.fr
   target_server_host: sopnode-f2
   ues: ["qhat01", "qhat03"]
   base_port: 5201
@@ -12,200 +11,30 @@ iperf:
   bitrate: "40M"
 
 sections:
-  - name: precheck_ue_connectivity
-    title: Check qhat01/qhat03 wwan0 IPs and server route
-    runner:
-      type: command
-      host: "faraday.inria.fr"
-      command: |
-        set -euo pipefail
-        {% set server_host = target_server_host | default('sopnode-f2') %}
-        SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
-        UES="qhat01 qhat03"
-
-        missing=""
-        for ue in $UES; do
-          echo "Checking ${ue} before traffic..."
-          ue_ip=$(ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"$ue" \
-            "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1" || true)
-
-          if [ -z "$ue_ip" ]; then
-            echo "ERROR: ${ue} has no IPv4 address on wwan0." >&2
-            missing="${missing} ${ue}:no_wwan0_ip"
-            continue
-          fi
-
-          if ! ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"$ue" \
-            "ip route get '$SERVER_IP' >/dev/null 2>&1"; then
-            echo "ERROR: ${ue} has wwan0=${ue_ip}, but no route to ${SERVER_IP}." >&2
-            missing="${missing} ${ue}:no_route_to_server"
-            continue
-          fi
-
-          route=$(ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"$ue" \
-            "ip route get '$SERVER_IP' | head -n 1")
-          echo "OK: ${ue} wwan0=${ue_ip}; route=${route}"
-        done
-
-        if [ -n "$missing" ]; then
-          echo "UE connectivity precheck failed:${missing}" >&2
-          echo "Connect the UEs and ensure they can route to ${SERVER_IP} before running this generic artifact example." >&2
-          exit 1
-        fi
-
-  - name: prepare_iperf_server
-    title: Start iperf servers for qhat01 and qhat03
-    runner:
-      type: command
-      host: "{{ target_server_host | default('sopnode-f2') }}"
-      command: |
-        set -euo pipefail
-        {% set server_host = target_server_host | default('sopnode-f2') %}
-        SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
-        BASE_PORT="{{ iperf_base_port | default(5201) }}"
-        UE_COUNT="2"
-        LOG_DIR="/root/IPERF/{{ experiment_run_id }}/two_ue_iperf_40m"
-
-        if ! command -v iperf3 >/dev/null 2>&1; then
-          if command -v apt-get >/dev/null 2>&1; then
-            DEBIAN_FRONTEND=noninteractive apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iperf3
-          elif command -v dnf >/dev/null 2>&1; then
-            dnf install -y -q iperf3
-          elif command -v yum >/dev/null 2>&1; then
-            yum install -y -q iperf3
-          fi
-        fi
-
-        command -v iperf3 >/dev/null 2>&1
-        mkdir -p "$LOG_DIR"
-
-        idx=0
-        while [ "$idx" -lt "$UE_COUNT" ]; do
-          port=$((BASE_PORT + idx))
-          pkill -f "iperf3 .* -s .* -p ${port}" >/dev/null 2>&1 || true
-          iperf3 -s -B "$SERVER_IP" -p "$port" -D --logfile "$LOG_DIR/server_${port}.log"
-          idx=$((idx + 1))
-        done
-
-        ss -tulpn | grep iperf3 || netstat -tulpn | grep iperf3 || true
-
   - name: uplink_40m_qhat01_qhat03
     title: qhat01/qhat03 uplink TCP at 40 Mb/s
     runner:
-      type: command
-      host: "faraday.inria.fr"
-      fetch:
-        - src: "/tmp/{{ experiment_run_id }}_two_ue_iperf_40m_ul.tgz"
-          dest: "iperf_ul.tgz"
-      command: |
-        set -euo pipefail
-        {% set server_host = target_server_host | default('sopnode-f2') %}
-        SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
-        RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(5201) }}"
-        DURATION="{{ iperf_duration | default(60) }}"
-        BITRATE="{{ iperf_bitrate | default('40M') }}"
-        UES="qhat01 qhat03"
-        LOG_ROOT="/tmp/${RUN_ID}/generic_iperf_40m/uplink"
-
-        rm -rf "$LOG_ROOT"
-        mkdir -p "$LOG_ROOT"
-
-        idx=0
-        pids=""
-        for ue in $UES; do
-          port=$((BASE_PORT + idx))
-          ue_ip=$(ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"$ue" \
-            "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1")
-          if [ -z "$ue_ip" ]; then
-            echo "No wwan0 IPv4 address found on ${ue}; connect the UE first." >&2
-            exit 1
-          fi
-          echo "Starting UL ${ue}: ue_ip=${ue_ip} server=${SERVER_IP} port=${port} bitrate=${BITRATE} duration=${DURATION}s"
-          ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"$ue" "
-            set -e
-            mkdir -p '$LOG_ROOT'
-            iperf3 -p '$port' -B '$ue_ip' -c '$SERVER_IP' -t '$DURATION' -b '$BITRATE' \
-              --json --get-server-output \
-              > '$LOG_ROOT/iperf_${ue}_ul.json' \
-              2> '$LOG_ROOT/iperf_${ue}_ul.stderr'
-          " &
-          pids="$pids $!"
-          idx=$((idx + 1))
-        done
-
-        rc=0
-        for pid in $pids; do
-          wait "$pid" || rc=1
-        done
-
-        for ue in $UES; do
-          scp -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
-            root@"$ue":"$LOG_ROOT/iperf_${ue}_ul.json" "$LOG_ROOT/" >/dev/null 2>&1 || true
-          scp -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
-            root@"$ue":"$LOG_ROOT/iperf_${ue}_ul.stderr" "$LOG_ROOT/" >/dev/null 2>&1 || true
-        done
-
-        tar -C "/tmp/${RUN_ID}" -czf "/tmp/${RUN_ID}_two_ue_iperf_40m_ul.tgz" "generic_iperf_40m/uplink"
-        exit "$rc"
+      type: tasks
+      file: tasks/experiment_iperf_tcp_section.yml
+      vars:
+        traffic:
+          - ue: qhat01
+            direction: ul
+            port_offset: 0
+          - ue: qhat03
+            direction: ul
+            port_offset: 1
 
   - name: downlink_40m_qhat01_qhat03
     title: qhat01/qhat03 downlink TCP at 40 Mb/s
     runner:
-      type: command
-      host: "faraday.inria.fr"
-      fetch:
-        - src: "/tmp/{{ experiment_run_id }}_two_ue_iperf_40m_dl.tgz"
-          dest: "iperf_dl.tgz"
-      command: |
-        set -euo pipefail
-        {% set server_host = target_server_host | default('sopnode-f2') %}
-        SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
-        RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(5201) }}"
-        DURATION="{{ iperf_duration | default(60) }}"
-        BITRATE="{{ iperf_bitrate | default('40M') }}"
-        UES="qhat01 qhat03"
-        LOG_ROOT="/tmp/${RUN_ID}/generic_iperf_40m/downlink"
-
-        rm -rf "$LOG_ROOT"
-        mkdir -p "$LOG_ROOT"
-
-        idx=0
-        pids=""
-        for ue in $UES; do
-          port=$((BASE_PORT + idx))
-          ue_ip=$(ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"$ue" \
-            "ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1")
-          if [ -z "$ue_ip" ]; then
-            echo "No wwan0 IPv4 address found on ${ue}; connect the UE first." >&2
-            exit 1
-          fi
-          echo "Starting DL ${ue}: ue_ip=${ue_ip} server=${SERVER_IP} port=${port} bitrate=${BITRATE} duration=${DURATION}s"
-          ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"$ue" "
-            set -e
-            mkdir -p '$LOG_ROOT'
-            iperf3 -p '$port' -B '$ue_ip' -c '$SERVER_IP' -t '$DURATION' -b '$BITRATE' -R \
-              --json --get-server-output \
-              > '$LOG_ROOT/iperf_${ue}_dl.json' \
-              2> '$LOG_ROOT/iperf_${ue}_dl.stderr'
-          " &
-          pids="$pids $!"
-          idx=$((idx + 1))
-        done
-
-        rc=0
-        for pid in $pids; do
-          wait "$pid" || rc=1
-        done
-
-        for ue in $UES; do
-          scp -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
-            root@"$ue":"$LOG_ROOT/iperf_${ue}_dl.json" "$LOG_ROOT/" >/dev/null 2>&1 || true
-          scp -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
-            root@"$ue":"$LOG_ROOT/iperf_${ue}_dl.stderr" "$LOG_ROOT/" >/dev/null 2>&1 || true
-        done
-
-        tar -C "/tmp/${RUN_ID}" -czf "/tmp/${RUN_ID}_two_ue_iperf_40m_dl.tgz" "generic_iperf_40m/downlink"
-        exit "$rc"
+      type: tasks
+      file: tasks/experiment_iperf_tcp_section.yml
+      vars:
+        traffic:
+          - ue: qhat01
+            direction: dl
+            port_offset: 0
+          - ue: qhat03
+            direction: dl
+            port_offset: 1

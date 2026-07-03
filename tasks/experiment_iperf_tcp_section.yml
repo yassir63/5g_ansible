@@ -1,0 +1,198 @@
+---
+- name: Set experiment iperf scenario config
+  ansible.builtin.set_fact:
+    experiment_iperf_config: "{{ experiment_scenario.iperf | default({}) }}"
+
+- name: Set experiment iperf section defaults
+  ansible.builtin.set_fact:
+    experiment_iperf_traffic_items: "{{ experiment_section_vars.traffic | default([]) }}"
+    experiment_iperf_target_server_host_effective: "{{ target_server_host | default(experiment_section_vars.target_server_host | default(experiment_iperf_config.target_server_host | default('sopnode-f2'))) }}"
+    experiment_iperf_base_port_effective: "{{ iperf_base_port | default(experiment_section_vars.base_port | default(experiment_iperf_config.base_port | default(5201))) | int }}"
+    experiment_iperf_duration_effective: "{{ iperf_duration | default(experiment_section_vars.duration | default(experiment_iperf_config.duration | default(60))) | int }}"
+    experiment_iperf_bitrate_effective: "{{ iperf_bitrate | default(experiment_section_vars.bitrate | default(experiment_iperf_config.bitrate | default('40M'))) }}"
+
+- name: Require iperf traffic items
+  ansible.builtin.fail:
+    msg: "Experiment iperf section {{ experiment_section_name }} needs runner.vars.traffic."
+  when: experiment_iperf_traffic_items | length == 0
+
+- name: Set experiment iperf target address
+  ansible.builtin.set_fact:
+    experiment_iperf_target_server_ip: >-
+      {{
+        hostvars[experiment_iperf_target_server_host_effective].ip
+        | default(hostvars[experiment_iperf_target_server_host_effective].ansible_host
+        | default(experiment_iperf_target_server_host_effective))
+      }}
+
+- name: Check UE wwan0 address before iperf
+  ansible.builtin.shell: |
+    set -e
+    ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ item.ue }}"
+  loop: "{{ experiment_iperf_traffic_items }}"
+  loop_control:
+    label: "{{ item.ue }}"
+  register: experiment_iperf_ue_ip_checks
+  changed_when: false
+  failed_when: false
+
+- name: Fail when a UE has no wwan0 address
+  ansible.builtin.fail:
+    msg: "UE {{ item.item.ue }} has no IPv4 address on wwan0; connect it before running {{ experiment_section_name }}."
+  loop: "{{ experiment_iperf_ue_ip_checks.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.ue | default('unknown') }}"
+  when: item.rc | default(1) != 0 or (item.stdout | default('') | trim | length) == 0
+
+- name: Check UE route to iperf server
+  ansible.builtin.command:
+    argv:
+      - ip
+      - route
+      - get
+      - "{{ experiment_iperf_target_server_ip }}"
+  delegate_to: "{{ item.ue }}"
+  loop: "{{ experiment_iperf_traffic_items }}"
+  loop_control:
+    label: "{{ item.ue }}"
+  register: experiment_iperf_route_checks
+  changed_when: false
+  failed_when: false
+
+- name: Fail when a UE cannot route to iperf server
+  ansible.builtin.fail:
+    msg: >-
+      UE {{ item.item.ue }} cannot route to {{ experiment_iperf_target_server_ip }}
+      on {{ experiment_iperf_target_server_host_effective }}.
+      stdout={{ item.stdout | default('') }}
+      stderr={{ item.stderr | default('') }}
+  loop: "{{ experiment_iperf_route_checks.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.ue | default('unknown') }}"
+  when: item.rc | default(1) != 0
+
+- name: Ensure iperf3 is installed on target server
+  ansible.builtin.shell: |
+    set -e
+    if ! command -v iperf3 >/dev/null 2>&1; then
+      if command -v apt-get >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iperf3
+      elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y -q iperf3
+      elif command -v yum >/dev/null 2>&1; then
+        yum install -y -q iperf3
+      fi
+    fi
+    command -v iperf3 >/dev/null 2>&1
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ experiment_iperf_target_server_host_effective }}"
+  changed_when: false
+
+- name: Start iperf3 servers for section traffic
+  ansible.builtin.shell: |
+    set -e
+    PORT="{{ item.port | default((experiment_iperf_base_port_effective | int) + (item.port_offset | default(experiment_iperf_traffic_index) | int)) }}"
+    LOG_DIR="/root/IPERF/{{ experiment_run_id }}/{{ experiment_window_label }}"
+    mkdir -p "$LOG_DIR"
+    pkill -f "iperf3 .* -s .* -p ${PORT}" >/dev/null 2>&1 || true
+    iperf3 -s -B "{{ experiment_iperf_target_server_ip }}" -p "$PORT" -D --logfile "$LOG_DIR/server_${PORT}.log"
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ experiment_iperf_target_server_host_effective }}"
+  loop: "{{ experiment_iperf_traffic_items }}"
+  loop_control:
+    index_var: experiment_iperf_traffic_index
+    label: "{{ item.ue }} {{ item.direction | default('ul') }}"
+
+- name: Run iperf3 clients on UEs
+  ansible.builtin.shell: |
+    set -e
+    PORT="{{ item.port | default((experiment_iperf_base_port_effective | int) + (item.port_offset | default(experiment_iperf_traffic_index) | int)) }}"
+    DIRECTION="{{ item.direction | default('ul') }}"
+    UE_IP="$(ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)"
+    LOG_ROOT="/tmp/{{ experiment_run_id }}/{{ experiment_window_label }}"
+    EXTRA=""
+    if [ "$DIRECTION" = "dl" ]; then
+      EXTRA="-R"
+    fi
+    mkdir -p "$LOG_ROOT"
+    iperf3 -p "$PORT" -B "$UE_IP" -c "{{ experiment_iperf_target_server_ip }}" \
+      -t "{{ experiment_iperf_duration_effective }}" -b "{{ experiment_iperf_bitrate_effective }}" $EXTRA \
+      --json --get-server-output \
+      > "$LOG_ROOT/iperf_{{ item.ue }}_${DIRECTION}.json" \
+      2> "$LOG_ROOT/iperf_{{ item.ue }}_${DIRECTION}.stderr"
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ item.ue }}"
+  async: "{{ (experiment_iperf_duration_effective | int) + 120 }}"
+  poll: 0
+  loop: "{{ experiment_iperf_traffic_items }}"
+  loop_control:
+    index_var: experiment_iperf_traffic_index
+    label: "{{ item.ue }} {{ item.direction | default('ul') }}"
+  register: experiment_iperf_client_jobs
+
+- name: Wait for iperf3 clients to finish
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  delegate_to: "{{ item.item.ue }}"
+  loop: "{{ experiment_iperf_client_jobs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.ue | default('unknown') }} {{ item.item.direction | default('ul') }}"
+  register: experiment_iperf_client_wait
+  until: experiment_iperf_client_wait.finished | default(false)
+  retries: "{{ (((experiment_iperf_duration_effective | int) + 124) // 5) | int }}"
+  delay: 5
+  failed_when: false
+
+- name: Fetch iperf JSON logs from UEs
+  ansible.builtin.fetch:
+    src: "/tmp/{{ experiment_run_id }}/{{ experiment_window_label }}/iperf_{{ item.ue }}_{{ item.direction | default('ul') }}.json"
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/iperf_{{ item.ue }}_{{ item.direction | default('ul') }}.json"
+    flat: true
+  delegate_to: "{{ item.ue }}"
+  loop: "{{ experiment_iperf_traffic_items }}"
+  loop_control:
+    label: "{{ item.ue }} {{ item.direction | default('ul') }}"
+  failed_when: false
+
+- name: Fetch iperf stderr logs from UEs
+  ansible.builtin.fetch:
+    src: "/tmp/{{ experiment_run_id }}/{{ experiment_window_label }}/iperf_{{ item.ue }}_{{ item.direction | default('ul') }}.stderr"
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/iperf_{{ item.ue }}_{{ item.direction | default('ul') }}.stderr"
+    flat: true
+  delegate_to: "{{ item.ue }}"
+  loop: "{{ experiment_iperf_traffic_items }}"
+  loop_control:
+    label: "{{ item.ue }} {{ item.direction | default('ul') }}"
+  failed_when: false
+
+- name: Fetch iperf server logs
+  ansible.builtin.fetch:
+    src: "/root/IPERF/{{ experiment_run_id }}/{{ experiment_window_label }}/server_{{ item.port | default((experiment_iperf_base_port_effective | int) + (item.port_offset | default(experiment_iperf_traffic_index) | int)) }}.log"
+    dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/server_{{ item.port | default((experiment_iperf_base_port_effective | int) + (item.port_offset | default(experiment_iperf_traffic_index) | int)) }}.log"
+    flat: true
+  delegate_to: "{{ experiment_iperf_target_server_host_effective }}"
+  loop: "{{ experiment_iperf_traffic_items }}"
+  loop_control:
+    index_var: experiment_iperf_traffic_index
+    label: "{{ item.ue }} {{ item.direction | default('ul') }}"
+  failed_when: false
+
+- name: Fail when an iperf3 client failed
+  ansible.builtin.fail:
+    msg: >-
+      iperf3 failed for {{ item.item.item.ue | default('unknown') }}
+      direction={{ item.item.item.direction | default('ul') }}
+      rc={{ item.rc | default('unknown') }}
+      stdout={{ item.stdout | default('') }}
+      stderr={{ item.stderr | default('') }}
+  loop: "{{ experiment_iperf_client_wait.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item.ue | default('unknown') }} {{ item.item.item.direction | default('ul') }}"
+  when: (not (item.finished | default(false) | bool)) or (item.rc | default(0) != 0)
