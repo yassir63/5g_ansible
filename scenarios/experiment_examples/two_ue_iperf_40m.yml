@@ -16,12 +16,12 @@ sections:
     title: Check qhat01/qhat03 wwan0 IPs and server route
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
-        UES="{{ experiment_iperf.ues | join(' ') }}"
+        UES="qhat01 qhat03"
 
         missing=""
         for ue in $UES; do
@@ -57,13 +57,13 @@ sections:
     title: Start iperf servers for qhat01 and qhat03
     runner:
       type: command
-      host: "{{ target_server_host | default(experiment_iperf.target_server_host) }}"
+      host: "{{ target_server_host | default('sopnode-f2') }}"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
-        UE_COUNT="{{ experiment_iperf.ues | length }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
+        UE_COUNT="2"
         LOG_DIR="/root/IPERF/{{ experiment_run_id }}/two_ue_iperf_40m"
 
         if ! command -v iperf3 >/dev/null 2>&1; then
@@ -94,19 +94,19 @@ sections:
     title: qhat01/qhat03 uplink TCP at 40 Mb/s
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       fetch:
         - src: "/tmp/{{ experiment_run_id }}_two_ue_iperf_40m_ul.tgz"
           dest: "iperf_ul.tgz"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
         RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
-        DURATION="{{ iperf_duration | default(experiment_iperf.duration) }}"
-        BITRATE="{{ iperf_bitrate | default(experiment_iperf.bitrate) }}"
-        UES="{{ experiment_iperf.ues | join(' ') }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
+        DURATION="{{ iperf_duration | default(60) }}"
+        BITRATE="{{ iperf_bitrate | default('40M') }}"
+        UES="qhat01 qhat03"
         LOG_ROOT="/tmp/${RUN_ID}/generic_iperf_40m/uplink"
 
         rm -rf "$LOG_ROOT"
@@ -154,19 +154,19 @@ sections:
     title: qhat01/qhat03 downlink TCP at 40 Mb/s
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       fetch:
         - src: "/tmp/{{ experiment_run_id }}_two_ue_iperf_40m_dl.tgz"
           dest: "iperf_dl.tgz"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
         RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
-        DURATION="{{ iperf_duration | default(experiment_iperf.duration) }}"
-        BITRATE="{{ iperf_bitrate | default(experiment_iperf.bitrate) }}"
-        UES="{{ experiment_iperf.ues | join(' ') }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
+        DURATION="{{ iperf_duration | default(60) }}"
+        BITRATE="{{ iperf_bitrate | default('40M') }}"
+        UES="qhat01 qhat03"
         LOG_ROOT="/tmp/${RUN_ID}/generic_iperf_40m/downlink"
 
         rm -rf "$LOG_ROOT"

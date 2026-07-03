@@ -16,12 +16,12 @@ sections:
     title: Check qhat01/qhat03 wwan0 IPs and server route
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
-        UES="{{ experiment_iperf.ues | join(' ') }}"
+        UES="qhat01 qhat03"
 
         missing=""
         for ue in $UES; do
@@ -57,13 +57,13 @@ sections:
     title: Start iperf servers for the two UE ports
     runner:
       type: command
-      host: "{{ target_server_host | default(experiment_iperf.target_server_host) }}"
+      host: "{{ target_server_host | default('sopnode-f2') }}"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
-        UE_COUNT="{{ experiment_iperf.ues | length }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
+        UE_COUNT="2"
         LOG_DIR="/root/IPERF/{{ experiment_run_id }}/two_ue_direction_matrix_40m"
 
         if ! command -v iperf3 >/dev/null 2>&1; then
@@ -98,18 +98,18 @@ sections:
         capture_seconds: 5
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       fetch:
         - src: "/tmp/{{ experiment_run_id }}_qhat01_ul_qhat03_dl.tgz"
           dest: "iperf_qhat01_ul_qhat03_dl.tgz"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
         RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
-        DURATION="{{ iperf_duration | default(experiment_iperf.duration) }}"
-        BITRATE="{{ iperf_bitrate | default(experiment_iperf.bitrate) }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
+        DURATION="{{ iperf_duration | default(60) }}"
+        BITRATE="{{ iperf_bitrate | default('40M') }}"
         LOG_ROOT="/tmp/${RUN_ID}/direction_matrix/qhat01_ul_qhat03_dl"
         rm -rf "$LOG_ROOT"
         mkdir -p "$LOG_ROOT"
@@ -162,18 +162,18 @@ sections:
         enabled: false
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       fetch:
         - src: "/tmp/{{ experiment_run_id }}_qhat01_dl_qhat03_ul.tgz"
           dest: "iperf_qhat01_dl_qhat03_ul.tgz"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
         RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
-        DURATION="{{ iperf_duration | default(experiment_iperf.duration) }}"
-        BITRATE="{{ iperf_bitrate | default(experiment_iperf.bitrate) }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
+        DURATION="{{ iperf_duration | default(60) }}"
+        BITRATE="{{ iperf_bitrate | default('40M') }}"
         LOG_ROOT="/tmp/${RUN_ID}/direction_matrix/qhat01_dl_qhat03_ul"
         rm -rf "$LOG_ROOT"
         mkdir -p "$LOG_ROOT"
@@ -223,18 +223,18 @@ sections:
     title: qhat01 uplink only while qhat03 idle
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       fetch:
         - src: "/tmp/{{ experiment_run_id }}_qhat01_ul_only.tgz"
           dest: "iperf_qhat01_ul_only.tgz"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
         RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
-        DURATION="{{ iperf_duration | default(experiment_iperf.duration) }}"
-        BITRATE="{{ iperf_bitrate | default(experiment_iperf.bitrate) }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
+        DURATION="{{ iperf_duration | default(60) }}"
+        BITRATE="{{ iperf_bitrate | default('40M') }}"
         LOG_ROOT="/tmp/${RUN_ID}/direction_matrix/qhat01_ul_only"
         rm -rf "$LOG_ROOT"
         mkdir -p "$LOG_ROOT"
@@ -256,18 +256,18 @@ sections:
     title: qhat01 downlink only while qhat03 idle
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       fetch:
         - src: "/tmp/{{ experiment_run_id }}_qhat01_dl_only.tgz"
           dest: "iperf_qhat01_dl_only.tgz"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
         RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
-        DURATION="{{ iperf_duration | default(experiment_iperf.duration) }}"
-        BITRATE="{{ iperf_bitrate | default(experiment_iperf.bitrate) }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
+        DURATION="{{ iperf_duration | default(60) }}"
+        BITRATE="{{ iperf_bitrate | default('40M') }}"
         LOG_ROOT="/tmp/${RUN_ID}/direction_matrix/qhat01_dl_only"
         rm -rf "$LOG_ROOT"
         mkdir -p "$LOG_ROOT"
@@ -289,19 +289,19 @@ sections:
     title: qhat03 uplink only while qhat01 idle
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       fetch:
         - src: "/tmp/{{ experiment_run_id }}_qhat03_ul_only.tgz"
           dest: "iperf_qhat03_ul_only.tgz"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
         RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
         PORT="$((BASE_PORT + 1))"
-        DURATION="{{ iperf_duration | default(experiment_iperf.duration) }}"
-        BITRATE="{{ iperf_bitrate | default(experiment_iperf.bitrate) }}"
+        DURATION="{{ iperf_duration | default(60) }}"
+        BITRATE="{{ iperf_bitrate | default('40M') }}"
         LOG_ROOT="/tmp/${RUN_ID}/direction_matrix/qhat03_ul_only"
         rm -rf "$LOG_ROOT"
         mkdir -p "$LOG_ROOT"
@@ -323,19 +323,19 @@ sections:
     title: qhat03 downlink only while qhat01 idle
     runner:
       type: command
-      host: "{{ experiment_iperf.control_host }}"
+      host: "faraday.inria.fr"
       fetch:
         - src: "/tmp/{{ experiment_run_id }}_qhat03_dl_only.tgz"
           dest: "iperf_qhat03_dl_only.tgz"
       command: |
         set -euo pipefail
-        {% set server_host = target_server_host | default(experiment_iperf.target_server_host) %}
+        {% set server_host = target_server_host | default('sopnode-f2') %}
         SERVER_IP="{{ hostvars[server_host].ip | default(hostvars[server_host].ansible_host | default(server_host)) }}"
         RUN_ID="{{ experiment_run_id }}"
-        BASE_PORT="{{ iperf_base_port | default(experiment_iperf.base_port) }}"
+        BASE_PORT="{{ iperf_base_port | default(5201) }}"
         PORT="$((BASE_PORT + 1))"
-        DURATION="{{ iperf_duration | default(experiment_iperf.duration) }}"
-        BITRATE="{{ iperf_bitrate | default(experiment_iperf.bitrate) }}"
+        DURATION="{{ iperf_duration | default(60) }}"
+        BITRATE="{{ iperf_bitrate | default('40M') }}"
         LOG_ROOT="/tmp/${RUN_ID}/direction_matrix/qhat03_dl_only"
         rm -rf "$LOG_ROOT"
         mkdir -p "$LOG_ROOT"
