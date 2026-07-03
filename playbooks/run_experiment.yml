@@ -41,6 +41,10 @@
         name: experiment_artifacts
       when: experiment_artifacts_file | default('') | length > 0
 
+    - name: Set experiment run id
+      ansible.builtin.set_fact:
+        experiment_run_id: "{{ experiment_run_id | default(lookup('pipe', 'date +%Y%m%d_%H%M%S')) }}"
+
     - name: Merge experiment scenario with artifact profile
       ansible.builtin.set_fact:
         experiment_scenario: "{{ (experiment_artifacts | default({})) | combine(experiment_scenario_source, recursive=True, list_merge='replace') }}"
@@ -61,10 +65,6 @@
             )
             else playbook_dir + '/../' + (experiment_collect_config.prometheus.queries_file | default('configs/artifacts/default_prometheus_queries.json'))
           }}
-
-    - name: Set experiment run id
-      ansible.builtin.set_fact:
-        experiment_run_id: "{{ experiment_run_id | default(lookup('pipe', 'date +%Y%m%d_%H%M%S')) }}"
 
     - name: Set experiment base defaults
       ansible.builtin.set_fact:
