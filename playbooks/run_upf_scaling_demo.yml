@@ -1,0 +1,88 @@
+---
+- name: Run elastic UPF scaling demo controller
+  hosts: localhost
+  gather_facts: false
+  vars:
+    demo_run_id: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    demo_results_dir: "{{ playbook_dir }}/../results/upf-scaling-demo-{{ demo_run_id }}"
+    demo_prometheus_url: "{{ prometheus_url | default('http://localhost:30095') }}"
+    demo_namespace: "{{ demo_namespace_override | default(core | default('open5gs')) }}"
+    demo_apply: "{{ demo_apply | default(false) | bool }}"
+    demo_poll_interval: "{{ demo_poll_interval | default(5) }}"
+    demo_iterations: "{{ demo_iterations | default(12) }}"
+    demo_scale_in_stable_seconds: "{{ demo_scale_in_stable_seconds | default(60) }}"
+    demo_cpu_scale_out_threshold: "{{ demo_cpu_scale_out_threshold | default(0.8) }}"
+    demo_cpu_scale_in_threshold: "{{ demo_cpu_scale_in_threshold | default(0.4) }}"
+    demo_cpu_query: >-
+      {{ demo_cpu_query_override | default('sum(rate(container_cpu_usage_seconds_total{namespace="' ~ demo_namespace ~ '",pod=~".*upf1.*",container!="POD",container!=""}[30s]))') }}
+    demo_latency_query: "{{ demo_latency_query_override | default('') }}"
+    demo_latency_scale_out_threshold_ms: "{{ demo_latency_scale_out_threshold_ms | default('') }}"
+    demo_latency_scale_in_threshold_ms: "{{ demo_latency_scale_in_threshold_ms | default('') }}"
+    demo_secondary_session_query: "{{ demo_secondary_session_query_override | default('') }}"
+    demo_scale_targets:
+      - deployment/upf2
+      - deployment/smf2
+  tasks:
+    - name: Create demo results directory
+      ansible.builtin.file:
+        path: "{{ demo_results_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Show elastic UPF scaling demo settings
+      ansible.builtin.debug:
+        msg:
+          - "Run ID: {{ demo_run_id }}"
+          - "Results: {{ demo_results_dir }}"
+          - "Prometheus URL: {{ demo_prometheus_url }}"
+          - "Namespace: {{ demo_namespace }}"
+          - "Apply scaling: {{ demo_apply }}"
+          - "Scale targets: {{ demo_scale_targets | join(', ') }}"
+          - "CPU query: {{ demo_cpu_query }}"
+          - "Latency query: {{ demo_latency_query | default('disabled', true) }}"
+          - "Latency scale-out threshold ms: {{ demo_latency_scale_out_threshold_ms | default('disabled', true) }}"
+          - "Latency scale-in threshold ms: {{ demo_latency_scale_in_threshold_ms | default('disabled', true) }}"
+          - "Secondary-session query: {{ demo_secondary_session_query | default('disabled', true) }}"
+
+    - name: Run UPF scaling controller
+      ansible.builtin.command:
+        argv: >-
+          {{
+            [
+              'python3',
+              playbook_dir + '/../scripts/demo/upf_scaling_controller.py',
+              '--prometheus-url', demo_prometheus_url,
+              '--namespace', demo_namespace,
+              '--poll-interval', demo_poll_interval | string,
+              '--iterations', demo_iterations | string,
+              '--state-file', demo_results_dir + '/state.json',
+              '--events-file', demo_results_dir + '/events.jsonl',
+              '--cpu-query', demo_cpu_query,
+              '--cpu-scale-out-threshold', demo_cpu_scale_out_threshold | string,
+              '--cpu-scale-in-threshold', demo_cpu_scale_in_threshold | string,
+              '--scale-in-stable-seconds', demo_scale_in_stable_seconds | string
+            ]
+            + (['--latency-query', demo_latency_query] if (demo_latency_query | length > 0) else [])
+            + (['--latency-scale-out-threshold-ms', demo_latency_scale_out_threshold_ms | string] if (demo_latency_scale_out_threshold_ms | string | length > 0) else [])
+            + (['--latency-scale-in-threshold-ms', demo_latency_scale_in_threshold_ms | string] if (demo_latency_scale_in_threshold_ms | string | length > 0) else [])
+            + (['--secondary-session-query', demo_secondary_session_query] if (demo_secondary_session_query | length > 0) else [])
+            + (['--allow-scale-in-without-session-query'] if (demo_secondary_session_query | length == 0) else [])
+            + (demo_scale_targets | map('regex_replace', '^(.*)$', '--scale-target=\1') | list)
+            + (['--apply'] if demo_apply else [])
+          }}
+      register: demo_controller_output
+      changed_when: demo_apply | bool
+
+    - name: Write controller stdout log
+      ansible.builtin.copy:
+        dest: "{{ demo_results_dir }}/controller_stdout.log"
+        content: "{{ demo_controller_output.stdout }}"
+        mode: "0644"
+
+    - name: Show demo output files
+      ansible.builtin.debug:
+        msg:
+          - "Elastic UPF scaling demo artifacts: {{ demo_results_dir }}"
+          - "Events: {{ demo_results_dir }}/events.jsonl"
+          - "State: {{ demo_results_dir }}/state.json"
+          - "Controller stdout: {{ demo_results_dir }}/controller_stdout.log"
