@@ -31,6 +31,7 @@
     ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1
   args:
     executable: /bin/bash
+  connection: ssh
   delegate_to: "{{ item.ue }}"
   loop: "{{ experiment_iperf_traffic_items }}"
   loop_control:
@@ -54,6 +55,7 @@
       - route
       - get
       - "{{ experiment_iperf_target_server_ip }}"
+  connection: ssh
   delegate_to: "{{ item.ue }}"
   loop: "{{ experiment_iperf_traffic_items }}"
   loop_control:
@@ -90,6 +92,7 @@
     command -v iperf3 >/dev/null 2>&1
   args:
     executable: /bin/bash
+  connection: ssh
   delegate_to: "{{ experiment_iperf_target_server_host_effective }}"
   changed_when: false
 
@@ -103,6 +106,7 @@
     iperf3 -s -B "{{ experiment_iperf_target_server_ip }}" -p "$PORT" -D --logfile "$LOG_DIR/server_${PORT}.log"
   args:
     executable: /bin/bash
+  connection: ssh
   delegate_to: "{{ experiment_iperf_target_server_host_effective }}"
   loop: "{{ experiment_iperf_traffic_items }}"
   loop_control:
@@ -128,6 +132,7 @@
       2> "$LOG_ROOT/iperf_{{ item.ue }}_${DIRECTION}.stderr"
   args:
     executable: /bin/bash
+  connection: ssh
   delegate_to: "{{ item.ue }}"
   async: "{{ (experiment_iperf_duration_effective | int) + 120 }}"
   poll: 0
@@ -140,6 +145,7 @@
 - name: Wait for iperf3 clients to finish
   ansible.builtin.async_status:
     jid: "{{ item.ansible_job_id }}"
+  connection: ssh
   delegate_to: "{{ item.item.ue }}"
   loop: "{{ experiment_iperf_client_jobs.results | default([]) }}"
   loop_control:
@@ -155,6 +161,7 @@
     src: "/tmp/{{ experiment_run_id }}/{{ experiment_window_label }}/iperf_{{ item.ue }}_{{ item.direction | default('ul') }}.json"
     dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/iperf_{{ item.ue }}_{{ item.direction | default('ul') }}.json"
     flat: true
+  connection: ssh
   delegate_to: "{{ item.ue }}"
   loop: "{{ experiment_iperf_traffic_items }}"
   loop_control:
@@ -166,6 +173,7 @@
     src: "/tmp/{{ experiment_run_id }}/{{ experiment_window_label }}/iperf_{{ item.ue }}_{{ item.direction | default('ul') }}.stderr"
     dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/iperf_{{ item.ue }}_{{ item.direction | default('ul') }}.stderr"
     flat: true
+  connection: ssh
   delegate_to: "{{ item.ue }}"
   loop: "{{ experiment_iperf_traffic_items }}"
   loop_control:
@@ -177,6 +185,7 @@
     src: "/root/IPERF/{{ experiment_run_id }}/{{ experiment_window_label }}/server_{{ item.port | default((experiment_iperf_base_port_effective | int) + (item.port_offset | default(experiment_iperf_traffic_index) | int)) }}.log"
     dest: "{{ experiment_results_dir }}/section_logs/{{ experiment_window_label }}/server_{{ item.port | default((experiment_iperf_base_port_effective | int) + (item.port_offset | default(experiment_iperf_traffic_index) | int)) }}.log"
     flat: true
+  connection: ssh
   delegate_to: "{{ experiment_iperf_target_server_host_effective }}"
   loop: "{{ experiment_iperf_traffic_items }}"
   loop_control:
