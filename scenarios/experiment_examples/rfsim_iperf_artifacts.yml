@@ -1,0 +1,14 @@
+---
+name: rfsim_iperf_artifacts
+title: RFSIM iperf with generic artifact collection
+timezone: Europe/Paris
+
+sections:
+  - name: rfsim_iperf
+    title: Existing simulated UE iperf scenario
+    runner:
+      type: playbook
+      file: playbooks/run_scenario_iperf.yml
+      extra_vars:
+        iperf_duration: "{{ iperf_duration | default(60) }}"
+        iperf_sleep: "{{ iperf_sleep | default(5) }}"
