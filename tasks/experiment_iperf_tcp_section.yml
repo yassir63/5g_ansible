@@ -27,7 +27,7 @@
 
 - name: Check UE wwan0 address before iperf
   ansible.builtin.shell: |
-    set -e
+    set -euo pipefail
     ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1
   args:
     executable: /bin/bash
@@ -39,14 +39,29 @@
   register: experiment_iperf_ue_ip_checks
   changed_when: false
   failed_when: false
+  ignore_unreachable: true
 
-- name: Fail when a UE has no wwan0 address
+- name: Fail when a UE cannot be checked before iperf
   ansible.builtin.fail:
-    msg: "UE {{ item.item.ue }} has no IPv4 address on wwan0; connect it before running {{ experiment_section_name }}."
+    msg: >-
+      UE {{ item.item.ue | default('unknown') }} cannot be used for
+      {{ experiment_section_name }}.
+      {% if item.unreachable | default(false) | bool %}
+      It is unreachable over SSH through the inventory path.
+      ssh_error={{ item.msg | default('') }}
+      {% else %}
+      No IPv4 address was found on wwan0.
+      rc={{ item.rc | default('unknown') }}
+      stdout={{ item.stdout | default('') }}
+      stderr={{ item.stderr | default('') }}
+      {% endif %}
   loop: "{{ experiment_iperf_ue_ip_checks.results | default([]) }}"
   loop_control:
     label: "{{ item.item.ue | default('unknown') }}"
-  when: item.rc | default(1) != 0 or (item.stdout | default('') | trim | length) == 0
+  when: >-
+    (item.unreachable | default(false) | bool)
+    or item.rc | default(1) != 0
+    or (item.stdout | default('') | trim | length) == 0
 
 - name: Check UE route to iperf server
   ansible.builtin.command:
@@ -63,18 +78,21 @@
   register: experiment_iperf_route_checks
   changed_when: false
   failed_when: false
+  ignore_unreachable: true
 
 - name: Fail when a UE cannot route to iperf server
   ansible.builtin.fail:
     msg: >-
       UE {{ item.item.ue }} cannot route to {{ experiment_iperf_target_server_ip }}
       on {{ experiment_iperf_target_server_host_effective }}.
+      unreachable={{ item.unreachable | default(false) }}
+      ssh_error={{ item.msg | default('') }}
       stdout={{ item.stdout | default('') }}
       stderr={{ item.stderr | default('') }}
   loop: "{{ experiment_iperf_route_checks.results | default([]) }}"
   loop_control:
     label: "{{ item.item.ue | default('unknown') }}"
-  when: item.rc | default(1) != 0
+  when: (item.unreachable | default(false) | bool) or item.rc | default(1) != 0
 
 - name: Ensure iperf3 is installed on target server
   ansible.builtin.shell: |
@@ -115,7 +133,7 @@
 
 - name: Run iperf3 clients on UEs
   ansible.builtin.shell: |
-    set -e
+    set -euo pipefail
     PORT="{{ item.port | default((experiment_iperf_base_port_effective | int) + (item.port_offset | default(experiment_iperf_traffic_index) | int)) }}"
     DIRECTION="{{ item.direction | default('ul') }}"
     UE_IP="$(ip -4 addr show wwan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)"
