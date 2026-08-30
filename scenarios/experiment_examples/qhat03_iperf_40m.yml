@@ -1,0 +1,34 @@
+---
+name: qhat03_iperf_40m
+title: qhat03-only 40 Mb/s TCP iperf artifact check
+timezone: Europe/Paris
+
+iperf:
+  target_server_host: sopnode-f2
+  ues: ["qhat03"]
+  base_port: 5201
+  duration: 60
+  bitrate: "40M"
+
+sections:
+  - name: qhat03_uplink_40m
+    title: qhat03 uplink TCP at 40 Mb/s
+    runner:
+      type: tasks
+      file: tasks/experiment_iperf_tcp_section.yml
+      vars:
+        traffic:
+          - ue: qhat03
+            direction: ul
+            port_offset: 0
+
+  - name: qhat03_downlink_40m
+    title: qhat03 downlink TCP at 40 Mb/s
+    runner:
+      type: tasks
+      file: tasks/experiment_iperf_tcp_section.yml
+      vars:
+        traffic:
+          - ue: qhat03
+            direction: dl
+            port_offset: 0
