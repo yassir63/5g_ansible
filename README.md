@@ -284,12 +284,30 @@ After deployment, instructions will be printed to your terminal with the SSH com
 
 ## Data Persistence
 
-The lightweight Prometheus/Grafana stack uses persistent storage when monitoring persistence is enabled. Prometheus and Grafana are deployed in the `monitoring` namespace and exposed with the same familiar NodePorts:
+The lightweight Prometheus/Grafana stack uses persistent storage when monitoring persistence is enabled. Prometheus, Grafana, Loki, and Promtail are deployed in the `monitoring` namespace. Prometheus, Grafana, and Loki are exposed with familiar NodePorts:
 
 - Prometheus: `30095`
 - Grafana: `32005`
+- Loki: `31000`
 
 The stack scrapes Kubernetes services and pods annotated with `prometheus.io/scrape: "true"` in the configured monitoring namespaces, so latency exporters, UE mapper metrics, and other exporters can be discovered without deploying the full Monarch platform.
+
+Grafana also provisions a `Loki` datasource. Promtail runs as a DaemonSet and forwards Kubernetes container logs into Loki, so logs can be inspected from Grafana Explore with LogQL queries such as:
+
+```logql
+{namespace="open5gs"}
+{namespace="monitoring"}
+{pod=~"open5gs-amf.*"}
+```
+
+Loki can be disabled or tuned through Ansible variables:
+
+```yaml
+monitoring_loki_enabled: false
+monitoring_loki_retention: "5d"
+monitoring_loki_storage_size: 10Gi
+monitoring_loki_node_port: 31000
+```
 
 When `monitoring_enabled=true`, the deployment also applies a lightweight KPI layer:
 

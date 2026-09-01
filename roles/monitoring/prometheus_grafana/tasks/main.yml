@@ -54,15 +54,20 @@
 
 - name: Create monitoring data directories when host storage is configured
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
     mode: "0777"
   loop:
-    - /mnt/data/prometheus
-    - /mnt/data/grafana
+    - path: /mnt/data/prometheus
+      enabled: true
+    - path: /mnt/data/grafana
+      enabled: true
+    - path: /mnt/data/loki
+      enabled: "{{ monitoring_loki_enabled | bool }}"
   when:
     - monitoring_persistence_enabled | bool
     - storage is defined
+    - item.enabled | bool
 
 - name: Create monitoring hostPath storage class
   kubernetes.core.k8s:
@@ -105,10 +110,18 @@
     - name: monitoring-prometheus-pv
       path: /mnt/data/prometheus
       size: "{{ monitoring_prometheus_storage_size }}"
+      enabled: true
     - name: monitoring-grafana-pv
       path: /mnt/data/grafana
       size: "{{ monitoring_grafana_storage_size }}"
-  when: monitoring_persistence_enabled | bool
+      enabled: true
+    - name: monitoring-loki-pv
+      path: /mnt/data/loki
+      size: "{{ monitoring_loki_storage_size }}"
+      enabled: "{{ monitoring_loki_enabled | bool }}"
+  when:
+    - monitoring_persistence_enabled | bool
+    - item.enabled | bool
 
 - name: Render kube-prometheus-stack values
   ansible.builtin.template:
@@ -121,6 +134,13 @@
     src: grafana-values.yml.j2
     dest: /tmp/lightweight-monitoring-grafana-values.yml
     mode: "0644"
+
+- name: Render Loki stack values
+  ansible.builtin.template:
+    src: loki-stack-values.yml.j2
+    dest: /tmp/lightweight-monitoring-loki-values.yml
+    mode: "0644"
+  when: monitoring_loki_enabled | bool
 
 - name: Add prometheus-community Helm repository
   kubernetes.core.helm_repository:
@@ -147,6 +167,19 @@
       - /tmp/lightweight-monitoring-prometheus-values.yml
     wait: true
     wait_timeout: 10m
+
+- name: Install lightweight Loki stack
+  kubernetes.core.helm:
+    name: "{{ monitoring_loki_release }}"
+    chart_ref: grafana/loki-stack
+    chart_version: "{{ monitoring_loki_stack_chart_version }}"
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    values_files:
+      - /tmp/lightweight-monitoring-loki-values.yml
+    wait: true
+    wait_timeout: 10m
+  when: monitoring_loki_enabled | bool
 
 - name: Install lightweight Grafana
   kubernetes.core.helm:
@@ -176,10 +209,22 @@
     --timeout=300s
   changed_when: false
 
+- name: Wait for Promtail to be ready
+  ansible.builtin.command: >
+    kubectl -n {{ monitoring_namespace }}
+    rollout status daemonset/{{ monitoring_loki_release }}-promtail
+    --timeout=300s
+  changed_when: false
+  when:
+    - monitoring_loki_enabled | bool
+    - monitoring_loki_promtail_enabled | bool
+
 - name: Show lightweight monitoring access details
   ansible.builtin.debug:
     msg:
       - "Prometheus NodePort: {{ monitoring_prometheus_node_port }}"
       - "Grafana NodePort: {{ monitoring_grafana_node_port }}"
+      - "Loki NodePort: {{ monitoring_loki_node_port if (monitoring_loki_enabled | bool) else 'disabled' }}"
       - "Grafana username: {{ monitoring_grafana_admin_user }}"
       - "Grafana password: {{ monitoring_grafana_admin_password }}"
+      - "Grafana Loki datasource: {{ 'enabled' if (monitoring_loki_enabled | bool) else 'disabled' }}"

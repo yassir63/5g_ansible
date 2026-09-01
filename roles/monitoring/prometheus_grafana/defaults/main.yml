@@ -5,16 +5,27 @@ monitoring_node_label_value: "true"
 
 monitoring_prometheus_chart_version: "51.9.4"
 monitoring_grafana_chart_version: "8.6.0"
+monitoring_loki_stack_chart_version: "2.10.3"
 monitoring_prometheus_stack_release: monitoring
 monitoring_grafana_release: grafana
+monitoring_loki_release: loki
 monitoring_prometheus_service_name: monitoring-prometheus
+monitoring_loki_service_name: loki
 
 monitoring_interval: "1s"
 monitoring_retention: "5d"
+monitoring_loki_retention: "5d"
 monitoring_prometheus_node_port: 30095
 monitoring_grafana_node_port: 32005
+monitoring_loki_node_port: 31000
 monitoring_grafana_admin_user: admin
 monitoring_grafana_admin_password: admin
+
+monitoring_loki_enabled: true
+monitoring_loki_promtail_enabled: true
+monitoring_loki_log_level: info
+monitoring_loki_log_format: logfmt
+monitoring_loki_extra_relabel_configs: []
 
 monitoring_grafana_dashboard_enabled: true
 monitoring_grafana_dashboard_configmap: monarch-dashboard-configmap
@@ -37,3 +48,4 @@ monitoring_mount_storage_device: true
 monitoring_storage_class: monitoring-hostpath
 monitoring_prometheus_storage_size: 10Gi
 monitoring_grafana_storage_size: 2Gi
+monitoring_loki_storage_size: 10Gi

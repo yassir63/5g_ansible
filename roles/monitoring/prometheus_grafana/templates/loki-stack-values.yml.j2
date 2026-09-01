@@ -1,0 +1,59 @@
+test_pod:
+  enabled: false
+
+loki:
+  enabled: true
+  isDefault: false
+  service:
+    type: NodePort
+    nodePort: {{ monitoring_loki_node_port }}
+  nodeSelector:
+    {{ monitoring_node_label_key }}: "{{ monitoring_node_label_value }}"
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+{% if monitoring_persistence_enabled | bool %}
+  persistence:
+    enabled: true
+    storageClassName: "{{ monitoring_storage_class }}"
+    size: "{{ monitoring_loki_storage_size }}"
+{% endif %}
+  config:
+    auth_enabled: false
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: "{{ monitoring_loki_retention }}"
+
+promtail:
+  enabled: {{ monitoring_loki_promtail_enabled | bool | lower }}
+  config:
+    logLevel: "{{ monitoring_loki_log_level }}"
+    logFormat: "{{ monitoring_loki_log_format }}"
+    serverPort: 3101
+    clients:
+      - url: "http://{{ monitoring_loki_service_name }}.{{ monitoring_namespace }}.svc:3100/loki/api/v1/push"
+    snippets:
+      extraRelabelConfigs:
+{% if monitoring_loki_extra_relabel_configs | length > 0 %}
+{{ monitoring_loki_extra_relabel_configs | to_nice_yaml(indent=8) | indent(8, false) }}
+{% else %}
+        []
+{% endif %}
+  tolerations:
+    - operator: Exists
+
+fluent-bit:
+  enabled: false
+
+grafana:
+  enabled: false
+
+prometheus:
+  enabled: false
+
+filebeat:
+  enabled: false
+
+logstash:
+  enabled: false

@@ -19,6 +19,7 @@ REQUESTED_PROMETHEUS_URL=""
 REQUESTED_EXPERIMENT_DURATION=""
 REQUESTED_VALIDATION_TCP_BITRATE=""
 REQUESTED_VALIDATION_MTU_PING_SIZE=""
+REQUESTED_MONITORING_LOKI=""
 
 SCENARIO_RFSIM="Iperf RFSIM scenario without interference"
 SCENARIO_R2LAB="Iperf R2lab scenario without interference"
@@ -63,6 +64,8 @@ usage() {
     echo "--duration <seconds>     Override TCP scenario/validation traffic duration"
     echo "--validation-tcp-bitrate <rate>  Override validation TCP cap, e.g. 30Mb or 0"
     echo "--validation-mtu-ping-size <bytes>  Override v06 ICMP payload size; 1472 gives a 1500-byte IPv4 packet"
+    echo "--with-loki              Enable Grafana Loki log collection when monitoring is deployed"
+    echo "--no-loki                Disable Grafana Loki log collection"
     echo "--ueransim-churn         Deploy/run the Open5GS UERANSIM attach/detach churn scenario"
     echo "--churn-subscribers <n> Number of generated churn subscribers"
     echo "--churn-counts <list>   Space-separated waves, e.g. \"10 50 100 200\""
@@ -209,6 +212,14 @@ parse_args() {
           shift
           REQUESTED_VALIDATION_MTU_PING_SIZE="${1:-}"
           ;;
+
+        --with-loki)
+          REQUESTED_MONITORING_LOKI="true"
+          ;;
+
+        --no-loki)
+          REQUESTED_MONITORING_LOKI="false"
+          ;;
         
         -h|--help)
           usage; exit 0
@@ -310,6 +321,15 @@ init_defaults_and_banner() {
     if [[ "$SKIP_INPUTS" == true ]]; then
       if [[ -f "$DEPLOYMENT_ENV" ]]; then
         source "$DEPLOYMENT_ENV"
+        if [[ -z "${monitoring_loki_enabled+x}" ]]; then
+          monitoring_loki_enabled="$([[ "${monitoring_enabled:-false}" == true ]] && echo true || echo false)"
+        fi
+        if [[ -n "${REQUESTED_MONITORING_LOKI:-}" ]]; then
+          monitoring_loki_enabled="${REQUESTED_MONITORING_LOKI}"
+        fi
+        if [[ "${monitoring_enabled:-false}" != true ]]; then
+          monitoring_loki_enabled=false
+        fi
       else
         echo "❌ The deployment variables were not set. Run the script with prompting enabled or manualy ensure that the $DEPLOYMENT_ENV file is configured correctly."
         exit 1
@@ -433,6 +453,7 @@ collect_user_inputs() {
     # Monarch roles remain in the repository, but deploy.sh no longer enables
     # the full Monarch stack.
     monitoring_enabled=false
+    monitoring_loki_enabled=false
     monarch=false
     monitor_node=""
     if [[ "$core" == "open5gs" || "$ran" != "ueransim" ]]; then
@@ -461,6 +482,18 @@ collect_user_inputs() {
             4) monitor_node="sopnode-w3" ;;
             *) echo "❌ Invalid Monitoring node"; exit 1 ;;
           esac
+        fi
+        if [[ "${REQUESTED_MONITORING_LOKI:-}" == "false" ]]; then
+          monitoring_loki_enabled=false
+        elif [[ "${REQUESTED_MONITORING_LOKI:-}" == "true" ]]; then
+          monitoring_loki_enabled=true
+        else
+          read -rp "Collect Kubernetes logs with Grafana Loki? [Y/n]: " loki_choice
+          if [[ "$loki_choice" =~ ^[Nn]$ ]]; then
+            monitoring_loki_enabled=false
+          else
+            monitoring_loki_enabled=true
+          fi
         fi
       fi
     fi
@@ -575,6 +608,7 @@ core_node="$core_node"
 ran_node="$ran_node"
 platform="$platform"
 monitoring_enabled="$monitoring_enabled"
+monitoring_loki_enabled="$monitoring_loki_enabled"
 monarch="$monarch"
 monitor_node="$monitor_node"
 EOF
@@ -1296,6 +1330,7 @@ print_summary() {
       else
         echo "Monitoring:  enabled (automatic mode)"
       fi
+      echo "Logs:        $([[ "${monitoring_loki_enabled:-false}" == true ]] && echo "Loki enabled" || echo "Loki disabled")"
       echo "Monarch:     disabled (legacy roles kept, not deployed)"
     else
       echo "Monitoring:  disabled"
@@ -1657,6 +1692,7 @@ f3_ran=$( [[ "${ran_node}" == "sopnode-f3" ]] && echo true || echo false )
 # bridge_enabled is true if OVS bridge required between core_node and ran_node
 bridge_enabled=$( [[ "${ran_node}" != "${core_node}" ]] && echo true || echo false )
 monitoring_enabled=${monitoring_enabled}
+monitoring_loki_enabled=${monitoring_loki_enabled:-false}
 monarch=${monarch}
 EOF
 
@@ -1789,6 +1825,10 @@ deploy() {
 
     ANSIBLE_EXTRA_ARGS=(-e "fiveg_profile=${PROFILE_5G}")
     append_cli_extra_vars
+
+    if [[ "${monitoring_enabled:-false}" == true ]] && ! extra_var_defined "monitoring_loki_enabled"; then
+      ANSIBLE_EXTRA_ARGS+=(-e "monitoring_loki_enabled=${monitoring_loki_enabled:-true}")
+    fi
 
     if [[ "${scenario:-}" == "UERANSIM attach/detach churn" ]]; then
       extra_var_defined "open5gs_repo_url_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_url_override=${ueransim_churn_repo_url:-$DEFAULT_UERANSIM_CHURN_REPO_URL}")
@@ -2081,6 +2121,11 @@ show_access_info() {
       echo ""
       echo "Username: admin"
       echo "Password: admin"
+      if [[ "${monitoring_loki_enabled:-false}" == true ]]; then
+        echo ""
+        echo "Loki is available inside Grafana as the 'Loki' datasource for Kubernetes pod logs."
+        echo "For direct Loki API access, forward port 31000 from ${monitor_node} if needed."
+      fi
       echo ""
     fi
 

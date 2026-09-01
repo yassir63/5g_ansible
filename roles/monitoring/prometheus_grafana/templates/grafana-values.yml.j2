@@ -41,6 +41,15 @@ datasources:
         editable: true
         jsonData:
           timeInterval: "{{ monitoring_interval }}"
+{% if monitoring_loki_enabled | bool %}
+      - name: Loki
+        type: loki
+        url: "http://{{ monitoring_loki_service_name }}.{{ monitoring_namespace }}.svc:3100"
+        access: proxy
+        isDefault: false
+        uid: loki
+        editable: true
+{% endif %}
 
 {% if monitoring_grafana_dashboard_enabled | bool %}
 dashboardProviders:
