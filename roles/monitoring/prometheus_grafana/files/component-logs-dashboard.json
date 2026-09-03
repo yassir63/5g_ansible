@@ -226,7 +226,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "UE simulator pod logs from the selected core namespace. COTS UE logs are not Kubernetes pod logs unless they are forwarded separately.",
+      "description": "UE simulator pod logs from the selected UE namespace. By default this is the same as the core namespace. COTS UE logs are not Kubernetes pod logs unless they are forwarded separately.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -255,7 +255,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$core_namespace\", pod=~\".*(ue|nr-ue|ueransim).*\"}",
+          "expr": "{namespace=~\"$ue_namespace\", pod=~\".*(ue|nr-ue|ueransim).*\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -482,6 +482,31 @@
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "open5gs",
+          "value": "open5gs"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values(namespace)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "UE namespace",
+        "multi": false,
+        "name": "ue_namespace",
+        "options": [],
+        "query": "label_values(namespace)",
+        "refresh": 1,
+        "regex": "/^(open5gs|free5gc|oai|ueransim)$/",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
       }
     ]
   },
@@ -493,6 +518,6 @@
   "timezone": "browser",
   "title": "5G Component Logs",
   "uid": "5g-component-logs",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
