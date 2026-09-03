@@ -300,6 +300,8 @@ Grafana also provisions a `Loki` datasource. Promtail runs as a DaemonSet and fo
 {pod=~"open5gs-amf.*"}
 ```
 
+The deployment also provisions a `5G Component Logs` dashboard. It contains separate Loki log panels for AMF, SMF, UPF, gNB/RAN, UE simulator pods, sniffers, UE mapper, and the monitoring controller/probe/exporter components. The dashboard uses namespace variables so it can follow Open5GS, OAI, srsRAN, UERANSIM, or future namespace changes without editing the JSON.
+
 Loki can be disabled or tuned through Ansible variables:
 
 ```yaml
@@ -307,6 +309,7 @@ monitoring_loki_enabled: false
 monitoring_loki_retention: "5d"
 monitoring_loki_storage_size: 10Gi
 monitoring_loki_node_port: 31000
+monitoring_loki_dashboard_enabled: true
 ```
 
 When `monitoring_enabled=true`, the deployment also applies a lightweight KPI layer:

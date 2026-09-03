@@ -51,7 +51,7 @@ datasources:
         editable: true
 {% endif %}
 
-{% if monitoring_grafana_dashboard_enabled | bool %}
+{% if (monitoring_grafana_dashboard_enabled | bool) or (monitoring_loki_enabled | bool and monitoring_loki_dashboard_enabled | bool) %}
 dashboardProviders:
   dashboardproviders.yaml:
     apiVersion: 1

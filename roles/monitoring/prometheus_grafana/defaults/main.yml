@@ -32,6 +32,9 @@ monitoring_grafana_dashboard_configmap: monarch-dashboard-configmap
 monitoring_grafana_dashboard_file: monarch-dashboard.json
 monitoring_grafana_dashboard_variant: "{{ 'srsran' if (ran | default('')) == 'srsRAN' else 'oai' }}"
 monitoring_grafana_dashboard_source: "{{ role_path }}/files/monarch-dashboard-{{ monitoring_grafana_dashboard_variant }}.json"
+monitoring_loki_dashboard_enabled: true
+monitoring_loki_dashboard_file: component-logs-dashboard.json
+monitoring_loki_dashboard_source: "{{ role_path }}/files/component-logs-dashboard.json"
 
 monitoring_scrape_namespaces:
   - "{{ core | default('open5gs') }}"

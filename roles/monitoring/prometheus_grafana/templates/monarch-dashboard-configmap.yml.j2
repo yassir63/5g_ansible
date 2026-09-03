@@ -6,5 +6,11 @@ metadata:
   labels:
     grafana_dashboard: "1"
 data:
+{% if monitoring_grafana_dashboard_enabled | bool %}
   "{{ monitoring_grafana_dashboard_file }}": |-
 {{ lookup('file', monitoring_grafana_dashboard_source) | indent(4, true) }}
+{% endif %}
+{% if monitoring_loki_enabled | bool and monitoring_loki_dashboard_enabled | bool %}
+  "{{ monitoring_loki_dashboard_file }}": |-
+{{ lookup('file', monitoring_loki_dashboard_source) | indent(4, true) }}
+{% endif %}
