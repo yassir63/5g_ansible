@@ -45,7 +45,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "AMF pod logs from the selected core namespace.",
+      "description": "AMF application logs from the selected core namespace. Sniffer containers in the same pod are shown separately.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -74,7 +74,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$core_namespace\", pod=~\".*amf.*\"}",
+          "expr": "{namespace=~\"$core_namespace\", pod=~\".*amf.*\", container!~\".*sniffer.*\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -87,7 +87,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "SMF pod logs from the selected core namespace.",
+      "description": "SMF application logs from the selected core namespace. Sniffer containers in the same pod are shown separately.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -116,7 +116,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$core_namespace\", pod=~\".*smf.*\"}",
+          "expr": "{namespace=~\"$core_namespace\", pod=~\".*smf.*\", container!~\".*sniffer.*\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -129,7 +129,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "UPF pod logs from the selected core namespace.",
+      "description": "UPF application logs from the selected core namespace. Probe/exporter containers in the same pod are shown separately.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -158,7 +158,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$core_namespace\", pod=~\".*upf.*\"}",
+          "expr": "{namespace=~\"$core_namespace\", pod=~\".*upf.*\", container!~\".*(latency|probe|exporter|pairer).*\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -226,7 +226,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "UE simulator pod logs. COTS UE logs are not Kubernetes pod logs unless they are forwarded separately.",
+      "description": "UE simulator pod logs from the selected core namespace. COTS UE logs are not Kubernetes pod logs unless they are forwarded separately.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -255,7 +255,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$ue_namespace\", pod=~\".*(ue|nr-ue|ueransim).*\"}",
+          "expr": "{namespace=~\"$core_namespace\", pod=~\".*(ue|nr-ue|ueransim).*\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -281,7 +281,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "AMF/SMF sniffer logs. These often appear as ephemeral-container logs on AMF/SMF pods.",
+      "description": "AMF/SMF sniffer container logs from the AMF/SMF pods in the selected core namespace.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -310,7 +310,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$component_namespace\", container=~\".*(amf-sniffer|smf-sniffer|sniffer).*\"}",
+          "expr": "{namespace=~\"$core_namespace\", pod=~\".*(amf|smf).*\", container=~\".*(amf-sniffer|smf-sniffer|sniffer).*\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -323,7 +323,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "UE mapper API logs.",
+      "description": "UE mapper API logs from the selected core namespace.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -352,7 +352,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$component_namespace\", pod=~\".*(ue-mapper|mapper).*\"}",
+          "expr": "{namespace=~\"$core_namespace\", pod=~\".*(ue-mapper|mapper).*\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -365,7 +365,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Kopf controller, latency probes, exporters, and pairer logs.",
+      "description": "Kopf controller, latency probes, exporters, and pairer logs. Probe/exporter containers may be inside UPF or gNB pods.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -394,9 +394,29 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$component_namespace\", pod=~\".*(kopf|controller|latency|probe|exporter|packet-pairer|pairer).*\"}",
+          "expr": "{namespace=~\"$core_namespace\", pod=~\".*(kopf|controller|latency|probe|exporter|packet-pairer|pairer).*\"}",
           "queryType": "range",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "direction": "backward",
+          "expr": "{namespace=~\"$core_namespace\", container=~\".*(latency|probe|exporter|packet-pairer|pairer).*\"}",
+          "queryType": "range",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "direction": "backward",
+          "expr": "{namespace=~\"$ran_namespace\", container=~\".*(latency|probe|exporter|packet-pairer|pairer).*\"}",
+          "queryType": "range",
+          "refId": "C"
         }
       ],
       "title": "Controller / Probe Logs",
@@ -462,82 +482,6 @@
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
-      },
-      {
-        "allValue": ".*",
-        "current": {
-          "selected": false,
-          "text": "ueransim",
-          "value": "ueransim"
-        },
-        "hide": 0,
-        "includeAll": true,
-        "label": "UE namespace",
-        "multi": false,
-        "name": "ue_namespace",
-        "options": [
-          {
-            "selected": true,
-            "text": "ueransim",
-            "value": "ueransim"
-          },
-          {
-            "selected": false,
-            "text": "open5gs",
-            "value": "open5gs"
-          },
-          {
-            "selected": false,
-            "text": "oai",
-            "value": "oai"
-          }
-        ],
-        "query": "ueransim,open5gs,oai",
-        "skipUrlSync": false,
-        "type": "custom"
-      },
-      {
-        "allValue": ".*",
-        "current": {
-          "selected": false,
-          "text": "open5gs",
-          "value": "open5gs"
-        },
-        "hide": 0,
-        "includeAll": true,
-        "label": "Monitoring component namespace",
-        "multi": false,
-        "name": "component_namespace",
-        "options": [
-          {
-            "selected": true,
-            "text": "open5gs",
-            "value": "open5gs"
-          },
-          {
-            "selected": false,
-            "text": "monitoring",
-            "value": "monitoring"
-          },
-          {
-            "selected": false,
-            "text": "monarch",
-            "value": "monarch"
-          },
-          {
-            "selected": false,
-            "text": "oai",
-            "value": "oai"
-          },
-          {
-            "selected": false,
-            "text": "free5gc",
-            "value": "free5gc"
-          }
-        ],
-        "query": "open5gs,monitoring,monarch,oai,free5gc",
-        "skipUrlSync": false,
-        "type": "custom"
       }
     ]
   },
@@ -549,6 +493,6 @@
   "timezone": "browser",
   "title": "5G Component Logs",
   "uid": "5g-component-logs",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

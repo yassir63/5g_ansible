@@ -300,7 +300,7 @@ Grafana also provisions a `Loki` datasource. Promtail runs as a DaemonSet and fo
 {pod=~"open5gs-amf.*"}
 ```
 
-The deployment also provisions a `5G Component Logs` dashboard. It contains separate Loki log panels for AMF, SMF, UPF, gNB/RAN, UE simulator pods, sniffers, UE mapper, and the monitoring controller/probe/exporter components. The dashboard uses namespace variables so it can follow Open5GS, OAI, srsRAN, UERANSIM, or future namespace changes without editing the JSON.
+The deployment also provisions a `5G Component Logs` dashboard. It contains separate Loki log panels for AMF, SMF, UPF, gNB/RAN, UE simulator pods, sniffers, UE mapper, and the monitoring controller/probe/exporter components. UE simulator logs, UE mapper logs, and AMF/SMF sniffer containers are expected in the core namespace; the sniffer panels match the sniffer container inside the AMF/SMF pods. The dashboard keeps a separate RAN namespace selector for gNB and RAN-side probe/exporter logs.
 
 Loki can be disabled or tuned through Ansible variables:
 
