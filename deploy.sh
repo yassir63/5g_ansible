@@ -64,7 +64,7 @@ usage() {
     echo "--duration <seconds>     Override TCP scenario/validation traffic duration"
     echo "--validation-tcp-bitrate <rate>  Override validation TCP cap, e.g. 30Mb or 0"
     echo "--validation-mtu-ping-size <bytes>  Override v06 ICMP payload size; 1472 gives a 1500-byte IPv4 packet"
-    echo "--with-loki              Enable Grafana Loki log collection when monitoring is deployed"
+    echo "--with-loki              Keep Grafana Loki enabled with monitoring (default)"
     echo "--no-loki                Disable Grafana Loki log collection"
     echo "--ueransim-churn         Deploy/run the Open5GS UERANSIM attach/detach churn scenario"
     echo "--churn-subscribers <n> Number of generated churn subscribers"
@@ -321,13 +321,12 @@ init_defaults_and_banner() {
     if [[ "$SKIP_INPUTS" == true ]]; then
       if [[ -f "$DEPLOYMENT_ENV" ]]; then
         source "$DEPLOYMENT_ENV"
-        if [[ -z "${monitoring_loki_enabled+x}" ]]; then
-          monitoring_loki_enabled="$([[ "${monitoring_enabled:-false}" == true ]] && echo true || echo false)"
-        fi
-        if [[ -n "${REQUESTED_MONITORING_LOKI:-}" ]]; then
-          monitoring_loki_enabled="${REQUESTED_MONITORING_LOKI}"
-        fi
-        if [[ "${monitoring_enabled:-false}" != true ]]; then
+        if [[ "${monitoring_enabled:-false}" == true ]]; then
+          monitoring_loki_enabled=true
+          if [[ "${REQUESTED_MONITORING_LOKI:-}" == "false" ]]; then
+            monitoring_loki_enabled=false
+          fi
+        else
           monitoring_loki_enabled=false
         fi
       else
@@ -483,17 +482,9 @@ collect_user_inputs() {
             *) echo "❌ Invalid Monitoring node"; exit 1 ;;
           esac
         fi
+        monitoring_loki_enabled=true
         if [[ "${REQUESTED_MONITORING_LOKI:-}" == "false" ]]; then
           monitoring_loki_enabled=false
-        elif [[ "${REQUESTED_MONITORING_LOKI:-}" == "true" ]]; then
-          monitoring_loki_enabled=true
-        else
-          read -rp "Collect Kubernetes logs with Grafana Loki? [Y/n]: " loki_choice
-          if [[ "$loki_choice" =~ ^[Nn]$ ]]; then
-            monitoring_loki_enabled=false
-          else
-            monitoring_loki_enabled=true
-          fi
         fi
       fi
     fi
