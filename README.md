@@ -313,7 +313,7 @@ monitoring_loki_node_port: 31000
 monitoring_loki_dashboard_enabled: true
 ```
 
-The `monitoring_loki_sniffer_file_scrape_enabled` fallback makes Promtail tail `/var/log/containers/*sniffer*.log` directly. This is useful for AMF/SMF sniffers injected as ephemeral containers, because Kubernetes `kubectl logs` may show them even when normal Promtail pod discovery does not.
+The `monitoring_loki_sniffer_file_scrape_enabled` fallback makes Promtail mount `/var/log/pods` from each host and tail `*sniffer*` container logs directly. This is useful for AMF/SMF sniffers injected as ephemeral containers, because Kubernetes `kubectl logs` may show them even when normal Promtail pod discovery does not.
 
 When `monitoring_enabled=true`, the deployment also applies a lightweight KPI layer:
 

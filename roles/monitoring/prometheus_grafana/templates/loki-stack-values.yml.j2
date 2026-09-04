@@ -48,20 +48,31 @@ promtail:
                 - localhost
               labels:
                 job: kubernetes-sniffer-ephemeral-containers
-                __path__: /var/log/containers/*sniffer*.log
+                __path__: /sniffer-var-log-pods/*/*sniffer*/*.log
           relabel_configs:
             - source_labels: [__path__]
-              regex: .*/([^_]+)_([^_]+)_(.+)-[0-9a-f]+\.log
-              target_label: pod
+              regex: .*/([^_]+)_([^_]+)_[^/]+/([^/]+)/[0-9]+\.log
+              target_label: namespace
               replacement: $1
             - source_labels: [__path__]
-              regex: .*/([^_]+)_([^_]+)_(.+)-[0-9a-f]+\.log
-              target_label: namespace
+              regex: .*/([^_]+)_([^_]+)_[^/]+/([^/]+)/[0-9]+\.log
+              target_label: pod
               replacement: $2
             - source_labels: [__path__]
-              regex: .*/([^_]+)_([^_]+)_(.+)-[0-9a-f]+\.log
+              regex: .*/([^_]+)_([^_]+)_[^/]+/([^/]+)/[0-9]+\.log
               target_label: container
               replacement: $3
+{% endif %}
+{% if monitoring_loki_sniffer_file_scrape_enabled | bool %}
+  extraVolumes:
+    - name: sniffer-pod-logs
+      hostPath:
+        path: /var/log/pods
+        type: Directory
+  extraVolumeMounts:
+    - name: sniffer-pod-logs
+      mountPath: /sniffer-var-log-pods
+      readOnly: true
 {% endif %}
   tolerations:
     - operator: Exists
