@@ -40,6 +40,29 @@ promtail:
 {% else %}
         []
 {% endif %}
+{% if monitoring_loki_sniffer_file_scrape_enabled | bool %}
+      extraScrapeConfigs: |
+        - job_name: kubernetes-sniffer-ephemeral-containers
+          static_configs:
+            - targets:
+                - localhost
+              labels:
+                job: kubernetes-sniffer-ephemeral-containers
+                __path__: /var/log/containers/*sniffer*.log
+          relabel_configs:
+            - source_labels: [__path__]
+              regex: .*/([^_]+)_([^_]+)_(.+)-[0-9a-f]+\.log
+              target_label: pod
+              replacement: $1
+            - source_labels: [__path__]
+              regex: .*/([^_]+)_([^_]+)_(.+)-[0-9a-f]+\.log
+              target_label: namespace
+              replacement: $2
+            - source_labels: [__path__]
+              regex: .*/([^_]+)_([^_]+)_(.+)-[0-9a-f]+\.log
+              target_label: container
+              replacement: $3
+{% endif %}
   tolerations:
     - operator: Exists
 

@@ -281,7 +281,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "AMF/SMF sniffer container logs from the AMF/SMF pods in the selected core namespace.",
+      "description": "AMF/SMF sniffer container logs from the AMF/SMF pods in the selected core namespace. The core namespace selector defaults to all known core namespaces so OAI and Open5GS deployments work without changing the dropdown.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -436,9 +436,9 @@
       {
         "allValue": ".*",
         "current": {
-          "selected": false,
-          "text": "open5gs",
-          "value": "open5gs"
+          "selected": true,
+          "text": "All",
+          "value": ".*"
         },
         "datasource": {
           "type": "loki",
@@ -486,9 +486,9 @@
       {
         "allValue": ".*",
         "current": {
-          "selected": false,
-          "text": "open5gs",
-          "value": "open5gs"
+          "selected": true,
+          "text": "All",
+          "value": ".*"
         },
         "datasource": {
           "type": "loki",
@@ -518,6 +518,6 @@
   "timezone": "browser",
   "title": "5G Component Logs",
   "uid": "5g-component-logs",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }

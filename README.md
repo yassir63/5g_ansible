@@ -300,17 +300,20 @@ Grafana also provisions a `Loki` datasource. Promtail runs as a DaemonSet and fo
 {pod=~"open5gs-amf.*"}
 ```
 
-The deployment also provisions a `5G Component Logs` dashboard. It contains separate Loki log panels for AMF, SMF, UPF, gNB/RAN, UE simulator pods, sniffers, UE mapper, and the monitoring controller/probe/exporter components. UE simulator logs default to the same namespace as the core logs, but keep their own `ue_namespace` selector for future deployments where UE pods move elsewhere. UE mapper logs and AMF/SMF sniffer containers are expected in the core namespace; the sniffer panels match the sniffer container inside the AMF/SMF pods. The dashboard keeps a separate RAN namespace selector for gNB and RAN-side probe/exporter logs.
+The deployment also provisions a `5G Component Logs` dashboard. It contains separate Loki log panels for AMF, SMF, UPF, gNB/RAN, UE simulator pods, sniffers, UE mapper, and the monitoring controller/probe/exporter components. Core and UE namespace selectors default to all known core namespaces, so Open5GS, free5GC, and OAI logs show up without changing the dropdown first. UE simulator logs keep their own `ue_namespace` selector for future deployments where UE pods move elsewhere. UE mapper logs and AMF/SMF sniffer containers are expected in the core namespace; the sniffer panels match the sniffer container inside the AMF/SMF pods. The dashboard keeps a separate RAN namespace selector for gNB and RAN-side probe/exporter logs.
 
 Loki is enabled automatically whenever monitoring is deployed. It can still be disabled or tuned through Ansible variables:
 
 ```yaml
 monitoring_loki_enabled: false
+monitoring_loki_sniffer_file_scrape_enabled: true
 monitoring_loki_retention: "5d"
 monitoring_loki_storage_size: 10Gi
 monitoring_loki_node_port: 31000
 monitoring_loki_dashboard_enabled: true
 ```
+
+The `monitoring_loki_sniffer_file_scrape_enabled` fallback makes Promtail tail `/var/log/containers/*sniffer*.log` directly. This is useful for AMF/SMF sniffers injected as ephemeral containers, because Kubernetes `kubectl logs` may show them even when normal Promtail pod discovery does not.
 
 When `monitoring_enabled=true`, the deployment also applies a lightweight KPI layer:
 
