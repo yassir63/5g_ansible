@@ -281,14 +281,14 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "AMF/SMF sniffer container logs from the AMF/SMF pods in the selected core namespace. The core namespace selector defaults to all known core namespaces so OAI and Open5GS deployments work without changing the dropdown.",
+      "description": "AMF sniffer container logs from AMF pods in the selected core namespace. Uses the Promtail sniffer file fallback so ephemeral-container logs are visible in Loki.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
       "gridPos": {
         "h": 9,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 20
       },
@@ -310,12 +310,54 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$core_namespace\", pod=~\".*(amf|smf).*\", container=~\".*(amf-sniffer|smf-sniffer|sniffer).*\"}",
+          "expr": "{job=\"kubernetes-sniffer-ephemeral-containers\", namespace=~\"$core_namespace\", pod=~\".*amf.*\", container=\"amf-sniffer\"}",
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Sniffer Logs",
+      "title": "AMF Sniffer Logs",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "SMF sniffer container logs from SMF pods in the selected core namespace. This panel can be quiet when no new PFCP/session events occur.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 6,
+        "y": 20
+      },
+      "id": 12,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "direction": "backward",
+          "expr": "{job=\"kubernetes-sniffer-ephemeral-containers\", namespace=~\"$core_namespace\", pod=~\".*smf.*\", container=\"smf-sniffer\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "SMF Sniffer Logs",
       "type": "logs"
     },
     {
@@ -330,8 +372,8 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 12,
         "y": 20
       },
       "id": 10,
@@ -372,8 +414,8 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 18,
         "y": 20
       },
       "id": 11,
@@ -518,6 +560,6 @@
   "timezone": "browser",
   "title": "5G Component Logs",
   "uid": "5g-component-logs",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
