@@ -1,15 +1,15 @@
 [
   {
     "name": "overhead_cpu_cores_5s",
-    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monarch\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}[5s]))"
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monitoring\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}[5s]))"
   },
   {
     "name": "overhead_cpu_cores_30s",
-    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monarch\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}[30s]))"
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monitoring\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}[30s]))"
   },
   {
     "name": "overhead_memory_mib",
-    "query": "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monarch\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}) / 1024 / 1024"
+    "query": "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"POD\", container!=\"\", namespace=~\"open5gs|monitoring\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}) / 1024 / 1024"
   },
   {
     "name": "ue_mapper_cpu_cores_5s",
@@ -49,6 +49,6 @@
   },
   {
     "name": "container_restarts_total",
-    "query": "kube_pod_container_status_restarts_total{namespace=~\"open5gs|monarch\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}"
+    "query": "kube_pod_container_status_restarts_total{namespace=~\"open5gs|monitoring\", pod=~\".*(amf|smf|upf|mongo|mongodb|ue-mapper|redis|prometheus|ueransim).*\"}"
   }
 ]

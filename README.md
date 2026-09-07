@@ -30,7 +30,7 @@ This script will first attempt to reserve the servers and possibly the 5G RAN no
 - Install all required packages on the server(s).
 - Set up a Kubernetes cluster across the nodes.
 - Deploy a 5G Core Network (CN). Currently 3 options are possible : Free5GC, OAI or Open5GS. 
-- Optionally deploy a lightweight Prometheus/Grafana monitoring stack. The legacy Monarch roles remain in the repository for reference and for existing UE-mapper/sniffer/controller mechanisms, but the full Monarch platform is not deployed by default. The deployment keeps the useful KPI exporters needed for Open5GS core throughput and OAI RAN metrics without deploying the Monarch SO/NFVO stack.
+- Optionally deploy a lightweight Prometheus/Grafana monitoring stack with UE-mapper, sniffer, controller, and KPI exporter components for Open5GS core throughput and OAI RAN metrics.
 - Deploy a 5G Radio Access network (RAN). Currently, 3 options are possible : OAI, srsRAN and UERANSIM. OAI and srsRAN supports both real 5G network devices in the R2lab testbed and emulation mode while UERANSIM is a pure 5G RAN emulation system. In case the R2lab platform is selected, a specific R2lab playbook will run in parallel to configure the R2lab resources: RRU, UEs and FIT R2lab nodes.
 - Optionally deploy a test scenario at the end of the deployment, see more details below.
 
@@ -41,7 +41,7 @@ This repo **5g_ansible** [sopnode/5g_ansible](https://github.com/sopnode/5g_ansi
 - **OAI OpenAirInterface Core and RAN** : [sopnode/oai5g-rru](https://github.com/sopnode/oai5g-rru) and [charts](https://gitlab.eurecom.fr/turletti/charts) that leverage [oai/cn5g/oai-cn5g-fed](https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed) and [openairinterface5G](https://gitlab.eurecom.fr/oai/openairinterface5g)
 - **Free5gc Core** : [sopnode/free5gc-helm](https://github.com/sopnode/free5gc-helm), forked from [free5gc/free5gc-helm](https://github.com/free5gc/free5gc-helm)
 - **srsran-helm** : [turletti/srsan-helm](https://github.com/turletti/srsran-helm), forked from [Ziyad-Mabrouk/srsran-helm](https://github.com/Ziyad-Mabrouk/srsran-helm)
-- **Prometheus/Grafana monitoring references** : the lightweight monitoring values are based on the useful Prometheus and Grafana parts from [Ziyad-Mabrouk/5g-monarch](https://github.com/Ziyad-Mabrouk/5g-monarch), especially the `srsRAN_metrics` and `with_data_persistance_for_sopnodes` branches. The full Monarch SO/NFVO/Thanos/MinIO stack is intentionally not deployed by default. The lightweight deployment separately restores the Open5GS and OAI KPI calculator exporters that provide derived metrics such as `slice_throughput`, `mac_throughput`, `number_ues`, and `saturation_percentage`.
+- **Prometheus/Grafana monitoring references** : the lightweight monitoring values are based on useful Prometheus/Grafana patterns from upstream 5G monitoring work. The deployment keeps only the local monitoring, UE-mapper, sniffer, controller, and KPI exporter pieces needed for derived metrics such as `slice_throughput`, `mac_throughput`, `number_ues`, and `saturation_percentage`.
 
 ---
 
@@ -370,7 +370,7 @@ The lightweight Prometheus/Grafana stack uses persistent storage when monitoring
 - Grafana: `32005`
 - Loki: `31000`
 
-The stack scrapes Kubernetes services and pods annotated with `prometheus.io/scrape: "true"` in the configured monitoring namespaces, so latency exporters, UE mapper metrics, and other exporters can be discovered without deploying the full Monarch platform.
+The stack scrapes Kubernetes services and pods annotated with `prometheus.io/scrape: "true"` in the configured monitoring namespaces, so latency exporters, UE mapper metrics, and other exporters can be discovered by the local monitoring stack.
 
 Grafana also provisions a `Loki` datasource. Promtail runs as a DaemonSet and forwards Kubernetes container logs into Loki, so logs can be inspected from Grafana Explore with LogQL queries such as:
 
@@ -397,9 +397,9 @@ The `monitoring_loki_sniffer_file_scrape_enabled` fallback makes Promtail mount 
 
 When `monitoring_enabled=true`, the deployment also applies a lightweight KPI layer:
 
-- Open5GS metric services for AMF/SMF/UPF and the Open5GS KPI calculator image from Monarch, restoring `slice_throughput`.
+- Open5GS metric services for AMF/SMF/UPF and the Open5GS KPI calculator image, restoring `slice_throughput`.
 - OAI gNB metric services and the OAI KPI calculator from the `with_data_persistance_for_sopnodes` branch, restoring `mac_throughput`, `number_ues`, and `saturation_percentage` from the OAI log-parser metrics.
-- The KPI calculators still use the environment variable name `MONARCH_THANOS_URL` because that is what the upstream images expect, but the value points to the new in-cluster Prometheus service.
+- The KPI calculators receive the in-cluster Prometheus URL through the monitoring deployment.
 
 **Note on Prometheus persistence:** Prometheus writes all incoming metrics data to an in-memory *head block* and only flushes this data to disk every **2 hours**. At the moment, this interval cannot be changed in our setup. As a result:
 > ⚠️ If the monitor node is terminated or redeployed before 2 hours have passed, any collected data will be lost.

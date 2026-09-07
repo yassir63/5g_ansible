@@ -542,7 +542,6 @@
           core: {{ core | to_json }}
           ran: {{ ran | to_json }}
           fiveg_profile: {{ fiveg_profile | default('default') | to_json }}
-          monarch: {{ monarch | default(false) | bool | to_json }}
           monitoring_enabled: {{ monitoring_enabled | default(false) | bool | to_json }}
           {% if churn_run_id is defined and (churn_run_id | string | length > 0) %}
           churn_run_id: {{ churn_run_id | to_json }}

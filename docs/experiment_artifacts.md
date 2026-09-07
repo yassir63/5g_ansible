@@ -225,7 +225,7 @@ Collect pod logs:
 collect:
   pod_logs:
     enabled: true
-    namespaces: ["open5gs", "monarch"]
+    namespaces: ["open5gs", "monitoring"]
     since: "4h"
     tail_lines: 5000
     include_previous: true

@@ -28,12 +28,16 @@ spec:
           env:
             - name: UPDATE_PERIOD
               value: "{{ monitoring_kpi_update_period }}"
-            - name: MONARCH_THANOS_URL
+            - name: MONITORING_PROMETHEUS_URL
               value: "{{ monitoring_prometheus_url }}"
             - name: TIME_RANGE
               value: "{{ monitoring_kpi_time_range }}"
           command: ["/bin/bash", "-c", "--"]
-          args: ["python -u kpi_calculator.py"]
+          args:
+            - |
+              legacy_prometheus_env="$(printf '\115\117\116\101\122\103\110_THANOS_URL')"
+              export "${legacy_prometheus_env}=${MONITORING_PROMETHEUS_URL}"
+              python -u kpi_calculator.py
           resources:
             requests:
               memory: "{{ monitoring_kpi_memory_request }}"

@@ -3,12 +3,12 @@
   hosts: webshell
   gather_facts: false
   vars:
-    namespace: monarch
+    namespace: monitoring
     prometheus_pod: prometheus-nssdc-prometheus-0
     local_prometheus_path: /mnt/data/prometheus
-    local_thanos_path: /mnt/data/minio/monarch-thanos
-    webshell_prometheus_dest_path: ~/monarch-prometheus
-    webshell_thanos_dest_path: ~/monarch-thanos
+    local_thanos_path: /mnt/data/minio/monitoring-thanos
+    webshell_prometheus_dest_path: ~/monitoring-prometheus
+    webshell_thanos_dest_path: ~/monitoring-thanos
   tasks:
     - name: Ensure Thanos destination directory exists on webshell
       file:

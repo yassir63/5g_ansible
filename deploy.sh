@@ -590,12 +590,9 @@ collect_user_inputs() {
     fi
 
     # Select Monitoring
-    # Monitoring now deploys a lightweight Prometheus/Grafana stack. The legacy
-    # Monarch roles remain in the repository, but deploy.sh no longer enables
-    # the full Monarch stack.
+    # Monitoring deploys a lightweight Prometheus/Grafana stack.
     monitoring_enabled=false
     monitoring_loki_enabled=false
-    monarch=false
     monitor_node=""
     if [[ "$core" == "open5gs" || "$ran" != "ueransim" ]]; then
       echo ""
@@ -605,7 +602,6 @@ collect_user_inputs() {
       read -rp "Do you want to deploy monitoring? [y/N]: " mon_choice
       if [[ "$mon_choice" =~ ^[Yy]$ ]]; then
         monitoring_enabled=true
-        monarch=false
         echo ""
         echo "Select the node to deploy lightweight Prometheus/Grafana on (default: ${DEFAULT_MONITOR_NODE}):"
         echo "1) sopnode-f1"
@@ -742,7 +738,6 @@ ran_node="$ran_node"
 platform="$platform"
 monitoring_enabled="$monitoring_enabled"
 monitoring_loki_enabled="$monitoring_loki_enabled"
-monarch="$monarch"
 monitor_node="$monitor_node"
 EOF
 }
@@ -958,7 +953,6 @@ optional_scenarios() {
           scenario="UERANSIM attach/detach churn"
           requires_iperf_server=false
           monitoring_enabled=true
-          monarch=false
           monitor_node="${monitor_node:-$DEFAULT_MONITOR_NODE}"
           if [[ ! "$ueransim_churn_subscribers" =~ ^[0-9]+$ || "$ueransim_churn_subscribers" -lt 1 ]]; then
             echo "❌ Invalid churn subscriber count: $ueransim_churn_subscribers"
@@ -1277,7 +1271,6 @@ EOF
 
 	          if [[ "${monitoring_enabled:-false}" != true || -z "${monitor_node:-}" ]]; then
 	            monitoring_enabled=true
-	            monarch=false
 	            echo "UERANSIM churn overhead needs a monitoring node for Prometheus/cAdvisor."
 	            echo "Select the node to deploy lightweight Prometheus/Grafana on (default: ${DEFAULT_MONITOR_NODE}):"
 	            echo "1) sopnode-f1"
@@ -1531,10 +1524,8 @@ print_summary() {
         echo "Monitoring:  enabled (automatic mode)"
       fi
       echo "Logs:        $([[ "${monitoring_loki_enabled:-false}" == true ]] && echo "Loki enabled" || echo "Loki disabled")"
-      echo "Monarch:     disabled (legacy roles kept, not deployed)"
     else
       echo "Monitoring:  disabled"
-      echo "Monarch:     false"
     fi
     echo "Platform:    $platform"
     [[ "$platform" == "r2lab" ]] && echo "RU:          $R2LAB_RU" && echo "UEs:         ${R2LAB_UES[*]}"
@@ -1908,7 +1899,6 @@ f3_ran=$( [[ "${ran_node}" == "sopnode-f3" ]] && echo true || echo false )
 bridge_enabled=$( [[ "${ran_node}" != "${core_node}" ]] && echo true || echo false )
 monitoring_enabled=${monitoring_enabled}
 monitoring_loki_enabled=${monitoring_loki_enabled:-false}
-monarch=${monarch}
 EOF
 
 }

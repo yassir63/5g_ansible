@@ -33,11 +33,11 @@ datasources:
         editable: true
         jsonData:
           timeInterval: "{{ monitoring_interval }}"
-      - name: monarch-thanos
+      - name: monitoring-prometheus
         type: prometheus
         url: "http://{{ monitoring_prometheus_service_name }}.{{ monitoring_namespace }}.svc:9090"
         isDefault: false
-        uid: monarch-thanos
+        uid: monitoring-prometheus
         editable: true
         jsonData:
           timeInterval: "{{ monitoring_interval }}"

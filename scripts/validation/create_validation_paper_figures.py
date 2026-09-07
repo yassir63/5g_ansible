@@ -920,7 +920,7 @@ def create_resource_figures(out_dir: Path, prom: list[dict[str, str]]) -> list[s
             text = f"{namespace} {pod} {container}"
             if value is None or not container or container == "POD":
                 continue
-            if namespace not in {"open5gs", "monarch"}:
+            if namespace not in {"open5gs", "monitoring"}:
                 continue
             if not MONITOR_CONTAINER_RE.search(text):
                 continue
