@@ -380,7 +380,7 @@
 
     - name: Ensure Redis and UE mapper are deployed for churn
       ansible.builtin.include_role:
-        name: monarch/sliceawareness
+        name: monitoring/sliceawareness
         apply:
           environment:
             KUBECONFIG: "{{ churn_kubeconfig }}"
@@ -402,7 +402,7 @@
 
     - name: Ensure AMF mapper sniffer is injected
       ansible.builtin.include_role:
-        name: monarch/sniffers/amf
+        name: monitoring/sniffers/amf
         apply:
           environment:
             KUBECONFIG: "{{ churn_kubeconfig }}"
@@ -413,7 +413,7 @@
 
     - name: Ensure SMF mapper sniffers are injected
       ansible.builtin.include_role:
-        name: monarch/sniffers/smf
+        name: monitoring/sniffers/smf
         apply:
           environment:
             KUBECONFIG: "{{ churn_kubeconfig }}"

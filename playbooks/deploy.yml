@@ -293,12 +293,12 @@
   hosts: core_node
   gather_facts: false
   roles:
-    - role: monarch/sniffers/amf
+    - role: monitoring/sniffers/amf
       when: monitoring_enabled
       vars:
         # redis_host: redis
         redis_host: "redis.{{ core }}.svc.cluster.local"
-    - role: monarch/sniffers/smf
+    - role: monitoring/sniffers/smf
       when: monitoring_enabled
       vars:
         # redis_host: redis
@@ -314,7 +314,7 @@
   pre_tasks:
     - name: Render Redis manifest for cleanup
       ansible.builtin.template:
-        src: ../roles/monarch/sliceawareness/templates/redis.yaml.j2
+        src: ../roles/monitoring/sliceawareness/templates/redis.yaml.j2
         dest: /tmp/redis.yaml
         mode: "0644"
 
@@ -327,7 +327,7 @@
 
     - name: Render UE Mapper manifest for cleanup
       ansible.builtin.template:
-        src: ../roles/monarch/sliceawareness/templates/ue-mapper.yaml.j2
+        src: ../roles/monitoring/sliceawareness/templates/ue-mapper.yaml.j2
         dest: /tmp/ue-mapper.yaml
         mode: "0644"
 
@@ -339,7 +339,7 @@
       failed_when: false
 
   roles:
-    - role: monarch/sliceawareness
+    - role: monitoring/sliceawareness
       when: monitoring_enabled
       vars:
         core_ns: "{{ core }}"
@@ -380,7 +380,7 @@
   tasks:
     - name: Render controller manifest for cleanup
       ansible.builtin.template:
-        src: ../roles/monarch/controller/templates/kopf-controller.yaml.j2
+        src: ../roles/monitoring/controller/templates/kopf-controller.yaml.j2
         dest: /tmp/kopf-controller.yaml
         mode: "0644"
       when: monitoring_enabled | bool
@@ -405,9 +405,9 @@
         - monitoring_enabled | bool
         - (ueransim_deploy_mode | default('static')) == 'churn'
 
-    - name: Run monarch controller role
+    - name: Run monitoring controller role
       ansible.builtin.include_role:
-        name: monarch/controller
+        name: monitoring/controller
       when:
         - monitoring_enabled | bool
         - (ueransim_deploy_mode | default('static')) != 'churn'
