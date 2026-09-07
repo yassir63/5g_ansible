@@ -185,16 +185,6 @@
     label: "Setting MTU 1350 on {{ item.pod }} ({{ item.tun }})"
   failed_when: false
 
-- name: Add route from simulated UE pods to iperf target server
-  shell: |
-    kubectl exec -n {{ core_ns }} {{ item.pod }} -- \
-    ip route replace {{ target_server }} via {{ item.ip.split('.')[:2] | join('.') }}.1.1 dev {{ item.tun }} 2>/dev/null || true
-  loop: "{{ valid_ues }}"
-  loop_control:
-    label: "Setting route on {{ item.pod }} via {{ item.tun }}"
-  failed_when: false
-  when: not (srsran | bool)
-
 
 # ============================================================
 # OAI Routing
@@ -305,7 +295,6 @@
   debug:
     msg: "UPLINK {{ item.item.pod }} {{ item.item.ip }} port {{ 5201 + item.idx }} skipped={{ item.skipped | default(false) }}"
   loop: "{{ iperf_uplink.results | default([]) }}"
-  when: rfsim_iperf_direction_effective in ['both', 'ul']
 
 - pause:
     seconds: 1
@@ -356,4 +345,3 @@
   debug:
     msg: "DOWNLINK {{ item.item.pod }} {{ item.item.ip }} port {{ 5201 + item.idx }} skipped={{ item.skipped | default(false) }}"
   loop: "{{ iperf_downlink.results | default([]) }}"
-  when: rfsim_iperf_direction_effective in ['both', 'dl']
