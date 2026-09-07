@@ -9,6 +9,8 @@
     target_server_name: "{{ target_server_host | default(groups['core_node'][0]) }}"
     core_ns: "{{ core }}"
     valid_ues: []
+    rfsim_iperf_direction_effective: "{{ rfsim_iperf_direction | default('both') }}"
+    rfsim_iperf_fail_on_error_effective: "{{ rfsim_iperf_fail_on_error | default(false) | bool }}"
     srsran: "{{ ran == 'srsRAN' }}"
     free5gc_srsran: "{{ core == 'free5gc' and ran == 'srsRAN' }}"
     open5gs_srsran: "{{ core == 'open5gs' and ran == 'srsRAN' }}"
@@ -21,6 +23,12 @@
       {{ 'tun_srsue1' if ran == 'srsRAN'
          else 'oaitun_ue1' if ran == 'oai'
          else 'uesimtun0' }}
+
+- name: Validate RFSIM iperf direction
+  ansible.builtin.assert:
+    that:
+      - rfsim_iperf_direction_effective in ['both', 'ul', 'dl']
+    fail_msg: "Invalid rfsim_iperf_direction={{ rfsim_iperf_direction_effective }}. Use both, ul, or dl."
 
 - name: Detect N3 interface
   shell: "ip link show n3br >/dev/null 2>&1 && echo n3br || echo cbr0"
@@ -46,6 +54,8 @@
         RAN: {{ ran }}
         Duration: {{ duration }}s
         Sleep: {{ sleep }}s
+        Direction: {{ rfsim_iperf_direction_effective }}
+        Fail on iperf error: {{ rfsim_iperf_fail_on_error_effective }}
 
 # ============================================================
 # Get UE pods
@@ -245,31 +255,41 @@
 
 - name: Run iperf uplink with temporary UE route
   shell: |
+    set -e
     echo "Running route add"
     kubectl exec -n {{ core_ns }} {{ item.pod }} -- ip route replace {{ target_server }} dev {{ item.tun }} 2>/dev/null || true
 
     echo "Running iperf uplink pod={{ item.pod }} ip={{ item.ip }} port={{ 5201 + idx }}"
+    set +e
     kubectl exec -n {{ core_ns }} {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ 5201 + idx }} -t {{ duration }}
+    rc=$?
+    set -e
 
     echo "Cleaning route"
     kubectl exec -n {{ core_ns }} {{ item.pod }} -- ip route del {{ target_server }} dev {{ item.tun }} 2>/dev/null || true
+    exit "$rc"
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
   register: iperf_uplink
-  ignore_errors: yes
-  when: srsran | bool
+  ignore_errors: "{{ not (rfsim_iperf_fail_on_error_effective | bool) }}"
+  when:
+    - srsran | bool
+    - rfsim_iperf_direction_effective in ['both', 'ul']
 
 - name: Run iperf uplink
   shell: |
+    set -e
     echo "Running iperf uplink pod={{ item.pod }} ip={{ item.ip }} port={{ 5201 + idx }}"
     kubectl exec -n {{ core_ns }} {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ 5201 + idx }} -t {{ duration }}
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
   register: iperf_uplink
-  ignore_errors: yes
-  when: not srsran | bool
+  ignore_errors: "{{ not (rfsim_iperf_fail_on_error_effective | bool) }}"
+  when:
+    - not (srsran | bool)
+    - rfsim_iperf_direction_effective in ['both', 'ul']
 
 - name: SHOW uplink commands
   debug:
@@ -285,31 +305,41 @@
 
 - name: Run iperf downlink with temporary UE route
   shell: |
+    set -e
     echo "Running route add"
     kubectl exec -n {{ core_ns }} {{ item.pod }} -- ip route replace {{ target_server }} dev {{ item.tun }} 2>/dev/null || true
 
     echo "Running iperf downlink pod={{ item.pod }} ip={{ item.ip }} port={{ 5201 + idx }}"
+    set +e
     kubectl exec -n {{ core_ns }} {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ 5201 + idx }} -t {{ duration }} -R
+    rc=$?
+    set -e
 
     echo "Cleaning route"
     kubectl exec -n {{ core_ns }} {{ item.pod }} -- ip route del {{ target_server }} dev {{ item.tun }} 2>/dev/null || true
+    exit "$rc"
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
   register: iperf_downlink
-  ignore_errors: yes
-  when: srsran | bool
+  ignore_errors: "{{ not (rfsim_iperf_fail_on_error_effective | bool) }}"
+  when:
+    - srsran | bool
+    - rfsim_iperf_direction_effective in ['both', 'dl']
 
 - name: Run iperf downlink
   shell: |
+    set -e
     echo "Running iperf downlink pod={{ item.pod }} ip={{ item.ip }} port={{ 5201 + idx }}"
     kubectl exec -n {{ core_ns }} {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ 5201 + idx }} -t {{ duration }} -R
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
   register: iperf_downlink
-  ignore_errors: yes
-  when: not srsran | bool
+  ignore_errors: "{{ not (rfsim_iperf_fail_on_error_effective | bool) }}"
+  when:
+    - not (srsran | bool)
+    - rfsim_iperf_direction_effective in ['both', 'dl']
 
 - name: SHOW downlink commands
   debug:

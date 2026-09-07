@@ -1,0 +1,31 @@
+---
+name: playbook_sections_example
+title: Experiment made of existing playbooks
+
+sections:
+  - name: connect_and_baseline
+    title: Run an existing setup or baseline playbook
+    pcap:
+      enabled: false
+    runner:
+      type: playbook
+      file: playbooks/my_existing_baseline.yml
+      extra_vars:
+        duration: 60
+
+  - name: measured_traffic_with_pcaps
+    title: Run an existing playbook while collecting short pcaps
+    pcap:
+      enabled: true
+      capture_seconds: 30
+    runner:
+      type: playbook
+      file: playbooks/my_existing_scenario.yml
+      extra_vars:
+        duration: 120
+
+  - name: recovery
+    title: Recovery window
+    runner:
+      type: pause
+      seconds: 60

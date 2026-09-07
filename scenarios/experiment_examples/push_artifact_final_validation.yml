@@ -1,0 +1,68 @@
+---
+name: push_artifact_final_validation
+title: Artifact final validation with RFSIM uplink, command, and downlink
+timezone: Europe/Paris
+
+sections:
+  - name: simulated_uplink_playbook
+    title: Simulated UE uplink traffic through a nested playbook
+    runner:
+      type: playbook
+      file: playbooks/run_rfsim_iperf_direction.yml
+      extra_vars:
+        fiveg_profile: "{{ fiveg_profile | default('default') }}"
+        target_server_host: >-
+          {{
+            target_server_host
+            | default(
+                (groups['iperf_server_node'] | default([]) | first),
+                true
+              )
+            | default(groups['core_node'][0], true)
+          }}
+        rfsim_iperf_direction: ul
+        iperf_duration: "{{ iperf_duration | default(60) }}"
+        iperf_sleep: "{{ iperf_sleep | default(5) }}"
+
+  - name: wait_after_uplink
+    title: Wait after uplink traffic
+    runner:
+      type: pause
+      seconds: 10
+
+  - name: mock_command
+    title: Generic command section between traffic directions
+    runner:
+      type: command
+      command: |
+        set -euo pipefail
+        echo "mock command start $(date -Is)"
+        echo "This section validates command-runner logging and section timing."
+        sleep "{{ mock_command_seconds | default(5) }}"
+        echo "mock command end $(date -Is)"
+
+  - name: wait_after_command
+    title: Wait after generic command
+    runner:
+      type: pause
+      seconds: 10
+
+  - name: simulated_downlink_playbook
+    title: Simulated UE downlink traffic through a nested playbook
+    runner:
+      type: playbook
+      file: playbooks/run_rfsim_iperf_direction.yml
+      extra_vars:
+        fiveg_profile: "{{ fiveg_profile | default('default') }}"
+        target_server_host: >-
+          {{
+            target_server_host
+            | default(
+                (groups['iperf_server_node'] | default([]) | first),
+                true
+              )
+            | default(groups['core_node'][0], true)
+          }}
+        rfsim_iperf_direction: dl
+        iperf_duration: "{{ iperf_duration | default(60) }}"
+        iperf_sleep: "{{ iperf_sleep | default(5) }}"

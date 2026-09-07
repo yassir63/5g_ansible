@@ -1,0 +1,150 @@
+---
+- name: Set experiment end epoch when missing
+  ansible.builtin.set_fact:
+    experiment_end_epoch: "{{ experiment_end_epoch | default(lookup('pipe', 'date +%s')) }}"
+
+- name: Materialize inline experiment Prometheus queries
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/experiment_prometheus_queries.json"
+    mode: "0644"
+    content: "{{ experiment_prometheus_queries | to_json }}"
+  when:
+    - experiment_collect_enabled | bool
+    - experiment_collect_prometheus | bool
+    - experiment_prometheus_queries is defined
+
+- name: Resolve experiment Prometheus query file
+  ansible.builtin.set_fact:
+    experiment_prometheus_queries_json_effective: >-
+      {{
+        experiment_results_dir + '/experiment_prometheus_queries.json'
+        if (experiment_prometheus_queries is defined)
+        else experiment_prometheus_queries_json
+      }}
+
+- name: Export experiment Prometheus time series
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/../scripts/validation/prometheus_range_export.py"
+      - "--prometheus-url"
+      - "{{ experiment_prometheus_url }}"
+      - "--start"
+      - "{{ ([experiment_start_epoch | int - experiment_query_padding_seconds | int, 0] | max) }}"
+      - "--end"
+      - "{{ experiment_end_epoch | int + experiment_query_padding_seconds | int }}"
+      - "--step"
+      - "{{ experiment_prometheus_step }}"
+      - "--queries-json"
+      - "{{ experiment_prometheus_queries_json_effective }}"
+      - "--discover-metrics-regex"
+      - "{{ experiment_discover_metrics_regex }}"
+      - "--discover-metrics-limit"
+      - "{{ experiment_discover_metrics_limit | string }}"
+      - "--out"
+      - "{{ experiment_results_dir }}/prometheus_timeseries.csv"
+      - "--summary-json"
+      - "{{ experiment_results_dir }}/prometheus_export_summary.json"
+  register: experiment_prometheus_export_output
+  when:
+    - experiment_collect_enabled | bool
+    - experiment_collect_prometheus | bool
+    - experiment_prometheus_url | length > 0
+  changed_when: true
+  failed_when: false
+
+- name: Finalize experiment timeline
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/../scripts/validation/paper_timeline_finalize.py"
+      - "--timeline-jsonl"
+      - "{{ experiment_results_dir }}/timeline_events.jsonl"
+      - "--out-dir"
+      - "{{ experiment_results_dir }}"
+      - "--run-id"
+      - "{{ experiment_run_id }}"
+      - "--timezone"
+      - "{{ experiment_local_timezone }}"
+  register: experiment_timeline_finalize_output
+  changed_when: true
+  failed_when: false
+
+- name: Split experiment Prometheus CSV by timeline windows
+  ansible.builtin.command:
+    argv: "{{ [
+      'python3',
+      playbook_dir + '/../scripts/validation/split_prometheus_by_timeline.py',
+      '--full-csv',
+      experiment_results_dir + '/prometheus_timeseries.csv',
+      '--timeline-json',
+      experiment_results_dir + '/timeline_summary.json',
+      '--out-dir',
+      experiment_results_dir + '/by_window',
+      '--window-types',
+      experiment_split_window_types,
+      '--padding-seconds',
+      experiment_split_padding_seconds | string
+    ] + (['--compress'] if (experiment_split_compress | bool) else []) }}"
+  register: experiment_timeline_split_output
+  when:
+    - experiment_collect_enabled | bool
+    - experiment_collect_prometheus | bool
+    - experiment_split_prometheus_by_timeline | bool
+  changed_when: true
+  failed_when: false
+
+- name: Collect experiment pod logs
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/../tasks/experiment_collect_pod_logs.yml"
+    apply:
+      delegate_to: "{{ experiment_pod_log_control_host_effective }}"
+      become: true
+  when:
+    - experiment_collect_enabled | bool
+    - experiment_collect_pod_logs | bool
+
+- name: Write generic experiment README
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/README.md"
+    mode: "0644"
+    content: |
+      # Experiment Run {{ experiment_run_id }}
+
+      This directory was produced by the generic experiment artifact collector.
+
+      Main artifacts:
+      - `timeline_events.jsonl`: raw start/end events emitted by the runner or scenario.
+      - `timeline_summary.md` / `.csv` / `.json`: paired campaign, section, scenario, step, direction, and phase windows.
+      - `section_logs/<section>/`: stdout, stderr, result JSON, and fetched runner files for command/playbook sections.
+      - `prometheus_timeseries.csv`: full-run Prometheus/Grafana-query export when enabled.
+      - `prometheus_export_summary.json`: exported query inventory, row counts, and query errors.
+      - `by_window/<window_type>/.../prometheus_timeseries.csv(.gz)`: Prometheus data sliced by named windows.
+      - `pod_logs.tgz`: Kubernetes pod inventory, events, descriptions, and logs when enabled.
+      - `pcaps/<section_or_window>/`: tcpdump pcaps and tcpdump logs when pcap collection is enabled.
+      - `pcaps/pcap_summary.json`: machine-readable pcap capture status summary when pcaps are enabled.
+
+      Collection flags:
+      - Prometheus: {{ experiment_collect_prometheus }}
+      - Split by windows: {{ experiment_split_prometheus_by_timeline }}
+      - Pod logs: {{ experiment_collect_pod_logs }}
+      - Pcaps: {{ experiment_collect_pcaps }}
+
+      Prometheus query file:
+      `{{ experiment_prometheus_queries_json_effective | default(experiment_prometheus_queries_json) }}`
+  register: experiment_readme_output
+  failed_when: false
+
+- name: Show experiment timeline recap
+  ansible.builtin.debug:
+    msg: "{{ experiment_timeline_finalize_output.stdout_lines | default(['Timeline recap unavailable; check timeline_events.jsonl.']) }}"
+
+- name: Show experiment output paths
+  ansible.builtin.debug:
+    msg:
+      - "Experiment results: {{ experiment_results_dir }}"
+      - "Prometheus CSV: {{ experiment_results_dir }}/prometheus_timeseries.csv"
+      - "Timeline recap: {{ experiment_results_dir }}/timeline_summary.md"
+      - "Per-window metrics: {{ experiment_results_dir }}/by_window"
+      - "Pod logs: {{ experiment_results_dir }}/pod_logs.tgz"
+      - "Pcaps: {{ experiment_results_dir }}/pcaps"

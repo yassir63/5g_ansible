@@ -1,22 +1,10 @@
 ---
-- name: Capture timeline event timestamp
-  ansible.builtin.set_fact:
-    paper_timeline_epoch: "{{ lookup('pipe', 'date +%s') }}"
-    paper_timeline_utc: "{{ lookup('pipe', \"date -u '+%Y-%m-%dT%H:%M:%SZ'\") }}"
-    paper_timeline_local: "{{ lookup('pipe', 'TZ=' ~ (paper_local_timezone | default('Europe/Paris') | quote) ~ \" date '+%Y-%m-%d %H:%M:%S %Z'\") }}"
-
-- name: Append timeline event
-  ansible.builtin.lineinfile:
-    path: "{{ paper_results_dir }}/timeline_events.jsonl"
-    line: "{{ paper_timeline_event | combine(paper_timeline_timestamp) | to_json }}"
-    create: true
-    insertafter: EOF
-    mode: "0644"
+# Compatibility wrapper for older paper/validation playbooks.
+# New generic scenarios should include tasks/experiment_record_event.yml directly.
+- name: Record timeline event through generic experiment recorder
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
   vars:
-    paper_timeline_timestamp:
-      run_id: "{{ paper_run_id }}"
-      epoch: "{{ paper_timeline_epoch | int }}"
-      utc_time: "{{ paper_timeline_utc }}"
-      local_time: "{{ paper_timeline_local }}"
-      timezone: "{{ paper_local_timezone | default('Europe/Paris') }}"
-  delegate_to: localhost
+    experiment_timeline_event: "{{ paper_timeline_event }}"
+    experiment_results_dir: "{{ paper_results_dir | default(validation_results_dir) }}"
+    experiment_run_id: "{{ paper_run_id | default(validation_run_id) }}"
+    experiment_local_timezone: "{{ paper_local_timezone | default(validation_local_timezone | default('Europe/Paris')) }}"

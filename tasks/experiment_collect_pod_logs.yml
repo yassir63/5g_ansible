@@ -1,0 +1,95 @@
+---
+- name: Normalize experiment pod log namespaces
+  ansible.builtin.set_fact:
+    experiment_pod_log_namespaces_effective: >-
+      {{
+        (experiment_pod_log_namespaces.split(',') | map('trim') | reject('equalto', '') | list)
+        if (experiment_pod_log_namespaces is string)
+        else experiment_pod_log_namespaces
+      }}
+  when: experiment_collect_pod_logs | bool
+
+- name: Collect experiment Kubernetes pod logs on control node
+  ansible.builtin.shell: |
+    set -u
+    OUT="/tmp/{{ experiment_run_id }}_pod_logs"
+    ARCHIVE="/tmp/{{ experiment_run_id }}_pod_logs.tgz"
+    NAMESPACES="{{ experiment_pod_log_namespaces_effective | join(' ') }}"
+    SINCE="{{ experiment_pod_log_since }}"
+    TAIL="{{ experiment_pod_log_tail_lines | int }}"
+    INCLUDE_PREVIOUS="{{ (experiment_pod_log_include_previous | bool) | ternary('1', '0') }}"
+
+    rm -rf "$OUT" "$ARCHIVE"
+    mkdir -p "$OUT"
+    {
+      echo "run_id={{ experiment_run_id }}"
+      echo "host=$(hostname -f 2>/dev/null || hostname)"
+      echo "namespaces=${NAMESPACES}"
+      echo "kubeconfig={{ experiment_kubeconfig }}"
+      echo "since=${SINCE}"
+      echo "tail=${TAIL}"
+      echo "include_previous=${INCLUDE_PREVIOUS}"
+      echo "collected_at=$(date -Is)"
+    } > "$OUT/collection_info.txt"
+
+    if ! command -v kubectl >/dev/null 2>&1; then
+      echo "kubectl not found on $(hostname)" > "$OUT/ERROR.txt"
+      tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
+      exit 0
+    fi
+
+    export KUBECONFIG="{{ experiment_kubeconfig }}"
+    kubectl version > "$OUT/kubectl_version.txt" 2>&1 || true
+    kubectl config current-context > "$OUT/kubectl_context.txt" 2>&1 || true
+    kubectl get nodes -o wide > "$OUT/nodes.txt" 2>&1 || true
+    kubectl get pods -A -o wide > "$OUT/all_pods.txt" 2>&1 || true
+
+    for ns in $NAMESPACES; do
+      nsdir="$OUT/$ns"
+      mkdir -p "$nsdir"
+      if ! kubectl get namespace "$ns" > "$nsdir/namespace.txt" 2> "$nsdir/namespace.err"; then
+        echo "namespace $ns not found or not readable" > "$nsdir/SKIPPED.txt"
+        continue
+      fi
+
+      kubectl -n "$ns" get pods -o wide > "$nsdir/pods.txt" 2>&1 || true
+      kubectl -n "$ns" get events --sort-by=.lastTimestamp > "$nsdir/events.txt" 2>&1 || true
+
+      pods="$(kubectl -n "$ns" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+      for pod in $pods; do
+        safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.=-' '_')"
+        pdir="$nsdir/$safe_pod"
+        mkdir -p "$pdir"
+
+        kubectl -n "$ns" get pod "$pod" -o yaml > "$pdir/pod.yaml" 2>&1 || true
+        kubectl -n "$ns" describe pod "$pod" > "$pdir/describe.txt" 2>&1 || true
+
+        containers="$(kubectl -n "$ns" get pod "$pod" -o jsonpath='{range .spec.initContainers[*]}{.name}{"\n"}{end}{range .spec.containers[*]}{.name}{"\n"}{end}{range .spec.ephemeralContainers[*]}{.name}{"\n"}{end}' 2>/dev/null || true)"
+        for container in $containers; do
+          safe_container="$(printf '%s' "$container" | tr -c 'A-Za-z0-9_.=-' '_')"
+          kubectl -n "$ns" logs "$pod" -c "$container" --timestamps --since="$SINCE" --tail="$TAIL" \
+            > "$pdir/${safe_container}.log" 2> "$pdir/${safe_container}.log.err" || true
+          if [ "$INCLUDE_PREVIOUS" = "1" ]; then
+            kubectl -n "$ns" logs "$pod" -c "$container" --previous --timestamps --since="$SINCE" --tail="$TAIL" \
+              > "$pdir/${safe_container}.previous.log" 2> "$pdir/${safe_container}.previous.log.err" || true
+          fi
+        done
+      done
+    done
+
+    tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
+  args:
+    executable: /bin/bash
+  register: experiment_pod_logs_collect_output
+  when: experiment_collect_pod_logs | bool
+  changed_when: true
+  failed_when: false
+
+- name: Fetch experiment Kubernetes pod log archive
+  ansible.builtin.fetch:
+    src: "/tmp/{{ experiment_run_id }}_pod_logs.tgz"
+    dest: "{{ experiment_results_dir }}/pod_logs.tgz"
+    flat: true
+  register: experiment_pod_logs_fetch_output
+  when: experiment_collect_pod_logs | bool
+  failed_when: false

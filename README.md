@@ -48,6 +48,86 @@ This repo **5g_ansible** [sopnode/5g_ansible](https://github.com/sopnode/5g_ansi
 ## Available Test Scenarios
 The `deploy.sh` can be used to configure and deploy a scenario (iperf or interference). If such a scenario option is selected, the `deploy.sh`  script will execute, once the 5G CORE+CN deployement is ready, another script `run_scenario.sh` that can also be run manually, provided that the inventory is already configured for the target scenario.
 
+## Generic Experiment Artifact Collection
+
+In addition to the built-in scenarios, the repository can run arbitrary
+user-defined experiments and collect observability artifacts around named time
+windows. A scenario YAML defines sections such as `baseline`, `stress`, or
+`recovery`; the runner records their start/end times and can export
+Prometheus/Grafana-query CSVs, split metrics by section, collect Kubernetes pod
+logs, and optionally collect short pcaps.
+
+You can use either a self-contained scenario file with both `sections` and
+`collect` / `pcap` settings inside it, or a cleaner split with an experiment
+file plus an artifact profile. Start from an experiment template and an artifact
+profile:
+
+```bash
+cp scenarios/experiment_templates/basic_sections.yml scenarios/my_experiment.yml
+
+./deploy.sh -n --scenario-only \
+  --experiment scenarios/my_experiment.yml \
+  --experiment-artifacts default_5g_observability
+```
+
+Or run the small smoke-test scenario to verify the artifact layout:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment artifact_smoke_test \
+  --experiment-artifacts default_5g_observability
+```
+
+In interactive mode, select `Generic experiment`; the script then asks whether
+to collect artifacts and lets you keep the default profile or point to another
+profile. For non-interactive runs without artifact collection, use:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment artifact_smoke_test \
+  --no-experiment-artifacts
+```
+
+If artifacts are enabled but the experiment file has no `sections`, the runner
+creates a default `full_run` section. That gives you a general Prometheus window
+and pod logs instead of an empty artifact folder. In interactive mode,
+`deploy.sh` asks how long this default observation window should last.
+
+For a real traffic example, run `qhat01` and `qhat03` uplink/downlink TCP iperf
+at 40 Mb/s:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment two_ue_iperf_40m \
+  --experiment-artifacts default_5g_observability \
+  --target-server sopnode-f2
+```
+
+To exercise mixed direction and per-section artifact overrides, run:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment two_ue_direction_matrix_40m \
+  --experiment-artifacts default_5g_observability \
+  --target-server sopnode-f2
+```
+
+Artifact collection can be disabled entirely:
+
+```yaml
+collect:
+  enabled: false
+```
+
+Prometheus queries and pcap targets are configurable through the scenario YAML
+or through files in `configs/artifacts/`. Pcap capture is disabled by default;
+when enabled, the runner attempts to install `tcpdump` using `apt-get`, `dnf`,
+`yum`, `microdnf`, or `apk`, then continues with a clear summary if capture is
+not possible unless strict mode is requested.
+
+See [docs/experiment_artifacts.md](docs/experiment_artifacts.md) for the full
+tutorial and templates.
+
 #### Command Overview
 
 ```bash
@@ -326,4 +406,4 @@ When `monitoring_enabled=true`, the deployment also applies a lightweight KPI la
 
 To ensure metrics are actually written to disk and persist across redeployments, you must wait **at least 2 hours** after starting data collection, in which case extending your reservation is needed. Once this threshold is reached, Prometheus will flush the in-memory block to the permanent on-disk block that survives restarts.
 
-As long as the same monitor node and persistent volume are reused, previously flushed data will remain available in the monitoring dashboard.
+As long as the same monitor node and persistent volume or mounted storage are reused, previously flushed data will remain available in the monitoring dashboard.

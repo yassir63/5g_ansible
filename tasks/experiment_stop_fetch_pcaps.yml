@@ -1,0 +1,150 @@
+---
+- name: Stop experiment host pcaps
+  ansible.builtin.shell: |
+    set -u
+    RUN_DIR="/tmp/{{ experiment_run_id }}/pcaps/{{ experiment_window_label }}"
+    NAME="{{ item.name }}"
+    PID_FILE="$RUN_DIR/${NAME}.pid"
+    LOG="$RUN_DIR/${NAME}.tcpdump.log"
+    if [ -f "$PID_FILE" ]; then
+      kill -INT "$(cat "$PID_FILE")" >/dev/null 2>&1 || true
+      sleep 2
+      echo "stop_requested_at=$(date -Is)" >> "$LOG"
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ item.host }}"
+  become: true
+  loop: "{{ experiment_pcap_targets_effective | selectattr('type', 'defined') | selectattr('type', 'equalto', 'host') | list + experiment_pcap_targets_effective | rejectattr('type', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: experiment_pcap_enabled_effective | bool
+  changed_when: false
+  failed_when: false
+
+- name: Fetch experiment host pcap files
+  ansible.builtin.fetch:
+    src: "/tmp/{{ experiment_run_id }}/pcaps/{{ experiment_window_label }}/{{ item.name }}.pcap"
+    dest: "{{ experiment_results_dir }}/pcaps/{{ experiment_window_label }}/{{ item.name }}.pcap"
+    flat: true
+  delegate_to: "{{ item.host }}"
+  become: true
+  loop: "{{ experiment_pcap_targets_effective | selectattr('type', 'defined') | selectattr('type', 'equalto', 'host') | list + experiment_pcap_targets_effective | rejectattr('type', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: experiment_pcap_enabled_effective | bool
+  ignore_errors: true
+
+- name: Fetch experiment host tcpdump logs
+  ansible.builtin.fetch:
+    src: "/tmp/{{ experiment_run_id }}/pcaps/{{ experiment_window_label }}/{{ item.name }}.tcpdump.log"
+    dest: "{{ experiment_results_dir }}/pcaps/{{ experiment_window_label }}/{{ item.name }}.tcpdump.log"
+    flat: true
+  delegate_to: "{{ item.host }}"
+  become: true
+  loop: "{{ experiment_pcap_targets_effective | selectattr('type', 'defined') | selectattr('type', 'equalto', 'host') | list + experiment_pcap_targets_effective | rejectattr('type', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: experiment_pcap_enabled_effective | bool
+  ignore_errors: true
+
+- name: Stop and stage experiment pod pcaps
+  ansible.builtin.shell: |
+    set -u
+    NS="{{ item.namespace }}"
+    POD_REGEX="{{ item.pod_regex | default(item.name_regex | default('.*')) }}"
+    CONTAINER_REGEX="{{ item.container_regex | default('.*') }}"
+    TARGET_NAME="{{ item.name }}"
+    STAGE="/tmp/{{ experiment_run_id }}/pcaps/{{ experiment_window_label }}"
+    mkdir -p "$STAGE"
+
+    if ! command -v kubectl >/dev/null 2>&1; then
+      echo "target_type=pod target_name=${TARGET_NAME} status=kubectl_not_found" > "$STAGE/${TARGET_NAME}.pod-stop.log"
+      exit 0
+    fi
+
+    pods="$(kubectl -n "$NS" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -E "$POD_REGEX" || true)"
+    for pod in $pods; do
+      containers="$(kubectl -n "$NS" get pod "$pod" -o jsonpath='{range .spec.containers[*]}{.name}{"\n"}{end}' 2>/dev/null || true)"
+      container="$(printf '%s\n' "$containers" | grep -E "$CONTAINER_REGEX" | head -n 1 || true)"
+      if [ -z "$container" ]; then
+        container="$(printf '%s\n' "$containers" | head -n 1)"
+      fi
+      safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.=-' '_')"
+      remote_dir="/tmp/{{ experiment_run_id }}/pcaps/{{ experiment_window_label }}"
+      remote_name="${TARGET_NAME}_${safe_pod}"
+
+      kubectl -n "$NS" exec -c "$container" "$pod" -- sh -c '
+        RUN_DIR="$1"
+        NAME="$2"
+        PID_FILE="$RUN_DIR/${NAME}.pid"
+        LOG="$RUN_DIR/${NAME}.tcpdump.log"
+        if [ -f "$PID_FILE" ]; then
+          kill -INT "$(cat "$PID_FILE")" >/dev/null 2>&1 || true
+          sleep 2
+          echo "stop_requested_at=$(date -Is)" >> "$LOG"
+        fi
+      ' sh "$remote_dir" "$remote_name" || true
+
+      kubectl -n "$NS" exec -c "$container" "$pod" -- \
+        cat "$remote_dir/${remote_name}.pcap" > "$STAGE/${remote_name}.pcap" 2>/dev/null || true
+      kubectl -n "$NS" exec -c "$container" "$pod" -- \
+        cat "$remote_dir/${remote_name}.tcpdump.log" > "$STAGE/${remote_name}.tcpdump.log" 2>/dev/null || true
+    done
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ experiment_pcap_k8s_control_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ experiment_kubeconfig }}"
+  loop: "{{ experiment_pcap_targets_effective | selectattr('type', 'defined') | selectattr('type', 'equalto', 'pod') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: experiment_pcap_enabled_effective | bool
+  changed_when: false
+  failed_when: false
+
+- name: List staged experiment pod pcap artifacts
+  ansible.builtin.shell: |
+    find "/tmp/{{ experiment_run_id }}/pcaps/{{ experiment_window_label }}" \
+      -maxdepth 1 \
+      -type f \
+      \( -name "*.pcap" -o -name "*.tcpdump.log" -o -name "*.pod-*.log" \) \
+      -print 2>/dev/null || true
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ experiment_pcap_k8s_control_host }}"
+  become: true
+  register: experiment_staged_pcap_files
+  when: experiment_pcap_enabled_effective | bool
+  changed_when: false
+  failed_when: false
+
+- name: Fetch staged experiment pod pcap artifacts
+  ansible.builtin.fetch:
+    src: "{{ item }}"
+    dest: "{{ experiment_results_dir }}/pcaps/{{ experiment_window_label }}/{{ item | basename }}"
+    flat: true
+  delegate_to: "{{ experiment_pcap_k8s_control_host }}"
+  become: true
+  loop: "{{ experiment_staged_pcap_files.stdout_lines | default([]) }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when:
+    - experiment_pcap_enabled_effective | bool
+    - experiment_staged_pcap_files.stdout_lines | default([]) | length > 0
+  ignore_errors: true
+
+- name: Summarize pcap artifacts for this window
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/../scripts/validation/pcap_artifact_summary.py"
+      - "--pcap-dir"
+      - "{{ experiment_results_dir }}/pcaps"
+      - "--out"
+      - "{{ experiment_results_dir }}/pcaps/pcap_summary.json"
+  delegate_to: localhost
+  when: experiment_pcap_enabled_effective | bool
+  changed_when: true
+  failed_when: false
