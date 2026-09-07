@@ -292,7 +292,7 @@ resolve_generic_experiment_scenario_file() {
 
     if [[ -z "$input" ]]; then
       echo "❌ Missing generic experiment scenario. Use --experiment <file|name>." >&2
-      echo "Examples: artifact_smoke_test, two_ue_iperf_40m, two_ue_direction_matrix_40m" >&2
+      echo "Examples: artifact_smoke_test, push_artifact_final_validation, two_ue_iperf_40m, two_ue_direction_matrix_40m" >&2
       return 1
     fi
 
