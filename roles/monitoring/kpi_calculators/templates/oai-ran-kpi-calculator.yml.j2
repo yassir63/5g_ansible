@@ -30,14 +30,14 @@ spec:
               value: "{{ monitoring_kpi_update_period }}"
             - name: MONITORING_PROMETHEUS_URL
               value: "{{ monitoring_prometheus_url }}"
+            # The upstream KPI image still reads MONARCH_THANOS_URL.
+            # Keep this compatibility variable until the image is rebuilt.
+            - name: MONARCH_THANOS_URL
+              value: "{{ monitoring_prometheus_url }}"
             - name: TIME_RANGE
               value: "{{ monitoring_kpi_time_range }}"
           command: ["/bin/bash", "-c", "--"]
-          args:
-            - |
-              legacy_prometheus_env="$(printf '\115\117\116\101\122\103\110_THANOS_URL')"
-              export "${legacy_prometheus_env}=${MONITORING_PROMETHEUS_URL}"
-              python -u kpi_calculator.py
+          args: ["python -u kpi_calculator.py"]
           resources:
             requests:
               memory: "{{ monitoring_kpi_memory_request }}"
