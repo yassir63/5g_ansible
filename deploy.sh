@@ -33,6 +33,7 @@ REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS=""
 REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED=""
 GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS=""
 CHURN_RUNS_VIA_DEPLOY=false
+MONITORING_AUTO_ENABLED_REASON=""
 
 usage() {
     echo "Usage: $0 [options]"
@@ -417,6 +418,54 @@ prompt_generic_default_section_seconds_if_needed() {
       GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS="$duration_input"
     else
       echo "❌ Invalid full_run duration: $duration_input"
+      exit 1
+    fi
+}
+
+enable_monitoring_for_workflow() {
+    local reason="$1"
+
+    if [[ "${monitoring_enabled:-false}" != true || -z "${monitor_node:-}" ]]; then
+      echo "${reason} needs the monitoring stack; enabling monitoring on ${monitor_node:-$DEFAULT_MONITOR_NODE}."
+      MONITORING_AUTO_ENABLED_REASON="$reason"
+    fi
+
+    monitoring_enabled=true
+    monitor_node="${monitor_node:-$DEFAULT_MONITOR_NODE}"
+    if [[ "${REQUESTED_MONITORING_LOKI:-}" == "false" ]]; then
+      monitoring_loki_enabled=false
+    else
+      monitoring_loki_enabled=true
+    fi
+}
+
+inventory_first_group_host() {
+    local group="$1"
+    awk -v group="$group" '
+      $0 ~ "^[[:space:]]*\\[" group "\\][[:space:]]*$" { in_group=1; next }
+      $0 ~ "^[[:space:]]*\\[" { in_group=0 }
+      in_group && $0 !~ "^[[:space:]]*(#|$)" { print $1; exit }
+    ' "$INVENTORY"
+}
+
+assert_monitoring_inventory_ready() {
+    local inventory_monitor_node=""
+
+    if [[ "${monitoring_enabled:-false}" != true || "$SCENARIO_ONLY" == true ]]; then
+      return
+    fi
+
+    inventory_monitor_node="$(inventory_first_group_host monitor_node)"
+    if [[ -n "$inventory_monitor_node" && ( -z "${monitor_node:-}" || "$SKIP_INPUTS" == true ) ]]; then
+      monitor_node="$inventory_monitor_node"
+    fi
+
+    if [[ -z "$inventory_monitor_node" ]]; then
+      echo "❌ Monitoring is enabled but ${INVENTORY} has no active host in [monitor_node]."
+      if [[ "$SKIP_INPUTS" == true ]]; then
+        echo "Because --no-input reuses the saved inventory, deploy.sh cannot add the monitoring node automatically."
+        echo "Rerun once without --no-input so the inventory is regenerated, or add monitor_node to ${DEPLOYMENT_ENV} and an active [monitor_node] entry to ${INVENTORY}."
+      fi
       exit 1
     fi
 }
@@ -844,6 +893,9 @@ optional_scenarios() {
           if [[ "$SKIP_INPUTS" != true ]]; then
             prompt_generic_default_section_seconds_if_needed
           fi
+          if [[ "${experiment_artifacts_enabled}" == true ]]; then
+            enable_monitoring_for_workflow "Generic experiment artifact collection"
+          fi
           echo "Generic experiment scenario file: ${experiment_scenario_file}"
           if [[ "${experiment_artifacts_enabled}" == true && -n "${experiment_artifacts_file:-}" ]]; then
             echo "Generic experiment artifact profile: ${experiment_artifacts_file}"
@@ -893,6 +945,7 @@ optional_scenarios() {
               R2LAB_UES+=("$required_ue")
             fi
           done
+          enable_monitoring_for_workflow "TCP paper scenario artifacts and latency probes"
           echo "TCP paper scenario selected; ensuring required UEs are in inventory: ${tcp_paper_required_ues[*]}"
           ;;
 
@@ -942,6 +995,7 @@ optional_scenarios() {
               R2LAB_UES+=("$required_ue")
             fi
           done
+          enable_monitoring_for_workflow "Latency validation artifacts and latency probes"
           echo "Latency validation selected; ensuring required UEs are in inventory: ${validation_required_ues[*]}"
           ;;
 
@@ -952,8 +1006,7 @@ optional_scenarios() {
           fi
           scenario="UERANSIM attach/detach churn"
           requires_iperf_server=false
-          monitoring_enabled=true
-          monitor_node="${monitor_node:-$DEFAULT_MONITOR_NODE}"
+          enable_monitoring_for_workflow "UERANSIM churn overhead collection"
           if [[ ! "$ueransim_churn_subscribers" =~ ^[0-9]+$ || "$ueransim_churn_subscribers" -lt 1 ]]; then
             echo "❌ Invalid churn subscriber count: $ueransim_churn_subscribers"
             exit 1
@@ -1001,6 +1054,9 @@ optional_scenarios() {
       cat >> "$DEPLOYMENT_ENV" <<EOF
 run_scenario="$run_scenario"
 scenario="$scenario"
+monitoring_enabled="$monitoring_enabled"
+monitoring_loki_enabled="$monitoring_loki_enabled"
+monitor_node="$monitor_node"
 iperf_server_node="$iperf_server_node"
 paper_scenario_names="$paper_scenario_names"
 validation_scenario_names="$validation_scenario_names"
@@ -1097,6 +1153,9 @@ EOF
             experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${experiment_artifacts_input:-default_5g_observability}")" || exit 1
           fi
           prompt_generic_default_section_seconds_if_needed
+          if [[ "${experiment_artifacts_enabled}" == true ]]; then
+            enable_monitoring_for_workflow "Generic experiment artifact collection"
+          fi
           echo "Generic experiment scenario file: ${experiment_scenario_file}"
           if [[ "${experiment_artifacts_enabled}" == true && -n "${experiment_artifacts_file:-}" ]]; then
             echo "Generic experiment artifact profile: ${experiment_artifacts_file}"
@@ -1159,6 +1218,7 @@ EOF
               R2LAB_UES+=("$required_ue")
             fi
           done
+          enable_monitoring_for_workflow "TCP paper scenario artifacts and latency probes"
           echo "TCP paper scenario selected; ensuring required UEs are in inventory: ${tcp_paper_required_ues[*]}"
           echo "This workflow will export Prometheus at 1s and create experiment_analysis.ipynb automatically."
           echo ""
@@ -1231,6 +1291,7 @@ EOF
               R2LAB_UES+=("$required_ue")
             fi
           done
+          enable_monitoring_for_workflow "Latency validation artifacts and latency probes"
           echo "Latency validation selected; ensuring required UEs are in inventory: ${validation_required_ues[*]}"
           echo "This workflow will export Prometheus at 1s and create experiment_analysis.ipynb automatically."
           echo ""
@@ -1270,26 +1331,9 @@ EOF
 	          echo ""
 
 	          if [[ "${monitoring_enabled:-false}" != true || -z "${monitor_node:-}" ]]; then
-	            monitoring_enabled=true
 	            echo "UERANSIM churn overhead needs a monitoring node for Prometheus/cAdvisor."
-	            echo "Select the node to deploy lightweight Prometheus/Grafana on (default: ${DEFAULT_MONITOR_NODE}):"
-	            echo "1) sopnode-f1"
-	            echo "2) sopnode-f2"
-	            echo "3) sopnode-f3"
-	            echo "4) sopnode-w3"
-	            read -rp "Enter choice [1-4]: " churn_monitor_node_choice
-	            if [[ -z "${churn_monitor_node_choice}" ]]; then
-	              monitor_node=${DEFAULT_MONITOR_NODE}
-	            else
-	              case "${churn_monitor_node_choice}" in
-	                1) monitor_node="sopnode-f1" ;;
-	                2) monitor_node="sopnode-f2" ;;
-	                3) monitor_node="sopnode-f3" ;;
-	                4) monitor_node="sopnode-w3" ;;
-	                *) echo "❌ Invalid Monitoring node"; exit 1 ;;
-	              esac
-	            fi
 	          fi
+	          enable_monitoring_for_workflow "UERANSIM churn overhead collection"
 
 	          read -rp "Number of churn subscribers to create [default: ${DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}]: " churn_subscribers_input
 	          ueransim_churn_subscribers="${churn_subscribers_input:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}"
@@ -1375,6 +1419,9 @@ EOF
     cat >> "$DEPLOYMENT_ENV" <<EOF
 run_scenario="$run_scenario"
 scenario="$scenario"
+monitoring_enabled="$monitoring_enabled"
+monitoring_loki_enabled="$monitoring_loki_enabled"
+monitor_node="$monitor_node"
 iperf_server_node="$iperf_server_node"
 paper_scenario_names="$paper_scenario_names"
 validation_scenario_names="$validation_scenario_names"
@@ -2443,6 +2490,7 @@ else
   print_summary
   generate_inventory
 fi
+assert_monitoring_inventory_ready
 reserve_nodes
 reserve_r2lab
 if [[ "$SCENARIO_ONLY" == true ]]; then
