@@ -2283,8 +2283,8 @@ run_scenario() {
             if [[ -n "${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}" ]]; then
               GENERIC_EXPERIMENT_ARGS+=(-e "experiment_default_section_seconds=${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}")
             fi
-            if [[ -n "${REQUESTED_TARGET_SERVER:-}" ]]; then
-              GENERIC_EXPERIMENT_ARGS+=(-e "target_server_host=${REQUESTED_TARGET_SERVER}")
+            if [[ -n "${REQUESTED_TARGET_SERVER:-${iperf_server_node:-}}" ]]; then
+              GENERIC_EXPERIMENT_ARGS+=(-e "target_server_host=${REQUESTED_TARGET_SERVER:-${iperf_server_node}}")
             fi
             run_logged_cmd "${DIR_LOGS}/logs-scenario_generic-experiment.txt" \
               ansible-playbook -i "$INVENTORY" \
