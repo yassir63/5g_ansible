@@ -394,7 +394,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$core_namespace\", pod=~\".*(ue-mapper|mapper).*\"}",
+          "expr": "{namespace=~\"$monitoring_namespace\", pod=~\".*(ue-mapper|mapper|redis).*\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -407,7 +407,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Kopf controller, latency probes, exporters, and pairer logs. Probe/exporter containers may be inside UPF or gNB pods.",
+      "description": "Kopf controller runs in the monitoring namespace. Probe/exporter containers may be inside UPF or gNB pods.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -436,7 +436,7 @@
             "uid": "loki"
           },
           "direction": "backward",
-          "expr": "{namespace=~\"$core_namespace\", pod=~\".*(kopf|controller|latency|probe|exporter|packet-pairer|pairer).*\"}",
+          "expr": "{namespace=~\"$monitoring_namespace\", pod=~\".*(kopf|controller).*\"}",
           "queryType": "range",
           "refId": "A"
         },
@@ -496,6 +496,31 @@
         "query": "label_values(namespace)",
         "refresh": 1,
         "regex": "/^(open5gs|free5gc|oai)$/",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "monitoring",
+          "value": "monitoring"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values(namespace)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Monitoring namespace",
+        "multi": false,
+        "name": "monitoring_namespace",
+        "options": [],
+        "query": "label_values(namespace)",
+        "refresh": 1,
+        "regex": "/^(monitoring)$/",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"

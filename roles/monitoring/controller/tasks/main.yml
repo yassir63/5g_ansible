@@ -1,4 +1,13 @@
 ---
+- name: Ensure controller namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ controller_namespace }}"
+
 - name: Render controller manifest to a file
   ansible.builtin.template:
     src: kopf-controller.yaml.j2

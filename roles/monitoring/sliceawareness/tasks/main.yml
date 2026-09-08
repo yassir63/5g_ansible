@@ -1,4 +1,13 @@
 ---
+- name: Ensure slice-awareness namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ sliceawareness_namespace }}"
+
 - name: Render Redis manifest to a file
   ansible.builtin.template:
     src: redis.yaml.j2
@@ -7,7 +16,7 @@
 
 - name: Deploy Redis Database
   ansible.builtin.command: >
-    kubectl -n {{ core }} apply -f /tmp/redis.yaml
+    kubectl -n {{ sliceawareness_namespace }} apply -f /tmp/redis.yaml
   changed_when: false
 
 - name: Render UE Mapper manifest to a file
@@ -18,5 +27,5 @@
 
 - name: Deploy UE Mapper
   ansible.builtin.command: >
-    kubectl -n {{ core }} apply -f /tmp/ue-mapper.yaml
+    kubectl -n {{ sliceawareness_namespace }} apply -f /tmp/ue-mapper.yaml
   changed_when: false

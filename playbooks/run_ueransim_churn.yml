@@ -287,8 +287,9 @@
     churn_ue_mapper_namespace_effective: >-
       {{
         churn_ue_mapper_namespace
-        | default(hostvars[inventory_hostname].core | default('open5gs'))
+        | default(monitoring_namespace | default('monitoring'))
       }}
+    churn_core_namespace_effective: "{{ hostvars[inventory_hostname].core | default('open5gs') }}"
     churn_ue_mapper_service_effective: "{{ churn_ue_mapper_service | default('ue-mapper-api') }}"
     churn_ue_mapper_local_port_effective: "{{ churn_ue_mapper_local_port | default(18080) }}"
 
@@ -338,13 +339,18 @@
       ansible.builtin.shell: |
         set -e
         export KUBECONFIG="{{ churn_kubeconfig }}"
-        NS="{{ churn_ue_mapper_namespace_effective }}"
-        kubectl -n "$NS" delete deployment/kopf-controller --ignore-not-found=true
-        kubectl -n "$NS" delete deployment/packet-pairer service/packet-pairer-service --ignore-not-found=true
-        kubectl -n "$NS" wait --for=delete pod -l app=kopf-controller --timeout=120s || true
-        kubectl -n "$NS" wait --for=delete pod -l app=packet-pairer --timeout=120s || true
-        if kubectl -n "$NS" get pods -o name | grep -E '/(kopf-controller|packet-pairer)-'; then
-          echo "Controller or packet-pairer pods are still running." >&2
+        SUPPORT_NS="{{ churn_ue_mapper_namespace_effective }}"
+        CORE_NS="{{ churn_core_namespace_effective }}"
+        kubectl -n "$SUPPORT_NS" delete deployment/kopf-controller --ignore-not-found=true
+        kubectl -n "$CORE_NS" delete deployment/packet-pairer service/packet-pairer-service --ignore-not-found=true
+        kubectl -n "$SUPPORT_NS" wait --for=delete pod -l app=kopf-controller --timeout=120s || true
+        kubectl -n "$CORE_NS" wait --for=delete pod -l app=packet-pairer --timeout=120s || true
+        if kubectl -n "$SUPPORT_NS" get pods -o name | grep -E '/kopf-controller-'; then
+          echo "Controller pod is still running." >&2
+          exit 1
+        fi
+        if kubectl -n "$CORE_NS" get pods -o name | grep -E '/packet-pairer-'; then
+          echo "Packet-pairer pod is still running." >&2
           exit 1
         fi
       args:
@@ -355,7 +361,7 @@
       ansible.builtin.shell: |
         set -e
         export KUBECONFIG="{{ churn_kubeconfig }}"
-        NS="{{ churn_ue_mapper_namespace_effective }}"
+        NS="{{ churn_core_namespace_effective }}"
         stale="$(kubectl -n "$NS" get pods -o json | python3 -c '
         import json
         import sys
@@ -385,7 +391,7 @@
           environment:
             KUBECONFIG: "{{ churn_kubeconfig }}"
       vars:
-        core: "{{ churn_ue_mapper_namespace_effective }}"
+        sliceawareness_namespace: "{{ churn_ue_mapper_namespace_effective }}"
       when: churn_require_ue_mapper_ready | bool
 
     - name: Wait for Redis and UE mapper
@@ -407,7 +413,7 @@
           environment:
             KUBECONFIG: "{{ churn_kubeconfig }}"
       vars:
-        core: "{{ churn_ue_mapper_namespace_effective }}"
+        core: "{{ churn_core_namespace_effective }}"
         redis_host: "redis.{{ churn_ue_mapper_namespace_effective }}.svc.cluster.local"
       when: churn_require_ue_mapper_ready | bool
 
@@ -418,7 +424,7 @@
           environment:
             KUBECONFIG: "{{ churn_kubeconfig }}"
       vars:
-        core: "{{ churn_ue_mapper_namespace_effective }}"
+        core: "{{ churn_core_namespace_effective }}"
         redis_host: "redis.{{ churn_ue_mapper_namespace_effective }}.svc.cluster.local"
       when: churn_require_ue_mapper_ready | bool
 
@@ -426,7 +432,7 @@
       ansible.builtin.shell: |
         set -e
         export KUBECONFIG="{{ churn_kubeconfig }}"
-        NS="{{ churn_ue_mapper_namespace_effective }}"
+        NS="{{ churn_core_namespace_effective }}"
         INVENTORY="$(kubectl -n "$NS" get pods \
           -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.ephemeralContainers[*]}{.name}{" "}{end}{"\n"}{end}')"
         printf '%s\n' "$INVENTORY"
@@ -442,7 +448,7 @@
       ansible.builtin.shell: |
         set -u
         export KUBECONFIG="{{ churn_kubeconfig }}"
-        NS="{{ churn_ue_mapper_namespace_effective }}"
+        NS="{{ churn_core_namespace_effective }}"
         OUT="/tmp/{{ churn_run_id }}_sniffer_network_stats.txt"
         : > "$OUT"
         {
@@ -1114,7 +1120,7 @@
       ansible.builtin.shell: |
         set -u
         export KUBECONFIG="{{ churn_kubeconfig }}"
-        NS="{{ churn_ue_mapper_namespace_effective }}"
+        NS="{{ churn_core_namespace_effective }}"
         OUT="/tmp/{{ churn_run_id }}_sniffer_network_stats.txt"
         {
           echo

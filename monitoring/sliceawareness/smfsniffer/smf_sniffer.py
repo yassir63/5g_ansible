@@ -17,7 +17,7 @@ if not interface:
         print("❌ Error: No interface provided. Set smf_sniffer_iface or pass as argument.")
         sys.exit(1)
 
-redis_host = os.getenv("REDIS_HOST", "redis.open5gs.svc.cluster.local")
+redis_host = os.getenv("REDIS_HOST", "redis.monitoring.svc.cluster.local")
 print(f"🔗 Connecting to Redis at {redis_host}:6379...")
 rdb = redis.Redis(host=redis_host, port=6379, decode_responses=True)
 
@@ -797,4 +797,3 @@ if __name__ == "__main__":
 
 # if __name__ == "__main__":
 #     main()
-

@@ -1,4 +1,6 @@
 core_ns: open5gs
+monitoring_namespace: monitoring
+controller_namespace: "{{ monitoring_namespace | default('monitoring') }}"
 # core_type: open5gs
 
 kopf_image: "r2labuser/kopf-controller:2026w10"
@@ -9,7 +11,7 @@ exporter_port: "9100"
 exporter_path: "/latency"
 
 ue_mapper_limit: "2000"
-ue_mapper_url: ""      # optional override
+ue_mapper_url: "http://ue-mapper-api.{{ monitoring_namespace | default('monitoring') }}.svc.cluster.local"
 probe_iface: ""        # optional override
 latency_mode: "BOTH" # CORE | RAN | BOTH
 dry_run: "0"

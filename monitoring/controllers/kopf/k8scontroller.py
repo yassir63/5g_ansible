@@ -11,6 +11,7 @@ import requests
 # -------------------------
 
 CORE_NS = os.getenv("CORE_NS", "default")
+MONITORING_NS = os.getenv("MONITORING_NS", "monitoring")
 
 DEFAULT_IFACE = "n3" if CORE_NS == "open5gs" else "n2"
 PROBE_IFACE = os.getenv("PROBE_IFACE", DEFAULT_IFACE)
@@ -25,7 +26,7 @@ DRY_RUN = int(os.getenv("DRY_RUN", "0"))
 UE_MAPPER_LIMIT = int(os.getenv("UE_MAPPER_LIMIT", "2000"))
 PROBE_IMAGE = os.getenv("PROBE_IMAGE", "r2labuser/ebpf-latency-probe:2026")
 
-DEFAULT_UE_MAPPER_URL = f"http://ue-mapper-api.{CORE_NS}.svc.cluster.local"
+DEFAULT_UE_MAPPER_URL = f"http://ue-mapper-api.{MONITORING_NS}.svc.cluster.local"
 UE_MAPPER_URL = os.getenv("UE_MAPPER_URL", DEFAULT_UE_MAPPER_URL)
 
 @kopf.on.startup()
