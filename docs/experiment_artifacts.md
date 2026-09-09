@@ -33,6 +33,7 @@ Choose an artifact profile:
 ```text
 configs/artifacts/profiles/default_5g_observability.yml
 configs/artifacts/profiles/pod_logs_and_pcaps.yml
+configs/artifacts/profiles/churn_observability.yml
 ```
 
 Edit `scenarios/my_experiment.yml`, then run both files together:
@@ -98,6 +99,38 @@ It includes:
 The `qhat01_ul_qhat03_dl` section enables pcap only for that section. The
 `qhat01_dl_qhat03_ul` section disables the per-section Prometheus split, while
 the full-run Prometheus export remains available.
+
+## UERANSIM Churn As A Generic Experiment
+
+UERANSIM attach/detach churn is also expressed as a generic experiment. The
+shortcut:
+
+```bash
+./deploy.sh --ueransim-churn \
+  --churn-subscribers 200 \
+  --churn-counts "10 50 100 200"
+```
+
+is equivalent to selecting the generic experiment scenario:
+
+```bash
+./deploy.sh \
+  --experiment ueransim_churn \
+  --experiment-artifacts churn_observability \
+  -e "ueransim_churn_counts=10 50 100 200"
+```
+
+During deployment, the shortcut only prepares the churn-capable Open5GS and
+UERANSIM resources. The churn waves then run as the `ueransim_churn` section
+inside `playbooks/run_experiment.yml`. Detailed churn artifacts are written
+under:
+
+```text
+results/experiment-<run_id>/section_logs/ueransim_churn/churn_results/
+```
+
+That directory includes `churn_analysis.ipynb`, churn summaries, UE mapper
+snapshots, optional AMF pcaps, pod logs, and the churn playbook timeline.
 
 ## Scenario Structure
 

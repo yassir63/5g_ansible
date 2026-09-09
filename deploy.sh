@@ -32,7 +32,6 @@ REQUESTED_GENERIC_EXPERIMENT_SCENARIO=""
 REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS=""
 REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED=""
 GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS=""
-CHURN_RUNS_VIA_DEPLOY=false
 MONITORING_AUTO_ENABLED_REASON=""
 
 usage() {
@@ -71,7 +70,7 @@ usage() {
     echo "--validation-mtu-ping-size <bytes>  Override v06 ICMP payload size; 1472 gives a 1500-byte IPv4 packet"
     echo "--with-loki              Keep Grafana Loki enabled with monitoring (default)"
     echo "--no-loki                Disable Grafana Loki log collection"
-    echo "--ueransim-churn         Deploy/run the Open5GS UERANSIM attach/detach churn scenario"
+    echo "--ueransim-churn         Shortcut for --experiment ueransim_churn with churn artifacts"
     echo "--churn-subscribers <n> Number of generated churn subscribers"
     echo "--churn-counts <list>   Space-separated waves, e.g. \"10 50 100 200\""
     echo "--experiment <file|name> Run a generic experiment scenario through playbooks/run_experiment.yml"
@@ -311,7 +310,7 @@ resolve_generic_experiment_scenario_file() {
 
     if [[ -z "$input" ]]; then
       echo "❌ Missing generic experiment scenario. Use --experiment <file|name>." >&2
-      echo "Examples: artifact_smoke_test, push_artifact_final_validation, two_ue_iperf_40m, two_ue_direction_matrix_40m" >&2
+      echo "Examples: artifact_smoke_test, push_artifact_final_validation, two_ue_iperf_40m, two_ue_direction_matrix_40m, ueransim_churn" >&2
       return 1
     fi
 
@@ -439,6 +438,80 @@ enable_monitoring_for_workflow() {
     fi
 }
 
+generic_experiment_is_churn() {
+    [[ "${REQUESTED_EXPERIMENT_MODE:-}" == "ueransim-churn" ]] && return 0
+    [[ "$(basename "${experiment_scenario_file:-}")" == "ueransim_churn.yml" ]]
+}
+
+configure_ueransim_churn_experiment() {
+    if [[ "${core:-}" != "open5gs" || "${ran:-}" != "ueransim" ]]; then
+      echo "❌ UERANSIM churn requires core=open5gs and ran=ueransim."
+      echo "Current selection: core=${core:-unset}, ran=${ran:-unset}"
+      exit 1
+    fi
+
+    scenario="Generic experiment"
+    experiment_display_name="UERANSIM attach/detach churn"
+    requires_iperf_server=false
+    if [[ -z "${experiment_scenario_file:-}" ]]; then
+      experiment_scenario_file="$(resolve_generic_experiment_scenario_file "${DEFAULT_UERANSIM_CHURN_EXPERIMENT}")" || exit 1
+    fi
+
+    if [[ "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED:-true}" == false ]]; then
+      experiment_artifacts_enabled=false
+      experiment_artifacts_file=""
+    else
+      experiment_artifacts_enabled=true
+      experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-$DEFAULT_UERANSIM_CHURN_ARTIFACTS}")" || exit 1
+    fi
+
+    if [[ "${experiment_artifacts_enabled}" == true ]]; then
+      enable_monitoring_for_workflow "UERANSIM churn overhead collection"
+    fi
+
+    echo "UERANSIM churn selected as a generic experiment."
+    echo "Scenario file: ${experiment_scenario_file}"
+    if [[ "${experiment_artifacts_enabled}" == true && -n "${experiment_artifacts_file:-}" ]]; then
+      echo "Artifact profile: ${experiment_artifacts_file}"
+    elif [[ "${experiment_artifacts_enabled}" == true ]]; then
+      echo "Artifact profile: none (scenario/default collection settings only)"
+    else
+      echo "Artifact collection: disabled"
+    fi
+}
+
+add_ueransim_churn_deploy_vars() {
+    extra_var_defined "open5gs_repo_url_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_url_override=${DEFAULT_UERANSIM_CHURN_REPO_URL}")
+    extra_var_defined "open5gs_repo_branch_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_branch_override=${DEFAULT_UERANSIM_CHURN_REPO_BRANCH}")
+    extra_var_defined "ueransim_deploy_mode" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_deploy_mode=churn")
+    extra_var_defined "ueransim_churn_initial_replicas" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_initial_replicas=0")
+    extra_var_defined "ueransim_run_churn_after_deploy" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_run_churn_after_deploy=false")
+    extra_var_defined "ueransim_churn_subscribers" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_subscribers=${REQUESTED_CHURN_SUBSCRIBERS:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}")
+}
+
+add_ueransim_churn_runtime_vars() {
+    if [[ "${experiment_artifacts_enabled:-true}" == true ]]; then
+      extra_var_defined "churn_capture_amf_pcap" || ANSIBLE_EXTRA_ARGS+=(-e "churn_capture_amf_pcap=true")
+    else
+      extra_var_defined "churn_require_monitoring_ready" || ANSIBLE_EXTRA_ARGS+=(-e "churn_require_monitoring_ready=false")
+      extra_var_defined "churn_require_ue_mapper_ready" || ANSIBLE_EXTRA_ARGS+=(-e "churn_require_ue_mapper_ready=false")
+      extra_var_defined "churn_collect_prometheus" || ANSIBLE_EXTRA_ARGS+=(-e "churn_collect_prometheus=false")
+      extra_var_defined "churn_collect_pod_logs" || ANSIBLE_EXTRA_ARGS+=(-e "churn_collect_pod_logs=false")
+      extra_var_defined "churn_collect_ue_mapper_api" || ANSIBLE_EXTRA_ARGS+=(-e "churn_collect_ue_mapper_api=false")
+      extra_var_defined "churn_collect_ue_mapper_samples" || ANSIBLE_EXTRA_ARGS+=(-e "churn_collect_ue_mapper_samples=false")
+      extra_var_defined "churn_capture_amf_pcap" || ANSIBLE_EXTRA_ARGS+=(-e "churn_capture_amf_pcap=false")
+    fi
+    if [[ -n "${REQUESTED_CHURN_SUBSCRIBERS:-}" ]] && ! extra_var_defined "ueransim_churn_subscribers"; then
+      ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_subscribers=${REQUESTED_CHURN_SUBSCRIBERS}")
+    fi
+    if [[ -n "${REQUESTED_CHURN_COUNTS:-}" ]] && ! extra_var_defined "ueransim_churn_counts"; then
+      ANSIBLE_EXTRA_ARGS+=(-e "{\"ueransim_churn_counts\":\"${REQUESTED_CHURN_COUNTS}\"}")
+    fi
+    if [[ -n "${REQUESTED_PROMETHEUS_URL:-}" ]] && ! extra_var_defined "churn_prometheus_url"; then
+      ANSIBLE_EXTRA_ARGS+=(-e "churn_prometheus_url=${REQUESTED_PROMETHEUS_URL}")
+    fi
+}
+
 inventory_first_group_host() {
     local group="$1"
     awk -v group="$group" '
@@ -495,12 +568,11 @@ init_defaults_and_banner() {
     DEFAULT_PLATFORM="r2lab"
     DEFAULT_RU="n300"
     DEFAULT_LIST_UE="qhat01"
+    DEFAULT_UERANSIM_CHURN_EXPERIMENT="ueransim_churn"
+    DEFAULT_UERANSIM_CHURN_ARTIFACTS="churn_observability"
     DEFAULT_UERANSIM_CHURN_REPO_URL="https://github.com/yassir63/open5gs-k8s.git"
     DEFAULT_UERANSIM_CHURN_REPO_BRANCH="ueransim-churn"
     DEFAULT_UERANSIM_CHURN_SUBSCRIBERS="200"
-    DEFAULT_UERANSIM_CHURN_COUNTS="10 50 100 200"
-    DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS="60"
-    DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS="30"
 
     PROFILE_5G="${PROFILE_5G:-$DEFAULT_PROFILE_5G}"
   
@@ -821,38 +893,8 @@ optional_scenarios() {
     experiment_scenario_file=""
     experiment_artifacts_file=""
     experiment_artifacts_enabled=true
+    experiment_display_name=""
     requires_iperf_server=true
-    ueransim_churn_repo_url="${DEFAULT_UERANSIM_CHURN_REPO_URL}"
-    ueransim_churn_repo_branch="${DEFAULT_UERANSIM_CHURN_REPO_BRANCH}"
-    ueransim_churn_subscribers="${DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}"
-    ueransim_churn_counts="${DEFAULT_UERANSIM_CHURN_COUNTS}"
-    ueransim_churn_settle_seconds="${DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}"
-    ueransim_churn_between_seconds="${DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}"
-
-    if churn_override="$(extra_var_value ueransim_churn_repo_url)"; then
-      ueransim_churn_repo_url="$churn_override"
-    fi
-    if churn_override="$(extra_var_value ueransim_churn_repo_branch)"; then
-      ueransim_churn_repo_branch="$churn_override"
-    fi
-    if churn_override="$(extra_var_value ueransim_churn_subscribers)"; then
-      ueransim_churn_subscribers="$churn_override"
-    fi
-    if churn_override="$(extra_var_value ueransim_churn_counts)"; then
-      ueransim_churn_counts="$churn_override"
-    fi
-    if churn_override="$(extra_var_value ueransim_churn_settle_seconds)"; then
-      ueransim_churn_settle_seconds="$churn_override"
-    fi
-    if churn_override="$(extra_var_value ueransim_churn_between_seconds)"; then
-      ueransim_churn_between_seconds="$churn_override"
-    fi
-    if [[ -n "${REQUESTED_CHURN_SUBSCRIBERS:-}" ]]; then
-      ueransim_churn_subscribers="$REQUESTED_CHURN_SUBSCRIBERS"
-    fi
-    if [[ -n "${REQUESTED_CHURN_COUNTS:-}" ]]; then
-      ueransim_churn_counts="$REQUESTED_CHURN_COUNTS"
-    fi
 
     TCP_PAPER_UES=("qhat01" "qhat02" "qhat03")
     TCP_PAPER_SCENARIOS=(
@@ -884,10 +926,13 @@ optional_scenarios() {
           scenario="Generic experiment"
           requires_iperf_server=false
           experiment_scenario_file="$(resolve_generic_experiment_scenario_file "$REQUESTED_GENERIC_EXPERIMENT_SCENARIO")" || exit 1
-          if [[ "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED:-true}" == false ]]; then
+          if generic_experiment_is_churn; then
+            configure_ueransim_churn_experiment
+          elif [[ "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED:-true}" == false ]]; then
             experiment_artifacts_enabled=false
             experiment_artifacts_file=""
           else
+            experiment_artifacts_enabled=true
             experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-default_5g_observability}")" || exit 1
           fi
           if [[ "$SKIP_INPUTS" != true ]]; then
@@ -1000,36 +1045,7 @@ optional_scenarios() {
           ;;
 
         "ueransim-churn")
-          if [[ "$core" != "open5gs" || "$ran" != "ueransim" ]]; then
-            echo "❌ UERANSIM churn requires core=open5gs and ran=ueransim."
-            exit 1
-          fi
-          scenario="UERANSIM attach/detach churn"
-          requires_iperf_server=false
-          enable_monitoring_for_workflow "UERANSIM churn overhead collection"
-          if [[ ! "$ueransim_churn_subscribers" =~ ^[0-9]+$ || "$ueransim_churn_subscribers" -lt 1 ]]; then
-            echo "❌ Invalid churn subscriber count: $ueransim_churn_subscribers"
-            exit 1
-          fi
-          if [[ ! "$ueransim_churn_counts" =~ ^[0-9]+([[:space:]]+[0-9]+)*$ ]]; then
-            echo "❌ Invalid churn counts: $ueransim_churn_counts"
-            exit 1
-          fi
-          churn_max_count=0
-          for churn_count in $ueransim_churn_counts; do
-            if (( churn_count > churn_max_count )); then
-              churn_max_count="$churn_count"
-            fi
-          done
-          if (( churn_max_count > ueransim_churn_subscribers )); then
-            echo "❌ Largest churn wave (${churn_max_count}) exceeds generated subscribers (${ueransim_churn_subscribers})."
-            exit 1
-          fi
-          echo "UERANSIM churn selected."
-          echo "Monitoring node: ${monitor_node}"
-          echo "Kopf controller, packet-pairer, and eBPF latency probes: disabled"
-          echo "Subscribers: ${ueransim_churn_subscribers}"
-          echo "Attach counts: ${ueransim_churn_counts}"
+          configure_ueransim_churn_experiment
           ;;
 
         *)
@@ -1069,14 +1085,9 @@ validation_mtu_ping_size_override="${REQUESTED_VALIDATION_MTU_PING_SIZE:-${VALID
 experiment_scenario_file="$experiment_scenario_file"
 experiment_artifacts_file="$experiment_artifacts_file"
 experiment_artifacts_enabled="$experiment_artifacts_enabled"
+experiment_display_name="$experiment_display_name"
 generic_experiment_default_section_seconds="$GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS"
 requires_iperf_server="$requires_iperf_server"
-ueransim_churn_repo_url="$ueransim_churn_repo_url"
-ueransim_churn_repo_branch="$ueransim_churn_repo_branch"
-ueransim_churn_subscribers="$ueransim_churn_subscribers"
-ueransim_churn_counts="$ueransim_churn_counts"
-ueransim_churn_settle_seconds="$ueransim_churn_settle_seconds"
-ueransim_churn_between_seconds="$ueransim_churn_between_seconds"
 EOF
       return
     fi
@@ -1138,19 +1149,25 @@ EOF
           echo "  artifact_smoke_test"
           echo "  two_ue_iperf_40m"
           echo "  two_ue_direction_matrix_40m"
+          echo "  ueransim_churn"
           read -rp "Experiment scenario file or example name [default: artifact_smoke_test]: " experiment_scenario_input
           experiment_scenario_file="$(resolve_generic_experiment_scenario_file "${experiment_scenario_input:-artifact_smoke_test}")" || exit 1
-          read -rp "Collect artifacts after the experiment? [Y/n]: " experiment_artifacts_choice
-          if [[ "$experiment_artifacts_choice" =~ ^[Nn]$ ]]; then
-            experiment_artifacts_enabled=false
-            experiment_artifacts_file=""
+          if generic_experiment_is_churn; then
+            configure_ueransim_churn_experiment
           else
-            experiment_artifacts_enabled=true
-            echo "Artifact profiles:"
-            echo "  default_5g_observability"
-            echo "  pod_logs_and_pcaps"
-            read -rp "Artifact profile file or name [default: default_5g_observability; use none for scenario/default collection settings only]: " experiment_artifacts_input
-            experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${experiment_artifacts_input:-default_5g_observability}")" || exit 1
+            read -rp "Collect artifacts after the experiment? [Y/n]: " experiment_artifacts_choice
+            if [[ "$experiment_artifacts_choice" =~ ^[Nn]$ ]]; then
+              experiment_artifacts_enabled=false
+              experiment_artifacts_file=""
+            else
+              experiment_artifacts_enabled=true
+              echo "Artifact profiles:"
+              echo "  default_5g_observability"
+              echo "  pod_logs_and_pcaps"
+              echo "  churn_observability"
+              read -rp "Artifact profile file or name [default: default_5g_observability; use none for scenario/default collection settings only]: " experiment_artifacts_input
+              experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${experiment_artifacts_input:-default_5g_observability}")" || exit 1
+            fi
           fi
           prompt_generic_default_section_seconds_if_needed
           if [[ "${experiment_artifacts_enabled}" == true ]]; then
@@ -1319,67 +1336,8 @@ EOF
 	            fi
 	          fi
 	          DEFAULT_IPERF_SERVER_NODE="sopnode-w3"
-	        elif [[ "$scenario" == "UERANSIM attach/detach churn" ]]; then
-	          requires_iperf_server=false
-	          echo ""
-	          echo "UERANSIM churn selected."
-	          echo "This will deploy Open5GS from ${DEFAULT_UERANSIM_CHURN_REPO_URL} branch ${DEFAULT_UERANSIM_CHURN_REPO_BRANCH}"
-	          echo "and run attach/detach waves against the ueransim-ue-churn StatefulSet."
-	          echo "Each UE container pauses immediately before nr-ue, then the full wave is released as one attach burst."
-	          echo "It will collect Prometheus CPU/memory overhead, pod logs, and UE-mapper API snapshots."
-	          echo "Kopf controller, packet-pairer, and eBPF latency probes are disabled for churn."
-	          echo ""
-
-	          if [[ "${monitoring_enabled:-false}" != true || -z "${monitor_node:-}" ]]; then
-	            echo "UERANSIM churn overhead needs a monitoring node for Prometheus/cAdvisor."
-	          fi
-	          enable_monitoring_for_workflow "UERANSIM churn overhead collection"
-
-	          read -rp "Number of churn subscribers to create [default: ${DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}]: " churn_subscribers_input
-	          ueransim_churn_subscribers="${churn_subscribers_input:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}"
-	          if [[ ! "$ueransim_churn_subscribers" =~ ^[0-9]+$ || "$ueransim_churn_subscribers" -lt 1 ]]; then
-	            echo "❌ Invalid churn subscriber count: $ueransim_churn_subscribers"
-	            exit 1
-	          fi
-
-	          read -rp "UE attach counts to test [default: ${DEFAULT_UERANSIM_CHURN_COUNTS}]: " churn_counts_input
-	          ueransim_churn_counts="${churn_counts_input:-$DEFAULT_UERANSIM_CHURN_COUNTS}"
-	          if [[ ! "$ueransim_churn_counts" =~ ^[0-9[:space:]]+$ ]]; then
-	            echo "❌ Invalid churn counts: $ueransim_churn_counts"
-	            exit 1
-	          fi
-
-	          read -rp "Seconds to hold each attached wave [default: ${DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}]: " churn_settle_input
-	          ueransim_churn_settle_seconds="${churn_settle_input:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}"
-	          if [[ ! "$ueransim_churn_settle_seconds" =~ ^[0-9]+$ ]]; then
-	            echo "❌ Invalid settle seconds: $ueransim_churn_settle_seconds"
-	            exit 1
-	          fi
-
-	          read -rp "Seconds to wait between waves after detach [default: ${DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}]: " churn_between_input
-	          ueransim_churn_between_seconds="${churn_between_input:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}"
-	          if [[ ! "$ueransim_churn_between_seconds" =~ ^[0-9]+$ ]]; then
-	            echo "❌ Invalid between-wave seconds: $ueransim_churn_between_seconds"
-	            exit 1
-	          fi
-
-	          churn_max_count=0
-	          for churn_count in $ueransim_churn_counts; do
-	            if (( churn_count > churn_max_count )); then
-	              churn_max_count="$churn_count"
-	            fi
-	          done
-	          if (( churn_max_count > ueransim_churn_subscribers )); then
-	            echo "❌ Largest churn wave (${churn_max_count}) exceeds generated subscribers (${ueransim_churn_subscribers})."
-	            exit 1
-	          fi
-
-	          echo ""
-	          echo "Confirmed UERANSIM churn configuration:"
-	          echo "  Subscribers: ${ueransim_churn_subscribers}"
-	          echo "  Attach waves: ${ueransim_churn_counts}"
-	          echo "  Hold each wave: ${ueransim_churn_settle_seconds}s"
-	          echo "  Wait after detach: ${ueransim_churn_between_seconds}s"
+        elif [[ "$scenario" == "UERANSIM attach/detach churn" ]]; then
+          configure_ueransim_churn_experiment
 	        else
 	          DEFAULT_IPERF_SERVER_NODE=${core_node}
 	        fi
@@ -1434,14 +1392,9 @@ validation_mtu_ping_size_override="$validation_mtu_ping_size_override"
 experiment_scenario_file="$experiment_scenario_file"
 experiment_artifacts_file="$experiment_artifacts_file"
 experiment_artifacts_enabled="$experiment_artifacts_enabled"
+experiment_display_name="$experiment_display_name"
 generic_experiment_default_section_seconds="$GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS"
 requires_iperf_server="$requires_iperf_server"
-ueransim_churn_repo_url="$ueransim_churn_repo_url"
-ueransim_churn_repo_branch="$ueransim_churn_repo_branch"
-ueransim_churn_subscribers="$ueransim_churn_subscribers"
-ueransim_churn_counts="$ueransim_churn_counts"
-ueransim_churn_settle_seconds="$ueransim_churn_settle_seconds"
-ueransim_churn_between_seconds="$ueransim_churn_between_seconds"
 EOF
 }
 
@@ -1591,12 +1544,12 @@ print_summary() {
       echo "  NOISE_BANDWIDTH: $NOISE_BANDWIDTH"
     fi
 	    if [[ "${run_scenario}" == true ]]; then
-	      if [[ "$scenario" == "UERANSIM attach/detach churn" ]]; then
+	      if [[ "$scenario" == "Generic experiment" || "$scenario" == "TCP paper scenarios" || "$scenario" == "Latency validation pipeline" ]]; then
 	        echo "Scenario:    enabled"
 	      else
 	        echo "Iperf Test: enabled"
 	      fi
-	      echo "  Scenario: $scenario"
+	      echo "  Scenario: ${experiment_display_name:-$scenario}"
       case "$scenario" in
         "$SCENARIO_R2LAB")
           echo "Will run iperf in a sequential way on ${R2LAB_UES[0]} for 30 seconds in downlink then uplink (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
@@ -1614,7 +1567,11 @@ print_summary() {
           [[ -n "${paper_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${paper_prometheus_url}"
         ;;
         "Generic experiment")
-          echo "Will run generic experiment through playbooks/run_experiment.yml."
+          if [[ -n "${experiment_display_name:-}" ]]; then
+            echo "Will run ${experiment_display_name} through playbooks/run_experiment.yml."
+          else
+            echo "Will run generic experiment through playbooks/run_experiment.yml."
+          fi
           echo "  Scenario file: ${experiment_scenario_file:-unset}"
           if [[ "${experiment_artifacts_enabled:-true}" == true && -n "${experiment_artifacts_file:-}" ]]; then
             echo "  Artifact profile: ${experiment_artifacts_file}"
@@ -1641,18 +1598,6 @@ print_summary() {
         ;;
         "$SCENARIO_R2LAB_PING")
           echo "Will run ping from each UE individually (${R2LAB_UES[0]}), and then all UEs simultaneously.  Each test lasts 30s (use the ping_duration and ping_sleep ansible parameters to change the default values (in s))"
-	        ;;
-	        "UERANSIM attach/detach churn")
-	          echo "Will deploy UERANSIM churn from ${ueransim_churn_repo_url:-$DEFAULT_UERANSIM_CHURN_REPO_URL} branch ${ueransim_churn_repo_branch:-$DEFAULT_UERANSIM_CHURN_REPO_BRANCH}."
-	          if [[ "$START_SCENARIO" == true ]]; then
-	            echo "Will run attach/detach waves during deploy with counts: ${ueransim_churn_counts:-$DEFAULT_UERANSIM_CHURN_COUNTS}."
-	          else
-	            echo "Will configure churn deployment; attach/detach waves are not auto-started."
-	          fi
-	          echo "Attach mode: synchronized nr-ue launch after every UE container reaches the shared start gate."
-	          echo "Subscribers: ${ueransim_churn_subscribers:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}"
-	          echo "Kopf controller, packet-pairer, and eBPF latency probes: disabled"
-	          echo "Settle seconds: ${ueransim_churn_settle_seconds:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}; between waves: ${ueransim_churn_between_seconds:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}"
 	        ;;
 	      esac
 	      if [[ "${requires_iperf_server:-true}" == true ]]; then
@@ -2082,25 +2027,8 @@ deploy() {
       ANSIBLE_EXTRA_ARGS+=(-e "monitoring_loki_enabled=${monitoring_loki_enabled:-true}")
     fi
 
-    if [[ "${scenario:-}" == "UERANSIM attach/detach churn" ]]; then
-      extra_var_defined "open5gs_repo_url_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_url_override=${ueransim_churn_repo_url:-$DEFAULT_UERANSIM_CHURN_REPO_URL}")
-      extra_var_defined "open5gs_repo_branch_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_branch_override=${ueransim_churn_repo_branch:-$DEFAULT_UERANSIM_CHURN_REPO_BRANCH}")
-      ANSIBLE_EXTRA_ARGS+=(-e "ueransim_deploy_mode=churn")
-      ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_initial_replicas=0")
-      extra_var_defined "churn_capture_amf_pcap" || ANSIBLE_EXTRA_ARGS+=(-e "churn_capture_amf_pcap=true")
-      extra_var_defined "ueransim_churn_subscribers" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_subscribers=${ueransim_churn_subscribers:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}")
-      extra_var_defined "ueransim_churn_counts" || ANSIBLE_EXTRA_ARGS+=(
-        -e "{\"ueransim_churn_counts\":\"${ueransim_churn_counts:-$DEFAULT_UERANSIM_CHURN_COUNTS}\"}"
-      )
-      extra_var_defined "ueransim_churn_settle_seconds" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_settle_seconds=${ueransim_churn_settle_seconds:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}")
-      extra_var_defined "ueransim_churn_between_seconds" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_between_seconds=${ueransim_churn_between_seconds:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}")
-      if [[ "$START_SCENARIO" == true ]]; then
-        ANSIBLE_EXTRA_ARGS+=(-e "ueransim_run_churn_after_deploy=true")
-        CHURN_RUNS_VIA_DEPLOY=true
-      else
-        ANSIBLE_EXTRA_ARGS+=(-e "ueransim_run_churn_after_deploy=false")
-        CHURN_RUNS_VIA_DEPLOY=false
-      fi
+    if generic_experiment_is_churn; then
+      add_ueransim_churn_deploy_vars
     fi
 
     echo "Launching deployment..."
@@ -2205,17 +2133,6 @@ run_scenario() {
 	      ANSIBLE_EXTRA_ARGS+=(-e "validation_mtu_ping_size=${REQUESTED_VALIDATION_MTU_PING_SIZE}")
 	    fi
 
-	    if [[ "${scenario:-}" == "UERANSIM attach/detach churn" ]]; then
-	      ANSIBLE_EXTRA_ARGS+=(-e "ueransim_deploy_mode=churn")
-	      extra_var_defined "churn_capture_amf_pcap" || ANSIBLE_EXTRA_ARGS+=(-e "churn_capture_amf_pcap=true")
-	      extra_var_defined "ueransim_churn_subscribers" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_subscribers=${ueransim_churn_subscribers:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}")
-	      extra_var_defined "ueransim_churn_counts" || ANSIBLE_EXTRA_ARGS+=(
-	        -e "{\"ueransim_churn_counts\":\"${ueransim_churn_counts:-$DEFAULT_UERANSIM_CHURN_COUNTS}\"}"
-	      )
-	      extra_var_defined "ueransim_churn_settle_seconds" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_settle_seconds=${ueransim_churn_settle_seconds:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS}")
-	      extra_var_defined "ueransim_churn_between_seconds" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_between_seconds=${ueransim_churn_between_seconds:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS}")
-	    fi
-
     if [[ -n "${REQUESTED_EXPERIMENT_MODE:-}" ]]; then
       run_scenario=true
       iperf_server_node="${REQUESTED_TARGET_SERVER:-${iperf_server_node:-sopnode-w3}}"
@@ -2241,7 +2158,7 @@ run_scenario() {
           fi
           ;;
         "ueransim-churn")
-          scenario="UERANSIM attach/detach churn"
+          configure_ueransim_churn_experiment
           ;;
       esac
     fi
@@ -2273,6 +2190,9 @@ run_scenario() {
             scenario_status=$?
             ;;
           "Generic experiment")
+            if generic_experiment_is_churn; then
+              add_ueransim_churn_runtime_vars
+            fi
             GENERIC_EXPERIMENT_ARGS=(-e "experiment_scenario_file=${experiment_scenario_file}")
             if [[ "${experiment_artifacts_enabled:-true}" == true && -n "${experiment_artifacts_file:-}" ]]; then
               GENERIC_EXPERIMENT_ARGS+=(-e "experiment_artifacts_file=${experiment_artifacts_file}")
@@ -2326,21 +2246,6 @@ run_scenario() {
             run_cmd ./run_scenario.sh --ping --inventory="${NAME_INVENTORY}" \
               "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee ${DIR_LOGS}/logs-scenario_ping.txt
 	            ;;
-	          "UERANSIM attach/detach churn")
-	            if [[ "$SCENARIO_ONLY" != true && "$CHURN_RUNS_VIA_DEPLOY" == true ]]; then
-	              echo "UERANSIM churn already ran from deploy.yml because it was selected in deploy.sh."
-	              scenario_status=0
-	            else
-	              churn_console_log="${TMPDIR:-/tmp}/5g_ansible_logs/logs-scenario_ueransim-churn.txt"
-	              mkdir -p "$(dirname "$churn_console_log")"
-	              echo "UERANSIM churn console log: ${churn_console_log}"
-	              run_logged_cmd "$churn_console_log" \
-	                ansible-playbook -i "$INVENTORY" \
-	                "${ANSIBLE_EXTRA_ARGS[@]}" \
-	                playbooks/run_ueransim_churn.yml
-	              scenario_status=$?
-	            fi
-	            ;;
 	          *)
 	            echo "❌ Unknown scenario: $scenario"
 	            exit 1
@@ -2385,9 +2290,6 @@ run_scenario() {
 	          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  add: -e validation_tcp_bitrate=${validation_tcp_bitrate_override}"
 	          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  add: -e validation_mtu_ping_size=${validation_mtu_ping_size_override}"
 	          [[ -n "${validation_prometheus_url:-}" ]] && echo "  add: -e validation_prometheus_url=${validation_prometheus_url}"
-	        elif [[ "$scenario" == "UERANSIM attach/detach churn" ]]; then
-	          echo "Just launch:"
-	          echo "ansible-playbook -i ${INVENTORY} -e fiveg_profile=${PROFILE_5G} -e ueransim_deploy_mode=churn -e \"ueransim_churn_counts=${ueransim_churn_counts:-$DEFAULT_UERANSIM_CHURN_COUNTS}\" -e ueransim_churn_settle_seconds=${ueransim_churn_settle_seconds:-$DEFAULT_UERANSIM_CHURN_SETTLE_SECONDS} -e ueransim_churn_between_seconds=${ueransim_churn_between_seconds:-$DEFAULT_UERANSIM_CHURN_BETWEEN_SECONDS} playbooks/run_ueransim_churn.yml"
 	        else
 	          echo "Just launch ./run_scenario.sh to start it !"
 	        fi

@@ -52,6 +52,34 @@
         churn_kubeconfig: "{{ churn_kubeconfig | default('/etc/kubernetes/admin.conf') }}"
         churn_start_epoch: "{{ lookup('pipe', 'date +%s') }}"
 
+    - name: Validate churn subscriber count
+      ansible.builtin.assert:
+        that:
+          - (ueransim_churn_subscribers | default(100) | string) is regex('^[0-9]+$')
+          - (ueransim_churn_subscribers | default(100) | int) >= 1
+        fail_msg: "Invalid ueransim_churn_subscribers={{ ueransim_churn_subscribers | default(100) }}. Use a positive integer."
+
+    - name: Validate churn attach count syntax
+      ansible.builtin.assert:
+        that:
+          - (ueransim_churn_counts | default('10 25 50') | string | trim) is regex('^[0-9]+(\\s+[0-9]+)*$')
+        fail_msg: "Invalid ueransim_churn_counts={{ ueransim_churn_counts | default('10 25 50') }}. Use space-separated positive integers, for example '10 50 100'."
+
+    - name: Parse churn attach counts
+      ansible.builtin.set_fact:
+        churn_attach_counts_list: "{{ (ueransim_churn_counts | default('10 25 50') | string).split() | map('int') | list }}"
+
+    - name: Validate churn attach counts fit generated subscribers
+      ansible.builtin.assert:
+        that:
+          - churn_attach_counts_list | length > 0
+          - (churn_attach_counts_list | min) >= 1
+          - (churn_attach_counts_list | max) <= (ueransim_churn_subscribers | default(100) | int)
+        fail_msg: >-
+          Invalid UERANSIM churn sizing: subscribers={{ ueransim_churn_subscribers | default(100) }},
+          counts={{ ueransim_churn_counts | default('10 25 50') }}. Counts must be positive
+          integers and the largest wave must not exceed generated subscribers.
+
     - name: Check local result quota before starting churn
       ansible.builtin.shell: |
         set -u
@@ -1800,6 +1828,17 @@
       changed_when: true
       failed_when: false
 
+    - name: Create UERANSIM churn analysis notebook
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/validation/create_ueransim_churn_notebook.py"
+          - "--results-dir"
+          - "{{ churn_results_dir }}"
+      register: churn_notebook_output
+      changed_when: true
+      failed_when: false
+
     - name: Write UERANSIM churn README
       ansible.builtin.copy:
         dest: "{{ churn_results_dir }}/README.md"
@@ -1821,6 +1860,7 @@
           - `churn_stage_correlation.csv`: per-wave, per-IMSI evidence from AMF, SMF, both sniffers, and the mapper.
           - `churn_stage_summary.csv`: checkpoint totals for each attach wave.
           - `churn_diagnosis.md/json`: first missing pipeline stage for every incomplete IMSI.
+          - `churn_analysis.ipynb`: compact notebook for timeline, mapper-count, stage-correlation, and overhead inspection.
           - `pcaps/amf_*_{{ hostvars['localhost'].churn_amf_pcap_iface }}.pcap`: optional raw AMF packet captures gathered during churn when `churn_capture_amf_pcap=true`.
           - `pcaps/amf_*_{{ hostvars['localhost'].churn_amf_pcap_iface }}.log`: capture-tool logs paired with those AMF pcaps.
           - `sniffer_network_stats.txt`: before/after interface and packet-socket counters from every AMF/SMF sniffer.
@@ -1843,6 +1883,7 @@
           - "UE mapper inventory samples: {{ churn_results_dir }}/ue_mapper_inventory_samples.csv"
           - "UE mapper inventory counts: {{ churn_results_dir }}/ue_mapper_inventory_counts.csv"
           - "Churn stage diagnosis: {{ churn_results_dir }}/churn_diagnosis.md"
+          - "Churn analysis notebook: {{ churn_results_dir }}/churn_analysis.ipynb"
           - "AMF pcaps: {{ churn_results_dir }}/pcaps"
           - "Pod logs: {{ churn_results_dir }}/pod_logs.tgz"
           - "Timeline recap: {{ churn_results_dir }}/timeline_summary.md"

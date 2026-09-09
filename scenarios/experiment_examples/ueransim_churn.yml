@@ -1,0 +1,30 @@
+---
+name: ueransim_churn
+title: UERANSIM attach/detach churn
+timezone: Europe/Paris
+
+sections:
+  - name: ueransim_churn
+    title: Run UERANSIM attach/detach churn playbook
+    runner:
+      type: playbook
+      file: playbooks/run_ueransim_churn.yml
+      extra_vars:
+        fiveg_profile: "{{ fiveg_profile | default('default') }}"
+        churn_run_id: "{{ experiment_run_id }}"
+        churn_results_dir: "{{ experiment_results_dir }}/section_logs/ueransim_churn/churn_results"
+        churn_local_timezone: "{{ experiment_local_timezone | default('Europe/Paris') }}"
+        churn_require_monitoring_ready: "{{ churn_require_monitoring_ready | default(true) }}"
+        churn_require_ue_mapper_ready: "{{ churn_require_ue_mapper_ready | default(true) }}"
+        churn_collect_prometheus: "{{ churn_collect_prometheus | default(true) }}"
+        churn_collect_pod_logs: "{{ churn_collect_pod_logs | default(true) }}"
+        churn_collect_ue_mapper_api: "{{ churn_collect_ue_mapper_api | default(true) }}"
+        churn_collect_ue_mapper_samples: "{{ churn_collect_ue_mapper_samples | default(true) }}"
+        churn_prometheus_url: "{{ churn_prometheus_url | default(experiment_prometheus_url | default('')) }}"
+        churn_prometheus_step: "{{ churn_prometheus_step | default('1s') }}"
+        churn_prometheus_queries_json: "{{ playbook_dir }}/../scripts/validation/ueransim_churn_prometheus_queries.json"
+        ueransim_churn_subscribers: "{{ ueransim_churn_subscribers | default(100) }}"
+        ueransim_churn_counts: "{{ ueransim_churn_counts | default('10 25 50') }}"
+        ueransim_churn_settle_seconds: "{{ ueransim_churn_settle_seconds | default(60) }}"
+        ueransim_churn_between_seconds: "{{ ueransim_churn_between_seconds | default(30) }}"
+        churn_capture_amf_pcap: "{{ churn_capture_amf_pcap | default(true) }}"
