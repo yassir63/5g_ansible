@@ -304,13 +304,139 @@ append_cli_extra_vars() {
     done
 }
 
+list_generic_experiment_names() {
+    local file base
+    for file in scenarios/experiment_examples/*.yml; do
+      [[ -f "$file" ]] || continue
+      base="${file##*/}"
+      printf '%s\n' "${base%.yml}"
+    done | sort
+}
+
+list_generic_artifact_profile_names() {
+    local file base
+    for file in configs/artifacts/profiles/*.yml; do
+      [[ -f "$file" ]] || continue
+      base="${file##*/}"
+      printf '%s\n' "${base%.yml}"
+    done | sort
+}
+
+default_generic_experiment_name() {
+    if [[ -f scenarios/experiment_examples/uesim_artifact_validation.yml ]]; then
+      printf '%s' "uesim_artifact_validation"
+      return 0
+    fi
+    list_generic_experiment_names | head -n 1
+}
+
+default_generic_artifact_profile_name() {
+    if [[ -f configs/artifacts/profiles/default_5g_observability.yml ]]; then
+      printf '%s' "default_5g_observability"
+      return 0
+    fi
+    list_generic_artifact_profile_names | head -n 1
+}
+
+print_generic_experiment_examples() {
+    local example
+    while IFS= read -r example; do
+      [[ -n "$example" ]] && echo "  ${example}"
+    done < <(list_generic_experiment_names)
+}
+
+print_generic_artifact_profiles() {
+    local profile
+    while IFS= read -r profile; do
+      [[ -n "$profile" ]] && echo "  ${profile}"
+    done < <(list_generic_artifact_profile_names)
+}
+
+choose_generic_experiment_scenario() {
+    local examples=()
+    local default_name input selected i
+
+    while IFS= read -r input; do
+      [[ -n "$input" ]] && examples+=("$input")
+    done < <(list_generic_experiment_names)
+
+    default_name="$(default_generic_experiment_name)"
+    if [[ -z "$default_name" ]]; then
+      echo "No example YAML files were found in scenarios/experiment_examples." >&2
+      read -rp "Experiment scenario file or example name: " selected
+      resolve_generic_experiment_scenario_file "$selected"
+      return $?
+    fi
+
+    echo "Experiment examples:" >&2
+    for i in "${!examples[@]}"; do
+      if [[ "${examples[$i]}" == "$default_name" ]]; then
+        echo "  $((i + 1))) ${examples[$i]} (default)" >&2
+      else
+        echo "  $((i + 1))) ${examples[$i]}" >&2
+      fi
+    done
+
+    read -rp "Experiment scenario [default: ${default_name}; enter number, name, or path]: " input
+    if [[ -z "$input" ]]; then
+      selected="$default_name"
+    elif [[ "$input" =~ ^[0-9]+$ && "$input" -ge 1 && "$input" -le "${#examples[@]}" ]]; then
+      selected="${examples[$((input - 1))]}"
+    else
+      selected="$input"
+    fi
+
+    resolve_generic_experiment_scenario_file "$selected"
+}
+
+choose_generic_artifact_profile() {
+    local profiles=()
+    local default_name input selected i
+
+    while IFS= read -r input; do
+      [[ -n "$input" ]] && profiles+=("$input")
+    done < <(list_generic_artifact_profile_names)
+
+    default_name="$(default_generic_artifact_profile_name)"
+    if [[ -z "$default_name" ]]; then
+      echo "No artifact profile YAML files were found in configs/artifacts/profiles." >&2
+      read -rp "Artifact profile [default: none; enter path/name or none]: " input
+      resolve_generic_experiment_artifacts_file "${input:-none}"
+      return $?
+    fi
+
+    echo "Artifact profiles:" >&2
+    echo "  0) none (use scenario/default collection settings only)" >&2
+    for i in "${!profiles[@]}"; do
+      if [[ "${profiles[$i]}" == "$default_name" ]]; then
+        echo "  $((i + 1))) ${profiles[$i]} (default)" >&2
+      else
+        echo "  $((i + 1))) ${profiles[$i]}" >&2
+      fi
+    done
+
+    read -rp "Artifact profile [default: ${default_name}; enter number, name, path, or none]: " input
+    if [[ -z "$input" ]]; then
+      selected="$default_name"
+    elif [[ "$input" == "0" || "$input" == "none" || "$input" == "false" ]]; then
+      selected="none"
+    elif [[ "$input" =~ ^[0-9]+$ && "$input" -ge 1 && "$input" -le "${#profiles[@]}" ]]; then
+      selected="${profiles[$((input - 1))]}"
+    else
+      selected="$input"
+    fi
+
+    resolve_generic_experiment_artifacts_file "$selected"
+}
+
 resolve_generic_experiment_scenario_file() {
     local input="${1:-}"
     local candidate=""
 
     if [[ -z "$input" ]]; then
       echo "❌ Missing generic experiment scenario. Use --experiment <file|name>." >&2
-      echo "Examples: uesim_artifact_validation, two_ue_iperf_40m, two_ue_direction_matrix_40m, ueransim_churn" >&2
+      echo "Examples:" >&2
+      print_generic_experiment_examples >&2
       return 1
     fi
 
@@ -337,8 +463,12 @@ resolve_generic_experiment_scenario_file() {
 }
 
 resolve_generic_experiment_artifacts_file() {
-    local input="${1:-default_5g_observability}"
+    local input="${1:-}"
     local candidate=""
+
+    if [[ -z "$input" ]]; then
+      input="$(default_generic_artifact_profile_name)"
+    fi
 
     if [[ -z "$input" || "$input" == "none" || "$input" == "false" ]]; then
       printf ''
@@ -358,6 +488,8 @@ resolve_generic_experiment_artifacts_file() {
 
     echo "❌ Generic experiment artifact profile not found: $input" >&2
     echo "Tried: $input and configs/artifacts/profiles/${input}.yml" >&2
+    echo "Profiles:" >&2
+    print_generic_artifact_profiles >&2
     return 1
 }
 
@@ -933,7 +1065,7 @@ optional_scenarios() {
             experiment_artifacts_file=""
           else
             experiment_artifacts_enabled=true
-            experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-default_5g_observability}")" || exit 1
+            experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-}")" || exit 1
           fi
           if [[ "$SKIP_INPUTS" != true ]]; then
             prompt_generic_default_section_seconds_if_needed
@@ -1145,13 +1277,7 @@ EOF
           echo ""
           echo "Generic experiment selected."
           echo "This runs your experiment YAML through deploy.sh, then optionally collects artifacts."
-          echo "Available example names:"
-          echo "  uesim_artifact_validation"
-          echo "  two_ue_iperf_40m"
-          echo "  two_ue_direction_matrix_40m"
-          echo "  ueransim_churn"
-          read -rp "Experiment scenario file or example name [default: uesim_artifact_validation]: " experiment_scenario_input
-          experiment_scenario_file="$(resolve_generic_experiment_scenario_file "${experiment_scenario_input:-uesim_artifact_validation}")" || exit 1
+          experiment_scenario_file="$(choose_generic_experiment_scenario)" || exit 1
           if generic_experiment_is_churn; then
             configure_ueransim_churn_experiment
           else
@@ -1161,12 +1287,7 @@ EOF
               experiment_artifacts_file=""
             else
               experiment_artifacts_enabled=true
-              echo "Artifact profiles:"
-              echo "  default_5g_observability"
-              echo "  pod_logs_and_pcaps"
-              echo "  churn_observability"
-              read -rp "Artifact profile file or name [default: default_5g_observability; use none for scenario/default collection settings only]: " experiment_artifacts_input
-              experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${experiment_artifacts_input:-default_5g_observability}")" || exit 1
+              experiment_artifacts_file="$(choose_generic_artifact_profile)" || exit 1
             fi
           fi
           prompt_generic_default_section_seconds_if_needed
@@ -2154,7 +2275,7 @@ run_scenario() {
             experiment_artifacts_file=""
           else
             experiment_artifacts_enabled=true
-            experiment_artifacts_file="${experiment_artifacts_file:-$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-default_5g_observability}")}" || exit 1
+            experiment_artifacts_file="${experiment_artifacts_file:-$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-}")}" || exit 1
           fi
           ;;
         "ueransim-churn")
@@ -2275,9 +2396,9 @@ run_scenario() {
         elif [[ "$scenario" == "Generic experiment" ]]; then
           echo "Just launch through deploy.sh:"
           if [[ "${experiment_artifacts_enabled:-true}" == true ]]; then
-            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-uesim_artifact_validation} --experiment-artifacts ${experiment_artifacts_file:-default_5g_observability}"
+            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-$(default_generic_experiment_name)} --experiment-artifacts ${experiment_artifacts_file:-$(default_generic_artifact_profile_name)}"
           else
-            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-uesim_artifact_validation} --no-experiment-artifacts"
+            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-$(default_generic_experiment_name)} --no-experiment-artifacts"
           fi
           [[ -n "${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}" ]] && echo "  add: -e experiment_default_section_seconds=${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}"
           [[ -n "${REQUESTED_TARGET_SERVER:-}" ]] && echo "  add: --target-server ${REQUESTED_TARGET_SERVER}"
