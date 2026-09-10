@@ -129,8 +129,8 @@ under:
 results/experiment-<run_id>/section_logs/ueransim_churn/churn_results/
 ```
 
-That directory includes `churn_analysis.ipynb`, churn summaries, UE mapper
-snapshots, optional AMF pcaps, pod logs, and the churn playbook timeline.
+That directory includes churn summaries, UE mapper snapshots, optional AMF
+pcaps, pod logs, and the churn playbook timeline.
 
 ## Scenario Structure
 

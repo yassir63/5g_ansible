@@ -1828,17 +1828,6 @@
       changed_when: true
       failed_when: false
 
-    - name: Create UERANSIM churn analysis notebook
-      ansible.builtin.command:
-        argv:
-          - python3
-          - "{{ playbook_dir }}/../scripts/validation/create_ueransim_churn_notebook.py"
-          - "--results-dir"
-          - "{{ churn_results_dir }}"
-      register: churn_notebook_output
-      changed_when: true
-      failed_when: false
-
     - name: Write UERANSIM churn README
       ansible.builtin.copy:
         dest: "{{ churn_results_dir }}/README.md"
@@ -1860,7 +1849,6 @@
           - `churn_stage_correlation.csv`: per-wave, per-IMSI evidence from AMF, SMF, both sniffers, and the mapper.
           - `churn_stage_summary.csv`: checkpoint totals for each attach wave.
           - `churn_diagnosis.md/json`: first missing pipeline stage for every incomplete IMSI.
-          - `churn_analysis.ipynb`: compact notebook for timeline, mapper-count, stage-correlation, and overhead inspection.
           - `pcaps/amf_*_{{ hostvars['localhost'].churn_amf_pcap_iface }}.pcap`: optional raw AMF packet captures gathered during churn when `churn_capture_amf_pcap=true`.
           - `pcaps/amf_*_{{ hostvars['localhost'].churn_amf_pcap_iface }}.log`: capture-tool logs paired with those AMF pcaps.
           - `sniffer_network_stats.txt`: before/after interface and packet-socket counters from every AMF/SMF sniffer.
@@ -1883,7 +1871,6 @@
           - "UE mapper inventory samples: {{ churn_results_dir }}/ue_mapper_inventory_samples.csv"
           - "UE mapper inventory counts: {{ churn_results_dir }}/ue_mapper_inventory_counts.csv"
           - "Churn stage diagnosis: {{ churn_results_dir }}/churn_diagnosis.md"
-          - "Churn analysis notebook: {{ churn_results_dir }}/churn_analysis.ipynb"
           - "AMF pcaps: {{ churn_results_dir }}/pcaps"
           - "Pod logs: {{ churn_results_dir }}/pod_logs.tgz"
           - "Timeline recap: {{ churn_results_dir }}/timeline_summary.md"
