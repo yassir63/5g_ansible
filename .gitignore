@@ -4,8 +4,9 @@ logs*
 .deployment.env
 .kubeadm_join_command.txt
 admin.conf
-inventory/default/hosts.ini
-results
+inventory/*/hosts.ini
+results/
+results/**
 include
 .DS_Store
 __pycache__/
