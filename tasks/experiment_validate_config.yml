@@ -1,0 +1,152 @@
+---
+- name: Validate experiment effective sections are a list
+  ansible.builtin.assert:
+    that:
+      - experiment_sections_effective is sequence
+      - experiment_sections_effective is not string
+      - experiment_sections_effective is not mapping
+    fail_msg: "experiment sections must be a YAML list."
+
+- name: Validate experiment section schema
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.name is defined
+      - item.name is string
+      - item.name | length > 0
+      - item.title is not defined or item.title is string
+      - item.runner is not defined or item.runner is mapping
+      - item.collect is not defined or item.collect is mapping
+      - item.artifacts is not defined or item.artifacts is mapping
+      - item.pcap is not defined or item.pcap is mapping
+      - (item.runner.type | default('pause')) in ['command', 'playbook', 'tasks', 'pause']
+    fail_msg: >-
+      Invalid experiment section schema for section={{ item.name | default(item) }}.
+      Each section needs a non-empty name and runner.type must be one of
+      command, playbook, tasks, or pause.
+  loop: "{{ experiment_sections_effective }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+
+- name: Validate experiment section names are unique
+  ansible.builtin.assert:
+    that:
+      - experiment_section_names_for_validation | length == (experiment_section_names_for_validation | unique | list | length)
+    fail_msg: >-
+      Experiment section names must be unique.
+      Current names: {{ experiment_section_names_for_validation | join(', ') }}
+  vars:
+    experiment_section_names_for_validation: "{{ experiment_sections_effective | map(attribute='name') | list }}"
+
+- name: Validate command runner sections
+  ansible.builtin.assert:
+    that:
+      - item.runner.command is defined
+      - item.runner.command is string
+      - item.runner.command | length > 0
+      - item.runner.chdir is not defined or item.runner.chdir is string
+      - item.runner.host is not defined or item.runner.host is string
+      - item.runner.fetch is not defined or (item.runner.fetch is sequence and item.runner.fetch is not string and item.runner.fetch is not mapping)
+    fail_msg: "Command runner section {{ item.name }} needs runner.command as a non-empty string."
+  loop: "{{ experiment_sections_effective }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when: item.runner.type | default('pause') == 'command'
+
+- name: Validate playbook and task runner sections
+  ansible.builtin.assert:
+    that:
+      - item.runner.file is defined
+      - item.runner.file is string
+      - item.runner.file | length > 0
+      - item.runner.chdir is not defined or item.runner.chdir is string
+      - item.runner.extra_vars is not defined or item.runner.extra_vars is mapping
+      - item.runner.vars is not defined or item.runner.vars is mapping
+      - item.runner.fetch is not defined or (item.runner.fetch is sequence and item.runner.fetch is not string and item.runner.fetch is not mapping)
+    fail_msg: "Runner section {{ item.name }} needs runner.file as a non-empty string."
+  loop: "{{ experiment_sections_effective }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when: (item.runner.type | default('pause')) in ['playbook', 'tasks']
+
+- name: Validate pause runner sections
+  ansible.builtin.assert:
+    that:
+      - (item.runner.seconds | default(item.seconds | default(0)) | int) >= 0
+    fail_msg: "Pause section {{ item.name }} needs a non-negative runner.seconds value."
+  loop: "{{ experiment_sections_effective }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when: item.runner.type | default('pause') == 'pause'
+
+- name: Validate collect block schema
+  ansible.builtin.assert:
+    that:
+      - experiment_collect_config is mapping
+      - experiment_collect_config.prometheus is not defined or experiment_collect_config.prometheus is mapping or experiment_collect_config.prometheus is boolean
+      - experiment_collect_config.pod_logs is not defined or experiment_collect_config.pod_logs is mapping or experiment_collect_config.pod_logs is boolean
+      - experiment_collect_config.pcaps is not defined or experiment_collect_config.pcaps is mapping or experiment_collect_config.pcaps is boolean
+    fail_msg: "collect must be a map; collect.prometheus, collect.pod_logs, and collect.pcaps must be maps or booleans."
+
+- name: Validate Prometheus collection schema
+  ansible.builtin.assert:
+    that:
+      - experiment_collect_config.prometheus.enabled is not defined or experiment_collect_config.prometheus.enabled is boolean
+      - experiment_collect_config.prometheus.url is not defined or experiment_collect_config.prometheus.url is string
+      - experiment_collect_config.prometheus.step is not defined or experiment_collect_config.prometheus.step is string
+      - experiment_collect_config.prometheus.queries_file is not defined or experiment_collect_config.prometheus.queries_file is string
+      - experiment_collect_config.prometheus.discover_metrics_regex is not defined or experiment_collect_config.prometheus.discover_metrics_regex is string
+      - experiment_collect_config.prometheus.discover_metrics_limit is not defined or (experiment_collect_config.prometheus.discover_metrics_limit | int) >= 0
+      - experiment_collect_config.prometheus.padding_seconds is not defined or (experiment_collect_config.prometheus.padding_seconds | int) >= 0
+    fail_msg: "collect.prometheus has an invalid schema."
+  when: experiment_collect_config.prometheus | default({}) is mapping
+
+- name: Validate pod log collection schema
+  ansible.builtin.assert:
+    that:
+      - experiment_collect_config.pod_logs.enabled is not defined or experiment_collect_config.pod_logs.enabled is boolean
+      - experiment_collect_config.pod_logs.control_host is not defined or experiment_collect_config.pod_logs.control_host is string
+      - experiment_collect_config.pod_logs.namespaces is not defined or experiment_collect_config.pod_logs.namespaces is string or (experiment_collect_config.pod_logs.namespaces is sequence and experiment_collect_config.pod_logs.namespaces is not mapping)
+      - experiment_collect_config.pod_logs.since is not defined or experiment_collect_config.pod_logs.since is string
+      - experiment_collect_config.pod_logs.tail_lines is not defined or (experiment_collect_config.pod_logs.tail_lines | int) >= 0
+      - experiment_collect_config.pod_logs.include_previous is not defined or experiment_collect_config.pod_logs.include_previous is boolean
+    fail_msg: "collect.pod_logs has an invalid schema."
+  when: experiment_collect_config.pod_logs | default({}) is mapping
+
+- name: Validate pcap block schema
+  ansible.builtin.assert:
+    that:
+      - experiment_pcap_config is mapping
+      - experiment_pcap_capture_seconds | int >= 0
+      - experiment_pcap_snaplen | int > 0
+      - experiment_pcap_interface is string
+      - experiment_pcap_pod_interface is string
+      - experiment_pcap_filter is string
+      - experiment_pcap_targets is sequence
+      - experiment_pcap_targets is not string
+      - experiment_pcap_targets is not mapping
+    fail_msg: "pcap must be a map and pcap.targets must be a YAML list when provided."
+
+- name: Validate pcap target schema
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.name is defined
+      - item.name is string
+      - item.name | length > 0
+      - item.type is not defined or item.type in ['host', 'pod']
+      - (item.type | default('host')) != 'host' or (item.host is defined and item.host is string and item.host | length > 0)
+      - (item.type | default('host')) != 'pod' or (item.namespace is defined and item.namespace is string and item.namespace | length > 0)
+      - item.interface is not defined or item.interface is string
+      - item.filter is not defined or item.filter is string
+      - item.capture_seconds is not defined or (item.capture_seconds | int) >= 0
+      - item.snaplen is not defined or (item.snaplen | int) > 0
+      - item.pod_regex is not defined or item.pod_regex is string
+      - item.name_regex is not defined or item.name_regex is string
+      - item.container_regex is not defined or item.container_regex is string
+    fail_msg: >-
+      Invalid pcap target schema for target={{ item.name | default(item) }}.
+      Host targets need name and host. Pod targets need name and namespace.
+  loop: "{{ experiment_pcap_targets }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"

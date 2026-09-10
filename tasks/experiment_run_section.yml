@@ -34,6 +34,40 @@
       }}
     experiment_pcap_targets_effective: "{{ experiment_section_pcap_config.targets | default((experiment_section_artifacts_config.pcap | default({})).targets | default(experiment_pcap_targets)) }}"
 
+- name: Validate section pcap target list
+  ansible.builtin.assert:
+    that:
+      - experiment_pcap_targets_effective is sequence
+      - experiment_pcap_targets_effective is not string
+      - experiment_pcap_targets_effective is not mapping
+    fail_msg: "Section {{ experiment_section_name }} pcap targets must be a YAML list."
+  when: experiment_pcap_enabled_effective | bool
+
+- name: Validate section pcap target schema
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.name is defined
+      - item.name is string
+      - item.name | length > 0
+      - item.type is not defined or item.type in ['host', 'pod']
+      - (item.type | default('host')) != 'host' or (item.host is defined and item.host is string and item.host | length > 0)
+      - (item.type | default('host')) != 'pod' or (item.namespace is defined and item.namespace is string and item.namespace | length > 0)
+      - item.interface is not defined or item.interface is string
+      - item.filter is not defined or item.filter is string
+      - item.capture_seconds is not defined or (item.capture_seconds | int) >= 0
+      - item.snaplen is not defined or (item.snaplen | int) > 0
+      - item.pod_regex is not defined or item.pod_regex is string
+      - item.name_regex is not defined or item.name_regex is string
+      - item.container_regex is not defined or item.container_regex is string
+    fail_msg: >-
+      Invalid pcap target schema in section {{ experiment_section_name }}
+      for target={{ item.name | default(item) }}.
+  loop: "{{ experiment_pcap_targets_effective }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when: experiment_pcap_enabled_effective | bool
+
 - name: Record experiment section start
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
   vars:

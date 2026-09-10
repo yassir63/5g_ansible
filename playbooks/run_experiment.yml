@@ -54,6 +54,19 @@
         experiment_collect_config: "{{ experiment_scenario.collect | default({}) }}"
         experiment_pcap_config: "{{ experiment_scenario.pcap | default({}) }}"
 
+    - name: Validate experiment root schema
+      ansible.builtin.assert:
+        that:
+          - experiment_scenario_source is mapping
+          - experiment_artifacts is not defined or experiment_artifacts is mapping
+          - experiment_scenario is mapping
+          - experiment_collect_config is mapping
+          - experiment_pcap_config is mapping
+          - experiment_scenario.sections is not defined or (experiment_scenario.sections is sequence and experiment_scenario.sections is not string and experiment_scenario.sections is not mapping)
+        fail_msg: >-
+          Invalid generic experiment YAML schema. Scenario and artifact files must be YAML maps,
+          collect/pcap must be maps, and sections must be a YAML list when provided.
+
     - name: Resolve experiment collection file paths
       ansible.builtin.set_fact:
         experiment_prometheus_queries_json: >-
@@ -196,6 +209,64 @@
               else 'localhost'
             )
           }}
+
+    - name: Validate experiment schema after defaults
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_validate_config.yml"
+
+    - name: Show generic experiment dry-run preview
+      ansible.builtin.debug:
+        msg:
+          dry_run: true
+          summary: "Resolved configuration only; no deployment, sections, commands, pcaps, pod logs, or Prometheus export will run."
+          run:
+            run_id: "{{ experiment_run_id }}"
+            name: "{{ experiment_name }}"
+            title: "{{ experiment_title }}"
+            timezone: "{{ experiment_local_timezone }}"
+            results_dir_if_executed: "{{ experiment_results_dir }}"
+          inputs:
+            scenario_file: "{{ experiment_scenario_file }}"
+            scenario_file_resolved: "{{ experiment_scenario_file_resolved }}"
+            artifacts_file: "{{ experiment_artifacts_file | default('') }}"
+            artifacts_file_resolved: "{{ experiment_artifacts_file_resolved | default('') }}"
+          collection:
+            enabled: "{{ experiment_collect_enabled | bool }}"
+            prometheus:
+              enabled: "{{ experiment_collect_prometheus | bool }}"
+              url: "{{ experiment_prometheus_url }}"
+              step: "{{ experiment_prometheus_step }}"
+              queries_file: "{{ experiment_prometheus_queries_json }}"
+              discover_metrics_regex: "{{ experiment_discover_metrics_regex }}"
+              discover_metrics_limit: "{{ experiment_discover_metrics_limit }}"
+            pod_logs:
+              enabled: "{{ experiment_collect_pod_logs | bool }}"
+              control_host: "{{ experiment_pod_log_control_host_effective }}"
+              namespaces: "{{ experiment_pod_log_namespaces }}"
+              since: "{{ experiment_pod_log_since }}"
+              tail_lines: "{{ experiment_pod_log_tail_lines }}"
+              include_previous: "{{ experiment_pod_log_include_previous | bool }}"
+            pcaps:
+              enabled: "{{ experiment_collect_pcaps | bool }}"
+              capture_seconds: "{{ experiment_pcap_capture_seconds }}"
+              strict: "{{ experiment_pcap_strict | bool }}"
+              auto_install_tcpdump: "{{ experiment_pcap_auto_install_tcpdump | bool }}"
+              interface: "{{ experiment_pcap_interface }}"
+              pod_interface: "{{ experiment_pcap_pod_interface }}"
+              filter: "{{ experiment_pcap_filter }}"
+              snaplen: "{{ experiment_pcap_snaplen }}"
+              k8s_control_host: "{{ experiment_pcap_k8s_control_host }}"
+              targets: "{{ experiment_pcap_targets }}"
+            split_by_windows:
+              enabled: "{{ experiment_split_prometheus_by_timeline | bool }}"
+              window_types: "{{ experiment_split_window_types }}"
+              padding_seconds: "{{ experiment_split_padding_seconds }}"
+              compress: "{{ experiment_split_compress | bool }}"
+          sections: "{{ experiment_sections_effective }}"
+      when: experiment_dry_run | default(false) | bool
+
+    - name: Stop before executing generic experiment dry run
+      ansible.builtin.meta: end_play
+      when: experiment_dry_run | default(false) | bool
 
     - name: Create experiment results directory
       ansible.builtin.file:

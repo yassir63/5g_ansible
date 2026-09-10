@@ -62,6 +62,34 @@ smoke-test scenario:
 It creates three short section windows and writes the command section output
 under `section_logs/local_command/`.
 
+Preview the merged experiment/artifact configuration without deploying or
+running traffic:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment uesim_artifact_validation \
+  --experiment-artifacts default_5g_observability \
+  --duration 60 \
+  --dry-run-experiment
+```
+
+This loads the scenario YAML, merges the artifact profile, validates the
+schema, prints the resolved sections and collection settings, then stops before
+creating results, running sections, starting pcaps, collecting pod logs, or
+exporting Prometheus.
+
+The same schema validation runs before every real generic experiment. It checks
+the structure the runner depends on:
+
+- scenario and artifact files must be YAML maps;
+- `sections` must be a list when present;
+- each section needs a unique non-empty `name`;
+- `runner.type` must be `command`, `playbook`, `tasks`, or `pause`;
+- command runners need `runner.command`;
+- playbook/task runners need `runner.file`;
+- collection blocks must be maps or booleans where supported;
+- pcap targets must be valid host or pod targets.
+
 For a real traffic example, run `qhat01` and `qhat03` uplink/downlink TCP iperf
 at 40 Mb/s:
 

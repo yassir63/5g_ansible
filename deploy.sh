@@ -31,6 +31,7 @@ REQUESTED_CHURN_COUNTS=""
 REQUESTED_GENERIC_EXPERIMENT_SCENARIO=""
 REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS=""
 REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED=""
+REQUESTED_GENERIC_EXPERIMENT_DRY_RUN=false
 GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS=""
 MONITORING_AUTO_ENABLED_REASON=""
 
@@ -79,6 +80,8 @@ usage() {
     echo "                         Artifact profile for --experiment; names resolve from configs/artifacts/profiles/<name>.yml"
     echo "--no-experiment-artifacts"
     echo "                         Run --experiment with only timeline/section logs, no Prometheus/pod-log/pcap collection"
+    echo "--dry-run-experiment"
+    echo "                         Preview the merged generic experiment/artifact config and stop before running anything"
     echo "-h, --help               Show help"
 }
 
@@ -157,6 +160,10 @@ parse_args() {
         
         --dry-run)
           DRY_RUN=true
+          ;;
+
+        --dry-run-experiment)
+          REQUESTED_GENERIC_EXPERIMENT_DRY_RUN=true
           ;;
         
         -r|--no-reservation)
@@ -1693,6 +1700,9 @@ print_summary() {
           else
             echo "Will run generic experiment through playbooks/run_experiment.yml."
           fi
+          if [[ "${REQUESTED_GENERIC_EXPERIMENT_DRY_RUN:-false}" == true ]]; then
+            echo "  Dry run: enabled, so deployment, traffic, artifact collection, and remote changes are skipped."
+          fi
           echo "  Scenario file: ${experiment_scenario_file:-unset}"
           if [[ "${experiment_artifacts_enabled:-true}" == true && -n "${experiment_artifacts_file:-}" ]]; then
             echo "  Artifact profile: ${experiment_artifacts_file}"
@@ -2327,6 +2337,9 @@ run_scenario() {
             if [[ -n "${REQUESTED_TARGET_SERVER:-${iperf_server_node:-}}" ]]; then
               GENERIC_EXPERIMENT_ARGS+=(-e "target_server_host=${REQUESTED_TARGET_SERVER:-${iperf_server_node}}")
             fi
+            if [[ "${REQUESTED_GENERIC_EXPERIMENT_DRY_RUN:-false}" == true ]]; then
+              GENERIC_EXPERIMENT_ARGS+=(-e "experiment_dry_run=true")
+            fi
             run_logged_cmd "${DIR_LOGS}/logs-scenario_generic-experiment.txt" \
               ansible-playbook -i "$INVENTORY" \
               "${ANSIBLE_EXTRA_ARGS[@]}" \
@@ -2513,17 +2526,27 @@ else
   print_summary
   generate_inventory
 fi
-assert_monitoring_inventory_ready
-reserve_nodes
-reserve_r2lab
-if [[ "$SCENARIO_ONLY" == true ]]; then
-  echo "Scenario-only mode selected: skipping reservation and deployment."
+if [[ "${REQUESTED_GENERIC_EXPERIMENT_DRY_RUN:-false}" == true && "${scenario:-}" != "Generic experiment" && "${REQUESTED_EXPERIMENT_MODE:-}" != "generic-experiment" ]]; then
+  echo "❌ --dry-run-experiment is only valid with the Generic experiment workflow."
+  exit 1
+fi
+if [[ "${REQUESTED_GENERIC_EXPERIMENT_DRY_RUN:-false}" == true ]]; then
+  echo "Generic experiment dry-run selected: skipping reservation and deployment."
 else
-  deploy
+  assert_monitoring_inventory_ready
+  reserve_nodes
+  reserve_r2lab
+  if [[ "$SCENARIO_ONLY" == true ]]; then
+    echo "Scenario-only mode selected: skipping reservation and deployment."
+  else
+    deploy
+  fi
 fi
 SCENARIO_STATUS=0
 run_scenario || SCENARIO_STATUS=$?
-show_access_info
+if [[ "${REQUESTED_GENERIC_EXPERIMENT_DRY_RUN:-false}" != true ]]; then
+  show_access_info
+fi
 
 if [[ "$SCENARIO_STATUS" -ne 0 ]]; then
   echo "❌ Finished with scenario failure."
