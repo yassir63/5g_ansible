@@ -74,7 +74,7 @@ Or run the small smoke-test scenario to verify the artifact layout:
 
 ```bash
 ./deploy.sh -n --scenario-only \
-  --experiment artifact_smoke_test \
+  --experiment uesim_artifact_validation \
   --experiment-artifacts default_5g_observability
 ```
 
@@ -84,7 +84,7 @@ profile. For non-interactive runs without artifact collection, use:
 
 ```bash
 ./deploy.sh -n --scenario-only \
-  --experiment artifact_smoke_test \
+  --experiment uesim_artifact_validation \
   --no-experiment-artifacts
 ```
 

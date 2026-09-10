@@ -1,6 +1,6 @@
 ---
-name: push_artifact_final_validation
-title: Artifact final validation with RFSIM uplink, command, and downlink
+name: uesim_artifact_validation
+title: UESIM artifact validation with RFSIM uplink, command, and downlink
 timezone: Europe/Paris
 
 sections:

@@ -55,7 +55,7 @@ smoke-test scenario:
 
 ```bash
 ./deploy.sh -n --scenario-only \
-  --experiment artifact_smoke_test \
+  --experiment uesim_artifact_validation \
   --experiment-artifacts default_5g_observability
 ```
 

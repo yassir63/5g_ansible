@@ -310,7 +310,7 @@ resolve_generic_experiment_scenario_file() {
 
     if [[ -z "$input" ]]; then
       echo "❌ Missing generic experiment scenario. Use --experiment <file|name>." >&2
-      echo "Examples: artifact_smoke_test, push_artifact_final_validation, two_ue_iperf_40m, two_ue_direction_matrix_40m, ueransim_churn" >&2
+      echo "Examples: uesim_artifact_validation, two_ue_iperf_40m, two_ue_direction_matrix_40m, ueransim_churn" >&2
       return 1
     fi
 
@@ -1146,12 +1146,12 @@ EOF
           echo "Generic experiment selected."
           echo "This runs your experiment YAML through deploy.sh, then optionally collects artifacts."
           echo "Available example names:"
-          echo "  artifact_smoke_test"
+          echo "  uesim_artifact_validation"
           echo "  two_ue_iperf_40m"
           echo "  two_ue_direction_matrix_40m"
           echo "  ueransim_churn"
-          read -rp "Experiment scenario file or example name [default: artifact_smoke_test]: " experiment_scenario_input
-          experiment_scenario_file="$(resolve_generic_experiment_scenario_file "${experiment_scenario_input:-artifact_smoke_test}")" || exit 1
+          read -rp "Experiment scenario file or example name [default: uesim_artifact_validation]: " experiment_scenario_input
+          experiment_scenario_file="$(resolve_generic_experiment_scenario_file "${experiment_scenario_input:-uesim_artifact_validation}")" || exit 1
           if generic_experiment_is_churn; then
             configure_ueransim_churn_experiment
           else
@@ -2275,9 +2275,9 @@ run_scenario() {
         elif [[ "$scenario" == "Generic experiment" ]]; then
           echo "Just launch through deploy.sh:"
           if [[ "${experiment_artifacts_enabled:-true}" == true ]]; then
-            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-artifact_smoke_test} --experiment-artifacts ${experiment_artifacts_file:-default_5g_observability}"
+            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-uesim_artifact_validation} --experiment-artifacts ${experiment_artifacts_file:-default_5g_observability}"
           else
-            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-artifact_smoke_test} --no-experiment-artifacts"
+            echo "./deploy.sh -n --scenario-only --experiment ${experiment_scenario_file:-uesim_artifact_validation} --no-experiment-artifacts"
           fi
           [[ -n "${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}" ]] && echo "  add: -e experiment_default_section_seconds=${GENERIC_EXPERIMENT_DEFAULT_SECTION_SECONDS:-${generic_experiment_default_section_seconds:-}}"
           [[ -n "${REQUESTED_TARGET_SERVER:-}" ]] && echo "  add: --target-server ${REQUESTED_TARGET_SERVER}"
