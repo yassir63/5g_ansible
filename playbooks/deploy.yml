@@ -168,7 +168,7 @@
 
 
 
-- name: Deploy lightweight Prometheus/Grafana monitoring
+- name: Deploy Prometheus/Grafana monitoring
   hosts: monitor_node
   roles:
     - role: monitoring/prometheus_grafana
@@ -512,7 +512,7 @@
         - core != 'oai'
 
 
-- name: Deploy lightweight monitoring KPI calculators
+- name: Deploy monitoring KPI calculators
   hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
   gather_facts: false
   roles:

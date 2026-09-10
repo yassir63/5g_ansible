@@ -21,7 +21,7 @@ cd 5g_ansible
 ./deploy.sh
 ```
 
-This script helps you interactively configure a 5G deployment scenario by allowing you to choose the type of core network, the type of RAN, a lightweight Prometheus/Grafana monitoring stack, and an optional test scenario once the deployment is completed. It also allows you to select the servers on which the 5G pods will run, or to choose the default ones. This will generate a reservation for server(s) such as  `sopnode-f1`, `sopnode-f2`, `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
+This script helps you interactively configure a 5G deployment scenario by allowing you to choose the type of core network, the type of RAN, a Prometheus/Grafana monitoring stack, and an optional test scenario once the deployment is completed. It also allows you to select the servers on which the 5G pods will run, or to choose the default ones. This will generate a reservation for server(s) such as  `sopnode-f1`, `sopnode-f2`, `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
 
 
 This script will first attempt to reserve the servers and possibly the 5G RAN nodes you selected for your 5G deployment. Then it will :
@@ -30,7 +30,7 @@ This script will first attempt to reserve the servers and possibly the 5G RAN no
 - Install all required packages on the server(s).
 - Set up a Kubernetes cluster across the nodes.
 - Deploy a 5G Core Network (CN). Currently 3 options are possible : Free5GC, OAI or Open5GS. 
-- Optionally deploy a lightweight Prometheus/Grafana monitoring stack with UE-mapper, sniffer, controller, and KPI exporter components for Open5GS core throughput and OAI RAN metrics.
+- Optionally deploy a Prometheus/Grafana monitoring stack with UE-mapper, sniffer, controller, and KPI exporter components for Open5GS core throughput and OAI RAN metrics.
 - Deploy a 5G Radio Access network (RAN). Currently, 3 options are possible : OAI, srsRAN and UERANSIM. OAI and srsRAN supports both real 5G network devices in the R2lab testbed and emulation mode while UERANSIM is a pure 5G RAN emulation system. In case the R2lab platform is selected, a specific R2lab playbook will run in parallel to configure the R2lab resources: RRU, UEs and FIT R2lab nodes.
 - Optionally deploy a test scenario at the end of the deployment, see more details below.
 
@@ -41,7 +41,7 @@ This repo **5g_ansible** [sopnode/5g_ansible](https://github.com/sopnode/5g_ansi
 - **OAI OpenAirInterface Core and RAN** : [sopnode/oai5g-rru](https://github.com/sopnode/oai5g-rru) and [charts](https://gitlab.eurecom.fr/turletti/charts) that leverage [oai/cn5g/oai-cn5g-fed](https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed) and [openairinterface5G](https://gitlab.eurecom.fr/oai/openairinterface5g)
 - **Free5gc Core** : [sopnode/free5gc-helm](https://github.com/sopnode/free5gc-helm), forked from [free5gc/free5gc-helm](https://github.com/free5gc/free5gc-helm)
 - **srsran-helm** : [turletti/srsan-helm](https://github.com/turletti/srsran-helm), forked from [Ziyad-Mabrouk/srsran-helm](https://github.com/Ziyad-Mabrouk/srsran-helm)
-- **Prometheus/Grafana monitoring references** : the lightweight monitoring values are based on useful Prometheus/Grafana patterns from upstream 5G monitoring work. The deployment keeps only the local monitoring, UE-mapper, sniffer, controller, and KPI exporter pieces needed for derived metrics such as `slice_throughput`, `mac_throughput`, `number_ues`, and `saturation_percentage`.
+- **Prometheus/Grafana monitoring references** : the monitoring values are based on useful Prometheus/Grafana patterns from upstream 5G monitoring work. The deployment keeps only the local monitoring, UE-mapper, sniffer, controller, and KPI exporter pieces needed for derived metrics such as `slice_throughput`, `mac_throughput`, `number_ues`, and `saturation_percentage`.
 
 ---
 
@@ -383,7 +383,7 @@ After deployment, instructions will be printed to your terminal with the SSH com
 
 ## Data Persistence
 
-The lightweight Prometheus/Grafana stack uses persistent storage when monitoring persistence is enabled. Prometheus, Grafana, Loki, and Promtail are deployed in the `monitoring` namespace. Prometheus, Grafana, and Loki are exposed with familiar NodePorts:
+The Prometheus/Grafana stack uses persistent storage when monitoring persistence is enabled. Prometheus, Grafana, Loki, and Promtail are deployed in the `monitoring` namespace. Prometheus, Grafana, and Loki are exposed with familiar NodePorts:
 
 - Prometheus: `30095`
 - Grafana: `32005`
@@ -414,7 +414,7 @@ monitoring_loki_dashboard_enabled: true
 
 The `monitoring_loki_sniffer_file_scrape_enabled` fallback makes Promtail mount `/var/log/pods` from each host and tail `*sniffer*` container logs directly. This is useful for AMF/SMF sniffers injected as ephemeral containers, because Kubernetes `kubectl logs` may show them even when normal Promtail pod discovery does not.
 
-When `monitoring_enabled=true`, the deployment also applies a lightweight KPI layer:
+When `monitoring_enabled=true`, the deployment also applies a KPI layer:
 
 - Open5GS metric services for AMF/SMF/UPF and the Open5GS KPI calculator image, restoring `slice_throughput`.
 - OAI gNB metric services and the OAI KPI calculator from the `with_data_persistance_for_sopnodes` branch, restoring `mac_throughput`, `number_ues`, and `saturation_percentage` from the OAI log-parser metrics.

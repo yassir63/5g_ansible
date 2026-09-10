@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reconstruct TCP ACK RTT samples from GTP-U pcaps.
 
-This is a lightweight validation helper. It shells out to tshark when present,
+This helper shells out to tshark when present,
 extracts inner TCP fields from GTP-U packets, and matches TCP data packets to
 the reverse ACK carrying the expected cumulative ACK number.
 """

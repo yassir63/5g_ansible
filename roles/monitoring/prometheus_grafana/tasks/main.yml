@@ -1,5 +1,5 @@
 ---
-- name: START_LIGHTWEIGHT_MONITORING_DEPLOY
+- name: START_MONITORING_DEPLOY
   ansible.builtin.meta: noop
 
 - name: Ensure monitoring namespace exists
@@ -14,14 +14,14 @@
 - name: Render Grafana dashboard ConfigMap
   ansible.builtin.template:
     src: monitoring-dashboard-configmap.yml.j2
-    dest: /tmp/lightweight-monitoring-grafana-dashboard.yml
+    dest: /tmp/monitoring-grafana-dashboard.yml
     mode: "0644"
   when: >
     (monitoring_grafana_dashboard_enabled | bool)
     or (monitoring_loki_enabled | bool and monitoring_loki_dashboard_enabled | bool)
 
 - name: Install Grafana dashboard ConfigMap
-  ansible.builtin.command: kubectl apply -f /tmp/lightweight-monitoring-grafana-dashboard.yml
+  ansible.builtin.command: kubectl apply -f /tmp/monitoring-grafana-dashboard.yml
   register: monitoring_grafana_dashboard_apply
   changed_when: "'created' in monitoring_grafana_dashboard_apply.stdout or 'configured' in monitoring_grafana_dashboard_apply.stdout"
   when: >
@@ -130,19 +130,19 @@
 - name: Render kube-prometheus-stack values
   ansible.builtin.template:
     src: kube-prometheus-stack-values.yml.j2
-    dest: /tmp/lightweight-monitoring-prometheus-values.yml
+    dest: /tmp/monitoring-prometheus-values.yml
     mode: "0644"
 
 - name: Render Grafana values
   ansible.builtin.template:
     src: grafana-values.yml.j2
-    dest: /tmp/lightweight-monitoring-grafana-values.yml
+    dest: /tmp/monitoring-grafana-values.yml
     mode: "0644"
 
 - name: Render Loki stack values
   ansible.builtin.template:
     src: loki-stack-values.yml.j2
-    dest: /tmp/lightweight-monitoring-loki-values.yml
+    dest: /tmp/monitoring-loki-values.yml
     mode: "0644"
   when: monitoring_loki_enabled | bool
 
@@ -160,7 +160,7 @@
   ansible.builtin.command: helm repo update
   changed_when: false
 
-- name: Install lightweight Prometheus stack
+- name: Install Prometheus stack
   kubernetes.core.helm:
     name: "{{ monitoring_prometheus_stack_release }}"
     chart_ref: prometheus-community/kube-prometheus-stack
@@ -168,11 +168,11 @@
     release_namespace: "{{ monitoring_namespace }}"
     create_namespace: true
     values_files:
-      - /tmp/lightweight-monitoring-prometheus-values.yml
+      - /tmp/monitoring-prometheus-values.yml
     wait: true
     wait_timeout: 10m
 
-- name: Install lightweight Loki stack
+- name: Install Loki stack
   kubernetes.core.helm:
     name: "{{ monitoring_loki_release }}"
     chart_ref: grafana/loki-stack
@@ -180,12 +180,12 @@
     release_namespace: "{{ monitoring_namespace }}"
     create_namespace: true
     values_files:
-      - /tmp/lightweight-monitoring-loki-values.yml
+      - /tmp/monitoring-loki-values.yml
     wait: true
     wait_timeout: 10m
   when: monitoring_loki_enabled | bool
 
-- name: Install lightweight Grafana
+- name: Install Grafana
   kubernetes.core.helm:
     name: "{{ monitoring_grafana_release }}"
     chart_ref: grafana/grafana
@@ -193,7 +193,7 @@
     release_namespace: "{{ monitoring_namespace }}"
     create_namespace: true
     values_files:
-      - /tmp/lightweight-monitoring-grafana-values.yml
+      - /tmp/monitoring-grafana-values.yml
     wait: true
     wait_timeout: 10m
 
@@ -223,7 +223,7 @@
     - monitoring_loki_enabled | bool
     - monitoring_loki_promtail_enabled | bool
 
-- name: Show lightweight monitoring access details
+- name: Show monitoring access details
   ansible.builtin.debug:
     msg:
       - "Prometheus NodePort: {{ monitoring_prometheus_node_port }}"

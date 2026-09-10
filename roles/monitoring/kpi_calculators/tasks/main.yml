@@ -1,5 +1,5 @@
 ---
-- name: START_LIGHTWEIGHT_KPI_DEPLOY
+- name: START_MONITORING_KPI_DEPLOY
   ansible.builtin.meta: noop
 
 - name: Ensure monitoring namespace exists for KPI calculators
@@ -14,12 +14,12 @@
 - name: Render Open5GS MDE services
   ansible.builtin.template:
     src: open5gs-mde-services.yml.j2
-    dest: /tmp/lightweight-open5gs-mde-services.yml
+    dest: /tmp/monitoring-open5gs-mde-services.yml
     mode: "0644"
   when: monitoring_core_mde_enabled | bool
 
 - name: Apply Open5GS MDE services
-  ansible.builtin.command: kubectl apply -f /tmp/lightweight-open5gs-mde-services.yml
+  ansible.builtin.command: kubectl apply -f /tmp/monitoring-open5gs-mde-services.yml
   register: monitoring_open5gs_mde_apply
   changed_when: "'created' in monitoring_open5gs_mde_apply.stdout or 'configured' in monitoring_open5gs_mde_apply.stdout"
   when: monitoring_core_mde_enabled | bool
@@ -27,12 +27,12 @@
 - name: Render RAN MDE services
   ansible.builtin.template:
     src: oai-ran-mde-services.yml.j2
-    dest: /tmp/lightweight-ran-mde-services.yml
+    dest: /tmp/monitoring-ran-mde-services.yml
     mode: "0644"
   when: monitoring_ran_mde_enabled | bool
 
 - name: Apply RAN MDE services
-  ansible.builtin.command: kubectl apply -f /tmp/lightweight-ran-mde-services.yml
+  ansible.builtin.command: kubectl apply -f /tmp/monitoring-ran-mde-services.yml
   register: monitoring_oai_ran_mde_apply
   changed_when: "'created' in monitoring_oai_ran_mde_apply.stdout or 'configured' in monitoring_oai_ran_mde_apply.stdout"
   when: monitoring_ran_mde_enabled | bool
@@ -40,12 +40,12 @@
 - name: Render Open5GS KPI calculator
   ansible.builtin.template:
     src: open5gs-kpi-calculator.yml.j2
-    dest: /tmp/lightweight-open5gs-kpi-calculator.yml
+    dest: /tmp/monitoring-open5gs-kpi-calculator.yml
     mode: "0644"
   when: monitoring_core_kpi_enabled | bool
 
 - name: Apply Open5GS KPI calculator
-  ansible.builtin.command: kubectl apply -f /tmp/lightweight-open5gs-kpi-calculator.yml
+  ansible.builtin.command: kubectl apply -f /tmp/monitoring-open5gs-kpi-calculator.yml
   register: monitoring_open5gs_kpi_apply
   changed_when: "'created' in monitoring_open5gs_kpi_apply.stdout or 'configured' in monitoring_open5gs_kpi_apply.stdout"
   when: monitoring_core_kpi_enabled | bool
@@ -53,12 +53,12 @@
 - name: Render OAI RAN KPI calculator
   ansible.builtin.template:
     src: oai-ran-kpi-calculator.yml.j2
-    dest: /tmp/lightweight-oai-ran-kpi-calculator.yml
+    dest: /tmp/monitoring-oai-ran-kpi-calculator.yml
     mode: "0644"
   when: monitoring_oai_ran_kpi_enabled | bool
 
 - name: Apply OAI RAN KPI calculator
-  ansible.builtin.command: kubectl apply -f /tmp/lightweight-oai-ran-kpi-calculator.yml
+  ansible.builtin.command: kubectl apply -f /tmp/monitoring-oai-ran-kpi-calculator.yml
   register: monitoring_oai_ran_kpi_apply
   changed_when: "'created' in monitoring_oai_ran_kpi_apply.stdout or 'configured' in monitoring_oai_ran_kpi_apply.stdout"
   when: monitoring_oai_ran_kpi_enabled | bool
@@ -77,7 +77,7 @@
   changed_when: false
   when: monitoring_oai_ran_kpi_enabled | bool
 
-- name: Show lightweight KPI deployment summary
+- name: Show KPI deployment summary
   ansible.builtin.debug:
     msg:
       - "Prometheus query endpoint for KPI calculators: {{ monitoring_prometheus_url }}"

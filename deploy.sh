@@ -389,7 +389,7 @@ PY
       fi
     fi
 
-    # A lightweight deploy.sh-side check. The Ansible runner still owns the
+    # A deploy.sh-side check. The Ansible runner still owns the
     # authoritative YAML parsing; this is only to decide whether to ask for the
     # default full_run observation duration.
     grep -Eq '^[[:space:]]*sections:[[:space:]]*($|#)' "$file"
@@ -711,7 +711,7 @@ collect_user_inputs() {
     fi
 
     # Select Monitoring
-    # Monitoring deploys a lightweight Prometheus/Grafana stack.
+    # Monitoring deploys a Prometheus/Grafana stack.
     monitoring_enabled=false
     monitoring_loki_enabled=false
     monitor_node=""
@@ -724,7 +724,7 @@ collect_user_inputs() {
       if [[ "$mon_choice" =~ ^[Yy]$ ]]; then
         monitoring_enabled=true
         echo ""
-        echo "Select the node to deploy lightweight Prometheus/Grafana on (default: ${DEFAULT_MONITOR_NODE}):"
+        echo "Select the node to deploy monitoring components on (default: ${DEFAULT_MONITOR_NODE}):"
         echo "1) sopnode-f1"
         echo "2) sopnode-f2"
         echo "3) sopnode-f3"
