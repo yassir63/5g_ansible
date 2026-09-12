@@ -119,6 +119,7 @@
   delegate_to: "{{ experiment_pod_log_control_host_effective }}"
   become: false
   vars:
+    ansible_connection: ssh
     ansible_user: "{{ experiment_pod_log_remote_user_effective }}"
   register: experiment_pod_logs_collect_output
   when: experiment_collect_pod_logs | bool
@@ -133,6 +134,7 @@
   delegate_to: "{{ experiment_pod_log_control_host_effective }}"
   become: false
   vars:
+    ansible_connection: ssh
     ansible_user: "{{ experiment_pod_log_remote_user_effective }}"
   register: experiment_pod_logs_fetch_output
   when: experiment_collect_pod_logs | bool
