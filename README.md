@@ -113,16 +113,8 @@ To exercise mixed direction and per-section artifact overrides, run:
 ```
 
 UERANSIM attach/detach churn also uses the same generic experiment mechanism.
-The shortcut below deploys the churn-capable UERANSIM setup, then runs the
-`ueransim_churn` experiment with churn-focused artifacts:
-
-```bash
-./deploy.sh --ueransim-churn \
-  --churn-subscribers 200 \
-  --churn-counts "10 50 100 200"
-```
-
-The equivalent explicit form is:
+Run it by selecting the `ueransim_churn` experiment with the churn-focused
+artifact profile:
 
 ```bash
 ./deploy.sh \

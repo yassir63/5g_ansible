@@ -130,16 +130,8 @@ the full-run Prometheus export remains available.
 
 ## UERANSIM Churn As A Generic Experiment
 
-UERANSIM attach/detach churn is also expressed as a generic experiment. The
-shortcut:
-
-```bash
-./deploy.sh --ueransim-churn \
-  --churn-subscribers 200 \
-  --churn-counts "10 50 100 200"
-```
-
-is equivalent to selecting the generic experiment scenario:
+UERANSIM attach/detach churn is also expressed as a generic experiment.
+Select the churn scenario and artifact profile like this:
 
 ```bash
 ./deploy.sh \
@@ -148,10 +140,8 @@ is equivalent to selecting the generic experiment scenario:
   -e "ueransim_churn_counts=10 50 100 200"
 ```
 
-During deployment, the shortcut only prepares the churn-capable Open5GS and
-UERANSIM resources. The churn waves then run as the `ueransim_churn` section
-inside `playbooks/run_experiment.yml`. Detailed churn artifacts are written
-under:
+The churn waves run as the `ueransim_churn` section inside
+`playbooks/run_experiment.yml`. Detailed churn artifacts are written under:
 
 ```text
 results/experiment-<run_id>/section_logs/ueransim_churn/churn_results/

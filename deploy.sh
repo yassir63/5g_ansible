@@ -26,8 +26,6 @@ SCENARIO_R2LAB="Iperf R2lab scenario without interference"
 SCENARIO_R2LAB_INTERFERENCE="Iperf R2lab scenario with interference"
 SCENARIO_R2LAB_MULTI="Iperf R2lab scenario without interference, with multiple simultaneous UEs"
 SCENARIO_R2LAB_PING="Ping R2lab scenario without interference, with multiple simultaneous UEs"
-REQUESTED_CHURN_SUBSCRIBERS=""
-REQUESTED_CHURN_COUNTS=""
 REQUESTED_GENERIC_EXPERIMENT_SCENARIO=""
 REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS=""
 REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED=""
@@ -71,9 +69,6 @@ usage() {
     echo "--validation-mtu-ping-size <bytes>  Override v06 ICMP payload size; 1472 gives a 1500-byte IPv4 packet"
     echo "--with-loki              Keep Grafana Loki enabled with monitoring (default)"
     echo "--no-loki                Disable Grafana Loki log collection"
-    echo "--ueransim-churn         Shortcut for --experiment ueransim_churn with churn artifacts"
-    echo "--churn-subscribers <n> Number of generated churn subscribers"
-    echo "--churn-counts <list>   Space-separated waves, e.g. \"10 50 100 200\""
     echo "--experiment <file|name> Run a generic experiment scenario through playbooks/run_experiment.yml"
     echo "                         Names resolve from scenarios/experiment_examples/<name>.yml"
     echo "--experiment-artifacts <file|name>"
@@ -191,10 +186,6 @@ parse_args() {
           REQUESTED_VALIDATION_SCENARIOS="${1:-all}"
           ;;
 
-        --ueransim-churn)
-          REQUESTED_EXPERIMENT_MODE="ueransim-churn"
-          ;;
-
         --experiment|--generic-experiment)
           shift
           REQUESTED_EXPERIMENT_MODE="generic-experiment"
@@ -208,16 +199,6 @@ parse_args() {
 
         --no-experiment-artifacts)
           REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED=false
-          ;;
-
-        --churn-subscribers)
-          shift
-          REQUESTED_CHURN_SUBSCRIBERS="${1:-}"
-          ;;
-
-        --churn-counts)
-          shift
-          REQUESTED_CHURN_COUNTS="${1:-}"
           ;;
 
         --target-server)
@@ -298,16 +279,11 @@ extra_var_defined() {
 }
 
 append_cli_extra_vars() {
-    local ev clean_ev churn_counts_value
+    local ev clean_ev
     for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
       [[ -z "$ev" ]] && continue
       clean_ev="${ev#--}"
-      if [[ "$clean_ev" == "ueransim_churn_counts="* ]]; then
-        churn_counts_value="${clean_ev#*=}"
-        ANSIBLE_EXTRA_ARGS+=(-e "{\"ueransim_churn_counts\":\"${churn_counts_value}\"}")
-      else
-        ANSIBLE_EXTRA_ARGS+=(-e "$clean_ev")
-      fi
+      ANSIBLE_EXTRA_ARGS+=(-e "$clean_ev")
     done
 }
 
@@ -577,80 +553,6 @@ enable_monitoring_for_workflow() {
     fi
 }
 
-generic_experiment_is_churn() {
-    [[ "${REQUESTED_EXPERIMENT_MODE:-}" == "ueransim-churn" ]] && return 0
-    [[ "$(basename "${experiment_scenario_file:-}")" == "ueransim_churn.yml" ]]
-}
-
-configure_ueransim_churn_experiment() {
-    if [[ "${core:-}" != "open5gs" || "${ran:-}" != "ueransim" ]]; then
-      echo "❌ UERANSIM churn requires core=open5gs and ran=ueransim."
-      echo "Current selection: core=${core:-unset}, ran=${ran:-unset}"
-      exit 1
-    fi
-
-    scenario="Generic experiment"
-    experiment_display_name="UERANSIM attach/detach churn"
-    requires_iperf_server=false
-    if [[ -z "${experiment_scenario_file:-}" ]]; then
-      experiment_scenario_file="$(resolve_generic_experiment_scenario_file "${DEFAULT_UERANSIM_CHURN_EXPERIMENT}")" || exit 1
-    fi
-
-    if [[ "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED:-true}" == false ]]; then
-      experiment_artifacts_enabled=false
-      experiment_artifacts_file=""
-    else
-      experiment_artifacts_enabled=true
-      experiment_artifacts_file="$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-$DEFAULT_UERANSIM_CHURN_ARTIFACTS}")" || exit 1
-    fi
-
-    if [[ "${experiment_artifacts_enabled}" == true ]]; then
-      enable_monitoring_for_workflow "UERANSIM churn overhead collection"
-    fi
-
-    echo "UERANSIM churn selected as a generic experiment."
-    echo "Scenario file: ${experiment_scenario_file}"
-    if [[ "${experiment_artifacts_enabled}" == true && -n "${experiment_artifacts_file:-}" ]]; then
-      echo "Artifact profile: ${experiment_artifacts_file}"
-    elif [[ "${experiment_artifacts_enabled}" == true ]]; then
-      echo "Artifact profile: none (scenario/default collection settings only)"
-    else
-      echo "Artifact collection: disabled"
-    fi
-}
-
-add_ueransim_churn_deploy_vars() {
-    extra_var_defined "open5gs_repo_url_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_url_override=${DEFAULT_UERANSIM_CHURN_REPO_URL}")
-    extra_var_defined "open5gs_repo_branch_override" || ANSIBLE_EXTRA_ARGS+=(-e "open5gs_repo_branch_override=${DEFAULT_UERANSIM_CHURN_REPO_BRANCH}")
-    extra_var_defined "ueransim_deploy_mode" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_deploy_mode=churn")
-    extra_var_defined "ueransim_churn_initial_replicas" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_initial_replicas=0")
-    extra_var_defined "ueransim_run_churn_after_deploy" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_run_churn_after_deploy=false")
-    extra_var_defined "ueransim_churn_subscribers" || ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_subscribers=${REQUESTED_CHURN_SUBSCRIBERS:-$DEFAULT_UERANSIM_CHURN_SUBSCRIBERS}")
-}
-
-add_ueransim_churn_runtime_vars() {
-    if [[ "${experiment_artifacts_enabled:-true}" == true ]]; then
-      extra_var_defined "churn_capture_amf_pcap" || ANSIBLE_EXTRA_ARGS+=(-e "churn_capture_amf_pcap=true")
-    else
-      extra_var_defined "churn_require_monitoring_ready" || ANSIBLE_EXTRA_ARGS+=(-e "churn_require_monitoring_ready=false")
-      extra_var_defined "churn_require_ue_mapper_ready" || ANSIBLE_EXTRA_ARGS+=(-e "churn_require_ue_mapper_ready=false")
-      extra_var_defined "churn_collect_prometheus" || ANSIBLE_EXTRA_ARGS+=(-e "churn_collect_prometheus=false")
-      extra_var_defined "churn_collect_pod_logs" || ANSIBLE_EXTRA_ARGS+=(-e "churn_collect_pod_logs=false")
-      extra_var_defined "churn_collect_ue_mapper_api" || ANSIBLE_EXTRA_ARGS+=(-e "churn_collect_ue_mapper_api=false")
-      extra_var_defined "churn_collect_ue_mapper_samples" || ANSIBLE_EXTRA_ARGS+=(-e "churn_collect_ue_mapper_samples=false")
-      extra_var_defined "churn_capture_amf_pcap" || ANSIBLE_EXTRA_ARGS+=(-e "churn_capture_amf_pcap=false")
-    fi
-    if [[ -n "${REQUESTED_CHURN_SUBSCRIBERS:-}" ]] && ! extra_var_defined "ueransim_churn_subscribers"; then
-      ANSIBLE_EXTRA_ARGS+=(-e "ueransim_churn_subscribers=${REQUESTED_CHURN_SUBSCRIBERS}")
-    fi
-    if [[ -n "${REQUESTED_CHURN_COUNTS:-}" ]] && ! extra_var_defined "ueransim_churn_counts"; then
-      ANSIBLE_EXTRA_ARGS+=(-e "{\"ueransim_churn_counts\":\"${REQUESTED_CHURN_COUNTS}\"}")
-    fi
-    if [[ -n "${REQUESTED_PROMETHEUS_URL:-}" ]] && ! extra_var_defined "churn_prometheus_url"; then
-      ANSIBLE_EXTRA_ARGS+=(-e "churn_prometheus_url=${REQUESTED_PROMETHEUS_URL}")
-    fi
-}
-
 inventory_first_group_host() {
     local group="$1"
     awk -v group="$group" '
@@ -707,12 +609,6 @@ init_defaults_and_banner() {
     DEFAULT_PLATFORM="r2lab"
     DEFAULT_RU="n300"
     DEFAULT_LIST_UE="qhat01"
-    DEFAULT_UERANSIM_CHURN_EXPERIMENT="ueransim_churn"
-    DEFAULT_UERANSIM_CHURN_ARTIFACTS="churn_observability"
-    DEFAULT_UERANSIM_CHURN_REPO_URL="https://github.com/yassir63/open5gs-k8s.git"
-    DEFAULT_UERANSIM_CHURN_REPO_BRANCH="ueransim-churn"
-    DEFAULT_UERANSIM_CHURN_SUBSCRIBERS="200"
-
     PROFILE_5G="${PROFILE_5G:-$DEFAULT_PROFILE_5G}"
   
     START_SCENARIO="${START_SCENARIO:-true}"
@@ -1054,7 +950,7 @@ optional_scenarios() {
     )
 
     if [[ -n "${REQUESTED_EXPERIMENT_MODE:-}" ]]; then
-      if [[ "$REQUESTED_EXPERIMENT_MODE" != "ueransim-churn" && "$REQUESTED_EXPERIMENT_MODE" != "generic-experiment" && "$platform" != "r2lab" ]]; then
+      if [[ "$REQUESTED_EXPERIMENT_MODE" != "generic-experiment" && "$platform" != "r2lab" ]]; then
         echo "❌ Automated paper/validation workflows currently require platform=r2lab."
         exit 1
       fi
@@ -1065,9 +961,7 @@ optional_scenarios() {
           scenario="Generic experiment"
           requires_iperf_server=false
           experiment_scenario_file="$(resolve_generic_experiment_scenario_file "$REQUESTED_GENERIC_EXPERIMENT_SCENARIO")" || exit 1
-          if generic_experiment_is_churn; then
-            configure_ueransim_churn_experiment
-          elif [[ "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED:-true}" == false ]]; then
+          if [[ "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS_ENABLED:-true}" == false ]]; then
             experiment_artifacts_enabled=false
             experiment_artifacts_file=""
           else
@@ -1183,10 +1077,6 @@ optional_scenarios() {
           echo "Latency validation selected; ensuring required UEs are in inventory: ${validation_required_ues[*]}"
           ;;
 
-        "ueransim-churn")
-          configure_ueransim_churn_experiment
-          ;;
-
         *)
           echo "❌ Unknown requested experiment mode: ${REQUESTED_EXPERIMENT_MODE}"
           exit 1
@@ -1285,17 +1175,13 @@ EOF
           echo "Generic experiment selected."
           echo "This runs your experiment YAML through deploy.sh, then optionally collects artifacts."
           experiment_scenario_file="$(choose_generic_experiment_scenario)" || exit 1
-          if generic_experiment_is_churn; then
-            configure_ueransim_churn_experiment
+          read -rp "Collect artifacts after the experiment? [Y/n]: " experiment_artifacts_choice
+          if [[ "$experiment_artifacts_choice" =~ ^[Nn]$ ]]; then
+            experiment_artifacts_enabled=false
+            experiment_artifacts_file=""
           else
-            read -rp "Collect artifacts after the experiment? [Y/n]: " experiment_artifacts_choice
-            if [[ "$experiment_artifacts_choice" =~ ^[Nn]$ ]]; then
-              experiment_artifacts_enabled=false
-              experiment_artifacts_file=""
-            else
-              experiment_artifacts_enabled=true
-              experiment_artifacts_file="$(choose_generic_artifact_profile)" || exit 1
-            fi
+            experiment_artifacts_enabled=true
+            experiment_artifacts_file="$(choose_generic_artifact_profile)" || exit 1
           fi
           prompt_generic_default_section_seconds_if_needed
           if [[ "${experiment_artifacts_enabled}" == true ]]; then
@@ -1464,9 +1350,7 @@ EOF
 	            fi
 	          fi
 	          DEFAULT_IPERF_SERVER_NODE="sopnode-w3"
-        elif [[ "$scenario" == "UERANSIM attach/detach churn" ]]; then
-          configure_ueransim_churn_experiment
-	        else
+        else
 	          DEFAULT_IPERF_SERVER_NODE=${core_node}
 	        fi
 	        if [[ "$requires_iperf_server" == true ]]; then
@@ -2158,10 +2042,6 @@ deploy() {
       ANSIBLE_EXTRA_ARGS+=(-e "monitoring_loki_enabled=${monitoring_loki_enabled:-true}")
     fi
 
-    if generic_experiment_is_churn; then
-      add_ueransim_churn_deploy_vars
-    fi
-
     echo "Launching deployment..."
 
     run_cmd ansible-galaxy install -r collections/requirements.yml
@@ -2288,9 +2168,6 @@ run_scenario() {
             experiment_artifacts_file="${experiment_artifacts_file:-$(resolve_generic_experiment_artifacts_file "${REQUESTED_GENERIC_EXPERIMENT_ARTIFACTS:-}")}" || exit 1
           fi
           ;;
-        "ueransim-churn")
-          configure_ueransim_churn_experiment
-          ;;
       esac
     fi
 
@@ -2321,9 +2198,6 @@ run_scenario() {
             scenario_status=$?
             ;;
           "Generic experiment")
-            if generic_experiment_is_churn; then
-              add_ueransim_churn_runtime_vars
-            fi
             GENERIC_EXPERIMENT_ARGS=(-e "experiment_scenario_file=${experiment_scenario_file}")
             if [[ "${experiment_artifacts_enabled:-true}" == true && -n "${experiment_artifacts_file:-}" ]]; then
               GENERIC_EXPERIMENT_ARGS+=(-e "experiment_artifacts_file=${experiment_artifacts_file}")
