@@ -199,8 +199,11 @@ collect:
 Pod logs are collected by running `kubectl` on one control host. By default,
 the runner uses the first `[core_node]` inventory host and auto-detects a
 usable kubeconfig from `$HOME/.kube/config`, `/root/.kube/config`, or
-`/etc/kubernetes/admin.conf`. If your working Kubernetes context is on another
-machine, override it at runtime:
+`/etc/kubernetes/admin.conf`. It connects as `root` by default because the
+cluster kubeconfig is commonly root-owned on lab nodes.
+
+If your working Kubernetes context is on another machine, override it at
+runtime:
 
 ```bash
 ./deploy.sh -n --scenario-only \
@@ -213,6 +216,12 @@ If that host uses a specific kubeconfig path, also pass:
 
 ```bash
 -e experiment_kubeconfig=/path/to/kubeconfig
+```
+
+If the control host needs a different SSH user, pass:
+
+```bash
+-e experiment_pod_log_remote_user=<user>
 ```
 
 Each section becomes a timeline window. If Prometheus splitting is enabled, the
