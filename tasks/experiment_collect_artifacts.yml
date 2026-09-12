@@ -99,7 +99,6 @@
     file: "{{ playbook_dir }}/../tasks/experiment_collect_pod_logs.yml"
     apply:
       delegate_to: "{{ experiment_pod_log_control_host_effective }}"
-      become: true
   when:
     - experiment_collect_enabled | bool
     - experiment_collect_pod_logs | bool
