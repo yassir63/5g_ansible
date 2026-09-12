@@ -88,6 +88,12 @@
         experiment_local_timezone: "{{ experiment_scenario.timezone | default(experiment_local_timezone | default(lookup('env', 'TZ') | default('Europe/Paris', true))) }}"
         experiment_start_epoch: "{{ lookup('pipe', 'date +%s') }}"
 
+    - name: Resolve experiment monitoring host
+      ansible.builtin.set_fact:
+        experiment_monitor_host: "{{ groups['monitor_node'][0] if (groups['monitor_node'] | default([]) | length > 0) else '' }}"
+        experiment_prometheus_url_requested: "{{ experiment_prometheus_url | default('') }}"
+        experiment_prometheus_profile_url: "{{ experiment_collect_config.prometheus.url | default('') }}"
+
     - name: Set experiment collection defaults
       ansible.builtin.set_fact:
         experiment_collect_enabled: "{{ (experiment_collect_artifacts | default(true) | bool) and (experiment_collect_config.enabled | default(true) | bool) }}"
@@ -97,9 +103,19 @@
         experiment_split_prometheus_by_timeline: "{{ experiment_collect_config.split_by_windows | default(true) | bool }}"
         experiment_prometheus_url: >-
           {{
-            experiment_prometheus_url
-            if (experiment_prometheus_url | default('') | length > 0)
-            else experiment_collect_config.prometheus.url | default('')
+            experiment_prometheus_url_requested
+            if (experiment_prometheus_url_requested | length > 0)
+            else (
+              'http://' ~ (hostvars[experiment_monitor_host].ip | default(hostvars[experiment_monitor_host].ansible_host | default(experiment_monitor_host))) ~ ':30095'
+              if (
+                experiment_monitor_host | length > 0
+                and (
+                  experiment_prometheus_profile_url | length == 0
+                  or experiment_prometheus_profile_url | regex_search('^http://(127\\.0\\.0\\.1|localhost):30095/?$')
+                )
+              )
+              else experiment_prometheus_profile_url
+            )
           }}
         experiment_prometheus_step: "{{ experiment_collect_config.prometheus.step | default(experiment_prometheus_step | default('1s')) }}"
         experiment_query_padding_seconds: "{{ experiment_collect_config.prometheus.padding_seconds | default(30) | int }}"

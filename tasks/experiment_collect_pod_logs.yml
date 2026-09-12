@@ -93,3 +93,39 @@
   register: experiment_pod_logs_fetch_output
   when: experiment_collect_pod_logs | bool
   failed_when: false
+
+- name: Check fetched experiment Kubernetes pod log archive
+  ansible.builtin.stat:
+    path: "{{ experiment_results_dir }}/pod_logs.tgz"
+  delegate_to: localhost
+  register: experiment_pod_logs_archive_stat
+  when: experiment_collect_pod_logs | bool
+
+- name: Write experiment Kubernetes pod log collection status
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/pod_logs_status.json"
+    mode: "0644"
+    content: |
+      {{
+        {
+          "expected_local_archive": experiment_results_dir + "/pod_logs.tgz",
+          "expected_remote_archive": "/tmp/" + experiment_run_id + "_pod_logs.tgz",
+          "fetched": experiment_pod_logs_archive_stat.stat.exists | default(false),
+          "size": experiment_pod_logs_archive_stat.stat.size | default(0),
+          "collection": experiment_pod_logs_collect_output | default({}),
+          "fetch": experiment_pod_logs_fetch_output | default({})
+        } | to_nice_json
+      }}
+  delegate_to: localhost
+  when: experiment_collect_pod_logs | bool
+
+- name: Warn when experiment Kubernetes pod log archive was not fetched
+  ansible.builtin.debug:
+    msg:
+      - "Kubernetes pod logs were requested, but pod_logs.tgz was not found after fetch."
+      - "Expected local archive: {{ experiment_results_dir }}/pod_logs.tgz"
+      - "Expected remote archive: /tmp/{{ experiment_run_id }}_pod_logs.tgz on {{ experiment_pod_log_control_host_effective }}"
+      - "Details: {{ experiment_results_dir }}/pod_logs_status.json"
+  when:
+    - experiment_collect_pod_logs | bool
+    - not (experiment_pod_logs_archive_stat.stat.exists | default(false))
