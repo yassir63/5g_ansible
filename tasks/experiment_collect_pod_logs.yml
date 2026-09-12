@@ -98,6 +98,7 @@
   ansible.builtin.stat:
     path: "{{ experiment_results_dir }}/pod_logs.tgz"
   delegate_to: localhost
+  become: false
   register: experiment_pod_logs_archive_stat
   when: experiment_collect_pod_logs | bool
 
@@ -117,6 +118,7 @@
         } | to_nice_json
       }}
   delegate_to: localhost
+  become: false
   when: experiment_collect_pod_logs | bool
 
 - name: Warn when experiment Kubernetes pod log archive was not fetched
@@ -126,6 +128,8 @@
       - "Expected local archive: {{ experiment_results_dir }}/pod_logs.tgz"
       - "Expected remote archive: /tmp/{{ experiment_run_id }}_pod_logs.tgz on {{ experiment_pod_log_control_host_effective }}"
       - "Details: {{ experiment_results_dir }}/pod_logs_status.json"
+  delegate_to: localhost
+  become: false
   when:
     - experiment_collect_pod_logs | bool
     - not (experiment_pod_logs_archive_stat.stat.exists | default(false))
