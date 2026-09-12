@@ -1,5 +1,5 @@
 ---
-- name: RESTART_UE_SETUP
+- name: START_UE_SETUP
   ansible.builtin.meta: noop
 
 - name: Load active 5G profile variables
@@ -11,44 +11,95 @@
     that:
       - slices is defined
       - ues is defined
-    fail_msg: >
-      5G profile not loaded.
-      Expected group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yml
 
-- name: Power ON UEs PDU outlet
+- name: Build UE lists
+  set_fact:
+    all_ues: "{{ (groups['qhats'] | default([])) + (groups['qfits'] | default([])) }}"
+
+- name: Power OFF QHAT UEs
+  shell: rhubarbe pdu off "{{ item }}"
+  delegate_to: faraday.inria.fr
+  async: 1800
+  poll: 0
+  failed_when: false
+  changed_when: false
+  loop: "{{ groups['qhats'] | default([]) }}"
+  register: qhat_off_jobs
+
+- name: Power OFF QFIT UEs
+  shell: qfit off {{ groups['qfits'] | join(' ') }}
+  delegate_to: faraday.inria.fr
+  when: groups['qfits'] is defined and groups['qfits'] | length > 0
+  failed_when: false
+  changed_when: false
+
+- pause:
+    seconds: 20
+
+- name: Power ON QHAT UEs
   shell: rhubarbe pdu on "{{ item }}"
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    label: "{{ item }}"
-  register: power_ue_jobs
+  loop: "{{ groups['qhats'] | default([]) }}"
+  register: qhat_on_jobs
 
-- name: Wait for all UEs to be turned ON
+- name: Wait QHAT ON completion
   async_status:
     jid: "{{ item.ansible_job_id }}"
-  register: job_result
-  until: job_result.finished
-  retries: 100
-  delay: 10
-  loop: "{{ power_ue_jobs.results }}"
-  loop_control:
-    label: "{{ item.item }}"
+  register: qhat_on_status
+  until: qhat_on_status.finished
+  retries: 12
+  delay: 5
+  loop: "{{ qhat_on_jobs.results }}"
 
-- name: Wait for UEs to be SSH accessible
+- name: Power ON QFIT UEs
+  shell: qfit on {{ groups['qfits'] | join(' ') }}
+  delegate_to: faraday.inria.fr
+  when: groups['qfits'] is defined and groups['qfits'] | length > 0
+
+- name: Ping UEs
+  shell: "ping -c1 -W1 {{ item }}"
+  delegate_to: faraday.inria.fr
+  register: ping_results
+  ignore_errors: true
+  changed_when: false
+  retries: 12            # ~2 min max par UE
+  delay: 10
+  until: ping_results.rc == 0
+  loop: "{{ all_ues }}"
+
+- name: Build reachable UEs
+  set_fact:
+    reachable_ues: >-
+      {{
+        ping_results.results
+        | selectattr('rc', 'defined')
+        | selectattr('rc', 'equalto', 0)
+        | map(attribute='item')
+        | list
+      }}
+
+- name: SSH check
   wait_for:
     host: "{{ item }}"
     port: 22
-    timeout: 180
-    sleep: 5
+    timeout: 20
   delegate_to: faraday.inria.fr
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    label: "{{ item }}"
-  register: power_ue_jobs
+  register: ssh_results
+  ignore_errors: true
+  loop: "{{ reachable_ues }}"
 
-- name: Prepare and Display qhat-init command for each UE
+- name: Compute failed UEs
+  set_fact:
+    failed_ues: "{{ all_ues | difference(reachable_ues) }}"
+
+- name: Report failed UEs
+  debug:
+    msg: "UEs not reachable after boot: {{ failed_ues }}"
+  when: failed_ues | length > 0
+
+- name: Prepare qhat-init command
   vars:
     ue_slice_info: "{{ slices | selectattr('name', 'equalto', ues[item].slice) | first }}"
     qhat_command: >-
@@ -57,76 +108,81 @@
       --nssai="{{ ue_slice_info.sst }}.{{ ue_slice_info.sd }}"
   debug:
     msg: "UE {{ item }} command: {{ qhat_command }}"
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    label: "{{ item }}"
+  loop: "{{ reachable_ues }}"
 
-- name: Configure rmem buffers on qhat UEs
+- name: Configure rmem buffers
   shell: |
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 root@{{ item }} '
-      echo "Current values:";
-      sysctl net.core.rmem_max;
-      sysctl net.core.rmem_default;
-
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ item }} '
       sysctl -w net.core.rmem_max=62500000;
       sysctl -w net.core.rmem_default=62500000;
-
-      echo "New values:";
-      sysctl net.core.rmem_max;
-      sysctl net.core.rmem_default;
     '
   delegate_to: faraday.inria.fr
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    label: "{{ item }}"
+  loop: "{{ reachable_ues }}"
   when: rru in ['benetel1', 'benetel2']
-    
-- name: Init UEs via jump host using 5G profile from YAML
-  vars:
-    ue_slice_info: "{{ slices | selectattr('name', 'equalto', ues[item].slice) | first }}"
-    qhat_command: >-
-      qhat-init --mode={{ hostvars[item].mode | default('default') }}
-      --dnn="{{ ue_slice_info.dnn }}"
-      --nssai="{{ ue_slice_info.sst }}.{{ ue_slice_info.sd }}"
-  shell: |
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} '{{ qhat_command }}'
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'stop.sh'
+
+- name: Init UEs (qhat-init only, parallel)
+  shell: >
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ item }}
+    'qhat-init'
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    label: "{{ item }}"
+  loop: "{{ reachable_ues }}"
   register: set_ue_jobs
 
-- name: Wait for setup to finish on all UEs
+- name: Wait init completion
   async_status:
     jid: "{{ item.ansible_job_id }}"
+  loop: "{{ set_ue_jobs.results }}"
   register: job_result
   until: job_result.finished
-  retries: 100
+  retries: 20
   delay: 10
-  loop: "{{ set_ue_jobs.results }}"
-  loop_control:
-    label: "{{ item.item }}"
 
-- name: Run qhat-check on each UE to verify configuration
-  shell: |
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -n root@{{ item }} 'qhat-check'
+# Mode-aware stop, run as its own parallel async batch.
+# Best-effort: a stop failure must NOT abort the setup (unlike qhat-init).
+#   mbim -> stop.sh   |   qmi -> ci_ctl_qtel.py <at_port> detach
+# at_port defaults to /dev/ttyUSB3 (AT port after qhat-init's QMI switch);
+# override per node in the inventory with at_port=/dev/ttyUSBx if needed.
+- name: Stop UEs after init (parallel, best-effort)
+  shell: >
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ item }}
+    '{{ ue_stop_cmd }}'
+  vars:
+    ue_stop_cmd: >-
+      {{ 'stop.sh'
+         if (hostvars[item].mode | default('mbim', true)) == 'mbim'
+         else 'python3 /usr/local/bin/ci_ctl_qtel.py '
+              ~ (hostvars[item].at_port | default('/dev/ttyUSB3')) ~ ' detach' }}
   delegate_to: faraday.inria.fr
-  loop: "{{ groups['qhats'] }}"
-  loop_control:
-    label: "{{ item }}"
+  async: 300
+  poll: 0
+  loop: "{{ reachable_ues }}"
+  register: stop_ue_jobs
+
+- name: Wait stop completion (best-effort)
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ stop_ue_jobs.results }}"
+  register: stop_result
+  until: stop_result.finished
+  retries: 20
+  delay: 5
+  failed_when: false
+  ignore_errors: true
+
+- name: Run qhat-check
+  shell: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ item }} 'qhat-check'
+  delegate_to: faraday.inria.fr
+  loop: "{{ reachable_ues }}"
   register: check_results
   changed_when: false
+  ignore_errors: true
 
-- name: Display qhat-check output for each UE
+- name: Display qhat-check
   debug:
-    msg: 
-      - "------------------------------------------------"
+    msg:
       - "UE: {{ item.item }}"
       - "{{ item.stdout_lines }}"
-      - "------------------------------------------------"
   loop: "{{ check_results.results }}"
-  loop_control:
-    label: "{{ item.item }}"
+  

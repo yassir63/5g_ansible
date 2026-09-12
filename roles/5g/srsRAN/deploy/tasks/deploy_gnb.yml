@@ -1,8 +1,16 @@
 ---
+- name: Check if venv Python exists
+  ansible.builtin.stat:
+    path: /opt/ansible-venv/bin/python
+  register: venv_python
+  when: rru in ['benetel1', 'benetel2']
+
 - name: Force Ansible to use venv Python
   ansible.builtin.set_fact:
     ansible_python_interpreter: /opt/ansible-venv/bin/python
-  when: rru in ['benetel1', 'benetel2']
+  when:
+    - rru in ['benetel1', 'benetel2']
+    - venv_python.stat.exists | default(false)
 
 - name: Check if helm exists
   ansible.builtin.command: helm version --short
@@ -203,4 +211,7 @@
 - name: Reset ansible_python_interpreter to system python3
   ansible.builtin.set_fact:
     ansible_python_interpreter: /usr/bin/python3
-  when: rru in ['benetel1', 'benetel2']
+  when:
+    - rru in ['benetel1', 'benetel2']
+    - venv_python.stat.exists | default(false)
+

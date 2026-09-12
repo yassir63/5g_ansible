@@ -1,0 +1,12 @@
+[Unit]
+Description=OAI IRQ and CPU pinning for AW2S fronthaul
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/oai-irq-setup.sh
+
+[Install]
+WantedBy=multi-user.target

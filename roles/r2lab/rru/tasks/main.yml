@@ -16,8 +16,7 @@
 
 - name: Show prepare RRU output
   debug:
-    var: prepare_rru_output.stdout
-  when: prepare_rru_output is defined
+    msg: "{{ prepare_rru_output.stdout | default('Task skipped') }}"
 
 - name: Verify PDU status
   shell: rhubarbe pdu status "{{ rru }}"

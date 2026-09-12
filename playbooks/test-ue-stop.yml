@@ -1,12 +1,12 @@
 ---
 - hosts: faraday
   tasks:
-    - name: Connect UEs on R2Lab to 5G network
+    - name: Disconnect R2lab UEs from 5G network
       include_role:
-        name: r2lab/ue/connect
+        name: r2lab/ue/stop
       vars:
         ue_item: "{{ item }}"
-      loop: "{{ groups['qhats'] + groups['qfits'] }}"
+      loop: "{{ groups['qhats'] + groups['qfits'] + groups['phones'] }}"
       loop_control:
         label: "{{ item }}"
       ignore_errors: true

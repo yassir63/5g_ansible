@@ -250,8 +250,21 @@
     - role: 5g/free5gc/deploy
       when: core == 'free5gc'
 
-- name: OAI Setup
-  hosts: core_node,ran_node
+############################################################################
+# Move this block where you want to restart with start-at-task=RESTART_HERE"
+#
+- hosts: localhost,core_node,ran_node
+  gather_facts: false
+  tasks:
+    - name: RESTART_HERE
+      ansible.builtin.meta: noop
+
+    - import_tasks: ../tasks/reload_booleans.yml
+#
+############################################################################
+
+- name: Deploy OAI CN/RAN
+  hosts: ran_node
   pre_tasks:
     - name: Load 5G profile
       include_vars:
@@ -447,19 +460,8 @@
   roles:
     - role: 5g/oai/ran
       when: ran == 'oai'
-
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost,core_node,ran_node
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-#
-############################################################################
+    - role: 5g/oai/csi_logging
+      when: ran == 'oai' and oai_csi_logging_enabled | default(false)
 
 - name: Deploy srsRAN
   hosts: ran_node
@@ -474,6 +476,10 @@
       when: ran == 'srsRAN'
     - role: 5g/srsRAN/deploy
       when: ran == 'srsRAN'
+    - role: 5g/srsRAN/csi
+      when: 
+        - ran == 'srsRAN'
+        - csi_logger_enabled | default(false)
 
 - name: Deploy ueransim for oai core
   hosts: ran_node

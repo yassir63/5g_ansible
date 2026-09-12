@@ -1,6 +1,6 @@
 ---
 repo_url: "https://github.com/turletti/srsran-helm.git"
-version: benetel #main
+version: csi # benetel #main
 
 ran_ns: "{{ core }}"
 repo_dest: "~/srsran-helm"

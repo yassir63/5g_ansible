@@ -9,15 +9,20 @@
   register: uhd_check
   changed_when: false
 
-- name: Display installed UHD version
+- name: Display installed UHD/GNU Radio versions
   debug:
-    msg: "UHD installed: {{ uhd_check.stdout | default('none') }}"
+    msg: |
+      UHD installed: {{ uhd_check.stdout | default('none') }}
 
-# Build UHD only if the installed version is different from target
-- name: Build UHD only if target version not installed
+- name: Build UHD only if target versions not installed
   block:
+    - name: Remove conflicting system UHD libs
+      shell: |
+        find /usr/lib -name "libuhd*" -delete 2>/dev/null || true
+        ldconfig
+      args:
+        executable: /bin/bash
 
-    # --- Required packages for UHD build ---
     - name: Ensure required packages are installed (Ubuntu/Debian)
       apt:
         name:
@@ -25,25 +30,26 @@
           - cmake
           - git
           - python3-dev
-          - libboost-all-dev
+          - python3-numpy
+          - python3-mako
+          - python3-ruamel.yaml
+          - libboost-all-dev 
+          - libboost-program-options-dev
           - libgmp-dev
           - libfftw3-dev
           - libusb-1.0-0-dev
-          - libuhd-dev
           - libvolk2-dev
           - libspdlog-dev
-          - libthrift-dev
-          - thrift-compiler
         state: present
         update_cache: yes
 
-    # --- Clean previous UHD build only if source directory exists ---
+    # --- Clean old UHD/GNU Radio builds ---
     - name: Clean previous UHD build
       file:
         path: "{{ uhd_src_dir }}"
         state: absent
 
-    # --- Clone UHD sources ---
+    # --- Clone UHD ---
     - name: Clone UHD sources
       git:
         repo: "https://github.com/EttusResearch/uhd.git"
@@ -52,7 +58,7 @@
         depth: 1
         force: yes
 
-    # --- Build and install UHD ---
+    # --- Build UHD ---
     - name: Build and install UHD
       shell: |
         set -e
@@ -61,7 +67,9 @@
         cmake ../ \
           -DCMAKE_INSTALL_PREFIX={{ install_prefix }} \
           -DENABLE_PYTHON_API=ON \
-          -DENABLE_TESTS=OFF
+          -DENABLE_TESTS=OFF \
+          -DENABLE_UTILS=ON \
+          -DENABLE_EXAMPLES=OFF
         make -j{{ make_jobs }}
         make install
         ldconfig
@@ -83,7 +91,7 @@
       debug:
         msg: "UHD installed: {{ uhd_verify.stdout }}"
 
-    # --- Ensure library cache & environment variables ---
+    # --- Library cache & PATH ---
     - name: Update library cache
       shell: ldconfig
       args:
@@ -110,4 +118,6 @@
       args:
         executable: /bin/bash
 
-  when: uhd_check.stdout | default('none') | trim != uhd_version
+  when:
+    - uhd_check.stdout | default('none') | trim != uhd_version
+

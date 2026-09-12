@@ -1,0 +1,342 @@
+---
+# collect_csi.yml
+# Standalone playbook : collect CSI traces from srsRAN gNB pod,
+# generate plots on ran_node, retrieve results on Duckburg.
+#
+# Usage:
+#   ansible-playbook playbooks/collect_csi.yml -i inventory/default/hosts.ini
+#   ansible-playbook playbooks/collect_csi.yml -i inventory/default/hosts.ini \
+#     -e "csi_traffic_pings=100 csi_plot_slot=503 csi_plot_prb=0"
+#
+# Variables (all optional, with defaults):
+#   csi_traffic_pings   : number of pings per TUN interface (default: 50)
+#   csi_plot_slot       : UL slot to plot (default: auto)
+#   csi_plot_prb        : UL PRB to plot  (default: auto)
+#   csi_cleanup_remote  : remove CSI files from pod after copy (default: false)
+
+- name: CSI Collection and Visualization
+  hosts: ran_node
+  gather_facts: false
+  vars:
+    ran_ns: "{{ core }}"
+    csi_output_dir: "/home/{{ ansible_user }}/csi_output"
+    visualizer: "/home/{{ ansible_user }}/csi_output/csi_visualizer.py"
+    plots_dir: "/home/{{ ansible_user }}/csi_output/plots"
+    srs_gnb_label_selectors:
+      - "app=srsran"
+      - "component=gnb"
+    srs_ue_label_selectors:
+      - "app=srsran"
+      - "component=ue"
+
+  tasks:
+
+    # ─────────────────────────────────────────────────────────────
+    # SETUP
+    # ─────────────────────────────────────────────────────────────
+
+    - name: Create output directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ csi_output_dir }}"
+        - "{{ plots_dir }}"
+
+    - name: Check Python packages
+      command: python3 -c "import matplotlib, numpy"
+      register: python_check
+      failed_when: false
+      changed_when: false
+
+    - name: Install Python packages if missing
+      shell: |
+        pip3 install --user matplotlib numpy 2>/dev/null || \
+        pip3 install matplotlib numpy 2>/dev/null || true
+      when: python_check.rc != 0
+
+    - name: Copy CSI visualizer to ran_node
+      copy:
+        src: "{{ playbook_dir }}/../roles/5g/srsRAN/csi/files/csi_visualizer.py"
+        dest: "{{ visualizer }}"
+        mode: '0755'
+
+    # ─────────────────────────────────────────────────────────────
+    # GET POD NAMES
+    # ─────────────────────────────────────────────────────────────
+
+    - name: Get gNB pod name
+      command: >
+        kubectl get pods -n {{ ran_ns }}
+        -l {{ srs_gnb_label_selectors | join(',') }}
+        -o jsonpath={.items[0].metadata.name}
+      register: gnb_pod_result
+      changed_when: false
+
+    - name: Set gNB pod fact
+      set_fact:
+        csi_gnb_pod: "{{ gnb_pod_result.stdout }}"
+
+    - name: Display gNB pod
+      debug:
+        msg: "gNB pod: {{ csi_gnb_pod }} (namespace: {{ ran_ns }})"
+
+    - name: Fail if no gNB pod found
+      fail:
+        msg: "No gNB pod found in namespace {{ ran_ns }}"
+      when: csi_gnb_pod == ""
+
+    # ─────────────────────────────────────────────────────────────
+    # TRAFFIC (rfsim only — UE pod available)
+    # ─────────────────────────────────────────────────────────────
+
+    - name: CSI - Generate UE traffic (rfsim only)
+      block:
+        - name: Get UE pod name
+          command: >
+            kubectl get pods -n {{ ran_ns }}
+            -l {{ srs_ue_label_selectors | join(',') }}
+            -o jsonpath={.items[0].metadata.name}
+          register: ue_pod_result
+          changed_when: false
+
+        - name: Set UE pod fact
+          set_fact:
+            csi_ue_pod: "{{ ue_pod_result.stdout }}"
+
+        - name: Display UE pod
+          debug:
+            msg: "UE pod: {{ csi_ue_pod }}"
+
+        - name: Generate traffic on tun_srsue1
+          command: >
+            kubectl exec -n {{ ran_ns }} {{ csi_ue_pod }} --
+            ping -c {{ csi_traffic_pings | default(50) }} 8.8.8.8
+            -I tun_srsue1 -i 0.1 -W 1
+          failed_when: false
+          when: csi_ue_pod != ""
+
+        - name: Generate traffic on tun_srsue2
+          command: >
+            kubectl exec -n {{ ran_ns }} {{ csi_ue_pod }} --
+            ping -c {{ csi_traffic_pings | default(50) }} 8.8.8.8
+            -I tun_srsue2 -i 0.1 -W 1
+          failed_when: false
+          when: csi_ue_pod != ""
+
+        - name: Generate traffic on tun_srsue3
+          command: >
+            kubectl exec -n {{ ran_ns }} {{ csi_ue_pod }} --
+            ping -c {{ csi_traffic_pings | default(50) }} 8.8.8.8
+            -I tun_srsue3 -i 0.1 -W 1
+          failed_when: false
+          when: csi_ue_pod != ""
+
+        - name: Wait for CSI files to appear in pod
+          command: >
+            kubectl exec -n {{ ran_ns }} {{ csi_gnb_pod }} -c gnb
+            -- sh -c "ls /tmp/csi_data_0x*.bin /tmp/csi_dl_0x*.csv 2>/dev/null | wc -l"
+          register: csi_file_count
+          retries: 12
+          delay: 5
+          until: csi_file_count.stdout | int > 0
+          failed_when: false
+
+        - name: Display CSI file count
+          debug:
+            msg: "CSI files in pod: {{ csi_file_count.stdout | default('0') }}"
+
+      when: rru == "rfsim"
+
+    # ─────────────────────────────────────────────────────────────
+    # FETCH : pod → ran_node
+    # ─────────────────────────────────────────────────────────────
+
+    - name: List UL binary files in pod
+      command: >
+        kubectl exec -n {{ ran_ns }} {{ csi_gnb_pod }} -c gnb
+        -- sh -c "ls /tmp/csi_data_0x*.bin 2>/dev/null | xargs -I{} basename {}"
+      register: csi_ul_files
+      failed_when: false
+      changed_when: false
+
+    - name: List DL CSV files in pod
+      command: >
+        kubectl exec -n {{ ran_ns }} {{ csi_gnb_pod }} -c gnb
+        -- sh -c "ls /tmp/csi_dl_0x*.csv 2>/dev/null | xargs -I{} basename {}"
+      register: csi_dl_files
+      failed_when: false
+      changed_when: false
+
+    - name: Display files found in pod
+      debug:
+        msg: |
+          UL files: {{ csi_ul_files.stdout_lines | default([]) }}
+          DL files: {{ csi_dl_files.stdout_lines | default([]) }}
+
+    - name: Copy UL binary files from pod to ran_node
+      command: >
+        kubectl cp {{ ran_ns }}/{{ csi_gnb_pod }}:/tmp/{{ item }}
+        {{ csi_output_dir }}/{{ item }} -c gnb
+      loop: "{{ csi_ul_files.stdout_lines }}"
+      failed_when: false
+      when: csi_ul_files.stdout_lines | length > 0
+
+    - name: Copy DL CSV files from pod to ran_node
+      command: >
+        kubectl cp {{ ran_ns }}/{{ csi_gnb_pod }}:/tmp/{{ item }}
+        {{ csi_output_dir }}/{{ item }} -c gnb
+      loop: "{{ csi_dl_files.stdout_lines }}"
+      failed_when: false
+      when: csi_dl_files.stdout_lines | length > 0
+
+    - name: List CSI files on ran_node
+      find:
+        paths: "{{ csi_output_dir }}"
+        patterns:
+          - "csi_data_0x*.bin"
+          - "csi_dl_0x*.csv"
+      register: csi_files_on_ran
+
+    - name: Display CSI files on ran_node
+      debug:
+        msg: |
+          {{ csi_files_on_ran.matched }} CSI files on ran_node:
+          {% for f in csi_files_on_ran.files | sort(attribute='path') %}
+          - {{ f.path | basename }} ({{ (f.size / 1024) | round(1) }} KB)
+          {% endfor %}
+
+    - name: Fail if no CSI files found
+      fail:
+        msg: "No CSI files found — is the gNB running with --csi-logger-enabled ?"
+      when: csi_files_on_ran.matched == 0
+
+    # ─────────────────────────────────────────────────────────────
+    # VISUALIZE : generate all plots on ran_node
+    # ─────────────────────────────────────────────────────────────
+
+    - name: Generate all plots
+      shell: |
+        set -e
+        ERRORS=0
+
+        echo "=== UL plots ==="
+        for f in {{ csi_output_dir }}/csi_data_0x4*.bin; do
+          [ -f "$f" ] || { echo "No UL files"; continue; }
+          echo "Processing: $(basename $f)"
+          python3 {{ visualizer }} "$f" \
+            --output {{ plots_dir }} \
+            {% if csi_plot_slot is defined %}--slot {{ csi_plot_slot }}{% endif %} \
+            {% if csi_plot_prb is defined %}--prb {{ csi_plot_prb }}{% endif %} \
+            && echo "OK: $(basename $f)" \
+            || { echo "WARN: $(basename $f)"; ERRORS=$((ERRORS+1)); }
+        done
+
+        echo "=== DL plots per RNTI ==="
+        for f in {{ csi_output_dir }}/csi_dl_0x*.csv; do
+          [ -f "$f" ] || { echo "No DL files"; continue; }
+          echo "Processing: $(basename $f)"
+          python3 {{ visualizer }} "$f" --dl \
+            --output {{ plots_dir }} \
+            && echo "OK: $(basename $f)" \
+            || { echo "WARN: $(basename $f)"; ERRORS=$((ERRORS+1)); }
+        done
+
+        echo "=== DL multi-UE overview ==="
+        DL_COUNT=$(ls {{ csi_output_dir }}/csi_dl_0x*.csv 2>/dev/null | wc -l)
+        if [ "$DL_COUNT" -gt 1 ]; then
+          python3 {{ visualizer }} \
+            --dl-dir {{ csi_output_dir }} \
+            --output {{ plots_dir }} \
+            && echo "OK: multi-UE" \
+            || { echo "WARN: multi-UE"; ERRORS=$((ERRORS+1)); }
+        fi
+
+        echo "Done. Errors: $ERRORS"
+      register: viz_result
+      failed_when: false
+
+    - name: Display visualizer output
+      debug:
+        msg: "{{ viz_result.stdout_lines }}"
+
+    - name: Find generated PNG files
+      find:
+        paths: "{{ plots_dir }}"
+        patterns: "*.png"
+      register: all_plots
+
+    - name: Display plot summary
+      debug:
+        msg: |
+          Generated {{ all_plots.matched }} plots:
+          {% for f in all_plots.files | sort(attribute='path') %}
+          - {{ f.path | basename }}
+          {% endfor %}
+
+    # ─────────────────────────────────────────────────────────────
+    # CLEANUP (optional)
+    # ─────────────────────────────────────────────────────────────
+
+    - name: Remove CSI files from pod
+      command: >
+        kubectl exec -n {{ ran_ns }} {{ csi_gnb_pod }} -c gnb
+        -- sh -c "rm -f /tmp/csi_data_0x*.bin /tmp/csi_dl_0x*.csv /tmp/csi_debug.log"
+      when: csi_cleanup_remote | default(false)
+
+# ─────────────────────────────────────────────────────────────
+# COPY : ran_node → Duckburg (localhost)
+# ─────────────────────────────────────────────────────────────
+
+- name: Retrieve CSI results on Duckburg
+  hosts: localhost
+  gather_facts: false
+  vars:
+    local_csi_dir: "{{ playbook_dir }}/LOGS/csi"
+
+  tasks:
+    - name: Create local LOGS/csi directory
+      file:
+        path: "{{ local_csi_dir }}"
+        state: directory
+        recurse: yes
+        mode: '0755'
+
+    - name: Sync plots and CSV from ran_node to Duckburg
+      synchronize:
+        src: "/home/{{ hostvars[groups['ran_node'][0]]['ansible_user'] }}/csi_output/"
+        dest: "{{ local_csi_dir }}/"
+        mode: pull
+        delete: no
+        rsync_opts:
+          - "--include=plots/"
+          - "--include=plots/*.png"
+          - "--include=*.csv"
+          - "--include=csi_visualizer.py"
+          - "--exclude=*.bin"
+          - "--exclude=*"
+      delegate_to: "{{ groups['ran_node'][0] }}"
+
+    - name: Find files on Duckburg
+      find:
+        paths: "{{ local_csi_dir }}"
+        patterns:
+          - "*.png"
+          - "*.csv"
+        recurse: yes
+      register: local_files
+
+    - name: Display results
+      debug:
+        msg: |
+          ╔══════════════════════════════════════════════════════╗
+          ║         CSI COLLECTION COMPLETE                      ║
+          ║                                                      ║
+          ║  {{ local_files.matched }} files in {{ local_csi_dir }}
+          ║                                                      ║
+          ║  To fetch to your Mac:                               ║
+          ║  scp -P 10022 -r                                     ║
+          ║    turletti@duckburg.net.in.tum.de:{{ local_csi_dir }}
+          ║    ~/Downloads/                                      ║
+          ╚══════════════════════════════════════════════════════╝

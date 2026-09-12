@@ -1,3 +1,20 @@
 ---
 ue_count: 3
 ran_ns: "{{ core }}"
+
+# AW2S fronthaul IRQ and CPU pinning defaults
+# These values match the r2lab sopnode-fX servers (Intel E810, 64-core)
+# Override in host_vars or group_vars if your server topology differs
+#
+# Virtual interface name used by OAI for the AW2S fronthaul (same on all f-nodes)
+fronthaul_iface: "r2lab_aw2s"
+#
+# CPUs assigned to OAI real-time threads (udp read/write, L1 rx/tx)
+# Must match L1_rx_thread_core, L1_tx_thread_core, rxfh_core_id, txfh_core_id in gnb config
+oai_cpus: [16, 18, 20, 22]
+#
+# CPU range for RT isolation (matches isolcpus/nohz_full in kernel cmdline)
+rt_cpu_range: "16-63"
+#
+# CPUs reserved for system/housekeeping (containerd, kubelet, system daemons)
+housekeeping_cpus: "0-15"

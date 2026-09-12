@@ -74,7 +74,7 @@
 
     - name: Install UHD on target_server_host for n300/n320
       include_role:
-        name: setup/uhd
+        name: setup/uhd-gnuradio
         apply:
           delegate_to: "{{ target_server_host }}"
           become: true

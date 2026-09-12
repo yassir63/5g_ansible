@@ -7,6 +7,31 @@
   args:
     chdir: "{{ repo_dest }}"
 
+# -----------------------------------------------------------------
+# PHASE 1 - Before gNB start: constrain system services to
+#           housekeeping CPUs so new pods inherit the right affinity
+# -----------------------------------------------------------------
+- name: AW2S pre-start - constrain system services to housekeeping CPUs
+  block:
+    - name: Set containerd AllowedCPUs
+      ansible.builtin.command: >
+        systemctl set-property containerd.service AllowedCPUs={{ housekeeping_cpus }}
+      changed_when: true
+
+    - name: Set kubelet AllowedCPUs
+      ansible.builtin.command: >
+        systemctl set-property kubelet.service AllowedCPUs={{ housekeeping_cpus }}
+      changed_when: true
+
+    - name: Reload systemd after property changes
+      ansible.builtin.systemd:
+        daemon_reload: yes
+  when: rru == "jaguar" or rru == "panther"
+
+# -----------------------------------------------------------------
+# gNB launch
+# -----------------------------------------------------------------
+
 - name: Launch OAI gNB pod
   ansible.builtin.command: "{{ demo_oai_script }} start-gnb"
   args:
@@ -14,12 +39,13 @@
   register: gnb_script
   changed_when: "'When you finish' in gnb_script.stdout"
 
-# --- USRP LOG CHECK LOGIC ---
+# -----------------------------------------------------------------
+# gNB sync check (USRP N3XX only)
+# -----------------------------------------------------------------
 - name: Monitor gNB logs for sync
   block:
-
     - name: Set pod label based on OAI mode
-      set_fact:
+      ansible.builtin.set_fact:
         pod_label_selector: >-
           {% if (oai_gnb_mode | default('')) in ['cudu', 'cucpup'] %}
           app.kubernetes.io/name=oai-du,app.kubernetes.io/instance=oai-du
@@ -28,16 +54,19 @@
           {% endif %}
 
     - name: Wait for gNB synchronization string
-      shell: |
-        GNB_POD_NAME=$(kubectl get pods --namespace {{ core }} -l "{{ pod_label_selector }}" -o jsonpath="{.items[0].metadata.name}")
-        kubectl logs --namespace {{ core }} $GNB_POD_NAME | grep '\[NR_MAC\] I Frame.Slot'
+      ansible.builtin.shell: |
+        GNB_POD_NAME=$(kubectl get pods --namespace {{ core }} \
+          -l "{{ pod_label_selector }}" \
+          -o jsonpath="{.items[0].metadata.name}")
+        kubectl logs --namespace {{ core }} $GNB_POD_NAME \
+          | grep '\[NR_MAC\] I Frame.Slot'
       register: gnb_log_check
       until: gnb_log_check.rc == 0
       retries: 6
       delay: 10
       ignore_errors: true
 
-    - name: Handle Sync Failure
+    - name: Handle sync failure
       block:
         - name: Stop gNB after failed sync
           ansible.builtin.command: "{{ demo_oai_script }} stop-gnb"
@@ -45,7 +74,7 @@
             chdir: "{{ repo_dest }}"
 
         - name: Swap USRP IP address
-          include_role:
+          ansible.builtin.include_role:
             name: 5g/oai/ran/n3xx_ip_swap
 
         - name: Restart OAI gNB pod
@@ -54,18 +83,66 @@
             chdir: "{{ repo_dest }}"
 
         - name: Re-check gNB logs for sync
-          shell: |
-            GNB_POD_NAME=$(kubectl get pods --namespace {{ core }} -l "{{ pod_label_selector }}" -o jsonpath="{.items[0].metadata.name}")
-            kubectl logs --namespace {{ core }} $GNB_POD_NAME | grep '\[NR_MAC\] I Frame.Slot'
+          ansible.builtin.shell: |
+            GNB_POD_NAME=$(kubectl get pods --namespace {{ core }} \
+              -l "{{ pod_label_selector }}" \
+              -o jsonpath="{.items[0].metadata.name}")
+            kubectl logs --namespace {{ core }} $GNB_POD_NAME \
+              | grep '\[NR_MAC\] I Frame.Slot'
           register: gnb_log_check_retry
           until: gnb_log_check_retry.rc == 0
           retries: 6
           delay: 10
           failed_when: gnb_log_check_retry.rc != 0
       when: gnb_log_check.rc != 0
-
   when: rru == "n300" or rru == "n320"
 
+# -----------------------------------------------------------------
+# PHASE 2 - After gNB sync: IRQ pinning and ru_thread affinity
+#           IRQs and ru_thread only exist once the gNB fronthaul
+#           is active, so this must run after Frame.Slot appears
+# -----------------------------------------------------------------
+- name: AW2S post-sync - IRQ and CPU pinning
+  block:
+    - name: Deploy IRQ setup script from template
+      ansible.builtin.template:
+        src: oai-irq-setup.sh.j2
+        dest: /usr/local/bin/oai-irq-setup.sh
+        mode: '0755'
+
+    - name: Deploy systemd service for persistent IRQ pinning
+      ansible.builtin.template:
+        src: oai-irq-pinning.service.j2
+        dest: /etc/systemd/system/oai-irq-pinning.service
+
+    - name: Enable IRQ pinning service
+      ansible.builtin.systemd:
+        name: oai-irq-pinning
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Wait for gNB sync before applying IRQ pinning
+      ansible.builtin.shell: |
+        GNB_POD_NAME=$(kubectl get pods --namespace {{ core }} \
+          -l "app.kubernetes.io/name=oai-gnb,app.kubernetes.io/instance=oai-gnb" \
+          -o jsonpath="{.items[0].metadata.name}")
+        kubectl logs --namespace {{ core }} $GNB_POD_NAME \
+          | grep '\[NR_MAC\] I Frame.Slot'
+      register: aw2s_sync_check
+      until: aw2s_sync_check.rc == 0
+      retries: 12
+      delay: 10
+      failed_when: aw2s_sync_check.rc != 0
+
+    - name: Run IRQ setup script
+      ansible.builtin.command: /usr/local/bin/oai-irq-setup.sh
+      changed_when: true
+
+  when: rru == "jaguar" or rru == "panther"
+
+# -----------------------------------------------------------------
+# NR-UE launch (rfsim only)
+# -----------------------------------------------------------------
 - name: Launch OAI NR-UE pods (conditional)
   ansible.builtin.command: "{{ demo_oai_script }} {{ ue_cmd }}"
   args:
@@ -79,4 +156,3 @@
   register: nr_ue_scripts
   changed_when: "'condition met' in nr_ue_scripts.stdout"
   when: rru == "rfsim"
-

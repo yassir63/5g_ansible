@@ -197,6 +197,24 @@
     line: 'export NAD_TYPE_N2N3="ovs"'
     insertafter: EOF
   when: not (core == 'oai' and core_node_name == ran_node_name and ran != 'ueransim')
+
+# use extra-var "e.g., ansible-playbook -e "csi_logger_enabled=true"
+- name: Set CSI_ENABLED flag when csi_logger_enabled is defined
+  ansible.builtin.lineinfile:
+    path: "{{ prepare_demo_script }}"
+    regexp: '^#?export CSI_ENABLED='
+    line: 'export CSI_ENABLED="{{ csi_logger_enabled }}"'
+    insertafter: EOF
+  when: csi_logger_enabled is defined
+ 
+# use extra-var "e.g. with ansible-playbook -e "redcap=true"
+- name: Set REDCAP flag when redcap is defined
+  ansible.builtin.lineinfile:
+    path: "{{ prepare_demo_script }}"
+    regexp: '^#?export REDCAP='
+    line: 'export REDCAP="{{ redcap }}"'
+    insertafter: EOF
+  when: redcap is defined
  
 - name: Run prepare-demo-oai.sh to pull and configure OAI charts
   ansible.builtin.shell: "./prepare-demo-oai.sh -a 2>&1 | tee /tmp/output-prepare-demo-oai.txt"

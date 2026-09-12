@@ -48,7 +48,7 @@
     target_server_host: "{{ hostvars['localhost'].get('target_server_host', groups['iperf_server_node'][0]) }}"
     target_server_ip: "{{ hostvars[target_server_host]['ip'] }}"
     ignore_task_errors: yes
-    nb_ues: "{{ 3 if rru == 'rfsim' else groups['qhats'] | length }}"
+    nb_ues: "{{ 3 if rru == 'rfsim' else (groups['qhats'] + groups['qfits'] + groups['phones']) | length }}"
   roles:
     - role: scenarios/iperf_server
 
@@ -59,7 +59,7 @@
   vars:
     target_server_host: "{{ hostvars['localhost'].get('target_server_host', groups['iperf_server_node'][0]) }}"
     target_server_ip: "{{ hostvars[target_server_host]['ip'] }}"
-    nb_ues: "{{ 3 if rru == 'rfsim' else groups['qhats'] | length }}"
+    nb_ues: "{{ 3 if rru == 'rfsim' else (groups['qhats'] + groups['qfits'] + groups['phones']) | length }}"
     ignore_task_errors: yes
   tasks:
     - name: Run RFSIM role
@@ -72,7 +72,7 @@
   vars:
     target_server_host: "{{ hostvars['localhost'].get('target_server_host', groups['iperf_server_node'][0]) }}"
     ignore_task_errors: yes
-    nb_ues: "{{ groups['qhats'] | length }}"
+    nb_ues: "{{ (groups['qhats'] + groups['qfits'] + groups['phones']) | length }}"
     target_server_ip: "{{ hostvars[target_server_host]['ip'] }}"
   roles:
     - role: scenarios/iperf/ue-to-target_server

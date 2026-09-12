@@ -1,0 +1,61 @@
+#!/bin/bash
+# OAI AW2S fronthaul IRQ and CPU pinning script
+# Auto-detects physical interface and NIC driver from the fronthaul VLAN name
+set -euo pipefail
+
+OAI_CPUS=({{ oai_cpus | join(' ') }})
+FH_IFACE="{{ fronthaul_iface }}"
+RT_RANGE="{{ rt_cpu_range }}"
+N={{ oai_cpus | length }}
+
+detect_phys_iface() {
+  local iface=$1
+  local phys
+  phys=$(cat /proc/net/vlan/"$iface" 2>/dev/null | awk '/Device:/ {print $2}')
+  [ -z "$phys" ] && phys=$(ip -d link show "$iface" 2>/dev/null \
+    | grep -oP '(?<=link )\S+' | head -1)
+  [ -z "$phys" ] && phys=$iface
+  echo "$phys"
+}
+
+PHYS=$(detect_phys_iface "$FH_IFACE")
+DRIVER=$(ethtool -i "$PHYS" 2>/dev/null | awk '/^driver:/ {print $2}')
+echo "Fronthaul interface: $FH_IFACE -> physical=$PHYS driver=$DRIVER"
+
+case "$DRIVER" in
+  ice)    IRQ_PATTERN="ice-${PHYS}-TxRx" ;;
+  mlx5*)  IRQ_PATTERN="mlx5_comp" ;;
+  *)
+    echo "Unsupported driver: $DRIVER - aborting."
+    exit 1
+    ;;
+esac
+
+echo "[1/4] Disabling irqbalance"
+systemctl stop irqbalance 2>/dev/null || true
+systemctl disable irqbalance 2>/dev/null || true
+
+echo "[2/4] Reducing NIC queues to $N"
+ethtool -L "$PHYS" combined "$N" 2>/dev/null \
+  && echo "  $PHYS combined=$N OK" \
+  || echo "  $PHYS SKIP (not supported by driver)"
+
+echo "[3/4] Pinning IRQs matching '$IRQ_PATTERN' to OAI CPUs"
+IDX=0
+while IFS= read -r irq; do
+  CPU=${OAI_CPUS[$((IDX % N))]}
+  echo "$CPU" > /proc/irq/"$irq"/smp_affinity_list
+  echo "  IRQ $irq -> CPU $CPU"
+  IDX=$((IDX + 1))
+done < <(grep "$IRQ_PATTERN" /proc/interrupts | awk -F: '{print $1}' | tr -d ' ')
+
+if [ "$IDX" -eq 0 ]; then
+  echo "  WARNING: no IRQs found matching pattern '$IRQ_PATTERN'"
+fi
+
+echo "[4/4] Constraining ru_thread to RT CPUs ($RT_RANGE)"
+while IFS= read -r tid; do
+  taskset -pc "$RT_RANGE" "$tid" 2>/dev/null || true
+done < <(ps -eLo tid,comm | awk '/ru_thread/ {print $1}')
+
+echo "Done."
