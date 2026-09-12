@@ -97,10 +97,6 @@
 - name: Collect experiment pod logs
   ansible.builtin.include_tasks:
     file: "{{ playbook_dir }}/../tasks/experiment_collect_pod_logs.yml"
-    apply:
-      delegate_to: "{{ experiment_pod_log_control_host_effective }}"
-  vars:
-    ansible_user: "{{ experiment_pod_log_remote_user_effective }}"
   when:
     - experiment_collect_enabled | bool
     - experiment_collect_pod_logs | bool

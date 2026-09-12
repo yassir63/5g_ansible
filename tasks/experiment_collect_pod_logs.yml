@@ -116,6 +116,10 @@
     tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
   args:
     executable: /bin/bash
+  delegate_to: "{{ experiment_pod_log_control_host_effective }}"
+  become: false
+  vars:
+    ansible_user: "{{ experiment_pod_log_remote_user_effective }}"
   register: experiment_pod_logs_collect_output
   when: experiment_collect_pod_logs | bool
   changed_when: true
@@ -126,6 +130,10 @@
     src: "/tmp/{{ experiment_run_id }}_pod_logs.tgz"
     dest: "{{ experiment_results_dir }}/pod_logs.tgz"
     flat: true
+  delegate_to: "{{ experiment_pod_log_control_host_effective }}"
+  become: false
+  vars:
+    ansible_user: "{{ experiment_pod_log_remote_user_effective }}"
   register: experiment_pod_logs_fetch_output
   when: experiment_collect_pod_logs | bool
   failed_when: false
@@ -147,6 +155,9 @@
         {
           "expected_local_archive": experiment_results_dir + "/pod_logs.tgz",
           "expected_remote_archive": "/tmp/" + experiment_run_id + "_pod_logs.tgz",
+          "control_host": experiment_pod_log_control_host_effective,
+          "remote_user": experiment_pod_log_remote_user_effective,
+          "kubeconfig": experiment_kubeconfig,
           "fetched": experiment_pod_logs_archive_stat.stat.exists | default(false),
           "size": experiment_pod_logs_archive_stat.stat.size | default(0),
           "collection": experiment_pod_logs_collect_output | default({}),
