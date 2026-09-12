@@ -93,6 +93,8 @@
         experiment_monitor_host: "{{ groups['monitor_node'][0] if (groups['monitor_node'] | default([]) | length > 0) else '' }}"
         experiment_prometheus_url_requested: "{{ experiment_prometheus_url | default('') }}"
         experiment_prometheus_profile_url: "{{ experiment_collect_config.prometheus.url | default('') }}"
+        experiment_kubeconfig_requested: "{{ experiment_kubeconfig | default('') }}"
+        experiment_pod_log_control_host_requested: "{{ experiment_pod_log_control_host | default('') }}"
 
     - name: Set experiment collection defaults
       ansible.builtin.set_fact:
@@ -128,7 +130,12 @@
         experiment_pod_log_since: "{{ experiment_collect_config.pod_logs.since | default('8h') }}"
         experiment_pod_log_tail_lines: "{{ experiment_collect_config.pod_logs.tail_lines | default(5000) | int }}"
         experiment_pod_log_include_previous: "{{ experiment_collect_config.pod_logs.include_previous | default(true) | bool }}"
-        experiment_kubeconfig: "{{ experiment_scenario.kubeconfig | default(experiment_collect_config.kubeconfig | default('/etc/kubernetes/admin.conf')) }}"
+        experiment_kubeconfig: >-
+          {{
+            experiment_kubeconfig_requested
+            if (experiment_kubeconfig_requested | length > 0)
+            else experiment_scenario.kubeconfig | default(experiment_collect_config.kubeconfig | default('auto'))
+          }}
 
     - name: Set effective experiment sections
       ansible.builtin.set_fact:
@@ -173,7 +180,9 @@
       ansible.builtin.set_fact:
         experiment_pod_log_control_host_effective: >-
           {{
-            experiment_collect_config.pod_logs.control_host | default(
+            experiment_pod_log_control_host_requested
+            if (experiment_pod_log_control_host_requested | length > 0)
+            else experiment_collect_config.pod_logs.control_host | default(
               groups['core_node'][0]
               if (groups['core_node'] | default([]) | length > 0)
               else 'localhost'

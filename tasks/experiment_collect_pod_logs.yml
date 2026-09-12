@@ -15,6 +15,7 @@
     OUT="/tmp/{{ experiment_run_id }}_pod_logs"
     ARCHIVE="/tmp/{{ experiment_run_id }}_pod_logs.tgz"
     NAMESPACES="{{ experiment_pod_log_namespaces_effective | join(' ') }}"
+    KUBECONFIG_REQUESTED="{{ experiment_kubeconfig | default('auto') }}"
     SINCE="{{ experiment_pod_log_since }}"
     TAIL="{{ experiment_pod_log_tail_lines | int }}"
     INCLUDE_PREVIOUS="{{ (experiment_pod_log_include_previous | bool) | ternary('1', '0') }}"
@@ -25,7 +26,7 @@
       echo "run_id={{ experiment_run_id }}"
       echo "host=$(hostname -f 2>/dev/null || hostname)"
       echo "namespaces=${NAMESPACES}"
-      echo "kubeconfig={{ experiment_kubeconfig }}"
+      echo "kubeconfig_requested=${KUBECONFIG_REQUESTED}"
       echo "since=${SINCE}"
       echo "tail=${TAIL}"
       echo "include_previous=${INCLUDE_PREVIOUS}"
@@ -38,7 +39,42 @@
       exit 0
     fi
 
-    export KUBECONFIG="{{ experiment_kubeconfig }}"
+    {
+      echo "requested=${KUBECONFIG_REQUESTED}"
+      if [ -n "${KUBECONFIG_REQUESTED}" ] && [ "${KUBECONFIG_REQUESTED}" != "auto" ]; then
+        export KUBECONFIG="${KUBECONFIG_REQUESTED}"
+        echo "selected=${KUBECONFIG}"
+        echo "mode=explicit"
+      else
+        selected=""
+        for candidate in "$HOME/.kube/config" /root/.kube/config /etc/kubernetes/admin.conf; do
+          if [ ! -f "$candidate" ]; then
+            echo "candidate_missing=${candidate}"
+            continue
+          fi
+          export KUBECONFIG="$candidate"
+          if kubectl get namespaces >/dev/null 2>&1; then
+            selected="$candidate"
+            break
+          fi
+          echo "candidate_failed=${candidate}"
+        done
+        if [ -n "$selected" ]; then
+          export KUBECONFIG="$selected"
+          echo "selected=${selected}"
+          echo "mode=auto"
+        else
+          unset KUBECONFIG
+          echo "selected=default"
+          echo "mode=auto-fallback"
+        fi
+      fi
+    } > "$OUT/kubectl_config_selection.txt" 2>&1
+
+    {
+      echo "kubeconfig_selected=${KUBECONFIG:-default}"
+    } >> "$OUT/collection_info.txt"
+
     kubectl version > "$OUT/kubectl_version.txt" 2>&1 || true
     kubectl config current-context > "$OUT/kubectl_context.txt" 2>&1 || true
     kubectl get nodes -o wide > "$OUT/nodes.txt" 2>&1 || true

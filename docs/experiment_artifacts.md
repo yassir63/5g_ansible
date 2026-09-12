@@ -196,6 +196,25 @@ collect:
     enabled: false
 ```
 
+Pod logs are collected by running `kubectl` on one control host. By default,
+the runner uses the first `[core_node]` inventory host and auto-detects a
+usable kubeconfig from `$HOME/.kube/config`, `/root/.kube/config`, or
+`/etc/kubernetes/admin.conf`. If your working Kubernetes context is on another
+machine, override it at runtime:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment uesim_artifact_validation \
+  --experiment-artifacts default_5g_observability \
+  -e experiment_pod_log_control_host=sopnode-f2
+```
+
+If that host uses a specific kubeconfig path, also pass:
+
+```bash
+-e experiment_kubeconfig=/path/to/kubeconfig
+```
+
 Each section becomes a timeline window. If Prometheus splitting is enabled, the
 runner creates:
 
