@@ -14,7 +14,8 @@
     set -u
     OUT="/tmp/{{ experiment_run_id }}_pod_logs"
     ARCHIVE="/tmp/{{ experiment_run_id }}_pod_logs.tgz"
-    NAMESPACES="{{ experiment_pod_log_namespaces_effective | join(' ') }}"
+    NAMESPACES_REQUESTED="{{ experiment_pod_log_namespaces_effective | join(' ') }}"
+    NAMESPACES="${NAMESPACES_REQUESTED}"
     KUBECONFIG_REQUESTED="{{ experiment_kubeconfig | default('auto') }}"
     SINCE="{{ experiment_pod_log_since }}"
     TAIL="{{ experiment_pod_log_tail_lines | int }}"
@@ -25,7 +26,7 @@
     {
       echo "run_id={{ experiment_run_id }}"
       echo "host=$(hostname -f 2>/dev/null || hostname)"
-      echo "namespaces=${NAMESPACES}"
+      echo "namespaces_requested=${NAMESPACES_REQUESTED}"
       echo "kubeconfig_requested=${KUBECONFIG_REQUESTED}"
       echo "since=${SINCE}"
       echo "tail=${TAIL}"
@@ -75,6 +76,38 @@
       echo "kubeconfig_selected=${KUBECONFIG:-default}"
     } >> "$OUT/collection_info.txt"
 
+    if [ -z "$(printf '%s' "$NAMESPACES_REQUESTED" | tr -d '[:space:]')" ] || [ "$NAMESPACES_REQUESTED" = "auto" ]; then
+      discovered_namespaces="$(kubectl get pods -A --no-headers 2>/dev/null | awk '{print $1}' | sort -u || true)"
+      auto_namespaces=""
+      for ns in $discovered_namespaces; do
+        case "$ns" in
+          kube-*|cluster-network-addons|openebs|sriov-network-operator|cert-manager|metallb-system|local-path-storage)
+            continue
+            ;;
+          default)
+            continue
+            ;;
+        esac
+        auto_namespaces="${auto_namespaces} ${ns}"
+      done
+
+      if [ -z "$(printf '%s' "$auto_namespaces" | tr -d '[:space:]')" ]; then
+        auto_namespaces="default"
+      fi
+
+      NAMESPACES="$(printf '%s\n' $auto_namespaces | sort -u | xargs)"
+      {
+        echo "namespaces_mode=auto"
+        echo "namespaces_discovered=$(printf '%s\n' $discovered_namespaces | sort -u | xargs)"
+        echo "namespaces_resolved=${NAMESPACES}"
+      } >> "$OUT/collection_info.txt"
+    else
+      {
+        echo "namespaces_mode=explicit"
+        echo "namespaces_resolved=${NAMESPACES}"
+      } >> "$OUT/collection_info.txt"
+    fi
+
     kubectl version > "$OUT/kubectl_version.txt" 2>&1 || true
     kubectl config current-context > "$OUT/kubectl_context.txt" 2>&1 || true
     kubectl get nodes -o wide > "$OUT/nodes.txt" 2>&1 || true
@@ -117,10 +150,10 @@
   args:
     executable: /bin/bash
   delegate_to: "{{ experiment_pod_log_control_host_effective }}"
+  remote_user: "{{ hostvars['localhost'].experiment_pod_log_remote_user_effective | default('root') }}"
   become: false
   vars:
     ansible_connection: ssh
-    ansible_user: "{{ experiment_pod_log_remote_user_effective }}"
   register: experiment_pod_logs_collect_output
   when: experiment_collect_pod_logs | bool
   changed_when: true
@@ -132,10 +165,10 @@
     dest: "{{ experiment_results_dir }}/pod_logs.tgz"
     flat: true
   delegate_to: "{{ experiment_pod_log_control_host_effective }}"
+  remote_user: "{{ hostvars['localhost'].experiment_pod_log_remote_user_effective | default('root') }}"
   become: false
   vars:
     ansible_connection: ssh
-    ansible_user: "{{ experiment_pod_log_remote_user_effective }}"
   register: experiment_pod_logs_fetch_output
   when: experiment_collect_pod_logs | bool
   failed_when: false

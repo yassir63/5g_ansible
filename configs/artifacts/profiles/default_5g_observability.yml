@@ -13,7 +13,7 @@ collect:
   window_types: "campaign,section"
   pod_logs:
     enabled: true
-    namespaces: ["open5gs", "monitoring"]
+    namespaces: auto
     since: "2h"
     tail_lines: 5000
     include_previous: true

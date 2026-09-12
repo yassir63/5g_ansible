@@ -192,15 +192,30 @@ collect:
   split_by_windows: true
   pod_logs:
     enabled: true
+    namespaces: auto
   pcaps:
     enabled: false
 ```
 
 Pod logs are collected by running `kubectl` on one control host. By default,
-the runner uses the first `[core_node]` inventory host and auto-detects a
-usable kubeconfig from `$HOME/.kube/config`, `/root/.kube/config`, or
-`/etc/kubernetes/admin.conf`. It connects as `root` by default because the
-cluster kubeconfig is commonly root-owned on lab nodes.
+the runner uses the `[monitor_node]` inventory host when present, then falls
+back to the first `[core_node]`. It auto-detects a usable kubeconfig from
+`$HOME/.kube/config`, `/root/.kube/config`, or `/etc/kubernetes/admin.conf`.
+It connects as `root` by default because the cluster kubeconfig is commonly
+root-owned on lab nodes.
+
+With `namespaces: auto`, the collector lists pods across the cluster, keeps
+application/observability namespaces such as `open5gs`, `oai`, `free5gc`, and
+`monitoring`, skips Kubernetes infrastructure namespaces, and falls back to
+`default` only when no application namespace with pods is found. To force a
+specific set of namespaces, pass a YAML list or a comma-separated string:
+
+```yaml
+collect:
+  pod_logs:
+    enabled: true
+    namespaces: ["open5gs", "monitoring"]
+```
 
 If your working Kubernetes context is on another machine, override it at
 runtime:
