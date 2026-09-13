@@ -1,0 +1,119 @@
+---
+# ============================================================
+# ueransim deploy for OAI (Helm)
+# Basé sur deploy_free5gc.yml
+# ============================================================
+
+- name: Load NAD file from chart path
+  ansible.builtin.slurp:
+    src: "{{ ueransim_chart_path }}/nad/nad-gnb.yaml"
+  register: nad_file
+  delegate_to: "{{ inventory_hostname }}"
+
+- name: Apply NetworkAttachmentDefinitions for gNB
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ nad_file.content | b64decode | from_yaml_all | list }}"
+    namespace: "{{ ran_ns | default('oai') }}"
+  register: nad_gnb_applied
+  retries: 3
+  delay: 5
+  until: nad_gnb_applied is not failed
+
+- name: Verify NAD creation
+  kubernetes.core.k8s_info:
+    api_version: k8s.cni.cncf.io/v1
+    kind: NetworkAttachmentDefinition
+    namespace: "{{ ran_ns | default('oai') }}"
+  register: nad_list
+  retries: 3
+  delay: 2
+
+- name: Display created NADs
+  ansible.builtin.debug:
+    msg: |
+      Created NetworkAttachmentDefinitions:
+      {% for nad in nad_list.resources %}
+        - {{ nad.metadata.name }}
+      {% endfor %}
+
+- name: Uninstall existing ueransim-gnb release if present
+  shell: >
+    helm list -n {{ ran_ns | default('oai') }} -a -q |
+    grep -w "^ueransim-gnb$" | wc -l
+  register: gnb_release_exists
+  changed_when: false
+  failed_when: false
+
+- name: Uninstall ueransim-gnb
+  shell: helm uninstall ueransim-gnb -n {{ ran_ns | default('oai') }} --no-hooks
+  when: gnb_release_exists.stdout | trim | int > 0
+  failed_when: false
+
+- name: Uninstall existing ueransim-ue releases if present
+  shell: >
+    helm list -n {{ ran_ns | default('oai') }} -a -q |
+    grep -w "^ueransim-{{ item.key | lower }}$" | wc -l
+  register: ue_release_exists
+  changed_when: false
+  failed_when: false
+  loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['uesim01', 'uesim02', 'uesim03']) | sort(attribute='key') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Uninstall existing ueransim-ue releases
+  shell: >
+    helm uninstall ueransim-{{ item.item.key | lower }}
+    -n {{ ran_ns | default('oai') }} --no-hooks
+  when: item.stdout | trim | int > 0
+  failed_when: false
+  loop: "{{ ue_release_exists.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: Deploy ueransim gNB via Helm
+  kubernetes.core.helm:
+    name: ueransim-gnb
+    chart_ref: "{{ ueransim_chart_path }}"
+    release_namespace: "{{ ran_ns | default('oai') }}"
+    state: present
+    wait: true
+    timeout: 120s
+    values_files:
+      - "{{ ueransim_chart_path }}/overrides/values-gnb-override.yaml"
+
+- name: Wait for gNB pod to be Ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ ran_ns | default('oai') }}"
+    label_selectors:
+      - app=ueransim
+      - component=gnb
+  register: gnb_pod
+  until:
+    - gnb_pod.resources | length > 0
+    - gnb_pod.resources[0].status.phase == 'Running'
+    - gnb_pod.resources[0].status.containerStatuses |
+      selectattr('ready', 'equalto', true) | list | length ==
+      gnb_pod.resources[0].status.containerStatuses | length
+  retries: 12
+  delay: 10
+
+- name: Delay for gNB stability
+  ansible.builtin.pause:
+    seconds: 10
+
+- name: Sequential UE deployment
+  include_tasks: sequential_ue_deploy_oai.yml
+  loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['uesim01', 'uesim02', 'uesim03']) | sort(attribute='key') | list }}"
+  loop_control:
+    loop_var: ue_item
+    index_var: ue_idx
+
+- name: Deployment summary
+  ansible.builtin.debug:
+    msg: |
+      UERANSIM deployment for OAI done
+      Check logs:
+        kubectl logs -n {{ ran_ns | default('oai') }} -l app=ueransim,component=gnb

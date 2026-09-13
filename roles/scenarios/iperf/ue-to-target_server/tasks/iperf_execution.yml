@@ -1,63 +1,142 @@
 ---
-- name: Debug IPERF UL parameters for {{ current_ue }}
+# ue_ip retrieved from main.yml loop (ue_ips[current_ue]), filled for phones and Quectel UEs
+
+- name: "Recompute is_phone for {{ current_ue }}"
+  set_fact:
+    is_phone: "{{ current_ue in (groups['phones'] | default([])) }}"
+
+- name: "Debug IPERF parameters for {{ current_ue }}"
   debug:
     msg: |
-      UE: {{ current_ue }}
+      UE: {{ current_ue }} (phone={{ is_phone }})
       Bind IP: {{ ue_ip }}
       Server IP: {{ target_server }}
       Port: {{ iperf_port }}
       Duration: {{ duration }}s
 
-# Run Uplink test on UE
-- name: Run uplink iperf from {{ current_ue }} via faraday
-  shell: |
-    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ current_ue }} \
-    "iperf3 -p {{ iperf_port }} -B {{ ue_ip }} -c {{ target_server }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json"
-  ignore_errors: "{{ ignore_task_errors | default(false) }}"
-  when: ue_ip is defined and ue_ip != ""
 
-- pause:
-    seconds: "{{ sleep }}"
+- name: "Phone iperf for {{ current_ue }}"
+  when: is_phone
+  block:
+    - name: "Phone: resolve adb/ssh params for {{ current_ue }}"
+      set_fact:
+        phone_ssh: "{{ hostvars[current_ue].ansible_user | default('tester') }}@{{ hostvars[current_ue].ansible_host | default(current_ue) }}"
+        adb_bin: "{{ hostvars[current_ue].adb_bin | default('adb') }}"
+        adb_opts: "{{ ('-s ' ~ hostvars[current_ue].serial) if (hostvars[current_ue].serial is defined and (hostvars[current_ue].serial | string | length) > 0) else '' }}"
+        phone_key: "/home/faraday/r2lab-embedded/mac-ssh-keys/macphone"
+        iperf_bin_remote: "/data/local/tmp/iperf3"
 
-- name: Debug IPERF DL parameters for {{ current_ue }}
-  debug:
-    msg: |
-      UE: {{ current_ue }}
-      Bind IP: {{ ue_ip }}
-      Server IP: {{ target_server }}
-      Port: {{ iperf_port }}
-      Duration: {{ duration }}s
+    - name: "Phone: check iperf3 present on {{ current_ue }}"
+      shell: >
+        ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no -i {{ phone_key }}
+        {{ phone_ssh }}
+        '{{ adb_bin }} {{ adb_opts }} shell {{ iperf_bin_remote }} --version'
+      register: phone_iperf_ver
+      changed_when: false
+      failed_when: false
 
-# Run Downlink test on UE
-- name: Run downlink iperf from {{ current_ue }} via faraday
-  shell: |
-    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ current_ue }} \
-    "iperf3 -p {{ iperf_port }} -B {{ ue_ip }} -c {{ target_server }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json"
-  ignore_errors: "{{ ignore_task_errors | default(false) }}"
-  when: ue_ip is defined and ue_ip != ""
+    - name: "Phone: push static iperf3 to {{ current_ue }} if missing"
+      when: "'iperf 3.19' not in (phone_iperf_ver.stdout | default(''))"
+      shell: |
+        scp -o BatchMode=yes -o StrictHostKeyChecking=no -i {{ phone_key }} \
+            {{ role_path }}/files/iperf3 {{ phone_ssh }}:/tmp/iperf3 && \
+        ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i {{ phone_key }} {{ phone_ssh }} \
+            '{{ adb_bin }} {{ adb_opts }} push /tmp/iperf3 {{ iperf_bin_remote }} && {{ adb_bin }} {{ adb_opts }} shell chmod 755 {{ iperf_bin_remote }}'
+      changed_when: true
+      ignore_errors: "{{ ignore_task_errors | default(false) }}"
 
-# Fetch JSON results from UE
-- name: Fetch uplink JSON results for {{ current_ue }}
-  fetch:
-    src: "/tmp/log_iperf_{{ current_ue }}_up.json"
-    dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_ul_test.json"
-    flat: yes
-  delegate_to: "{{ current_ue }}"
-  ignore_errors: true
+    - name: "Phone: uplink iperf from {{ current_ue }}"
+      shell: >
+        ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no
+        -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -i {{ phone_key }}
+        {{ phone_ssh }}
+        '{{ adb_bin }} {{ adb_opts }} shell timeout {{ duration | int + 10 }} {{ iperf_bin_remote }} -p {{ iperf_port }} -B {{ ue_ip }} -c {{ target_server }} -t {{ duration }} -J'
+      register: phone_ul
+      changed_when: false
+      failed_when: false
+      when: ue_ip is defined and ue_ip != ""
 
-- name: Fetch downlink JSON results for {{ current_ue }}
-  fetch:
-    src: "/tmp/log_iperf_{{ current_ue }}_down.json"
-    dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_dl_test.json"
-    flat: yes
-  delegate_to: "{{ current_ue }}"
-  ignore_errors: true
+    - name: "Phone: save uplink JSON for {{ current_ue }}"
+      copy:
+        content: "{{ phone_ul.stdout }}"
+        dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_ul_test.json"
+      delegate_to: localhost
+      when: phone_ul.stdout is defined and (phone_ul.stdout | trim | length) > 0
 
-# Extract Uplink average throughput locally
+    - name: "Phone: settle between UL and DL"
+      pause:
+        seconds: "{{ sleep }}"
+
+    - name: "Phone: downlink iperf from {{ current_ue }}"
+      shell: >
+        ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no
+        -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -i {{ phone_key }}
+        {{ phone_ssh }}
+        '{{ adb_bin }} {{ adb_opts }} shell timeout {{ duration | int + 10 }} {{ iperf_bin_remote }} -p {{ iperf_port }} -B {{ ue_ip }} -c {{ target_server }} -t {{ duration }} -R -J'
+      register: phone_dl
+      changed_when: false
+      failed_when: false
+      when: ue_ip is defined and ue_ip != ""
+
+    - name: "Phone: save downlink JSON for {{ current_ue }}"
+      copy:
+        content: "{{ phone_dl.stdout }}"
+        dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_dl_test.json"
+      delegate_to: localhost
+      when: phone_dl.stdout is defined and (phone_dl.stdout | trim | length) > 0
+
+
+- name: "Quectel iperf for {{ current_ue }}"
+  when: not is_phone
+  block:
+    - name: Run uplink iperf from {{ current_ue }} via faraday
+      shell: |
+        ssh -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=no \
+            -o ServerAliveInterval=5 \
+            -o ServerAliveCountMax=3 \
+            root@{{ current_ue }} \
+            "timeout {{ duration | int + 10 }} iperf3 -p {{ iperf_port }} -B {{ ue_ip }} -c {{ target_server }} -t {{ duration }} -J > /tmp/log_iperf_{{ current_ue }}_up.json 2>&1"
+      ignore_errors: "{{ ignore_task_errors | default(false) }}"
+      when: ue_ip is defined and ue_ip != ""
+
+    - pause:
+        seconds: "{{ sleep }}"
+
+    - name: Run downlink iperf from {{ current_ue }} via faraday
+      shell: |
+        ssh -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=no \
+            -o ServerAliveInterval=5 \
+            -o ServerAliveCountMax=3 \
+            root@{{ current_ue }} \
+            "timeout {{ duration | int + 10 }} iperf3 -p {{ iperf_port }} -B {{ ue_ip }} -c {{ target_server }} -t {{ duration }} -R -J > /tmp/log_iperf_{{ current_ue }}_down.json 2>&1"
+      ignore_errors: "{{ ignore_task_errors | default(false) }}"
+      when: ue_ip is defined and ue_ip != ""
+
+    - name: Fetch uplink JSON results for {{ current_ue }}
+      fetch:
+        src: "/tmp/log_iperf_{{ current_ue }}_up.json"
+        dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_ul_test.json"
+        flat: yes
+      delegate_to: "{{ current_ue }}"
+      ignore_errors: true
+
+    - name: Fetch downlink JSON results for {{ current_ue }}
+      fetch:
+        src: "/tmp/log_iperf_{{ current_ue }}_down.json"
+        dest: "{{ playbook_dir }}/results/{{ current_ue }}_log_dl_test.json"
+        flat: yes
+      delegate_to: "{{ current_ue }}"
+      ignore_errors: true
+
+# Show stats
 - name: Extract Uplink average throughput for {{ current_ue }}
   local_action:
     module: shell
-    cmd: "jq '.end.sum_sent.bits_per_second' {{ playbook_dir }}/results/{{ current_ue }}_log_ul_test.json"
+    cmd: "jq '.end.sum_sent.bits_per_second // empty' {{ playbook_dir }}/results/{{ current_ue }}_log_ul_test.json"
   register: ul_raw_value
   changed_when: false
   ignore_errors: true
@@ -66,3 +145,16 @@
   debug:
     msg: "UE {{ current_ue }} Uplink Average Throughput: {{ (ul_raw_value.stdout | default(0) | float / 1000000) | round(2) }} Mbps"
   when: ul_raw_value.stdout is defined and ul_raw_value.stdout != ""
+
+- name: Extract Downlink average throughput for {{ current_ue }}
+  local_action:
+    module: shell
+    cmd: "jq '.end.sum_received.bits_per_second // empty' {{ playbook_dir }}/results/{{ current_ue }}_log_dl_test.json"
+  register: dl_raw_value
+  changed_when: false
+  ignore_errors: true
+
+- name: Print Downlink Mbps results for {{ current_ue }}
+  debug:
+    msg: "UE {{ current_ue }} Downlink Average Throughput: {{ (dl_raw_value.stdout | default(0) | float / 1000000) | round(2) }} Mbps"
+  when: dl_raw_value.stdout is defined and dl_raw_value.stdout != ""

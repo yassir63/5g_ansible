@@ -1,0 +1,217 @@
+---
+- name: Normalize experiment pod log namespaces
+  ansible.builtin.set_fact:
+    experiment_pod_log_namespaces_effective: >-
+      {{
+        (experiment_pod_log_namespaces.split(',') | map('trim') | reject('equalto', '') | list)
+        if (experiment_pod_log_namespaces is string)
+        else experiment_pod_log_namespaces
+      }}
+  when: experiment_collect_pod_logs | bool
+
+- name: Collect experiment Kubernetes pod logs on control node
+  ansible.builtin.shell: |
+    set -u
+    OUT="/tmp/{{ experiment_run_id }}_pod_logs"
+    ARCHIVE="/tmp/{{ experiment_run_id }}_pod_logs.tgz"
+    NAMESPACES_REQUESTED="{{ experiment_pod_log_namespaces_effective | join(' ') }}"
+    NAMESPACES="${NAMESPACES_REQUESTED}"
+    KUBECONFIG_REQUESTED="{{ experiment_kubeconfig | default('auto') }}"
+    SINCE="{{ experiment_pod_log_since }}"
+    TAIL="{{ experiment_pod_log_tail_lines | int }}"
+    INCLUDE_PREVIOUS="{{ (experiment_pod_log_include_previous | bool) | ternary('1', '0') }}"
+
+    rm -rf "$OUT" "$ARCHIVE"
+    mkdir -p "$OUT"
+    {
+      echo "run_id={{ experiment_run_id }}"
+      echo "host=$(hostname -f 2>/dev/null || hostname)"
+      echo "namespaces_requested=${NAMESPACES_REQUESTED}"
+      echo "kubeconfig_requested=${KUBECONFIG_REQUESTED}"
+      echo "since=${SINCE}"
+      echo "tail=${TAIL}"
+      echo "include_previous=${INCLUDE_PREVIOUS}"
+      echo "collected_at=$(date -Is)"
+    } > "$OUT/collection_info.txt"
+
+    if ! command -v kubectl >/dev/null 2>&1; then
+      echo "kubectl not found on $(hostname)" > "$OUT/ERROR.txt"
+      tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
+      exit 0
+    fi
+
+    {
+      echo "requested=${KUBECONFIG_REQUESTED}"
+      if [ -n "${KUBECONFIG_REQUESTED}" ] && [ "${KUBECONFIG_REQUESTED}" != "auto" ]; then
+        export KUBECONFIG="${KUBECONFIG_REQUESTED}"
+        echo "selected=${KUBECONFIG}"
+        echo "mode=explicit"
+      else
+        selected=""
+        for candidate in "$HOME/.kube/config" /root/.kube/config /etc/kubernetes/admin.conf; do
+          if [ ! -f "$candidate" ]; then
+            echo "candidate_missing=${candidate}"
+            continue
+          fi
+          export KUBECONFIG="$candidate"
+          if kubectl get namespaces >/dev/null 2>&1; then
+            selected="$candidate"
+            break
+          fi
+          echo "candidate_failed=${candidate}"
+        done
+        if [ -n "$selected" ]; then
+          export KUBECONFIG="$selected"
+          echo "selected=${selected}"
+          echo "mode=auto"
+        else
+          unset KUBECONFIG
+          echo "selected=default"
+          echo "mode=auto-fallback"
+        fi
+      fi
+    } > "$OUT/kubectl_config_selection.txt" 2>&1
+
+    {
+      echo "kubeconfig_selected=${KUBECONFIG:-default}"
+    } >> "$OUT/collection_info.txt"
+
+    if [ -z "$(printf '%s' "$NAMESPACES_REQUESTED" | tr -d '[:space:]')" ] || [ "$NAMESPACES_REQUESTED" = "auto" ]; then
+      discovered_namespaces="$(kubectl get pods -A --no-headers 2>/dev/null | awk '{print $1}' | sort -u || true)"
+      auto_namespaces=""
+      for ns in $discovered_namespaces; do
+        case "$ns" in
+          kube-*|cluster-network-addons|openebs|sriov-network-operator|cert-manager|metallb-system|local-path-storage)
+            continue
+            ;;
+          default)
+            continue
+            ;;
+        esac
+        auto_namespaces="${auto_namespaces} ${ns}"
+      done
+
+      if [ -z "$(printf '%s' "$auto_namespaces" | tr -d '[:space:]')" ]; then
+        auto_namespaces="default"
+      fi
+
+      NAMESPACES="$(printf '%s\n' $auto_namespaces | sort -u | xargs)"
+      {
+        echo "namespaces_mode=auto"
+        echo "namespaces_discovered=$(printf '%s\n' $discovered_namespaces | sort -u | xargs)"
+        echo "namespaces_resolved=${NAMESPACES}"
+      } >> "$OUT/collection_info.txt"
+    else
+      {
+        echo "namespaces_mode=explicit"
+        echo "namespaces_resolved=${NAMESPACES}"
+      } >> "$OUT/collection_info.txt"
+    fi
+
+    kubectl version > "$OUT/kubectl_version.txt" 2>&1 || true
+    kubectl config current-context > "$OUT/kubectl_context.txt" 2>&1 || true
+    kubectl get nodes -o wide > "$OUT/nodes.txt" 2>&1 || true
+    kubectl get pods -A -o wide > "$OUT/all_pods.txt" 2>&1 || true
+
+    for ns in $NAMESPACES; do
+      nsdir="$OUT/$ns"
+      mkdir -p "$nsdir"
+      if ! kubectl get namespace "$ns" > "$nsdir/namespace.txt" 2> "$nsdir/namespace.err"; then
+        echo "namespace $ns not found or not readable" > "$nsdir/SKIPPED.txt"
+        continue
+      fi
+
+      kubectl -n "$ns" get pods -o wide > "$nsdir/pods.txt" 2>&1 || true
+      kubectl -n "$ns" get events --sort-by=.lastTimestamp > "$nsdir/events.txt" 2>&1 || true
+
+      pods="$(kubectl -n "$ns" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+      for pod in $pods; do
+        safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.=-' '_')"
+        pdir="$nsdir/$safe_pod"
+        mkdir -p "$pdir"
+
+        kubectl -n "$ns" get pod "$pod" -o yaml > "$pdir/pod.yaml" 2>&1 || true
+        kubectl -n "$ns" describe pod "$pod" > "$pdir/describe.txt" 2>&1 || true
+
+        containers="$(kubectl -n "$ns" get pod "$pod" -o jsonpath='{range .spec.initContainers[*]}{.name}{"\n"}{end}{range .spec.containers[*]}{.name}{"\n"}{end}{range .spec.ephemeralContainers[*]}{.name}{"\n"}{end}' 2>/dev/null || true)"
+        for container in $containers; do
+          safe_container="$(printf '%s' "$container" | tr -c 'A-Za-z0-9_.=-' '_')"
+          kubectl -n "$ns" logs "$pod" -c "$container" --timestamps --since="$SINCE" --tail="$TAIL" \
+            > "$pdir/${safe_container}.log" 2> "$pdir/${safe_container}.log.err" || true
+          if [ "$INCLUDE_PREVIOUS" = "1" ]; then
+            kubectl -n "$ns" logs "$pod" -c "$container" --previous --timestamps --since="$SINCE" --tail="$TAIL" \
+              > "$pdir/${safe_container}.previous.log" 2> "$pdir/${safe_container}.previous.log.err" || true
+          fi
+        done
+      done
+    done
+
+    tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ experiment_pod_log_control_host_effective }}"
+  remote_user: "{{ hostvars['localhost'].experiment_pod_log_remote_user_effective | default('root') }}"
+  become: false
+  vars:
+    ansible_connection: ssh
+  register: experiment_pod_logs_collect_output
+  when: experiment_collect_pod_logs | bool
+  changed_when: true
+  failed_when: false
+
+- name: Fetch experiment Kubernetes pod log archive
+  ansible.builtin.fetch:
+    src: "/tmp/{{ experiment_run_id }}_pod_logs.tgz"
+    dest: "{{ experiment_results_dir }}/pod_logs.tgz"
+    flat: true
+  delegate_to: "{{ experiment_pod_log_control_host_effective }}"
+  remote_user: "{{ hostvars['localhost'].experiment_pod_log_remote_user_effective | default('root') }}"
+  become: false
+  vars:
+    ansible_connection: ssh
+  register: experiment_pod_logs_fetch_output
+  when: experiment_collect_pod_logs | bool
+  failed_when: false
+
+- name: Check fetched experiment Kubernetes pod log archive
+  ansible.builtin.stat:
+    path: "{{ experiment_results_dir }}/pod_logs.tgz"
+  delegate_to: localhost
+  become: false
+  register: experiment_pod_logs_archive_stat
+  when: experiment_collect_pod_logs | bool
+
+- name: Write experiment Kubernetes pod log collection status
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/pod_logs_status.json"
+    mode: "0644"
+    content: |
+      {{
+        {
+          "expected_local_archive": experiment_results_dir + "/pod_logs.tgz",
+          "expected_remote_archive": "/tmp/" + experiment_run_id + "_pod_logs.tgz",
+          "control_host": experiment_pod_log_control_host_effective,
+          "remote_user": experiment_pod_log_remote_user_effective,
+          "kubeconfig": experiment_kubeconfig,
+          "fetched": experiment_pod_logs_archive_stat.stat.exists | default(false),
+          "size": experiment_pod_logs_archive_stat.stat.size | default(0),
+          "collection": experiment_pod_logs_collect_output | default({}),
+          "fetch": experiment_pod_logs_fetch_output | default({})
+        } | to_nice_json
+      }}
+  delegate_to: localhost
+  become: false
+  when: experiment_collect_pod_logs | bool
+
+- name: Warn when experiment Kubernetes pod log archive was not fetched
+  ansible.builtin.debug:
+    msg:
+      - "Kubernetes pod logs were requested, but pod_logs.tgz was not found after fetch."
+      - "Expected local archive: {{ experiment_results_dir }}/pod_logs.tgz"
+      - "Expected remote archive: /tmp/{{ experiment_run_id }}_pod_logs.tgz on {{ experiment_pod_log_control_host_effective }}"
+      - "Details: {{ experiment_results_dir }}/pod_logs_status.json"
+  delegate_to: localhost
+  become: false
+  when:
+    - experiment_collect_pod_logs | bool
+    - not (experiment_pod_logs_archive_stat.stat.exists | default(false))

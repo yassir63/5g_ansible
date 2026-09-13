@@ -1,0 +1,5 @@
+- name: Common sopnodes setup
+  hosts: sopnodes
+  roles:
+    - role: setup/ovs
+      when: not (fhi72 and ran == 'oai' and core_node_name == ran_node_name)

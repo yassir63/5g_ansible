@@ -1,0 +1,53 @@
+{#
+  ueransim-gnb-values.yaml.j2
+  Generates Helm values override for ueransim gNB chart (free5gc et OAI)
+#}
+{%- macro resolve_sd(sd) -%}
+  {%- if sd == 'EMPTY' -%}0xFFFFFF
+  {%- else -%}0x{{ '%06x' | format(sd | int(base=16)) }}
+  {%- endif -%}
+{%- endmacro -%}
+
+global:
+  n2network:
+    enabled: true
+    masterIf: "{{ nic_interface }}"
+    gatewayIP: ""
+    excludeIP: ""
+  n3network:
+    enabled: true
+    masterIf: "{{ nic_interface }}"
+    gatewayIP: ""
+    excludeIP: ""
+
+gnb:
+  enabled: true
+
+  n2if:
+    ipAddress: 0.0.0.0
+  n3if:
+    ipAddress: {{ net.gnb_n3_ip }}
+
+  amf:
+    n2if:
+      ipAddress: {{ net.amf_ip }}
+      port: {{ net.amf_port }}
+    service:
+      ngap:
+        enabled: true
+
+  configuration: |-
+    mcc: '{{ profile.plmn.mcc }}'
+    mnc: '{{ profile.plmn.mnc }}'
+    nci: '0x000000010'
+    idLength: 32
+    tac: {{ profile.plmn.tac | int }}
+    slices:
+{% for slice in profile.slices %}
+      - sst: {{ slice.sst | int }}
+        sd: {{ resolve_sd(slice.sd) }}
+{% endfor %}
+    ignoreStreamIds: true
+
+ue:
+  enabled: false

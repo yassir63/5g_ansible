@@ -8,7 +8,7 @@
   hosts: "{{ target_server | default('core_node') }}"
   become: true
   vars:
-    uhd_version: "4.7.0.0"
+    uhd_version: "UHD-4.7"
     gnuradio_version: "3.10.12.0"
     install_prefix: "/usr/local"
 
@@ -56,5 +56,7 @@
 
     - name: Display installation summary
       debug:
-        msg: "Target server = {{ target_server | default('core_node') }}"
-        msg: "{{ final_check.stdout_lines }}"
+        msg:
+          - "Target server = {{ target_server | default('core_node') }}"
+          - "{{ final_check.stdout_lines }}"
+

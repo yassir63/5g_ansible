@@ -1,0 +1,107 @@
+---
+- name: Select connected UEs for this step
+  ansible.builtin.set_fact:
+    paper_step_ues: "{{ paper_step.ues | select('in', paper_connected_ues) | list }}"
+
+- name: Show step details
+  ansible.builtin.debug:
+    msg:
+      - "Scenario: {{ paper_scenario.name }}"
+      - "Step: {{ paper_step.name }}"
+      - "UEs: {{ paper_step_ues | join(', ') }}"
+      - "Default parallel streams: {{ paper_step.parallel_streams | default(1) }}"
+      - "Per-UE parallel overrides: {{ paper_step.parallel_by_ue | default({}) }}"
+      - "TCP bitrate cap: {{ paper_step.bitrate | default(paper_step.tcp_bitrate | default('unlimited')) }}"
+      - "Mixed directions by UE: {{ paper_step.directions_by_ue | default({}) }}"
+      - "Stress target: {{ paper_step.stress_target | default('none') if (paper_step.stress | default(false) | bool) else 'none' }}"
+      - "UE roles: {{ paper_step.ue_roles | default({}) }}"
+
+- name: Record step start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "step"
+      phase: "start"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      ues: "{{ paper_step_ues }}"
+      configured_ues: "{{ paper_step.ues }}"
+      parallel_streams: "{{ paper_step.parallel_streams | default(1) | int }}"
+      parallel_by_ue: "{{ paper_step.parallel_by_ue | default({}) }}"
+      ue_roles: "{{ paper_step.ue_roles | default({}) }}"
+      bitrate: "{{ paper_step.bitrate | default(paper_step.tcp_bitrate | default('')) }}"
+      bitrate_by_ue: "{{ paper_step.bitrate_by_ue | default({}) }}"
+      directions: "{{ paper_step.directions | default([]) }}"
+      directions_by_ue: "{{ paper_step.directions_by_ue | default({}) }}"
+  when: paper_step_ues | length > 0
+
+- name: Validate mixed direction map covers connected step UEs
+  ansible.builtin.fail:
+    msg: "Missing mixed direction for UE(s): {{ paper_step_ues | difference(paper_step.directions_by_ue.keys() | list) }}"
+  when:
+    - paper_step.directions_by_ue is defined
+    - (paper_step_ues | difference(paper_step.directions_by_ue.keys() | list)) | length > 0
+
+- name: Validate mixed direction values
+  ansible.builtin.fail:
+    msg: "Invalid mixed direction value(s): {{ (paper_step.directions_by_ue | dict2items | map(attribute='value') | list) | difference(['ul', 'dl']) }}"
+  when:
+    - paper_step.directions_by_ue is defined
+    - ((paper_step.directions_by_ue | dict2items | map(attribute='value') | list) | difference(['ul', 'dl'])) | length > 0
+
+- name: Run mixed-direction step
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/run_tcp_paper_mixed_step.yml"
+  when:
+    - paper_step_ues | length > 0
+    - not (paper_step.interference | default(false) | bool)
+    - not (paper_step.stress | default(false) | bool)
+    - paper_step.directions_by_ue is defined
+
+- name: Run interference step
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/run_tcp_paper_interference_step.yml"
+  when:
+    - paper_step_ues | length > 0
+    - paper_step.interference | default(false) | bool
+
+- name: Run stress step
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/run_tcp_paper_stress_step.yml"
+  when:
+    - paper_step_ues | length > 0
+    - paper_step.stress | default(false) | bool
+    - not (paper_step.interference | default(false) | bool)
+
+- name: Run step directions
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/run_tcp_paper_direction.yml"
+  loop: "{{ paper_step.directions | default(['ul', 'dl']) }}"
+  loop_control:
+    loop_var: paper_direction
+    label: "{{ paper_direction }}"
+  when:
+    - paper_step_ues | length > 0
+    - not (paper_step.interference | default(false) | bool)
+    - not (paper_step.stress | default(false) | bool)
+    - paper_step.directions_by_ue is not defined
+
+- name: Record step end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "step"
+      phase: "end"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      ues: "{{ paper_step_ues }}"
+      parallel_streams: "{{ paper_step.parallel_streams | default(1) | int }}"
+      parallel_by_ue: "{{ paper_step.parallel_by_ue | default({}) }}"
+      ue_roles: "{{ paper_step.ue_roles | default({}) }}"
+      bitrate: "{{ paper_step.bitrate | default(paper_step.tcp_bitrate | default('')) }}"
+      bitrate_by_ue: "{{ paper_step.bitrate_by_ue | default({}) }}"
+      directions: "{{ paper_step.directions | default([]) }}"
+      directions_by_ue: "{{ paper_step.directions_by_ue | default({}) }}"
+  when: paper_step_ues | length > 0

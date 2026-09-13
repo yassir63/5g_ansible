@@ -1,0 +1,7 @@
+---
+- name: Run stress step directions
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/run_tcp_paper_stress_direction.yml"
+  loop: "{{ paper_step.directions | default(['ul', 'dl']) }}"
+  loop_control:
+    loop_var: paper_stress_direction
+    label: "{{ paper_stress_direction }}"

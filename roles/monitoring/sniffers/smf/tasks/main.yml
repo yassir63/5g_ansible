@@ -1,0 +1,169 @@
+# - name: Get list of pods
+#   kubernetes.core.k8s_info:
+#     kind: Pod
+#     namespace: "{{ core }}"
+#   register: core_pods
+#   no_log: true
+
+# - name: Build SMF pod list (any pod name containing 'smf')
+#   set_fact:
+#     smf_pod_list: >-
+#       {{
+#         core_pods.resources
+#         | selectattr('metadata.name', 'search', 'smf')
+#         | map(attribute='metadata.name')
+#         | list
+#       }}
+#   no_log: true
+
+# - name: Fail if none found
+#   fail:
+#     msg: "No SMF pods found in namespace={{ core }}"
+#   when: smf_pod_list | length == 0
+
+# # --- Install Python on each SMF ---
+
+# - name: Install minimal python3 on each SMF
+#   shell: |
+#     kubectl -n {{ core }} exec {{ item }} -- bash -c '
+#       set -euo pipefail
+
+#       if command -v python3 >/dev/null 2>&1; then
+#         python3 --version
+#         exit 0
+#       fi
+
+#       apt-get update -qq
+#       DEBIAN_FRONTEND=noninteractive \
+#         apt-get install -y -qq --no-install-recommends python3 python3-pip tshark
+
+#       python3 --version
+#     '
+#   loop: "{{ smf_pod_list }}"
+#   register: smf_install
+#   changed_when: false
+
+# - name: Install redis + pyshark + scapy on each SMF
+#   shell: |
+#     kubectl -n {{ core }} exec {{ item }} -- bash -c '
+#       set -euo pipefail
+#       python3 -m pip install --no-cache-dir --disable-pip-version-check redis pyshark scapy
+#     '
+#   loop: "{{ smf_pod_list }}"
+#   register: smf_pip_install
+#   changed_when: false
+
+# # --- Copy sniffer script into each SMF pod ---
+# - name: Copy smf_sniffer.py into each SMF pod
+#   ansible.builtin.shell: |
+#     kubectl -n {{ core }} cp \
+#       ~/monitoring/sliceawareness/smfsniffer/smf_sniffer.py \
+#       {{ item }}:/tmp/smf_sniffer.py
+#   loop: "{{ smf_pod_list }}"
+#   register: smf_sniffer_copy
+#   changed_when: smf_sniffer_copy.rc == 0
+
+# - name: Select SMF sniffer interface based on core
+#   set_fact:
+#     smf_sniffer_interface: "{{ 'n4' if core == 'open5gs' else 'eth0' }}"
+
+# # --- Start sniffer in background on each SMF pod ---
+# - name: Start smf_sniffer on each SMF ( {{ smf_sniffer_interface }}, background)
+#   ansible.builtin.shell: |
+#     kubectl -n {{ core }} exec {{ item }} -- bash -c '
+#       nohup python3 /tmp/smf_sniffer.py {{ smf_sniffer_interface }} \
+#         > /var/log/smf_sniffer_{{ smf_sniffer_interface }}.log 2>&1 &
+#     '
+#   loop: "{{ smf_pod_list }}"
+#   async: 0
+#   poll: 0
+#   changed_when: false
+
+
+
+---
+- name: Get list of pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ core }}"
+  register: core_pods
+  no_log: true
+
+- name: Build SMF pod list
+  set_fact:
+    smf_pod_list: >-
+      {{
+        core_pods.resources
+        | selectattr('metadata.name', 'search', 'smf')
+        | list
+      }}
+  no_log: true
+
+- name: Fail if none found
+  ansible.builtin.fail:
+    msg: "No SMF pods found in namespace={{ core }}"
+  when: smf_pod_list | length == 0
+
+- name: Select SMF sniffer interface based on core
+  set_fact:
+    smf_sniffer_interface: "{{ 'n4' if core == 'open5gs' else 'eth0' }}"
+
+- name: Set SMF Redis host
+  set_fact:
+    smf_redis_host: "{{ redis_host | default('redis') }}"
+
+- name: Inject SMF sniffer ephemeral container into each SMF pod
+  vars:
+    pod_name: "{{ item.metadata.name }}"
+    target_container_name: "{{ item.spec.containers[0].name }}"
+    existing_ephemeral: "{{ item.spec.ephemeralContainers | default([]) }}"
+    existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
+    smf_ephemeral_container:
+      name: smf-sniffer
+      image: r2labuser/smf-sniffer:2026w10
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: smf_sniffer_iface
+          value: "{{ smf_sniffer_interface }}"
+        - name: REDIS_HOST
+          value: "{{ smf_redis_host }}"
+      targetContainerName: "{{ target_container_name }}"
+      stdin: true
+      tty: true
+      securityContext:
+        privileged: true
+        allowPrivilegeEscalation: true
+        runAsUser: 0
+        runAsNonRoot: false
+        capabilities:
+          add:
+            - NET_ADMIN
+            - NET_RAW
+            - SYS_ADMIN
+    smf_patch:
+      metadata:
+        name: "{{ pod_name }}"
+      spec:
+        ephemeralContainers: "{{ existing_ephemeral + [smf_ephemeral_container] }}"
+  ansible.builtin.shell: |
+    kubectl -n {{ core }} patch pod {{ pod_name }} \
+      --subresource='ephemeralcontainers' \
+      --type='strategic' \
+      -p '{{ smf_patch | to_json }}'
+  args:
+    executable: /bin/bash
+  when: "'smf-sniffer' not in existing_ephemeral_names"
+  loop: "{{ smf_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: smf_injection_result
+  changed_when: true
+
+- name: Report existing SMF sniffer ephemeral container
+  ansible.builtin.debug:
+    msg: "SMF sniffer already present in pod {{ item.metadata.name }}, skipping injection."
+  when: "'smf-sniffer' in ((item.spec.ephemeralContainers | default([])) | map(attribute='name') | list)"
+  loop: "{{ smf_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"

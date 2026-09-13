@@ -3,7 +3,6 @@
 # Deploy srsRAN UE pod (single pod, tmux session)
 # RFSIM only - broker and UEs started in start_broker.yml
 # ------------------------------
-
 - name: Assert ue_list is defined (must be set by config role)
   ansible.builtin.assert:
     that:
@@ -34,17 +33,14 @@
         state: absent
       failed_when: false
 
-    - name: Deploy srsRAN UE pod via Helm
-      kubernetes.core.helm:
-        name: srsran-ue
-        chart_ref: "{{ [repo_dest_abs, 'charts', 'srsue'] | path_join }}"
-        release_namespace: "{{ ran_ns }}"
-        values_files:
-          - "{{ [repo_dest_abs, 'charts', 'srsue', 'values-rfsim.yaml'] | path_join }}"
-        state: present
-        wait: true
-        atomic: true
-        timeout: 300s
+    - name: Deploy srsRAN UE pod via Helm (run on ran_node)
+      ansible.builtin.command: >
+        helm upgrade --install srsran-ue
+        {{ [repo_dest_abs, 'charts', 'srsue'] | path_join }}
+        -n {{ ran_ns }}
+        -f {{ [repo_dest_abs, 'charts', 'srsue', 'values-rfsim.yaml'] | path_join }}
+        --wait --timeout 300s --atomic
+      changed_when: true
 
     - name: Get UE pod name
       kubernetes.core.k8s_info:

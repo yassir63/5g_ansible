@@ -1,0 +1,143 @@
+---
+- name: Set defaults and initialize ue_ips dictionary
+  set_fact:
+    ue_ips: {}
+    ignore_task_errors: true
+    target_server: "{{ target_server_ip | default(hostvars[groups['core_node'][0]].ip) }}"
+
+- name: Define timestamp
+  set_fact:
+    timestamp: "{{ '%Y-%m-%d-%H-%M-%S' | strftime(ansible_date_time.epoch) }}"
+
+- name: Define results path
+  set_fact:
+    results_dir: "{{ playbook_dir }}/../results/{{ timestamp }}"
+
+- name: Connect all qhat UEs sequentially
+  include_tasks: connect_ue.yml
+  loop: "{{ groups['qhats'] }}"
+  loop_control:
+    loop_var: current_ue
+    index_var: ue_index
+  vars:
+    iperf_port: "{{ 5201 + ue_index }}"
+    ignore_task_errors: true
+
+- name: Filter out UEs without IP
+  set_fact:
+    valid_ue_list: >-
+      {{
+        groups['qhats']
+        | select('in', ue_ips.keys())
+        | list
+      }}
+  register: ue_filter_result
+
+- name: Warn about UEs without IP
+  debug:
+    msg: "Warning: UE {{ item }} has no IP and will be skipped in iperf tests"
+  loop: "{{ groups['qhats'] | difference(valid_ue_list) }}"
+  when: (groups['qhats'] | difference(valid_ue_list)) | length > 0
+
+- name: Create local log directories
+  ansible.builtin.file:
+    path: "{{ results_dir }}/ue={{ current_ue }}/"
+    state: directory
+  loop: "{{ valid_ue_list }}"
+  loop_control:
+    loop_var: current_ue
+  delegate_to: localhost
+
+- name: Wipe remote log directories
+  ansible.builtin.file:
+    path: "/tmp/iperf_logs"
+    state: absent
+  loop: "{{ valid_ue_list }}"
+
+- name: Copy snmp_stats script
+  ansible.builtin.copy:
+    src: ../debug-scripts/snmp_stats.sh
+    dest: /usr/local/bin/snmp_stats.sh
+    mode: '0755'
+  become: true
+  loop: "{{ valid_ue_list }}"
+  loop_control:
+    loop_var: current_ue
+  delegate_to: "{{ current_ue }}"
+
+- name: Copy inventory file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../inventory/default/hosts.ini"
+    dest: "{{ results_dir }}/hosts.ini"
+  delegate_to: localhost
+
+- name: Execute iperf tests for all connected UEs individually
+  include_tasks: iperf_execution.yml
+  loop: "{{ valid_ue_list }}"
+  loop_control:
+    loop_var: current_ue
+    index_var: ue_index
+  vars:
+    ue_count: 1
+    ue_ip: "{{ ue_ips[current_ue] }}"
+    iperf_port: "{{ 5201 + ue_index }}"
+    ignore_task_errors: true
+  when: "{{ do_individual_tests }}"
+
+- name: Execute iperf tests for all connected UEs simultaneously
+  include_tasks: iperf_execution_async.yml
+  loop: "{{ iperf_scenarios }}"
+  loop_control:
+    loop_var: scenario
+  vars:
+    ue_count: "{{ valid_ue_list|length }}"
+    direction: "{{ scenario.direction }}"
+    protocol: "{{ scenario.protocol }}"
+    extra_args: "{{ scenario.extra_args }}"
+    ignore_task_errors: true
+  when: "{{ do_simultaneous_tests }}"
+
+- name: Archive logs
+  community.general.archive:
+    path: /tmp/iperf_logs/
+    dest: /tmp/iperf_logs.tar.gz
+    format: gz
+  loop: "{{ valid_ue_list }}"
+  loop_control:
+    loop_var: current_ue
+  delegate_to: "{{ current_ue }}"
+
+- name: Fetch archived logs
+  ansible.builtin.fetch:
+    src: /tmp/iperf_logs.tar.gz
+    dest: "{{ results_dir }}/{{ current_ue }}_logs.tar.gz"
+    flat: yes
+  loop: "{{ valid_ue_list }}"
+  loop_control:
+    loop_var: current_ue
+  delegate_to: "{{ current_ue }}"
+
+- name: Extract logs locally
+  ansible.builtin.unarchive:
+    src: "{{ results_dir }}/{{ current_ue }}_logs.tar.gz"
+    dest: "{{ results_dir }}/ue={{ current_ue }}/"
+    remote_src: false
+  loop: "{{ valid_ue_list }}"
+  loop_control:
+    loop_var: current_ue
+  delegate_to: localhost
+
+- name: Remove archive after extraction
+  ansible.builtin.file:
+    path: "{{ results_dir }}/{{ current_ue }}_logs.tar.gz"
+    state: absent
+  loop: "{{ valid_ue_list }}"
+  loop_control:
+    loop_var: current_ue
+  delegate_to: localhost
+
+- name: Cleanup local async files
+  ansible.builtin.file:
+    path: ".ansible_async/"
+    state: absent
+  delegate_to: localhost

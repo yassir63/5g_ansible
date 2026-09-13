@@ -1,0 +1,36 @@
+---
+# roles/5g/srsRAN/csi/vars/main.yml
+# CSI Logger configuration variables
+
+# Enable/disable CSI logging
+csi_logger_enabled: true
+
+# Kubernetes configuration
+k8s_namespace: "open5gs"
+k8s_gnb_label: "app=gnb"
+
+# Local paths (on Ansible controller)
+csi_base_dir: "{{ playbook_dir }}/LOGS/csi"
+csi_output_dir: "{{ csi_base_dir }}/data"
+csi_plots_dir: "{{ csi_base_dir }}/plots"
+csi_archive_dir: "{{ csi_base_dir }}/archives"
+csi_archive_path: "{{ csi_archive_dir }}/csi_results_{{ ansible_date_time.iso8601_basic_short }}.tar.gz"
+
+# Scripts
+csi_visualizer_path: "{{ csi_base_dir }}/csi_visualizer.py"
+csi_monitor_script: "/tmp/csi_monitor.sh"
+
+# CSI visualization options
+csi_plot_slot: 0          # Which slot to visualize
+csi_plot_prb: 0           # Which PRB to visualize
+csi_enable_stats: true    # Generate statistics
+csi_enable_plots: true    # Generate plots
+
+# Cleanup options
+csi_cleanup_remote: false        # Remove csi_data.bin from pod after fetch
+csi_cleanup_local_binary: false  # Remove binary after visualization (keep plots)
+
+# Timing
+csi_fetch_timeout: 300    # seconds
+csi_retry_count: 3
+csi_retry_delay: 10       # seconds

@@ -1,6 +1,7 @@
 ---
 repo_url: "https://github.com/turletti/srsran-helm.git"
-version: freetest # main
+version: csi # benetel #main
+
 ran_ns: "{{ core }}"
 repo_dest: "~/srsran-helm"
 
@@ -43,19 +44,25 @@ srsran_network_map:
         - "10.10.3.235"
         - "10.10.3.236"
         - "10.10.3.237"
+  oai:
+    n2:
+      amf_ip: "192.168.3.201"
+      gnb_ip: "192.168.3.203"
+      amf_port: 38412
+      gnb_bind_ip: "192.168.3.203"
+    n3:
+      amf_ip: "192.168.3.201"
+      gnb_ip: "192.168.3.203"
+      ue_ips:
+        - "192.168.3.210"
+        - "192.168.3.211"
+        - "192.168.3.212"
 
 srsran_network: "{{ srsran_network_map[core] }}"
-
-# Multus NetworkAttachmentDefinition names
-free5gc_n3_nad_name: "n3network-free5gc-free5gc-upf"
-open5gs_n3_nad_name: "n3network"
-n3_nad_name_map:
-  free5gc: "{{ free5gc_n3_nad_name }}"
-  open5gs: "{{ open5gs_n3_nad_name }}"
-n3_nad_name: "{{ n3_nad_name_map[core] }}"
 
 # N3 network name
 n3networkName_map: 
   free5gc: "n3network-free5gc-free5gc-upf"
   open5gs: "n3network"
+  oai: "oai-5g-basic-n3"
 n3networkName: "{{ n3networkName_map[core] }}"

@@ -1,0 +1,28 @@
+- name: Check if executable symlink already exists
+  ansible.builtin.stat:
+    path: /usr/bin/nuttcp
+  register: nuttcp_bin_exists
+
+- name: Build and install only if not already present
+  when: not nuttcp_bin_exists.stat.exists
+  block:
+    - name: Ensure build directory exists
+      ansible.builtin.file:
+        path: /opt/build/nuttcp
+        state: directory
+
+    - name: Copy archive from controller
+      ansible.builtin.unarchive:
+        src: ../include/nuttcp.tar.gz
+        dest: /opt/build/nuttcp
+
+    - name: Run make
+      ansible.builtin.command: make
+      args:
+        chdir: /opt/build/nuttcp
+
+    - name: Create symlink in /usr/bin
+      ansible.builtin.file:
+        src: "/opt/build/nuttcp/nuttcp-8.1.4"
+        dest: /usr/bin/nuttcp
+        state: link

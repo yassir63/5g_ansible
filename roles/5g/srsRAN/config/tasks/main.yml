@@ -1,8 +1,32 @@
 ---
+
+- name: Check if ansible venv python exists
+  ansible.builtin.stat:
+    path: /opt/ansible-venv/bin/python
+  register: venv_python
+
+- name: Save current interpreter
+  ansible.builtin.set_fact:
+    _original_python_interpreter: "{{ ansible_python_interpreter | default('/usr/bin/python3') }}"
+
+- name: Switch to venv python if available
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/ansible-venv/bin/python
+  when:
+    - venv_python.stat.exists
+    - core == 'free5gc'
+    - core_node_name != ran_node_name
+
 - name: Load common variables
   include_vars:
     file: "../../common/defaults/main.yml"
 
+- name: Ensure kubernetes python client is installed
+  ansible.builtin.package:
+    name: python3-kubernetes
+    state: present
+  become: yes
+  
 - name: Remove existing srsRAN Helm directory to ensure clean state
   ansible.builtin.file:
     path: "{{ repo_dest }}"
@@ -22,6 +46,8 @@
     kind: Namespace
     name: "{{ ran_ns }}"
     state: present
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
 - name: Gather env facts (remote)
   ansible.builtin.setup:
@@ -38,11 +64,12 @@
     values_filename: "{{ rru_file_map[(rru | default('rfsim') | string | trim | lower)] | default('values.yaml') }}"
   vars:
     rru_file_map:
-      benetel: values-benetel.yaml
-      liteon:  values-liteon.yaml
-      n300:    values-n300-n78-20MHz.yaml
-      n320:    values-n320-n78-20MHz.yaml
-      rfsim:   values-rfsim.yaml
+      benetel1: values-benetel1.yaml
+      benetel2: values-benetel2.yaml
+      liteon: values-liteon.yaml
+      n300: values-n300-n78-20MHz.yaml # values-n300.yaml is original FDD, band 3
+      n320: values-n320-n78-20MHz.yaml # values-n320.yaml is original FDD, band 3
+      rfsim: values-rfsim.yaml
 
 - name: Build absolute values_file path
   ansible.builtin.set_fact:
@@ -71,7 +98,7 @@
       apiVersion: k8s.cni.cncf.io/v1
       kind: NetworkAttachmentDefinition
       metadata:
-        name: "{{ free5gc_n3_nad_name }}"
+        name: "{{ n3networkName }}"
         namespace: "{{ ran_ns }}"
       spec:
         config: >-
@@ -122,12 +149,19 @@
     regexp: '"name":\s*"n3network"'
     replace: '"name": "{{ ''{{'' }} .Values.n3networkName {{ ''}}'' }}"'
 
-- name: Patch srsue deployment template - parameterize n3network name
-  ansible.builtin.replace:
-    path: "{{ repo_dest_abs }}/charts/srsue/templates/deployment.yaml"
-    regexp: '"name":\s*"n3network"'
-    replace: '"name": "{{ ''{{'' }} .Values.n3networkName {{ ''}}'' }}"'
-
+- name: Patch oai n3 NAD - remove static IPAM address
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: k8s.cni.cncf.io/v1
+      kind: NetworkAttachmentDefinition
+      metadata:
+        name: "{{ n3networkName }}"
+        namespace: "{{ ran_ns }}"
+      spec:
+        config: "{{ {'cniVersion': '0.3.1', 'name': n3networkName, 'type': 'ovs', 'bridge': 'n3br', 'ipam': {'type': 'static'}} | to_json }}"
+  when: core == 'oai'
+  
 # --- rfsim only: UE list + srsue values file ---
 
 - name: Load 5G profile vars
@@ -175,6 +209,9 @@
       gnbIp: "{{ srsran_network.n3.gnb_ip }}"
       ueIp: "{{ srsran_network.n3.ue_ips[0] }}"
       n3networkName: "{{ n3networkName }}"
+      nodeName: "{{ ran_node_name }}"
+      nodeSelector:
+        kubernetes.io/hostname: "{{ ran_node_name }}"
       ueCount: {{ ue_count }}
       ues:
       {% for ue in ue_list %}
@@ -187,3 +224,8 @@
           zmqRxPort: {{ ue.rx_port }}
       {% endfor %}
   when: rru == 'rfsim'
+
+- name: Restore original python interpreter if it was changed
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: "{{ _original_python_interpreter }}"
+  when: _original_python_interpreter is defined

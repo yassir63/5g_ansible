@@ -1,0 +1,14 @@
+---
+duration: "{{ iperf_duration | default(30) }}"
+sleep: "{{ iperf_sleep | default(5) }}"
+tcp_bandwidth: "0" # 0 == unlimited
+udp_bandwidth: "50M"
+async_stagger: 0
+do_individual_tests: true
+do_simultaneous_tests: true
+
+iperf_scenarios:
+  - {protocol: "tcp", direction: "up", extra_args: "-b {{ tcp_bandwidth }}"}
+  - {protocol: "tcp", direction: "down", extra_args: "-b {{ tcp_bandwidth }} -R"}
+  - {protocol: "udp", direction: "up", extra_args: "-u -b {{ udp_bandwidth }}"}
+  - {protocol: "udp", direction: "down", extra_args: "-u -b {{ udp_bandwidth }} -R"}

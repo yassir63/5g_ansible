@@ -105,7 +105,7 @@
     mode: '0644'
     content: "{{ lookup('template', 'srsue_configmap.yaml.j2') }}"
 
-# --- Rewrite deployment.yaml complet (evite les patches fragiles) ---
+# --- Rewrite deployment.yaml complet ---
 
 - name: Rewrite srsue deployment.yaml
   ansible.builtin.copy:
@@ -160,6 +160,13 @@
                     mountPath: /srsran/config
             dnsPolicy: ClusterFirst
             restartPolicy: Always
+            {{ '{{-' }} if .Values.nodeName {{ '}}' }}
+            nodeName: {{ '{{' }} .Values.nodeName | quote {{ '}}' }}
+            {{ '{{-' }} end {{ '}}' }}
+            {{ '{{-' }} if .Values.nodeSelector {{ '}}' }}
+            nodeSelector:
+              {{ '{{-' }} toYaml .Values.nodeSelector | nindent 12 {{ '}}' }}
+            {{ '{{-' }} end {{ '}}' }}
             volumes:
               - name: ue-config
                 configMap:

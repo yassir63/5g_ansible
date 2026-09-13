@@ -1,0 +1,53 @@
+---
+#
+# Deploy iperf servers on target_host
+#
+
+- name: Set defaults
+  set_fact:
+    base_port: 5201
+    actual_nb_ues: "{{ nb_ues | default(3) }}"
+    iperf_bind_ip: "{{ target_server_ip | default(hostvars[groups['core_node'][0]]['ip']) }}"
+
+- name: Ensure iperf3 is installed on target_host
+  apt:
+    name: iperf3
+    state: present
+    update_cache: yes
+  become: true
+  ignore_errors: true
+
+- name: Kill ANY existing iperf3 process
+  shell: pkill iperf3 || true
+  become: true
+  changed_when: false
+
+- name: Create base directory for iperf logs
+  file:
+    path: /root/IPERF
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Get timestamp
+  command: date +"%Y%m%d_%H%M%S"
+  register: iperf_timestamp
+  changed_when: false
+
+- name: Start iperf3 servers on incremental ports
+  # Using the full path /usr/bin/iperf3 to be safe against "not found" errors
+  shell: >
+    /usr/bin/iperf3 -s -B {{ iperf_bind_ip }} -p {{ base_port + item | int }} -D -J
+  loop: "{{ range(0, actual_nb_ues | int) | list }}"
+  become: true
+
+- name: Verify servers are listening
+  shell: netstat -tulpn | grep iperf3
+  register: iperf_status
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Debug server status
+  debug:
+    var: iperf_status.stdout_lines

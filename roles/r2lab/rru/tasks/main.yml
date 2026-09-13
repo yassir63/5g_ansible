@@ -3,6 +3,21 @@
   shell: rhubarbe pdu on "{{ rru }}"
   delegate_to: faraday.inria.fr
 
+- name: Wait 210 seconds for the "{{ rru }}" RRU to be ready
+  pause:
+    seconds: 210
+  when: rru in ['benetel1', 'benetel2'] and ran in ['srsRAN', 'oai']
+
+- name: "Prepare {{ rru }} RRU (switch on, load conf, reboot)"
+  shell: "/usr/local/bin/prepare-{{ rru }}-for-{{ ran | lower }}.sh"
+  delegate_to: faraday.inria.fr
+  when: rru in ['benetel1', 'benetel2'] and ran in ['srsRAN', 'oai']
+  register: prepare_rru_output
+
+- name: Show prepare RRU output
+  debug:
+    msg: "{{ prepare_rru_output.stdout | default('Task skipped') }}"
+
 - name: Verify PDU status
   shell: rhubarbe pdu status "{{ rru }}"
   register: pdu_status

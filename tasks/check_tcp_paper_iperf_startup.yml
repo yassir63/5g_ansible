@@ -1,0 +1,97 @@
+---
+- name: Reset real iperf startup guard elapsed time
+  ansible.builtin.set_fact:
+    paper_iperf_startup_elapsed_seconds: 0
+
+- name: Fail if any real iperf async job did not start
+  ansible.builtin.fail:
+    msg: |
+      TCP paper iperf could not be launched as a real async experiment job.
+      {{ paper_iperf_startup_context | default('') }}
+      direction={{ paper_iperf_startup_direction | default('unknown') }}
+      ue={{ item.item | default('unknown') }}
+      rc={{ item.rc | default('unknown') }}
+
+      stdout:
+      {{ item.stdout | default('') }}
+
+      stderr:
+      {{ item.stderr | default('') }}
+  loop: "{{ paper_iperf_jobs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('unknown') }}"
+  when: >
+    (item.failed | default(false) | bool) or
+    (item.ansible_job_id is not defined)
+
+- name: Wait briefly inside the real iperf window
+  ansible.builtin.pause:
+    seconds: "{{ paper_iperf_startup_check_seconds | default(12) | int }}"
+  when:
+    - paper_iperf_startup_check_enabled | default(true) | bool
+    - (paper_duration | int) > (paper_iperf_startup_check_seconds | default(12) | int)
+
+- name: Record real iperf startup guard elapsed time
+  ansible.builtin.set_fact:
+    paper_iperf_startup_elapsed_seconds: "{{ paper_iperf_startup_check_seconds | default(12) | int }}"
+  when:
+    - paper_iperf_startup_check_enabled | default(true) | bool
+    - (paper_duration | int) > (paper_iperf_startup_check_seconds | default(12) | int)
+
+- name: Check real iperf jobs are still running
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: paper_iperf_startup_status
+  loop: "{{ paper_iperf_jobs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default(item.ansible_job_id | default('unknown')) }}"
+  when:
+    - paper_iperf_startup_check_enabled | default(true) | bool
+    - (paper_duration | int) > (paper_iperf_startup_check_seconds | default(12) | int)
+    - item.ansible_job_id is defined
+  failed_when: false
+  changed_when: false
+
+- name: Collect early-exited iperf jobs
+  ansible.builtin.set_fact:
+    paper_iperf_startup_early_exits: "{{ paper_iperf_startup_status.results | default([]) | selectattr('finished') | list }}"
+  when:
+    - paper_iperf_startup_check_enabled | default(true) | bool
+    - (paper_duration | int) > (paper_iperf_startup_check_seconds | default(12) | int)
+
+- name: Stop remaining iperf jobs after startup failure
+  ansible.builtin.shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} \
+      "pkill -f 'iperf3 .* -c {{ paper_target_server_ip }}' >/dev/null 2>&1 || true"
+  loop: "{{ paper_step_ues }}"
+  changed_when: false
+  when:
+    - paper_iperf_startup_check_enabled | default(true) | bool
+    - paper_iperf_startup_early_exits | default([]) | length > 0
+
+- name: Fail if any real iperf job exited during startup
+  ansible.builtin.fail:
+    msg: |
+      TCP paper iperf exited during the real experiment startup window.
+      This run is being stopped before continuing.
+
+      {{ paper_iperf_startup_context | default('') }}
+      direction={{ paper_iperf_startup_direction | default('unknown') }}
+      ue={{ item.item.item | default(item.item | default('unknown')) }}
+      async_job_id={{ item.ansible_job_id | default(item.item.ansible_job_id | default('unknown')) }}
+      finished={{ item.finished | default('unknown') }}
+      rc={{ item.rc | default('unknown') }}
+
+      stdout:
+      {{ item.stdout | default('') }}
+
+      stderr:
+      {{ item.stderr | default('') }}
+
+      Fix the UE route, iperf server, or port issue and rerun. To intentionally continue without this guard, pass -e paper_iperf_startup_check_enabled=false.
+  loop: "{{ paper_iperf_startup_early_exits | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item | default(item.item | default('unknown')) }}"
+  when:
+    - paper_iperf_startup_check_enabled | default(true) | bool
+    - paper_iperf_startup_early_exits | default([]) | length > 0

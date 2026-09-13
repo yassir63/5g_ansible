@@ -1,3 +1,4 @@
+
 ---
 
 # Ensure usrp is off before loading image on fit node
@@ -31,4 +32,3 @@
 - name: Wait 20 seconds for the USRP to be ready
   pause:
     seconds: 20
-

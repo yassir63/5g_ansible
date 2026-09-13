@@ -1,0 +1,30 @@
+---
+- name: Record FIT interference setup start
+  ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+  vars:
+    paper_timeline_event:
+      level: "interference_setup"
+      phase: "start"
+      name: "setup-{{ paper_interference_target.node }}"
+      node: "{{ paper_interference_target.node }}"
+      fit_number: "{{ paper_interference_target.fit_number | int }}"
+      fit_usrp: "{{ paper_interference_target.fit_usrp }}"
+
+- name: Prepare FIT interference node
+  ansible.builtin.include_role:
+    name: scenarios/interference/setup
+  vars:
+    fit_node: "{{ paper_interference_target.node }}"
+    fit_number: "{{ paper_interference_target.fit_number | int }}"
+    fit_usrp: "{{ paper_interference_target.fit_usrp }}"
+
+- name: Record FIT interference setup end
+  ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+  vars:
+    paper_timeline_event:
+      level: "interference_setup"
+      phase: "end"
+      name: "setup-{{ paper_interference_target.node }}"
+      node: "{{ paper_interference_target.node }}"
+      fit_number: "{{ paper_interference_target.fit_number | int }}"
+      fit_usrp: "{{ paper_interference_target.fit_usrp }}"

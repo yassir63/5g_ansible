@@ -3,6 +3,7 @@
 # ueransim config for free5gc (Helm values overrides)
 # 1 release for gNB + 1 release per UE
 # ============================================================
+
 - name: Ensure ueransim output directory exists
   ansible.builtin.file:
     path: "{{ ueransim_chart_path }}/overrides"
@@ -16,7 +17,7 @@
     mode: '0644'
   vars:
     profile: "{{ fiveg }}"
-    net: "{{ ueransim_free5gc_network }}"
+    net: "{{ ueransim_network }}"
 
 - name: Generate ueransim UE values override for each UE
   ansible.builtin.template:
@@ -25,7 +26,7 @@
     mode: '0644'
   vars:
     profile: "{{ fiveg }}"
-    net: "{{ ueransim_free5gc_network }}"
+    net: "{{ ueransim_network }}"
     ue_name: "{{ ue.key }}"
     ue_data: "{{ ue.value }}"
     slice_data: "{{ fiveg.slices | selectattr('name', 'equalto', ue.value.slice) | first }}"

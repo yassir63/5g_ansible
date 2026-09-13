@@ -1,0 +1,66 @@
+{%- macro resolve_sd(sd) -%}
+  {%- if sd == 'EMPTY' -%}0xFFFFFF
+  {%- else -%}0x{{ '%06x' | format(sd | int(base=16)) }}
+  {%- endif -%}
+{%- endmacro -%}
+
+global:
+  n2network:
+    enabled: false
+  n3network:
+    enabled: true
+
+gnb:
+  enabled: true
+
+  n2if:
+    ipAddress: {{ net.gnb_n3_ip }}
+
+  n3if:
+    ipAddress: {{ net.gnb_n3_ip }}
+
+  amf:
+    n2if:
+      ipAddress: {{ net.amf_ip }}
+      port: {{ net.amf_port }}
+    service:
+      ngap:
+        enabled: false
+
+  configuration: |-
+    mcc: '{{ profile.plmn.mcc }}'
+    mnc: '{{ profile.plmn.mnc }}'
+    nci: '0x000000010'
+    idLength: 32
+    tac: {{ profile.plmn.tac | int }}
+    slices:
+{% for slice in profile.slices %}
+      - sst: {{ slice.sst | int }}
+        sd: {{ resolve_sd(slice.sd) }}
+{% endfor %}
+    ignoreStreamIds: true
+
+    # USEFUL for GTP-U BIND
+    linkIp: 0.0.0.0
+    ngapIp: {{ net.gnb_n3_ip }}
+
+    # Must match Multus N3 interface
+    gtpIp: {{ net.gnb_n3_ip }}
+
+ue:
+  enabled: false
+
+# ============================================================
+# IMPORTANT : MUST MATCH gnb-deployment.yaml
+# ============================================================
+
+nodeSelector:
+  kubernetes.io/hostname: "{{ ran_node_name }}"
+
+tolerations:
+  - key: "test-eviction"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+affinity: {}

@@ -21,7 +21,7 @@ cd 5g_ansible
 ./deploy.sh
 ```
 
-This script helps you interactively configure a 5G deployment scenario by allowing you to choose the type of core network, the type of RAN, monitoring functions (partly based on Monarch), and an optional test scenario once the deployment is completed. It also allows you to select the servers on which the 5G pods will run, or to choose the default ones. This will generate a reservation for server(s) such as  `sopnode-f1`, `sopnode-f2`, `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
+This script helps you interactively configure a 5G deployment scenario by allowing you to choose the type of core network, the type of RAN, a Prometheus/Grafana monitoring stack, and an optional test scenario once the deployment is completed. It also allows you to select the servers on which the 5G pods will run, or to choose the default ones. This will generate a reservation for server(s) such as  `sopnode-f1`, `sopnode-f2`, `sopnode-f3` (from [Duckburg](https://duckburg.net.cit.tum.de/)).
 
 
 This script will first attempt to reserve the servers and possibly the 5G RAN nodes you selected for your 5G deployment. Then it will :
@@ -30,7 +30,7 @@ This script will first attempt to reserve the servers and possibly the 5G RAN no
 - Install all required packages on the server(s).
 - Set up a Kubernetes cluster across the nodes.
 - Deploy a 5G Core Network (CN). Currently 3 options are possible : Free5GC, OAI or Open5GS. 
-- Optionally deploy the *Monarch monitoring framework* in case Open5GS CN is selected. 
+- Optionally deploy a Prometheus/Grafana monitoring stack with UE-mapper, sniffer, controller, and KPI exporter components for Open5GS core throughput and OAI RAN metrics.
 - Deploy a 5G Radio Access network (RAN). Currently, 3 options are possible : OAI, srsRAN and UERANSIM. OAI and srsRAN supports both real 5G network devices in the R2lab testbed and emulation mode while UERANSIM is a pure 5G RAN emulation system. In case the R2lab platform is selected, a specific R2lab playbook will run in parallel to configure the R2lab resources: RRU, UEs and FIT R2lab nodes.
 - Optionally deploy a test scenario at the end of the deployment, see more details below.
 
@@ -41,12 +41,103 @@ This repo **5g_ansible** [sopnode/5g_ansible](https://github.com/sopnode/5g_ansi
 - **OAI OpenAirInterface Core and RAN** : [sopnode/oai5g-rru](https://github.com/sopnode/oai5g-rru) and [charts](https://gitlab.eurecom.fr/turletti/charts) that leverage [oai/cn5g/oai-cn5g-fed](https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed) and [openairinterface5G](https://gitlab.eurecom.fr/oai/openairinterface5g)
 - **Free5gc Core** : [sopnode/free5gc-helm](https://github.com/sopnode/free5gc-helm), forked from [free5gc/free5gc-helm](https://github.com/free5gc/free5gc-helm)
 - **srsran-helm** : [turletti/srsan-helm](https://github.com/turletti/srsran-helm), forked from [Ziyad-Mabrouk/srsran-helm](https://github.com/Ziyad-Mabrouk/srsran-helm)
-- **Monarch monitoring framework** : [Ziyad-Mabrouk/5g-monarch](https://github.com/Ziyad-Mabrouk/5g-monarch), forked from [niloysh/5g-monarch](https://github.com/niloysh/5g-monarch).
+- **Prometheus/Grafana monitoring references** : the monitoring values are based on useful Prometheus/Grafana patterns from upstream 5G monitoring work. The deployment keeps only the local monitoring, UE-mapper, sniffer, controller, and KPI exporter pieces needed for derived metrics such as `slice_throughput`, `mac_throughput`, `number_ues`, and `saturation_percentage`.
 
 ---
 
 ## Available Test Scenarios
 The `deploy.sh` can be used to configure and deploy a scenario (iperf or interference). If such a scenario option is selected, the `deploy.sh`  script will execute, once the 5G CORE+CN deployement is ready, another script `run_scenario.sh` that can also be run manually, provided that the inventory is already configured for the target scenario.
+
+## Generic Experiment Artifact Collection
+
+In addition to the built-in scenarios, the repository can run arbitrary
+user-defined experiments and collect observability artifacts around named time
+windows. A scenario YAML defines sections such as `baseline`, `stress`, or
+`recovery`; the runner records their start/end times and can export
+Prometheus/Grafana-query CSVs, split metrics by section, collect Kubernetes pod
+logs, and optionally collect short pcaps.
+
+You can use either a self-contained scenario file with both `sections` and
+`collect` / `pcap` settings inside it, or a cleaner split with an experiment
+file plus an artifact profile. Start from an experiment template and an artifact
+profile:
+
+```bash
+cp scenarios/experiment_templates/basic_sections.yml scenarios/my_experiment.yml
+
+./deploy.sh -n --scenario-only \
+  --experiment scenarios/my_experiment.yml \
+  --experiment-artifacts default_5g_observability
+```
+
+Or run the small smoke-test scenario to verify the artifact layout:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment uesim_artifact_validation \
+  --experiment-artifacts default_5g_observability
+```
+
+In interactive mode, select `Generic experiment`; the script then asks whether
+to collect artifacts and lets you keep the default profile or point to another
+profile. For non-interactive runs without artifact collection, use:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment uesim_artifact_validation \
+  --no-experiment-artifacts
+```
+
+If artifacts are enabled but the experiment file has no `sections`, the runner
+creates a default `full_run` section. That gives you a general Prometheus window
+and pod logs instead of an empty artifact folder. In interactive mode,
+`deploy.sh` asks how long this default observation window should last.
+
+For a real traffic example, run `qhat01` and `qhat03` uplink/downlink TCP iperf
+at 40 Mb/s:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment two_ue_iperf_40m \
+  --experiment-artifacts default_5g_observability \
+  --target-server sopnode-f2
+```
+
+To exercise mixed direction and per-section artifact overrides, run:
+
+```bash
+./deploy.sh -n --scenario-only \
+  --experiment two_ue_direction_matrix_40m \
+  --experiment-artifacts default_5g_observability \
+  --target-server sopnode-f2
+```
+
+UERANSIM attach/detach churn also uses the same generic experiment mechanism.
+Run it by selecting the `ueransim_churn` experiment with the churn-focused
+artifact profile:
+
+```bash
+./deploy.sh \
+  --experiment ueransim_churn \
+  --experiment-artifacts churn_observability \
+  -e "ueransim_churn_counts=10 50 100 200"
+```
+
+Artifact collection can be disabled entirely:
+
+```yaml
+collect:
+  enabled: false
+```
+
+Prometheus queries and pcap targets are configurable through the scenario YAML
+or through files in `configs/artifacts/`. Pcap capture is disabled by default;
+when enabled, the runner attempts to install `tcpdump` using `apt-get`, `dnf`,
+`yum`, `microdnf`, or `apk`, then continues with a clear summary if capture is
+not possible unless strict mode is requested.
+
+See [docs/experiment_artifacts.md](docs/experiment_artifacts.md) for the full
+tutorial and templates.
 
 #### Command Overview
 
@@ -260,7 +351,7 @@ ues:
 
 ## Monitoring Dashboard Access
 
-After deployment, instructions will be printed to your terminal with the SSH command required to access the **Monarch monitoring dashboard**.
+After deployment, instructions will be printed to your terminal with the SSH command required to access the **Grafana monitoring dashboard**.
 
 **Note:** To access Duckburg nodes from your local machine, you must configure your local environment to connect to the SLICES infrastructure. See:
 👉 [SLICES CLI and SSH access guide](https://doc.slices-ri.eu/SupportingServices/slicescli.html)
@@ -284,11 +375,46 @@ After deployment, instructions will be printed to your terminal with the SSH com
 
 ## Data Persistence
 
-All of Monarch's monitoring data is automatically persisted to the block storage device specified under the storage variable in your `hosts.ini` file (e.g., `sda1` for `sopnode-f1`). This device is mounted under `/mnt/data`, and all monitoring data flushed by Prometheus to the MinIO bucket is stored under `/mnt/data/minio/monarch-thanos/`.
+The Prometheus/Grafana stack uses persistent storage when monitoring persistence is enabled. Prometheus, Grafana, Loki, and Promtail are deployed in the `monitoring` namespace. Prometheus, Grafana, and Loki are exposed with familiar NodePorts:
+
+- Prometheus: `30095`
+- Grafana: `32005`
+- Loki: `31000`
+
+The stack scrapes Kubernetes services and pods annotated with `prometheus.io/scrape: "true"` in the configured monitoring namespaces, so latency exporters, UE mapper metrics, and other exporters can be discovered by the local monitoring stack.
+
+Grafana also provisions a `Loki` datasource. Promtail runs as a DaemonSet and forwards Kubernetes container logs into Loki, so logs can be inspected from Grafana Explore with LogQL queries such as:
+
+```logql
+{namespace="open5gs"}
+{namespace="monitoring"}
+{pod=~"open5gs-amf.*"}
+```
+
+The deployment also provisions a `5G Component Logs` dashboard. It contains separate Loki log panels for AMF, SMF, UPF, gNB/RAN, UE simulator pods, sniffers, UE mapper, and the monitoring controller/probe/exporter components. Core and UE namespace selectors default to all known core namespaces, so Open5GS, free5GC, and OAI logs show up without changing the dropdown first. UE simulator logs keep their own `ue_namespace` selector for future deployments where UE pods move elsewhere. UE mapper logs and AMF/SMF sniffer containers are expected in the core namespace; the sniffer panels match the sniffer container inside the AMF/SMF pods. The dashboard keeps a separate RAN namespace selector for gNB and RAN-side probe/exporter logs.
+
+Loki is enabled automatically whenever monitoring is deployed. It can still be disabled or tuned through Ansible variables:
+
+```yaml
+monitoring_loki_enabled: false
+monitoring_loki_sniffer_file_scrape_enabled: true
+monitoring_loki_retention: "5d"
+monitoring_loki_storage_size: 10Gi
+monitoring_loki_node_port: 31000
+monitoring_loki_dashboard_enabled: true
+```
+
+The `monitoring_loki_sniffer_file_scrape_enabled` fallback makes Promtail mount `/var/log/pods` from each host and tail `*sniffer*` container logs directly. This is useful for AMF/SMF sniffers injected as ephemeral containers, because Kubernetes `kubectl logs` may show them even when normal Promtail pod discovery does not.
+
+When `monitoring_enabled=true`, the deployment also applies a KPI layer:
+
+- Open5GS metric services for AMF/SMF/UPF and the Open5GS KPI calculator image, restoring `slice_throughput`.
+- OAI gNB metric services and the OAI KPI calculator from the `with_data_persistance_for_sopnodes` branch, restoring `mac_throughput`, `number_ues`, and `saturation_percentage` from the OAI log-parser metrics.
+- The KPI calculators receive the in-cluster Prometheus URL through the monitoring deployment.
 
 **Note on Prometheus persistence:** Prometheus writes all incoming metrics data to an in-memory *head block* and only flushes this data to disk every **2 hours**. At the moment, this interval cannot be changed in our setup. As a result:
 > ⚠️ If the monitor node is terminated or redeployed before 2 hours have passed, any collected data will be lost.
 
 To ensure metrics are actually written to disk and persist across redeployments, you must wait **at least 2 hours** after starting data collection, in which case extending your reservation is needed. Once this threshold is reached, Prometheus will flush the in-memory block to the permanent on-disk block that survives restarts.
 
-As long as the same monitor node and mounted storage are reused, previously flushed data will remain available in the monitoring dashboard.
+As long as the same monitor node and persistent volume or mounted storage are reused, previously flushed data will remain available in the monitoring dashboard.

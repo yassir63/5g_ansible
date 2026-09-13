@@ -1,0 +1,57 @@
+# UERANSIM UE Configuration for Open5GS
+# Based on free5gc/OAI ueransim-ue-values.yaml.j2 structure
+
+supi: "imsi-{{ fiveg.plmn.mcc }}{{ fiveg.plmn.mnc }}{{ ue_data.imsi_suffix }}"
+mcc: '{{ fiveg.plmn.mcc }}'
+mnc: '{{ fiveg.plmn.mnc }}'
+key: '{{ fiveg.security.full_key }}'
+op: '{{ fiveg.security.opc }}'
+opType: OPC
+amf: '8000'
+imei: '356938035643803'
+imeiSv: '4370816125816151'
+
+uacAic:
+  mps: false
+  mcs: false
+
+uacAcc:
+  normalClass: 0
+  class11: false
+  class12: false
+  class13: false
+  class14: false
+  class15: false
+
+sessions:
+  - type: IPv4
+    apn: {{ slice_data.dnn }}
+    slice:
+      sst: {{ slice_data.sst | int }}
+      sd: '{{ curr_sd }}'
+
+configured-nssai:
+  - sst: {{ slice_data.sst | int }}
+    sd: '{{ curr_sd }}'
+
+default-nssai:
+  - sst: {{ slice_data.sst | int }}
+    sd: '{{ curr_sd }}'
+
+integrity:
+  IA1: true
+  IA2: true
+  IA3: true
+
+ciphering:
+  EA1: true
+  EA2: true
+  EA3: true
+
+integrityMaxRate:
+  uplink: full
+  downlink: full
+
+gnbSearchList:
+  - {{ ueransim_open5gs_network.gnb_ip }}
+

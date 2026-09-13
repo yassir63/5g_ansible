@@ -1,0 +1,10 @@
+---
+duration: "{{ ping_duration | default(30) }}"
+sleep: "{{ ping_sleep | default(5) }}"
+async_stagger: 0
+do_individual_tests: true
+do_simultaneous_tests: true
+
+ping_scenarios:
+  - {packet_size: 64, extra_args: ""}
+  - {packet_size: 1000, extra_args: "-s 992"} # 8 bytes of header data

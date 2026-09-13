@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gnb-metrics-service
+  namespace: {{ monitoring_ran_namespace }}
+  labels:
+    nf: gnb
+    app: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "9090"
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 9090
+  selector:
+    nf: gnb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gnb-latency-metrics-service
+  namespace: {{ monitoring_ran_namespace }}
+  labels:
+    nf: gnb
+    app: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/latency"
+    prometheus.io/port: "9100"
+spec:
+  clusterIP: None
+  ports:
+    - name: latency
+      port: 9100
+  selector:
+    nf: gnb

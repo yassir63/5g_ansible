@@ -1,0 +1,234 @@
+---
+- name: START_MONITORING_DEPLOY
+  ansible.builtin.meta: noop
+
+- name: Ensure monitoring namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ monitoring_namespace }}"
+
+- name: Render Grafana dashboard ConfigMap
+  ansible.builtin.template:
+    src: monitoring-dashboard-configmap.yml.j2
+    dest: /tmp/monitoring-grafana-dashboard.yml
+    mode: "0644"
+  when: >
+    (monitoring_grafana_dashboard_enabled | bool)
+    or (monitoring_loki_enabled | bool and monitoring_loki_dashboard_enabled | bool)
+
+- name: Install Grafana dashboard ConfigMap
+  ansible.builtin.command: kubectl apply -f /tmp/monitoring-grafana-dashboard.yml
+  register: monitoring_grafana_dashboard_apply
+  changed_when: "'created' in monitoring_grafana_dashboard_apply.stdout or 'configured' in monitoring_grafana_dashboard_apply.stdout"
+  when: >
+    (monitoring_grafana_dashboard_enabled | bool)
+    or (monitoring_loki_enabled | bool and monitoring_loki_dashboard_enabled | bool)
+
+- name: Ensure /mnt/data mount point exists for monitoring persistence
+  ansible.builtin.file:
+    path: /mnt/data
+    state: directory
+    mode: "0755"
+  when:
+    - monitoring_persistence_enabled | bool
+    - storage is defined
+
+- name: Mount monitor-node storage device for monitoring persistence
+  ansible.posix.mount:
+    path: /mnt/data
+    src: "/dev/{{ storage }}"
+    fstype: ext4
+    state: mounted
+  become: true
+  when:
+    - monitoring_persistence_enabled | bool
+    - monitoring_mount_storage_device | bool
+    - storage is defined
+
+- name: Label monitor node for monitoring scheduling
+  ansible.builtin.command: >
+    kubectl label node {{ groups['monitor_node'][0] }}
+    {{ monitoring_node_label_key }}={{ monitoring_node_label_value }} --overwrite
+  changed_when: false
+  when: groups['monitor_node'] | default([]) | length > 0
+
+- name: Create monitoring data directories when host storage is configured
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "0777"
+  loop:
+    - path: /mnt/data/prometheus
+      enabled: true
+    - path: /mnt/data/grafana
+      enabled: true
+    - path: /mnt/data/loki
+      enabled: "{{ monitoring_loki_enabled | bool }}"
+  when:
+    - monitoring_persistence_enabled | bool
+    - storage is defined
+    - item.enabled | bool
+
+- name: Create monitoring hostPath storage class
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: "{{ monitoring_storage_class }}"
+      provisioner: kubernetes.io/no-provisioner
+      volumeBindingMode: WaitForFirstConsumer
+  when: monitoring_persistence_enabled | bool
+
+- name: Create monitoring hostPath persistent volumes
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: "{{ item.name }}"
+      spec:
+        capacity:
+          storage: "{{ item.size }}"
+        accessModes:
+          - ReadWriteOnce
+        persistentVolumeReclaimPolicy: Retain
+        storageClassName: "{{ monitoring_storage_class }}"
+        local:
+          path: "{{ item.path }}"
+        nodeAffinity:
+          required:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - "{{ groups['monitor_node'][0] }}"
+  loop:
+    - name: monitoring-prometheus-pv
+      path: /mnt/data/prometheus
+      size: "{{ monitoring_prometheus_storage_size }}"
+      enabled: true
+    - name: monitoring-grafana-pv
+      path: /mnt/data/grafana
+      size: "{{ monitoring_grafana_storage_size }}"
+      enabled: true
+    - name: monitoring-loki-pv
+      path: /mnt/data/loki
+      size: "{{ monitoring_loki_storage_size }}"
+      enabled: "{{ monitoring_loki_enabled | bool }}"
+  when:
+    - monitoring_persistence_enabled | bool
+    - item.enabled | bool
+
+- name: Render kube-prometheus-stack values
+  ansible.builtin.template:
+    src: kube-prometheus-stack-values.yml.j2
+    dest: /tmp/monitoring-prometheus-values.yml
+    mode: "0644"
+
+- name: Render Grafana values
+  ansible.builtin.template:
+    src: grafana-values.yml.j2
+    dest: /tmp/monitoring-grafana-values.yml
+    mode: "0644"
+
+- name: Render Loki stack values
+  ansible.builtin.template:
+    src: loki-stack-values.yml.j2
+    dest: /tmp/monitoring-loki-values.yml
+    mode: "0644"
+  when: monitoring_loki_enabled | bool
+
+- name: Add prometheus-community Helm repository
+  kubernetes.core.helm_repository:
+    name: prometheus-community
+    repo_url: https://prometheus-community.github.io/helm-charts
+
+- name: Add Grafana Helm repository
+  kubernetes.core.helm_repository:
+    name: grafana
+    repo_url: https://grafana.github.io/helm-charts
+
+- name: Update Helm repositories
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: Install Prometheus stack
+  kubernetes.core.helm:
+    name: "{{ monitoring_prometheus_stack_release }}"
+    chart_ref: prometheus-community/kube-prometheus-stack
+    chart_version: "{{ monitoring_prometheus_chart_version }}"
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    values_files:
+      - /tmp/monitoring-prometheus-values.yml
+    wait: true
+    wait_timeout: 10m
+
+- name: Install Loki stack
+  kubernetes.core.helm:
+    name: "{{ monitoring_loki_release }}"
+    chart_ref: grafana/loki-stack
+    chart_version: "{{ monitoring_loki_stack_chart_version }}"
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    values_files:
+      - /tmp/monitoring-loki-values.yml
+    wait: true
+    wait_timeout: 10m
+  when: monitoring_loki_enabled | bool
+
+- name: Install Grafana
+  kubernetes.core.helm:
+    name: "{{ monitoring_grafana_release }}"
+    chart_ref: grafana/grafana
+    chart_version: "{{ monitoring_grafana_chart_version }}"
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    values_files:
+      - /tmp/monitoring-grafana-values.yml
+    wait: true
+    wait_timeout: 10m
+
+- name: Wait for Prometheus to be ready
+  ansible.builtin.command: >
+    kubectl -n {{ monitoring_namespace }}
+    wait --for=condition=Ready pod
+    -l app.kubernetes.io/name=prometheus
+    --timeout=300s
+  changed_when: false
+
+- name: Wait for Grafana to be ready
+  ansible.builtin.command: >
+    kubectl -n {{ monitoring_namespace }}
+    wait --for=condition=Ready pod
+    -l app.kubernetes.io/name=grafana
+    --timeout=300s
+  changed_when: false
+
+- name: Wait for Promtail to be ready
+  ansible.builtin.command: >
+    kubectl -n {{ monitoring_namespace }}
+    rollout status daemonset/{{ monitoring_loki_release }}-promtail
+    --timeout=300s
+  changed_when: false
+  when:
+    - monitoring_loki_enabled | bool
+    - monitoring_loki_promtail_enabled | bool
+
+- name: Show monitoring access details
+  ansible.builtin.debug:
+    msg:
+      - "Prometheus NodePort: {{ monitoring_prometheus_node_port }}"
+      - "Grafana NodePort: {{ monitoring_grafana_node_port }}"
+      - "Loki NodePort: {{ monitoring_loki_node_port if (monitoring_loki_enabled | bool) else 'disabled' }}"
+      - "Grafana username: {{ monitoring_grafana_admin_user }}"
+      - "Grafana password: {{ monitoring_grafana_admin_password }}"
+      - "Grafana Loki datasource: {{ 'enabled' if (monitoring_loki_enabled | bool) else 'disabled' }}"

@@ -1,0 +1,46 @@
+---
+#
+# Deploy nuttcp servers on target_host
+#
+
+- name: Set defaults
+  set_fact:
+    base_data_port: 5000
+    base_control_port: 5500
+    actual_nb_ues: "{{ nb_ues | default(3) }}"
+    # nuttcp_bind_ip: "{{ target_server_ip | default(hostvars[groups['core_node'][0]]['ip']) }}" # nuttcp will listen on all interfaces, can't be bound to a specific IP
+
+- name: Kill ANY existing nuttcp process
+  shell: pkill nuttcp || true
+  become: true
+  changed_when: false
+
+- name: Create base directory for nuttcp logs
+  file:
+    path: /root/NUTTCP
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Get timestamp
+  command: date +"%Y%m%d_%H%M%S"
+  register: nuttcp_timestamp
+  changed_when: false
+
+- name: Start nuttcp servers on incremental ports
+  # Using the full path /usr/bin/nuttcp to be safe against "not found" errors
+  shell: >
+    /usr/bin/nuttcp -S -p {{ base_data_port + item | int }} -P {{ base_control_port + item | int }}
+  loop: "{{ range(0, actual_nb_ues | int) | list }}"
+  become: true
+
+- name: Verify servers are listening
+  shell: netstat -tulpn | grep nuttcp
+  register: nuttcp_status
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Debug server status
+  debug:
+    var: nuttcp_status.stdout_lines

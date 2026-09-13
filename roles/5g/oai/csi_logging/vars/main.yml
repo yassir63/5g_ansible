@@ -1,0 +1,13 @@
+---
+# CSI Logging Role Variables
+csi_output_path: /data/csi/csi_per_rb.csv
+csi_script_path: /usr/local/bin/csi_visualizer_oai.py
+
+# CSI Granularity Configuration
+# Currently supports: RB range filtering and RB-level aggregation
+csi_granularity:
+  level: 'rb'
+  rb_selection: 'all'
+  # rb_selection: 'range'
+  # rb_start: 0
+  # rb_end: 52

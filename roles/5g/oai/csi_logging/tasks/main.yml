@@ -1,0 +1,22 @@
+---
+
+- name: Copy CSI visualization script
+  copy:
+    src: streamlit_csi_visualizer_v6.0.py
+    dest: "/usr/local/bin/streamlit_csi_visualizer_v6.0.py"
+    mode: '0755'
+  become: true
+
+- name: Install Python dependencies
+  package:
+    name:
+      - python3-numpy
+      - python3-matplotlib
+    state: present
+  become: true
+
+- name: CSI tools configured
+  debug:
+    msg: |
+      CSI visualization ready
+      

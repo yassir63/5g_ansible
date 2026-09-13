@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ue-mapper-api
+  namespace: monitoring
 spec:
   replicas: 1
   selector:
@@ -14,7 +15,8 @@ spec:
     spec:
       containers:
       - name: ue-mapper-api
-        image: r2labuser/ue_mapper_api:latest
+        # image: r2labuser/ue_mapper_api:latest
+        image: r2labuser/ue_mapper_api:2026w10
         ports:
         - containerPort: 8080
         env:
@@ -25,6 +27,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ue-mapper-api
+  namespace: monitoring
 spec:
   selector:
     app: ue-mapper-api

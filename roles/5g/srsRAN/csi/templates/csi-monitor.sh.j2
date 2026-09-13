@@ -1,0 +1,69 @@
+#!/bin/bash
+# roles/5g/srsRAN/csi/templates/csi-monitor.sh.j2
+# CSI monitoring script deployed to gNB pod
+
+set -e
+
+CSI_DATA_FILE="/tmp/csi_data.bin"
+CSI_DEBUG_FILE="/tmp/csi_debug.log"
+MONITOR_INTERVAL="{{ csi_monitor_interval | default(60) }}"
+MONITOR_DURATION="{{ csi_monitor_duration | default(300) }}"
+
+log_info() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] $*" | tee -a "$CSI_DEBUG_FILE"
+}
+
+log_error() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [ERROR] $*" | tee -a "$CSI_DEBUG_FILE"
+}
+
+log_info "CSI Monitor started"
+log_info "CSI Data File: $CSI_DATA_FILE"
+log_info "Monitor Interval: ${MONITOR_INTERVAL}s"
+log_info "Monitor Duration: ${MONITOR_DURATION}s"
+
+start_time=$(date +%s)
+
+while true; do
+    current_time=$(date +%s)
+    elapsed=$((current_time - start_time))
+    
+    if [ -f "$CSI_DATA_FILE" ]; then
+        file_size=$(stat -f%z "$CSI_DATA_FILE" 2>/dev/null || stat -c%s "$CSI_DATA_FILE" 2>/dev/null || echo "0")
+        file_size_mb=$((file_size / 1024 / 1024))
+        
+        log_info "CSI Data Size: ${file_size_mb}MB (elapsed: ${elapsed}s)"
+        
+        # Check if file is growing (not stalled)
+        if [ "$elapsed" -gt 10 ]; then
+            prev_size=$(cat "$CSI_DEBUG_FILE" 2>/dev/null | grep -o '[0-9]*MB' | tail -2 | head -1 | sed 's/MB//' || echo "0")
+            if [ "$file_size_mb" -eq "$prev_size" ]; then
+                log_error "CSI data is not growing - possible stall"
+            fi
+        fi
+    else
+        log_info "Waiting for CSI data file... (elapsed: ${elapsed}s)"
+    fi
+    
+    if [ "$elapsed" -ge "$MONITOR_DURATION" ]; then
+        log_info "Monitor duration reached. Exiting."
+        break
+    fi
+    
+    sleep "$MONITOR_INTERVAL"
+done
+
+if [ -f "$CSI_DATA_FILE" ]; then
+    final_size=$(stat -f%z "$CSI_DATA_FILE" 2>/dev/null || stat -c%s "$CSI_DATA_FILE" 2>/dev/null || echo "0")
+    final_size_mb=$((final_size / 1024 / 1024))
+    log_info "Final CSI Data Size: ${final_size_mb}MB"
+    
+    # Calculate record count (24 bytes per record)
+    record_count=$((final_size / 24))
+    log_info "Estimated Records: $record_count"
+else
+    log_error "CSI data file not found!"
+    exit 1
+fi
+
+log_info "CSI Monitor completed successfully"

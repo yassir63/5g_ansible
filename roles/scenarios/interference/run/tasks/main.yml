@@ -3,9 +3,9 @@
   set_fact:
     usrp_args: >-
       {% if node == "n320" %}
-      --args="product=n320,serial=31B3A77,addr=192.168.235.105,master_clock_rate=245.76e6"
+      --args="product=n320,serial=31B3A77,addr=192.168.235.105,mgmt_addr=192.168.235.105,master_clock_rate=245.76e6"
       {% elif node == "n300" %}
-      --args="product=n300,serial=31D98C7"
+      --args="product=n300,serial=31D98C7,addr=192.168.235.103,mgmt_addr=192.168.235.103"
       {% else %}{% endif %}
 
 - name: Build final command
@@ -22,11 +22,11 @@
 - name: Build final command
   set_fact:
     noise_cmd: >-
-      "timeout {{ time }} uhd_siggen --gaussian
+      timeout {{ time }} uhd_siggen --gaussian
       -f '{{ hostvars[groups['faraday'][0]].freq }}'
       -g '{{ hostvars[groups['faraday'][0]].gain }}'
       -s '{{ hostvars[groups['faraday'][0]].noise_bandwidth }}'
-      {{ usrp_args }} < /dev/null"
+      {{ usrp_args }}
   when: node == "n300" or node == "n320"
 
 - name: Show uhd_siggen command that will be executed
@@ -42,8 +42,12 @@
 
 - name: Start Gaussian Noise Emission from {{ target_server_host }}
   shell: "{{ noise_cmd }}"
+  args:
+    executable: /bin/bash
+  environment:
+    LD_LIBRARY_PATH: "{{ install_prefix | default('/usr/local') }}/lib"
+    LD_PRELOAD: "{{ install_prefix | default('/usr/local') }}/lib/libuhd.so.4.7.0"
   delegate_to: "{{ target_server_host }}"
   ignore_errors: true
-  #no_log: true
   when: node == "n300" or node == "n320"
 

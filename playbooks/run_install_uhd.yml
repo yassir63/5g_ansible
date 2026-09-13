@@ -1,0 +1,53 @@
+---
+#
+# Install UHD 4.7 and GNU Radio on target_server (should be part of inventory)
+# use option -e target_server=sopnode-XX to change the default (core_node).
+#
+
+- name: Install UHD + on sopnode
+  hosts: "{{ target_server | default('core_node') }}"
+  become: true
+  vars:
+    uhd_version: "UHD-4.7"
+    install_prefix: "/usr/local"
+
+  roles:
+    - role: setup/uhd
+
+  tasks:
+    - name: Verify complete installation
+      shell: |
+        export PATH={{ install_prefix }}/bin:$PATH
+        export LD_LIBRARY_PATH={{ install_prefix }}/lib:$LD_LIBRARY_PATH
+        
+        echo "=========================================="
+        echo "Installation Summary"
+        echo "=========================================="
+        echo ""
+        
+        echo "UHD Version:"
+        uhd_config_info --version
+        echo ""
+        
+        echo "uhd_siggen Status:"
+        if command -v uhd_siggen &> /dev/null; then
+          echo "✓ uhd_siggen found at: $(which uhd_siggen)"
+        else
+          echo "✗ uhd_siggen NOT FOUND"
+          exit 1
+        fi
+        echo ""
+        
+        echo "=========================================="
+        echo "Installation completed successfully!"
+        echo "=========================================="
+      args:
+        executable: /bin/bash
+      register: final_check
+
+    - name: Display installation summary
+      debug:
+        msg:
+          - "Target server = {{ target_server | default('core_node') }}"
+          - "{{ final_check.stdout_lines }}"
+

@@ -6,3 +6,7 @@
 - name: Deploy ueransim for free5gc
   ansible.builtin.include_tasks: deploy_free5gc.yml
   when: core == 'free5gc'
+
+- name: Deploy ueransim for oai
+  ansible.builtin.include_tasks: deploy_oai.yml
+  when: core == 'oai'

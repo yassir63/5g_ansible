@@ -1,0 +1,625 @@
+---
+- name: Set interference step parameters
+  ansible.builtin.set_fact:
+    paper_interference_delay_seconds: "{{ paper_step.interference_start_after_seconds | default(paper_interference_start_after_seconds | default(((paper_duration | int) // 3)), true) | int }}"
+    paper_interference_duration_seconds: "{{ paper_step.interference_duration_seconds | default(paper_interference_duration_seconds | default(((paper_duration | int) // 3)), true) | int }}"
+    paper_interference_step_node: "{{ paper_step.interference_node | default(paper_interference_node | default('fit02')) }}"
+    paper_interference_step_fit_number: "{{ paper_step.interference_fit_number | default(paper_interference_fit_number | default(2)) | int }}"
+    paper_interference_step_freq: "{{ paper_step.interference_freq | default(paper_interference_freq | default('3411.22M')) }}"
+    paper_interference_step_gain: "{{ paper_step.interference_gain_override | default(paper_interference_gain_override | default(paper_step.interference_gain | default(paper_interference_gain | default(110))), true) }}"
+    paper_interference_step_bandwidth: "{{ paper_step.interference_noise_bandwidth | default(paper_interference_noise_bandwidth | default('15M')) }}"
+    paper_interference_step_usrp_args: "{{ paper_step.interference_usrp_args | default(paper_interference_usrp_args | default('')) }}"
+    paper_interference_direction: "{{ paper_step.interference_direction | default(paper_step.direction | default('ul')) }}"
+    paper_interference_focus_ue: "{{ paper_step.interference_focus_ue | default(paper_step.interference_target_ue | default('')) }}"
+    paper_interference_precheck_enabled_effective: "{{ paper_step.interference_precheck_enabled | default(paper_interference_precheck_enabled | default(true)) | bool }}"
+    paper_interference_precheck_duration_seconds_effective: "{{ paper_step.interference_precheck_duration_seconds | default(paper_interference_precheck_duration_seconds | default(2)) | int }}"
+    paper_interference_siggen_attempts: "{{ paper_step.interference_siggen_attempts | default(paper_interference_siggen_attempts | default(3)) | int }}"
+    paper_interference_runtime_siggen_attempts: "{{ paper_step.interference_runtime_siggen_attempts | default(paper_interference_runtime_siggen_attempts | default(1)) | int }}"
+    paper_interference_recovery_pause_seconds: "{{ paper_step.interference_recovery_pause_seconds | default(paper_interference_recovery_pause_seconds | default(10)) | int }}"
+
+- name: Validate interference traffic direction
+  ansible.builtin.fail:
+    msg: "Invalid interference direction {{ paper_interference_direction }}. Use ul, dl, or bidir."
+  when: paper_interference_direction not in ["ul", "dl", "bidir"]
+
+- name: Set interference iperf direction args
+  ansible.builtin.set_fact:
+    paper_interference_direction_args: "{{ '--bidir' if paper_interference_direction == 'bidir' else ('-R' if paper_interference_direction == 'dl' else '') }}"
+
+- name: Show interference step details
+  ansible.builtin.debug:
+    msg:
+      - "Scenario: {{ paper_scenario.name }}"
+      - "Step: {{ paper_step.name }}"
+      - "Traffic: {{ paper_interference_direction }} TCP on {{ paper_step_ues | join(', ') }}"
+      - "Interference node: {{ paper_interference_step_node }} fit_number={{ paper_interference_step_fit_number }}"
+      - "Interference starts after: {{ paper_interference_delay_seconds }}s"
+      - "Interference duration: {{ paper_interference_duration_seconds }}s"
+      - "Noise: freq={{ paper_interference_step_freq }} gain={{ paper_interference_step_gain }} bandwidth={{ paper_interference_step_bandwidth }}"
+      - "FIT readiness gate before iperf: {{ paper_interference_precheck_enabled_effective }} duration={{ paper_interference_precheck_duration_seconds_effective }}s attempts={{ paper_interference_siggen_attempts }}"
+      - "FIT siggen attempts inside measured window: {{ paper_interference_runtime_siggen_attempts }}"
+      - "Analysis focus UE label: {{ paper_interference_focus_ue | default('none', true) }}"
+
+- name: Record FIT readiness precheck start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "interference_precheck"
+      phase: "start"
+      name: "fit-readiness"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+      interference_node: "{{ paper_interference_step_node }}"
+      interference_fit_number: "{{ paper_interference_step_fit_number }}"
+      interference_freq: "{{ paper_interference_step_freq }}"
+      interference_gain: "{{ paper_interference_step_gain }}"
+      interference_noise_bandwidth: "{{ paper_interference_step_bandwidth }}"
+      interference_focus_ue: "{{ paper_interference_focus_ue }}"
+      precheck_duration_seconds: "{{ paper_interference_precheck_duration_seconds_effective }}"
+      siggen_attempts: "{{ paper_interference_siggen_attempts }}"
+  when: paper_interference_precheck_enabled_effective | bool
+
+- name: Pre-arm FIT Gaussian noise generator before traffic
+  ansible.builtin.shell: |
+    set -u
+    FIT_NODE="{{ paper_interference_step_node }}"
+    FIT_NUMBER="{{ paper_interference_step_fit_number }}"
+    LOG="/tmp/{{ paper_run_id }}/interference/precheck_{{ paper_scenario.name }}_{{ paper_step.name }}.log"
+    ATTEMPTS="{{ paper_interference_siggen_attempts }}"
+    DURATION="{{ paper_interference_precheck_duration_seconds_effective }}"
+    RECOVERY_PAUSE="{{ paper_interference_recovery_pause_seconds }}"
+    if [ "${ATTEMPTS}" -lt 1 ]; then
+      ATTEMPTS=1
+    fi
+
+    run_siggen_attempt() {
+      local attempt="$1"
+      ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"${FIT_NODE}" "
+        set -u
+        mkdir -p /tmp/{{ paper_run_id }}/interference
+        if [ -d /usr/local/share/uhd/images ]; then
+          export UHD_IMAGES_DIR=/usr/local/share/uhd/images
+        fi
+        LOG='${LOG}'
+        FIFO=\"/tmp/{{ paper_run_id }}/interference/precheck_{{ paper_scenario.name }}_{{ paper_step.name }}_${attempt}.fifo\"
+        rm -f \"\$FIFO\"
+        mkfifo \"\$FIFO\"
+        echo \"==== precheck uhd_siggen attempt ${attempt}/${ATTEMPTS} started at \$(date -Is) ====\" >> \"\$LOG\"
+        echo \"UHD_IMAGES_DIR=\${UHD_IMAGES_DIR:-default}\" >> \"\$LOG\"
+        (
+          exec 3> \"\$FIFO\"
+          sleep '${DURATION}'
+          printf '\\n' >&3
+          exec 3>&-
+        ) &
+        STOPPER=\$!
+        uhd_siggen --gaussian \
+          -f '{{ paper_interference_step_freq }}' \
+          -g '{{ paper_interference_step_gain }}' \
+          -s '{{ paper_interference_step_bandwidth }}' \
+          {{ paper_interference_step_usrp_args }} \
+          < \"\$FIFO\" >> \"\$LOG\" 2>&1
+        RC=\$?
+        kill \"\$STOPPER\" >/dev/null 2>&1 || true
+        wait \"\$STOPPER\" >/dev/null 2>&1 || true
+        rm -f \"\$FIFO\"
+        echo \"==== precheck uhd_siggen attempt ${attempt}/${ATTEMPTS} finished rc=\${RC} at \$(date -Is) ====\" >> \"\$LOG\"
+        exit \"\$RC\"
+      "
+    }
+
+    recover_fit_usrp() {
+      local attempt="$1"
+      echo "Recovering ${FIT_NODE} USRP before precheck retry ${attempt}/${ATTEMPTS}" >&2
+      rhubarbe usrpoff "${FIT_NUMBER}" || true
+      sleep 3
+      ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"${FIT_NODE}" "
+        mkdir -p /tmp/{{ paper_run_id }}/interference
+        {
+          echo '==== precheck recovery before retry ${attempt}/${ATTEMPTS} at '\$(date -Is)' ===='
+          if [ -x /usr/local/lib/uhd/utils/uhd_images_downloader.py ]; then
+            /usr/local/lib/uhd/utils/uhd_images_downloader.py
+          elif command -v uhd_images_downloader >/dev/null 2>&1; then
+            uhd_images_downloader
+          else
+            echo 'No UHD image downloader found on ${FIT_NODE}'
+          fi
+        } >> '${LOG}' 2>&1
+      " || true
+      rhubarbe usrpon "${FIT_NUMBER}" || true
+      sleep "${RECOVERY_PAUSE}"
+      ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"${FIT_NODE}" "
+        {
+          echo '==== uhd_find_devices after precheck recovery at '\$(date -Is)' ===='
+          if [ -d /usr/local/share/uhd/images ]; then
+            export UHD_IMAGES_DIR=/usr/local/share/uhd/images
+          fi
+          echo \"UHD_IMAGES_DIR=\${UHD_IMAGES_DIR:-default}\"
+          uhd_find_devices
+        } >> '${LOG}' 2>&1
+      " || true
+    }
+
+    attempt=1
+    last_rc=1
+    while [ "${attempt}" -le "${ATTEMPTS}" ]; do
+      run_siggen_attempt "${attempt}"
+      last_rc="$?"
+      if [ "${last_rc}" -eq 0 ]; then
+        exit 0
+      fi
+      if [ "${attempt}" -lt "${ATTEMPTS}" ]; then
+        next_attempt=$((attempt + 1))
+        recover_fit_usrp "${next_attempt}"
+      fi
+      attempt=$((attempt + 1))
+    done
+    exit "${last_rc}"
+  register: paper_interference_precheck_result
+  changed_when: true
+  failed_when: false
+  when: paper_interference_precheck_enabled_effective | bool
+
+- name: Record FIT readiness precheck end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "interference_precheck"
+      phase: "end"
+      name: "fit-readiness"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+      interference_node: "{{ paper_interference_step_node }}"
+      rc: "{{ paper_interference_precheck_result.rc | default('unknown') }}"
+      success: "{{ (paper_interference_precheck_result.rc | default(1) | int) == 0 }}"
+      remote_log: "/tmp/{{ paper_run_id }}/interference/precheck_{{ paper_scenario.name }}_{{ paper_step.name }}.log"
+  when: paper_interference_precheck_enabled_effective | bool
+
+- name: Fail before iperf if FIT readiness precheck failed
+  ansible.builtin.fail:
+    msg: |
+      FIT Gaussian noise generator is not ready, so iperf traffic was not started.
+      scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_interference_direction }}
+      interference_node={{ paper_interference_step_node }} fit_number={{ paper_interference_step_fit_number }}
+      rc={{ paper_interference_precheck_result.rc | default('unknown') }}
+      remote_log=/tmp/{{ paper_run_id }}/interference/precheck_{{ paper_scenario.name }}_{{ paper_step.name }}.log
+
+      stdout:
+      {{ paper_interference_precheck_result.stdout | default('') }}
+
+      stderr:
+      {{ paper_interference_precheck_result.stderr | default('') }}
+  when:
+    - paper_interference_precheck_enabled_effective | bool
+    - (paper_interference_precheck_result.rc | default(1) | int) != 0
+
+- name: Record interference TCP direction start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "direction"
+      phase: "start"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+      ues: "{{ paper_step_ues }}"
+      parallel_streams: "{{ paper_step.parallel_streams | default(1) | int }}"
+      parallel_by_ue: "{{ paper_step.parallel_by_ue | default({}) }}"
+      interference_node: "{{ paper_interference_step_node }}"
+      interference_fit_number: "{{ paper_interference_step_fit_number }}"
+      interference_freq: "{{ paper_interference_step_freq }}"
+      interference_gain: "{{ paper_interference_step_gain }}"
+      interference_noise_bandwidth: "{{ paper_interference_step_bandwidth }}"
+      interference_focus_ue: "{{ paper_interference_focus_ue }}"
+      command_template: "iperf3 -c {{ paper_target_server_ip }} -t {{ paper_duration }} -P <per-UE> {{ paper_interference_direction_args }} --json --get-server-output"
+
+- name: Start TCP iperf jobs for interference step
+  ansible.builtin.shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} '
+      set -e
+      LOG_DIR="/tmp/{{ paper_run_id }}/scenario={{ paper_scenario.name }}/step={{ paper_step.name }}/direction={{ paper_interference_direction }}"
+      mkdir -p "$LOG_DIR"
+      iperf3 \
+        -p {{ paper_ue_port_map[item] }} \
+        -B {{ ue_ips[item] }} \
+        -c {{ paper_target_server_ip }} \
+        -t {{ paper_duration }} \
+        -P {{ (paper_step.parallel_by_ue | default({}))[item] | default(paper_step.parallel_streams | default(1)) }} \
+        {{ paper_interference_direction_args }} \
+        --json \
+        --get-server-output \
+        > "$LOG_DIR/iperf_{{ item }}.json" \
+        2> "$LOG_DIR/iperf_{{ item }}.stderr" || {
+          rc=$?
+          echo "TCP paper iperf failed during the real interference experiment job." >&2
+          echo "scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_interference_direction }} ue={{ item }} port={{ paper_ue_port_map[item] }} ue_ip={{ ue_ips[item] }} target={{ paper_target_server_ip }} rc=$rc" >&2
+          echo "Remote logs: $LOG_DIR/iperf_{{ item }}.json and $LOG_DIR/iperf_{{ item }}.stderr" >&2
+          head -n 80 "$LOG_DIR/iperf_{{ item }}.json" >&2 || true
+          head -n 80 "$LOG_DIR/iperf_{{ item }}.stderr" >&2 || true
+          exit "$rc"
+        }
+      if grep -q '"error"[[:space:]]*:' "$LOG_DIR/iperf_{{ item }}.json"; then
+        echo "TCP paper iperf JSON reported an error during the real interference experiment job." >&2
+        echo "scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_interference_direction }} ue={{ item }} port={{ paper_ue_port_map[item] }} ue_ip={{ ue_ips[item] }} target={{ paper_target_server_ip }}" >&2
+        echo "Remote logs: $LOG_DIR/iperf_{{ item }}.json and $LOG_DIR/iperf_{{ item }}.stderr" >&2
+        head -n 80 "$LOG_DIR/iperf_{{ item }}.json" >&2 || true
+        head -n 80 "$LOG_DIR/iperf_{{ item }}.stderr" >&2 || true
+        exit 1
+      fi
+    '
+  async: "{{ paper_duration | int + paper_async_grace | int }}"
+  poll: 0
+  loop: "{{ paper_step_ues }}"
+  loop_control:
+    label: "{{ item }}"
+  register: paper_iperf_jobs
+  changed_when: true
+  ignore_errors: "{{ ignore_task_errors | default(true) }}"
+
+- name: Record clean-before-interference phase start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "interference_phase"
+      phase: "start"
+      name: "clean_before_noise"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+      ues: "{{ paper_step_ues }}"
+      parallel_streams: "{{ paper_step.parallel_streams | default(1) | int }}"
+      parallel_by_ue: "{{ paper_step.parallel_by_ue | default({}) }}"
+
+- name: Wait before starting interference
+  ansible.builtin.pause:
+    seconds: "{{ paper_interference_delay_seconds }}"
+  when: paper_interference_delay_seconds | int > 0
+
+- name: Record clean-before-interference phase end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "interference_phase"
+      phase: "end"
+      name: "clean_before_noise"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+
+- name: Start FIT Gaussian noise generator
+  ansible.builtin.shell: |
+    set -u
+    FIT_NODE="{{ paper_interference_step_node }}"
+    FIT_NUMBER="{{ paper_interference_step_fit_number }}"
+    LOG="/tmp/{{ paper_run_id }}/interference/noise_{{ paper_scenario.name }}_{{ paper_step.name }}.log"
+    ATTEMPTS="{{ paper_interference_runtime_siggen_attempts }}"
+    DURATION="{{ paper_interference_duration_seconds }}"
+    RECOVERY_PAUSE="{{ paper_interference_recovery_pause_seconds }}"
+    if [ "${ATTEMPTS}" -lt 1 ]; then
+      ATTEMPTS=1
+    fi
+
+    run_siggen_attempt() {
+      local attempt="$1"
+      ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"${FIT_NODE}" "
+        set -u
+        mkdir -p /tmp/{{ paper_run_id }}/interference
+        if [ -d /usr/local/share/uhd/images ]; then
+          export UHD_IMAGES_DIR=/usr/local/share/uhd/images
+        fi
+        LOG='${LOG}'
+        FIFO=\"/tmp/{{ paper_run_id }}/interference/siggen_{{ paper_scenario.name }}_{{ paper_step.name }}_${attempt}.fifo\"
+        rm -f \"\$FIFO\"
+        mkfifo \"\$FIFO\"
+        echo \"==== uhd_siggen attempt ${attempt}/${ATTEMPTS} started at \$(date -Is) ====\" >> \"\$LOG\"
+        echo \"UHD_IMAGES_DIR=\${UHD_IMAGES_DIR:-default}\" >> \"\$LOG\"
+        (
+          exec 3> \"\$FIFO\"
+          sleep '${DURATION}'
+          printf '\\n' >&3
+          exec 3>&-
+        ) &
+        STOPPER=\$!
+        uhd_siggen --gaussian \
+          -f '{{ paper_interference_step_freq }}' \
+          -g '{{ paper_interference_step_gain }}' \
+          -s '{{ paper_interference_step_bandwidth }}' \
+          {{ paper_interference_step_usrp_args }} \
+          < \"\$FIFO\" >> \"\$LOG\" 2>&1
+        RC=\$?
+        kill \"\$STOPPER\" >/dev/null 2>&1 || true
+        wait \"\$STOPPER\" >/dev/null 2>&1 || true
+        rm -f \"\$FIFO\"
+        echo \"==== uhd_siggen attempt ${attempt}/${ATTEMPTS} finished rc=\${RC} at \$(date -Is) ====\" >> \"\$LOG\"
+        exit \"\$RC\"
+      "
+    }
+
+    recover_fit_usrp() {
+      local attempt="$1"
+      echo "Recovering ${FIT_NODE} USRP before retry ${attempt}/${ATTEMPTS}" >&2
+      rhubarbe usrpoff "${FIT_NUMBER}" || true
+      sleep 3
+      ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"${FIT_NODE}" "
+        mkdir -p /tmp/{{ paper_run_id }}/interference
+        {
+          echo '==== recovery before retry ${attempt}/${ATTEMPTS} at '\$(date -Is)' ===='
+          if [ -x /usr/local/lib/uhd/utils/uhd_images_downloader.py ]; then
+            /usr/local/lib/uhd/utils/uhd_images_downloader.py
+          elif command -v uhd_images_downloader >/dev/null 2>&1; then
+            uhd_images_downloader
+          else
+            echo 'No UHD image downloader found on ${FIT_NODE}'
+          fi
+        } >> '${LOG}' 2>&1
+      " || true
+      rhubarbe usrpon "${FIT_NUMBER}" || true
+      sleep "${RECOVERY_PAUSE}"
+      ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@"${FIT_NODE}" "
+        {
+          echo '==== uhd_find_devices after recovery at '\$(date -Is)' ===='
+          if [ -d /usr/local/share/uhd/images ]; then
+            export UHD_IMAGES_DIR=/usr/local/share/uhd/images
+          fi
+          echo \"UHD_IMAGES_DIR=\${UHD_IMAGES_DIR:-default}\"
+          uhd_find_devices
+        } >> '${LOG}' 2>&1
+      " || true
+    }
+
+    attempt=1
+    last_rc=1
+    while [ "${attempt}" -le "${ATTEMPTS}" ]; do
+      run_siggen_attempt "${attempt}"
+      last_rc="$?"
+      if [ "${last_rc}" -eq 0 ]; then
+        exit 0
+      fi
+      if [ "${attempt}" -lt "${ATTEMPTS}" ]; then
+        next_attempt=$((attempt + 1))
+        recover_fit_usrp "${next_attempt}"
+      fi
+      attempt=$((attempt + 1))
+    done
+    exit "${last_rc}"
+  async: "{{ paper_interference_duration_seconds | int + paper_async_grace | int + (paper_interference_runtime_siggen_attempts | int * 120) }}"
+  poll: 0
+  register: paper_interference_job
+  changed_when: true
+  ignore_errors: "{{ ignore_task_errors | default(true) }}"
+
+- name: Fail if FIT Gaussian noise generator did not start
+  ansible.builtin.fail:
+    msg: |
+      FIT Gaussian noise generator could not be launched as a real async experiment job.
+      scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_interference_direction }}
+      interference_node={{ paper_interference_step_node }}
+      remote_log=/tmp/{{ paper_run_id }}/interference/noise_{{ paper_scenario.name }}_{{ paper_step.name }}.log
+      rc={{ paper_interference_job.rc | default('unknown') }}
+
+      stdout:
+      {{ paper_interference_job.stdout | default('') }}
+
+      stderr:
+      {{ paper_interference_job.stderr | default('') }}
+  when: >
+    (paper_interference_job.failed | default(false) | bool) or
+    (paper_interference_job.ansible_job_id is not defined)
+
+- name: Record interference-on phase start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "interference_phase"
+      phase: "start"
+      name: "noise_on"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+      ues: "{{ paper_step_ues }}"
+      parallel_streams: "{{ paper_step.parallel_streams | default(1) | int }}"
+      parallel_by_ue: "{{ paper_step.parallel_by_ue | default({}) }}"
+      interference_node: "{{ paper_interference_step_node }}"
+      interference_freq: "{{ paper_interference_step_freq }}"
+      interference_gain: "{{ paper_interference_step_gain }}"
+      interference_noise_bandwidth: "{{ paper_interference_step_bandwidth }}"
+      interference_focus_ue: "{{ paper_interference_focus_ue }}"
+
+- name: Wait for FIT Gaussian noise generator to finish
+  ansible.builtin.async_status:
+    jid: "{{ paper_interference_job.ansible_job_id }}"
+  register: paper_interference_wait
+  until: paper_interference_wait.finished
+  retries: "{{ (((paper_interference_duration_seconds | int) + (paper_async_grace | int) + ((paper_interference_runtime_siggen_attempts | int) * 120)) // 5) + 30 }}"
+  delay: 5
+  when: paper_interference_job.ansible_job_id is defined
+  ignore_errors: "{{ ignore_task_errors | default(true) }}"
+
+- name: Stop TCP iperf jobs after FIT noise failure
+  ansible.builtin.shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} \
+      "pkill -f 'iperf3 .* -c {{ paper_target_server_ip }}' >/dev/null 2>&1 || true"
+  loop: "{{ paper_step_ues }}"
+  changed_when: false
+  failed_when: false
+  when: >
+    (paper_interference_wait is defined) and
+    (
+      (paper_interference_wait.failed | default(false) | bool) or
+      (paper_interference_wait.rc is defined and (paper_interference_wait.rc | int) != 0)
+    )
+
+- name: Fail if FIT Gaussian noise generator failed
+  ansible.builtin.fail:
+    msg: |
+      FIT Gaussian noise generator failed during the real experiment window.
+      scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_interference_direction }}
+      interference_node={{ paper_interference_step_node }}
+      rc={{ paper_interference_wait.rc | default('unknown') }}
+      remote_log=/tmp/{{ paper_run_id }}/interference/noise_{{ paper_scenario.name }}_{{ paper_step.name }}.log
+
+      stdout:
+      {{ paper_interference_wait.stdout | default('') }}
+
+      stderr:
+      {{ paper_interference_wait.stderr | default('') }}
+  when: >
+    (paper_interference_wait is defined) and
+    (
+      (paper_interference_wait.failed | default(false) | bool) or
+      (paper_interference_wait.rc is defined and (paper_interference_wait.rc | int) != 0)
+    )
+
+- name: Cleanup FIT noise async job file
+  ansible.builtin.async_status:
+    jid: "{{ paper_interference_job.ansible_job_id }}"
+    mode: cleanup
+  when: paper_interference_job.ansible_job_id is defined
+  ignore_errors: true
+
+- name: Record interference-on phase end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "interference_phase"
+      phase: "end"
+      name: "noise_on"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+
+- name: Record recovery-after-interference phase start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "interference_phase"
+      phase: "start"
+      name: "recovery_after_noise"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+      ues: "{{ paper_step_ues }}"
+      parallel_streams: "{{ paper_step.parallel_streams | default(1) | int }}"
+      parallel_by_ue: "{{ paper_step.parallel_by_ue | default({}) }}"
+  when: (paper_duration | int) > ((paper_interference_delay_seconds | int) + (paper_interference_duration_seconds | int))
+
+- name: Wait for TCP iperf jobs to finish
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: paper_iperf_wait
+  until: paper_iperf_wait.finished
+  retries: "{{ (paper_duration | int // 5) + 60 }}"
+  delay: 5
+  loop: "{{ paper_iperf_jobs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default(item.ansible_job_id | default('unknown')) }}"
+  when: item.ansible_job_id is defined
+  ignore_errors: "{{ ignore_task_errors | default(true) }}"
+
+- name: Collect failed interference TCP iperf wait jobs
+  ansible.builtin.set_fact:
+    paper_iperf_wait_failed_jobs: "{{ paper_iperf_wait.results | default([]) | selectattr('failed', 'defined') | selectattr('failed') | list }}"
+
+- name: Stop remaining interference iperf jobs after completion failure
+  ansible.builtin.shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} \
+      "pkill -f 'iperf3 .* -c {{ paper_target_server_ip }}' >/dev/null 2>&1 || true"
+  loop: "{{ paper_step_ues }}"
+  changed_when: false
+  failed_when: false
+  when: paper_iperf_wait_failed_jobs | length > 0
+
+- name: Fail if any real interference TCP iperf job failed
+  ansible.builtin.fail:
+    msg: |
+      TCP paper iperf failed during the real interference experiment window.
+      scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_interference_direction }}
+      ue={{ item.item.item | default(item.item | default('unknown')) }}
+      rc={{ item.rc | default('unknown') }}
+      msg={{ item.msg | default('') }}
+      remote_json=/tmp/{{ paper_run_id }}/scenario={{ paper_scenario.name }}/step={{ paper_step.name }}/direction={{ paper_interference_direction }}/iperf_{{ item.item.item | default(item.item | default('unknown')) }}.json
+      remote_stderr=/tmp/{{ paper_run_id }}/scenario={{ paper_scenario.name }}/step={{ paper_step.name }}/direction={{ paper_interference_direction }}/iperf_{{ item.item.item | default(item.item | default('unknown')) }}.stderr
+
+      stdout:
+      {{ item.stdout | default('') }}
+
+      stderr:
+      {{ item.stderr | default('') }}
+  loop: "{{ paper_iperf_wait.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item | default(item.item | default('unknown')) }}"
+  when: >
+    (item.failed | default(false) | bool) or
+    (item.rc is defined and (item.rc | int) != 0)
+
+- name: Record recovery-after-interference phase end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "interference_phase"
+      phase: "end"
+      name: "recovery_after_noise"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"
+  when: (paper_duration | int) > ((paper_interference_delay_seconds | int) + (paper_interference_duration_seconds | int))
+
+- name: Cleanup TCP async job files
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+    mode: cleanup
+  loop: "{{ paper_iperf_jobs.results | default([]) }}"
+  when: item.ansible_job_id is defined
+  ignore_errors: true
+
+- name: Record interference TCP direction end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "direction"
+      phase: "end"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_interference_direction }}"
+      traffic_type: "tcp"

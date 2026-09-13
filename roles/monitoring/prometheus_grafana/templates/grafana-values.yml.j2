@@ -1,0 +1,80 @@
+service:
+  enabled: true
+  type: NodePort
+  nodePort: {{ monitoring_grafana_node_port }}
+
+adminUser: "{{ monitoring_grafana_admin_user }}"
+adminPassword: "{{ monitoring_grafana_admin_password }}"
+
+nodeSelector:
+  {{ monitoring_node_label_key }}: "{{ monitoring_node_label_value }}"
+
+tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+{% if monitoring_persistence_enabled | bool %}
+persistence:
+  enabled: true
+  storageClassName: "{{ monitoring_storage_class }}"
+  size: "{{ monitoring_grafana_storage_size }}"
+{% endif %}
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: "http://{{ monitoring_prometheus_service_name }}.{{ monitoring_namespace }}.svc:9090"
+        isDefault: true
+        uid: prometheus
+        editable: true
+        jsonData:
+          timeInterval: "{{ monitoring_interval }}"
+      - name: monitoring-prometheus
+        type: prometheus
+        url: "http://{{ monitoring_prometheus_service_name }}.{{ monitoring_namespace }}.svc:9090"
+        isDefault: false
+        uid: monitoring-prometheus
+        editable: true
+        jsonData:
+          timeInterval: "{{ monitoring_interval }}"
+{% if monitoring_loki_enabled | bool %}
+      - name: Loki
+        type: loki
+        url: "http://{{ monitoring_loki_service_name }}.{{ monitoring_namespace }}.svc:3100"
+        access: proxy
+        isDefault: false
+        uid: loki
+        editable: true
+{% endif %}
+
+{% if (monitoring_grafana_dashboard_enabled | bool) or (monitoring_loki_enabled | bool and monitoring_loki_dashboard_enabled | bool) %}
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+dashboardsConfigMaps:
+  default: "{{ monitoring_grafana_dashboard_configmap }}"
+{% endif %}
+
+grafana.ini:
+  dashboards:
+    min_refresh_interval: 1s
+{% if monitoring_grafana_dashboard_enabled | bool %}
+    default_home_dashboard_path: /var/lib/grafana/dashboards/default/{{ monitoring_grafana_dashboard_file }}
+{% endif %}
+  users:
+    default_theme: light
+    viewers_can_edit: true

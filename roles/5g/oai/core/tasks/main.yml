@@ -6,6 +6,55 @@
   ansible.builtin.command: "{{ demo_oai_script }} stop-cn"
   args:
     chdir: "{{ repo_dest }}"
+- name: Install OVS CNI via Cluster Network Addons Operator (single-node)
+  block:
+
+    - name: Download Cluster Network Addons manifests
+      ansible.builtin.get_url:
+        url: "{{ item }}"
+        dest: "/tmp/{{ item | basename }}"
+        mode: "0644"
+      loop:
+        - https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/namespace.yaml
+        - https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/network-addons-config.crd.yaml
+        - https://github.com/kubevirt/cluster-network-addons-operator/releases/download/v0.98.1/operator.yaml
+
+    - name: Apply Cluster Network Addons manifests
+      ansible.builtin.command:
+        cmd: kubectl apply -f /tmp/{{ item }}
+      loop:
+        - namespace.yaml
+        - network-addons-config.crd.yaml
+        - operator.yaml
+
+    - name: Create NetworkAddonsConfig for OVS
+      ansible.builtin.copy:
+        dest: /tmp/netaddonsconf.yaml
+        mode: "0644"
+        content: |
+          apiVersion: networkaddonsoperator.network.kubevirt.io/v1
+          kind: NetworkAddonsConfig
+          metadata:
+            name: cluster
+          spec:
+            ovs: {}
+
+    - name: Apply NetworkAddonsConfig
+      ansible.builtin.command:
+        cmd: kubectl apply -f /tmp/netaddonsconf.yaml
+
+    - name: Wait for NetworkAddonsConfig to become Available
+      ansible.builtin.command:
+        cmd: kubectl wait networkaddonsconfig cluster --for condition=Available --timeout=300s
+
+    - name: Wait for OVS CNI plugin binary
+      ansible.builtin.wait_for:
+        path: /opt/cni/bin/ovs
+        state: present
+        timeout: 300
+
+  when: core_node_name == ran_node_name and ran == 'ueransim'
+  become: yes
 
 - name: Run demo-oai.sh start-cn to launch OAI CN pods
   ansible.builtin.command: "{{ demo_oai_script }} start-cn"

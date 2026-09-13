@@ -5,7 +5,7 @@
 
 - name: Set defaults
   set_fact:
-    base_port: 5201
+    base_port: "{{ base_port | default(5201) }}"
     actual_nb_ues: "{{ nb_ues | default(3) }}"
     iperf_bind_ip: "{{ target_server_ip | default(hostvars[groups['core_node'][0]]['ip']) }}"
 
@@ -37,8 +37,8 @@
 - name: Start iperf3 servers on incremental ports
   # Using the full path /usr/bin/iperf3 to be safe against "not found" errors
   shell: >
-    /usr/bin/iperf3 -s -B {{ iperf_bind_ip }} -p {{ base_port + item | int }} -D
-    --logfile /root/IPERF/iperf_{{ base_port + item | int }}_{{ iperf_timestamp.stdout }}.log
+    /usr/bin/iperf3 -s -B {{ iperf_bind_ip }} -p {{ (base_port | int) + (item | int) }} -D
+    --logfile /root/IPERF/iperf_{{ (base_port | int) + (item | int) }}_{{ iperf_timestamp.stdout }}.log
   loop: "{{ range(0, actual_nb_ues | int) | list }}"
   become: true
 

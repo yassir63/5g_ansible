@@ -1,0 +1,83 @@
+---
+# ============================================================
+# ueransim config for OAI (Helm + existing OVS NAD)
+# ============================================================
+
+- name: Ensure NAD directory exists
+  ansible.builtin.file:
+    path: "{{ ueransim_chart_path }}/nad"
+    state: directory
+    mode: '0755'
+
+- name: Ensure ueransim output directory exists
+  ansible.builtin.file:
+    path: "{{ ueransim_chart_path }}/overrides"
+    state: directory
+    mode: '0755'
+
+- name: Check if OVS bridges exist
+  ansible.builtin.shell: |
+    set -e
+    bridges_ok=true
+    echo "Checking OVS bridges..."
+    for bridge in n2br n3br; do
+      if ovs-vsctl list-br | grep -q "^${bridge}$"; then
+        echo "✓ Bridge $bridge exists"
+      else
+        echo "✗ Bridge $bridge NOT FOUND"
+        bridges_ok=false
+      fi
+    done
+    if [ "$bridges_ok" = "false" ]; then
+      echo "ERROR: Some required OVS bridges are missing"
+      exit 1
+    fi
+  register: ovs_check
+  failed_when: false
+  changed_when: false
+
+- name: Warn if OVS bridges not found
+  ansible.builtin.debug:
+    msg: "WARNING: OVS bridges may not be properly configured. Check manually."
+  when: ovs_check.rc != 0
+
+- name: Generate NAD OVS for gNB
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../roles/5g/ueransim/shared/templates/nad-ovs-gnb.yaml.j2"
+    dest: "{{ ueransim_chart_path }}/nad/nad-gnb.yaml"
+    mode: '0644'
+  vars:
+    net: "{{ ueransim_oai_network }}"
+
+- name: Generate ueransim gNB values override for OAI
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../roles/5g/ueransim/shared/templates/ueransim-gnb-values-oai.yaml.j2"
+    dest: "{{ ueransim_chart_path }}/overrides/values-gnb-override.yaml"
+    mode: '0644'
+  vars:
+    profile: "{{ fiveg }}"
+    net: "{{ ueransim_network }}"
+
+- name: Generate ueransim UE values override for each UE (OAI)
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../roles/5g/ueransim/shared/templates/ueransim-ue-values-oai.yaml.j2"
+    dest: "{{ ueransim_chart_path }}/overrides/values-{{ ue.key | lower }}-override.yaml"
+    mode: '0644'
+  vars:
+    profile: "{{ fiveg }}"
+    net: "{{ ueransim_network }}"
+    ue_name: "{{ ue.key }}"
+    ue_data: "{{ ue.value }}"
+    slice_data: "{{ fiveg.slices | selectattr('name', 'equalto', ue.value.slice) | first }}"
+  loop: "{{ fiveg.ues | dict2items | selectattr('key', 'in', ['uesim01', 'uesim02', 'uesim03']) | sort(attribute='key') | list }}"
+  loop_control:
+    loop_var: ue
+
+- name: Display NAD and values generation summary
+  ansible.builtin.debug:
+    msg: |
+      ✓ NAD OVS generated in : {{ ueransim_chart_path }}/nad/
+      ✓ Helm values generated in : {{ ueransim_chart_path }}/overrides/
+      gNB network config :
+        - N2 IP: {{ ueransim_oai_network.gnb_n2_ip }} (AMF: {{ ueransim_oai_network.amf_ip }})
+        - N3 IP: {{ ueransim_oai_network.gnb_n3_ip }}

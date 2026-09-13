@@ -1,0 +1,158 @@
+[
+  {
+    "name": "direct_latest_ms",
+    "query": "gtp_teid_latency_ns / 1000000"
+  },
+  {
+    "name": "direct_mean_ms_5s",
+    "query": "(sum by (imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_sum[5s])) / sum by (imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_count[5s]))) / 1000000"
+  },
+  {
+    "name": "direct_p50_ms_5s",
+    "query": "histogram_quantile(0.50, sum by (le, imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_bucket[5s]))) / 1000000"
+  },
+  {
+    "name": "direct_median_1s_ms",
+    "query": "gtp_teid_latency_median_1s_ns / 1000000"
+  },
+  {
+    "name": "direct_mean_ms_5s_by_kind",
+    "query": "(sum by (kind, imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_sum[5s])) / sum by (kind, imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_count[5s]))) / 1000000"
+  },
+  {
+    "name": "direct_median_1s_ms_by_kind",
+    "query": "gtp_teid_latency_median_1s_ns / 1000000"
+  },
+  {
+    "name": "direct_p50_ms_5s_by_kind",
+    "query": "histogram_quantile(0.50, sum by (le, kind, imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_bucket[5s]))) / 1000000"
+  },
+  {
+    "name": "direct_p95_ms_5s_by_kind",
+    "query": "histogram_quantile(0.95, sum by (le, kind, imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_bucket[5s]))) / 1000000"
+  },
+  {
+    "name": "direct_event_rate_hz_5s_by_kind",
+    "query": "sum by (kind, imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_count[5s]))"
+  },
+  {
+    "name": "direct_p95_ms_5s",
+    "query": "histogram_quantile(0.95, sum by (le, imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_bucket[5s]))) / 1000000"
+  },
+  {
+    "name": "direct_p99_ms_5s",
+    "query": "histogram_quantile(0.99, sum by (le, imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_bucket[5s]))) / 1000000"
+  },
+  {
+    "name": "direct_event_rate_hz_5s",
+    "query": "sum by (imsi, ue_ip, slice, probe_role, mode) (rate(gtp_teid_latency_observed_ns_count[5s]))"
+  },
+  {
+    "name": "direct_lost_events_hz_5s",
+    "query": "sum by (probe_role, stream) (rate(gtp_teid_latency_lost_events_total[5s]))"
+  },
+  {
+    "name": "tcp_data_observed_hz_30s",
+    "query": "sum by (mode, probe_role) (rate(gtp_tcp_data_observed_total[30s]))"
+  },
+  {
+    "name": "tcp_ack_observed_hz_30s",
+    "query": "sum by (mode, probe_role) (rate(gtp_tcp_ack_observed_total[30s]))"
+  },
+  {
+    "name": "tcp_rtt_emitted_hz_30s",
+    "query": "sum by (mode, probe_role) (rate(gtp_tcp_rtt_emitted_total[30s]))"
+  },
+  {
+    "name": "tcp_pending_evicted_hz_30s",
+    "query": "sum by (mode, probe_role, reason) (rate(gtp_tcp_pending_evicted_total[30s]))"
+  },
+  {
+    "name": "tcp_ack_no_match_hz_30s",
+    "query": "sum by (mode, probe_role) (rate(gtp_tcp_ack_no_match_total[30s]))"
+  },
+  {
+    "name": "same_packet_upf_rtt_latest_ms",
+    "query": "gtp_same_packet_upf_rtt_ns / 1000000"
+  },
+  {
+    "name": "same_packet_gnb_rtt_latest_ms",
+    "query": "gtp_same_packet_gnb_rtt_ns / 1000000"
+  },
+  {
+    "name": "same_packet_gap_latest_ms",
+    "query": "gtp_same_packet_rtt_gap_ns / 1000000"
+  },
+  {
+    "name": "same_packet_upf_rtt_mean_ms_5s",
+    "query": "(sum by (imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_upf_rtt_ns_sum[5s])) / sum by (imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_upf_rtt_ns_count[5s]))) / 1000000"
+  },
+  {
+    "name": "same_packet_gnb_rtt_mean_ms_5s",
+    "query": "(sum by (imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_gnb_rtt_ns_sum[5s])) / sum by (imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_gnb_rtt_ns_count[5s]))) / 1000000"
+  },
+  {
+    "name": "same_packet_gap_mean_ms_5s",
+    "query": "(sum by (imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_rtt_gap_ns_sum[5s])) / sum by (imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_rtt_gap_ns_count[5s]))) / 1000000"
+  },
+  {
+    "name": "same_packet_upf_rtt_p95_ms_5s",
+    "query": "histogram_quantile(0.95, sum by (le, imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_upf_rtt_ns_bucket[5s]))) / 1000000"
+  },
+  {
+    "name": "same_packet_gnb_rtt_p95_ms_5s",
+    "query": "histogram_quantile(0.95, sum by (le, imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_gnb_rtt_ns_bucket[5s]))) / 1000000"
+  },
+  {
+    "name": "same_packet_gap_p95_ms_5s",
+    "query": "histogram_quantile(0.95, sum by (le, imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_rtt_gap_ns_bucket[5s]))) / 1000000"
+  },
+  {
+    "name": "same_packet_pair_rate_hz_5s",
+    "query": "sum by (imsi, ue_ip, slice, probe_role, mode, direction) (rate(gtp_same_packet_pairs_total[5s]))"
+  },
+  {
+    "name": "same_packet_rejections_hz_5s",
+    "query": "sum by (direction, probe_role, reason) (rate(gtp_same_packet_rejections_total[5s]))"
+  },
+  {
+    "name": "same_packet_rejected_hz_5s",
+    "query": "sum by (direction, probe_role, reason) (rate(gtp_same_packet_rejected_total[5s]))"
+  },
+  {
+    "name": "mac_throughput_per_rnti_bps",
+    "query": "mac_throughput{direction=~\"downlink|uplink\"}"
+  },
+  {
+    "name": "mac_throughput_total_bps",
+    "query": "sum by (direction) (mac_throughput{direction=~\"downlink|uplink\"} > 0)"
+  },
+  {
+    "name": "prach_i0_db",
+    "query": "oai_gnb_l1_prach_i0_db"
+  },
+  {
+    "name": "container_cpu_cores_5s",
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", image!=\"\"}[5s]))"
+  },
+  {
+    "name": "container_cpu_cores_30s_any",
+    "query": "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\"}[30s]))"
+  },
+  {
+    "name": "container_memory_mib",
+    "query": "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"POD\", image!=\"\"}) / 1024 / 1024"
+  },
+  {
+    "name": "container_memory_mib_any",
+    "query": "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"POD\", container!=\"\"}) / 1024 / 1024"
+  },
+  {
+    "name": "node_cpu_non_idle_cores_30s",
+    "query": "sum by (instance) (rate(node_cpu_seconds_total{mode!=\"idle\"}[30s]))"
+  },
+  {
+    "name": "node_cpu_softirq_cores_30s",
+    "query": "sum by (instance) (rate(node_cpu_seconds_total{mode=\"softirq\"}[30s]))"
+  }
+]

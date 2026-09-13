@@ -69,3 +69,55 @@
 - name: Configure ueransim for free5gc
   ansible.builtin.include_tasks: config_free5gc.yml
   when: core == 'free5gc'
+  vars:
+    ueransim_network: "{{ ueransim_free5gc_network }}"
+
+# Retrieve ueransim repo for oai
+- name: Remove existing free5gc directory to ensure clean state
+  ansible.builtin.file:
+    path: "{{ free5gc_repo_dest }}"
+    state: absent
+  when: core == 'oai'
+
+- name: Clone free5gc repo
+  ansible.builtin.git:
+    repo: "{{ free5gc_repo_url }}"
+    dest: "{{ free5gc_repo_dest }}"
+    version: "{{ free5gc_repo_branch }}"
+    update: yes
+    force: yes
+  when: core == 'oai'
+
+- name: Fix chart templates - use $.Values in gnb/ue context
+  ansible.builtin.replace:
+    path: "{{ item.file }}"
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+  when: core == 'oai'
+  loop:
+    - file: "{{ ueransim_chart_path }}/templates/gnb/gnb-deployment.yaml"
+      regexp: 'toYaml \.nodeSelector'
+      replace: 'toYaml $.Values.nodeSelector'
+    - file: "{{ ueransim_chart_path }}/templates/gnb/gnb-deployment.yaml"
+      regexp: 'toYaml \.affinity'
+      replace: 'toYaml $.Values.affinity'
+    - file: "{{ ueransim_chart_path }}/templates/gnb/gnb-deployment.yaml"
+      regexp: 'toYaml \.tolerations'
+      replace: 'toYaml $.Values.tolerations'
+    - file: "{{ ueransim_chart_path }}/templates/ue/ue-deployment.yaml"
+      regexp: 'toYaml \.nodeSelector'
+      replace: 'toYaml $.Values.nodeSelector'
+    - file: "{{ ueransim_chart_path }}/templates/ue/ue-deployment.yaml"
+      regexp: 'toYaml \.affinity'
+      replace: 'toYaml $.Values.affinity'
+    - file: "{{ ueransim_chart_path }}/templates/ue/ue-deployment.yaml"
+      regexp: 'toYaml \.tolerations'
+      replace: 'toYaml $.Values.tolerations'
+  changed_when: false
+
+- name: Configure ueransim for oai
+  ansible.builtin.include_tasks: config_oai.yml
+  when: core == 'oai'
+  vars:
+    ueransim_network: "{{ ueransim_oai_network }}"
+

@@ -1,0 +1,79 @@
+---
+- hosts: all
+  gather_facts: true
+  tasks:
+    - name: Normalize booleans at playbook start
+      import_tasks: ../tasks/reload_booleans.yml
+
+- name: Set RFSIM direction iperf target
+  hosts: localhost
+  gather_facts: false
+  run_once: true
+  tasks:
+    - name: Set RFSIM direction iperf defaults
+      ansible.builtin.set_fact:
+        rfsim_iperf_direction_effective: "{{ rfsim_iperf_direction | default('ul') }}"
+        rfsim_iperf_target_server_host: >-
+          {{
+            target_server_host
+            | default(
+                (groups['iperf_server_node'] | default([]) | first),
+                true
+              )
+            | default(groups['core_node'][0])
+          }}
+        cacheable: true
+
+    - name: Validate RFSIM direction iperf input
+      ansible.builtin.assert:
+        that:
+          - rfsim_iperf_direction_effective in ['ul', 'dl']
+        fail_msg: "Invalid rfsim_iperf_direction={{ rfsim_iperf_direction_effective }}. Use ul or dl."
+
+    - name: Resolve RFSIM direction iperf target IP
+      ansible.builtin.set_fact:
+        rfsim_iperf_target_server_ip: >-
+          {{
+            hostvars[rfsim_iperf_target_server_host].ip
+            | default(hostvars[rfsim_iperf_target_server_host].ansible_host
+            | default(rfsim_iperf_target_server_host))
+          }}
+        cacheable: true
+
+    - name: Display RFSIM direction iperf target
+      ansible.builtin.debug:
+        msg:
+          - "RFSIM iperf direction: {{ rfsim_iperf_direction_effective }}"
+          - "Target server host: {{ rfsim_iperf_target_server_host }}"
+          - "Target server IP: {{ rfsim_iperf_target_server_ip }}"
+
+- name: Prepare iperf servers for RFSIM direction test
+  hosts: "{{ hostvars['localhost'].rfsim_iperf_target_server_host }}"
+  become: true
+  gather_facts: false
+  vars:
+    target_server_host: "{{ hostvars['localhost'].rfsim_iperf_target_server_host }}"
+    target_server_ip: "{{ hostvars['localhost'].rfsim_iperf_target_server_ip }}"
+    nb_ues: "{{ rfsim_iperf_server_count | default(3) }}"
+  roles:
+    - role: scenarios/iperf_server
+
+- name: Run one RFSIM UE iperf direction
+  hosts: core_node
+  become: true
+  gather_facts: false
+  vars:
+    target_server_host: "{{ hostvars['localhost'].rfsim_iperf_target_server_host }}"
+    target_server_ip: "{{ hostvars['localhost'].rfsim_iperf_target_server_ip }}"
+    nb_ues: "{{ rfsim_iperf_server_count | default(3) }}"
+    rfsim_iperf_direction: "{{ hostvars['localhost'].rfsim_iperf_direction_effective }}"
+    rfsim_iperf_fail_on_error: true
+  tasks:
+    - name: Require simulated RFSIM deployment
+      ansible.builtin.fail:
+        msg: "run_rfsim_iperf_direction.yml is for rru=rfsim deployments. Current rru={{ rru | default('undefined') }}."
+      when: rru | default('') != "rfsim"
+
+    - name: Run RFSIM direction role
+      ansible.builtin.include_role:
+        name: scenarios/iperf/rfsim-ue-to-target_server

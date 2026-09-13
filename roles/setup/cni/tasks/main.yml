@@ -1,6 +1,10 @@
 ---
-- name: RESTART_K8S_ADDS_ON
+- name: START_K8S_ADDS_ON
   ansible.builtin.meta: noop
+
+- name: Force Ansible to use venv Python
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/ansible-venv/bin/python
 
 - name: Ensure Open vSwitch is installed
   apt:
@@ -112,3 +116,8 @@
   delay: 5
   until: cnao_available.rc == 0
   changed_when: false
+
+- name: Reset ansible_python_interpreter to system python3
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /usr/bin/python3
+

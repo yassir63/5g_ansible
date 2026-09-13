@@ -1,0 +1,42 @@
+---
+# Default pcap target examples for the generic experiment runner.
+#
+# If `collect.pcaps.enabled: true` and a scenario does not provide pcap targets,
+# run_experiment.yml automatically captures GTP-U traffic on the first
+# `[core_node]` and first `[ran_node]` using `interface: any`.
+#
+# Copy this file into a scenario YAML and adjust host/interface/filter when you
+# need precise captures.
+pcap:
+  enabled: false
+  strict: false
+  auto_install_tcpdump: true
+  capture_seconds: 30
+  interface: any
+  # Empty filter means tcpdump captures all packets on the selected interface
+  # for the bounded capture window. Add a BPF filter such as "udp port 2152"
+  # when you want a protocol-specific capture.
+  filter: ""
+  snaplen: 192
+  targets:
+    - name: core_n3
+      type: host
+      host: sopnode-f1
+      interface: any
+      filter: ""
+
+    - name: ran_n3
+      type: host
+      host: sopnode-f3
+      interface: any
+      filter: ""
+
+    # Example pod capture target. Leave disabled/commented unless you know the
+    # pod image allows tcpdump or package installation.
+    # - name: upf_pod_n3
+    #   type: pod
+    #   namespace: open5gs
+    #   pod_regex: upf
+    #   container_regex: upf
+    #   interface: any
+    #   filter: "udp port 2152"

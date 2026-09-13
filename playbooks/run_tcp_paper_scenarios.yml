@@ -1,0 +1,1106 @@
+---
+- name: Initialize TCP paper scenario run
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_remote_tmp: "/tmp/.ansible-{{ lookup('env', 'USER') | default('controller', true) }}/tmp"
+    paper_required_ues_default:
+      - qhat01
+      - qhat02
+      - qhat03
+      - qhat21
+      - qhat22
+  tasks:
+    - name: Set run id
+      ansible.builtin.set_fact:
+        paper_run_id: "{{ paper_run_id | default(lookup('pipe', 'date +%Y%m%d_%H%M%S')) }}"
+
+    - name: Set paper scenario defaults
+      ansible.builtin.set_fact:
+        paper_required_ues: "{{ paper_required_ues | default(paper_required_ues_default) }}"
+        paper_target_server_host: "{{ target_server_host | default(paper_target_server_host | default('sopnode-w3')) }}"
+        paper_base_port: "{{ paper_base_port | default(5201) }}"
+        paper_duration: "{{ paper_duration | default(300) }}"
+        paper_async_grace: "{{ paper_async_grace | default(180) }}"
+        paper_iperf_startup_check_enabled: "{{ paper_iperf_startup_check_enabled | default(true) }}"
+        paper_iperf_startup_check_seconds: "{{ paper_iperf_startup_check_seconds | default(12) }}"
+        paper_iperf_connect_timeout_ms: "{{ paper_iperf_connect_timeout_ms | default(10000) }}"
+        paper_pause_between_scenarios: "{{ paper_pause_between_scenarios | default(120) }}"
+        paper_scenario_names: "{{ paper_scenario_names | default('all') }}"
+        paper_disconnect_ues: "{{ paper_disconnect_ues | default(false) }}"
+        paper_collect_artifacts: "{{ paper_collect_artifacts | default(true) }}"
+        paper_collect_prometheus: "{{ paper_collect_prometheus | default(paper_collect_artifacts | default(true)) }}"
+        paper_prometheus_step: "{{ paper_prometheus_step | default('1s') }}"
+        paper_prometheus_queries_json: "{{ paper_prometheus_queries_json | default(playbook_dir + '/../configs/artifacts/default_prometheus_queries.json') }}"
+        paper_discover_metrics_regex: "{{ paper_discover_metrics_regex | default('(?i)(mcs|bler|harq|rounds|cqi|rsrp|rsrq|sinr|snr|mac_throughput|slice_throughput|prach|saturation|number_ues|i0_noise|prb|gtp_tcp|tcp_)') }}"
+        paper_discover_metrics_limit: "{{ paper_discover_metrics_limit | default(80) }}"
+        paper_query_padding_seconds: "{{ paper_query_padding_seconds | default(30) }}"
+        paper_local_timezone: "{{ paper_local_timezone | default(lookup('env', 'TZ') | default('Europe/Paris', true)) }}"
+        paper_split_prometheus_by_timeline: "{{ paper_split_prometheus_by_timeline | default(paper_collect_artifacts | default(true)) }}"
+        paper_split_window_types: "{{ paper_split_window_types | default('scenario,step,direction,interference_phase,stress_phase') }}"
+        paper_split_padding_seconds: "{{ paper_split_padding_seconds | default(0) }}"
+        paper_split_compress: "{{ paper_split_compress | default(true) }}"
+        paper_split_iperf_by_scenario: "{{ paper_split_iperf_by_scenario | default(paper_collect_artifacts | default(true)) }}"
+        paper_fail_after_collect_on_error: "{{ paper_fail_after_collect_on_error | default(true) }}"
+        paper_collect_pod_logs: "{{ paper_collect_pod_logs | default(paper_collect_artifacts | default(true)) }}"
+        paper_pod_log_control_host: "{{ paper_pod_log_control_host | default('') }}"
+        paper_pod_log_namespaces: "{{ paper_pod_log_namespaces | default([core | default('open5gs'), 'monitoring']) }}"
+        paper_kubeconfig: "{{ paper_kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+        paper_pod_log_since: "{{ paper_pod_log_since | default('8h') }}"
+        paper_pod_log_tail_lines: "{{ paper_pod_log_tail_lines | default(5000) }}"
+        paper_pod_log_include_previous: "{{ paper_pod_log_include_previous | default(true) }}"
+        paper_interference_node: "{{ paper_interference_node | default('fit02') }}"
+        paper_interference_fit_number: "{{ paper_interference_fit_number | default(2) }}"
+        paper_interference_fit_usrp: "{{ paper_interference_fit_usrp | default('b210') }}"
+        paper_interference_setup: "{{ paper_interference_setup | default(true) }}"
+        paper_interference_freq: "{{ paper_interference_freq | default('3411.22M') }}"
+        paper_interference_gain: "{{ paper_interference_gain | default(110) }}"
+        paper_interference_noise_bandwidth: "{{ paper_interference_noise_bandwidth | default('15M') }}"
+        paper_interference_usrp_args: "{{ paper_interference_usrp_args | default('') }}"
+        paper_interference_precheck_enabled: "{{ paper_interference_precheck_enabled | default(true) }}"
+        paper_interference_precheck_duration_seconds: "{{ paper_interference_precheck_duration_seconds | default(2) }}"
+        paper_interference_siggen_attempts: "{{ paper_interference_siggen_attempts | default(3) }}"
+        paper_interference_runtime_siggen_attempts: "{{ paper_interference_runtime_siggen_attempts | default(1) }}"
+        paper_interference_recovery_pause_seconds: "{{ paper_interference_recovery_pause_seconds | default(10) }}"
+        paper_stress_start_after_seconds: "{{ paper_stress_start_after_seconds | default((((paper_duration | default(300)) | int) // 3)) }}"
+        paper_stress_duration_seconds: "{{ paper_stress_duration_seconds | default((((paper_duration | default(300)) | int) // 3)) }}"
+        paper_stress_workers: "{{ paper_stress_workers | default(4) }}"
+        paper_server_stress_workers: "{{ paper_server_stress_workers | default(8) }}"
+        paper_upf_stress_workers: "{{ paper_upf_stress_workers | default(8) }}"
+        paper_server_netem_delay_ms: "{{ paper_server_netem_delay_ms | default(50) }}"
+        paper_server_netem_iface: "{{ paper_server_netem_iface | default(hostvars[(target_server_host | default(paper_target_server_host | default('sopnode-w3')))].nic_interface | default('')) }}"
+        paper_server_netem_ifb: "{{ paper_server_netem_ifb | default('ifb0') }}"
+        paper_server_netem_filter_prio: "{{ paper_server_netem_filter_prio | default(49200) }}"
+        paper_server_netem_match_all: "{{ paper_server_netem_match_all | default(true) }}"
+        paper_stress_namespace: "{{ paper_stress_namespace | default(core | default('open5gs')) }}"
+        paper_stress_pod_regex: "{{ paper_stress_pod_regex | default('upf') }}"
+        paper_stress_container_regex: "{{ paper_stress_container_regex | default('upf') }}"
+        paper_results_dir: "{{ playbook_dir }}/../results/tcp-paper-{{ paper_run_id }}"
+        paper_start_epoch: "{{ lookup('pipe', 'date +%s') }}"
+
+    - name: Ensure target server is in inventory
+      ansible.builtin.fail:
+        msg: >
+          Target server {{ paper_target_server_host }} is not in the inventory.
+          Add sopnode-w3 as an iperf_server_node or pass -e target_server_host=<host>.
+      when: paper_target_server_host not in hostvars
+
+    - name: Create local results directory
+      ansible.builtin.file:
+        path: "{{ paper_results_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Initialize timeline event log
+      ansible.builtin.copy:
+        dest: "{{ paper_results_dir }}/timeline_events.jsonl"
+        mode: "0644"
+        content: ""
+
+    - name: Record TCP paper campaign start
+      ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+      vars:
+        paper_timeline_event:
+          level: "campaign"
+          phase: "start"
+          name: "tcp-paper-scenarios"
+          kind: "tcp-paper-scenarios"
+          scenario_selector: "{{ paper_scenario_names }}"
+          target_server_host: "{{ paper_target_server_host }}"
+          duration_seconds: "{{ paper_duration | int }}"
+
+    - name: Save run metadata
+      ansible.builtin.copy:
+        dest: "{{ paper_results_dir }}/run_metadata.yml"
+        mode: "0644"
+        content: |
+          run_id: {{ paper_run_id }}
+          target_server_host: {{ paper_target_server_host }}
+          required_ues: {{ paper_required_ues | to_json }}
+          base_port: {{ paper_base_port }}
+          duration: {{ paper_duration }}
+          iperf_startup_check_enabled: {{ paper_iperf_startup_check_enabled }}
+          iperf_startup_check_seconds: {{ paper_iperf_startup_check_seconds }}
+          iperf_connect_timeout_ms: {{ paper_iperf_connect_timeout_ms }}
+          pause_between_scenarios: {{ paper_pause_between_scenarios }}
+          scenario_names: {{ paper_scenario_names | to_json }}
+          disconnect_ues: {{ paper_disconnect_ues }}
+          collect_prometheus: {{ paper_collect_prometheus }}
+          prometheus_step: {{ paper_prometheus_step }}
+          prometheus_queries_json: {{ paper_prometheus_queries_json }}
+          local_timezone: {{ paper_local_timezone }}
+          split_prometheus_by_timeline: {{ paper_split_prometheus_by_timeline }}
+          split_window_types: {{ paper_split_window_types }}
+          split_padding_seconds: {{ paper_split_padding_seconds }}
+          split_compress: {{ paper_split_compress }}
+          split_iperf_by_scenario: {{ paper_split_iperf_by_scenario }}
+          fail_after_collect_on_error: {{ paper_fail_after_collect_on_error }}
+          collect_pod_logs: {{ paper_collect_pod_logs }}
+          pod_log_control_host: {{ paper_pod_log_control_host }}
+          pod_log_namespaces: {{ paper_pod_log_namespaces | to_json }}
+          kubeconfig: {{ paper_kubeconfig }}
+          pod_log_since: {{ paper_pod_log_since }}
+          pod_log_tail_lines: {{ paper_pod_log_tail_lines }}
+          pod_log_include_previous: {{ paper_pod_log_include_previous }}
+          interference_node: {{ paper_interference_node }}
+          interference_fit_number: {{ paper_interference_fit_number }}
+          interference_fit_usrp: {{ paper_interference_fit_usrp }}
+          interference_setup: {{ paper_interference_setup }}
+          interference_freq: {{ paper_interference_freq }}
+          interference_gain: {{ paper_interference_gain }}
+          interference_noise_bandwidth: {{ paper_interference_noise_bandwidth }}
+          interference_precheck_enabled: {{ paper_interference_precheck_enabled }}
+          interference_precheck_duration_seconds: {{ paper_interference_precheck_duration_seconds }}
+          interference_siggen_attempts: {{ paper_interference_siggen_attempts }}
+          interference_runtime_siggen_attempts: {{ paper_interference_runtime_siggen_attempts }}
+          interference_recovery_pause_seconds: {{ paper_interference_recovery_pause_seconds }}
+          stress_start_after_seconds: {{ paper_stress_start_after_seconds }}
+          stress_duration_seconds: {{ paper_stress_duration_seconds }}
+          stress_workers: {{ paper_stress_workers }}
+          server_stress_workers: {{ paper_server_stress_workers }}
+          upf_stress_workers: {{ paper_upf_stress_workers }}
+          server_netem_delay_ms: {{ paper_server_netem_delay_ms }}
+          server_netem_iface: {{ paper_server_netem_iface }}
+          server_netem_ifb: {{ paper_server_netem_ifb }}
+          server_netem_filter_prio: {{ paper_server_netem_filter_prio }}
+          server_netem_match_all: {{ paper_server_netem_match_all }}
+          stress_namespace: {{ paper_stress_namespace }}
+          stress_pod_regex: {{ paper_stress_pod_regex }}
+          stress_container_regex: {{ paper_stress_container_regex }}
+          start_epoch: {{ paper_start_epoch }}
+
+- name: Prepare iperf server
+  hosts: "{{ target_server_host | default(paper_target_server_host | default('sopnode-w3')) }}"
+  gather_facts: false
+  become: true
+  vars:
+    target_server_ip: "{{ hostvars[inventory_hostname].ip | default(hostvars[inventory_hostname].ansible_host | default(inventory_hostname)) }}"
+    nb_ues: "{{ hostvars['localhost'].paper_required_ues | length }}"
+    base_port: "{{ hostvars['localhost'].paper_base_port | int }}"
+  roles:
+    - role: scenarios/iperf_server
+
+- name: Run TCP paper scenarios from R2Lab UEs
+  hosts: faraday
+  gather_facts: false
+  vars:
+    paper_run_id: "{{ hostvars['localhost'].paper_run_id }}"
+    paper_required_ues: "{{ hostvars['localhost'].paper_required_ues }}"
+    paper_target_server_host: "{{ hostvars['localhost'].paper_target_server_host }}"
+    paper_target_server_ip: "{{ hostvars[paper_target_server_host].ip | default(hostvars[paper_target_server_host].ansible_host | default(paper_target_server_host)) }}"
+    paper_base_port: "{{ hostvars['localhost'].paper_base_port | int }}"
+    paper_duration: "{{ hostvars['localhost'].paper_duration | int }}"
+    paper_async_grace: "{{ hostvars['localhost'].paper_async_grace | int }}"
+    paper_iperf_startup_check_enabled: "{{ hostvars['localhost'].paper_iperf_startup_check_enabled | default(true) | bool }}"
+    paper_iperf_startup_check_seconds: "{{ hostvars['localhost'].paper_iperf_startup_check_seconds | default(12) | int }}"
+    paper_iperf_connect_timeout_ms: "{{ hostvars['localhost'].paper_iperf_connect_timeout_ms | default(10000) | int }}"
+    paper_pause_between_scenarios: "{{ hostvars['localhost'].paper_pause_between_scenarios | int }}"
+    paper_scenario_names: "{{ hostvars['localhost'].paper_scenario_names }}"
+    paper_disconnect_ues: "{{ hostvars['localhost'].paper_disconnect_ues | bool }}"
+    paper_results_dir: "{{ hostvars['localhost'].paper_results_dir }}"
+    paper_local_timezone: "{{ hostvars['localhost'].paper_local_timezone | default('Europe/Paris') }}"
+    paper_interference_node: "{{ hostvars['localhost'].paper_interference_node | default('fit02') }}"
+    paper_interference_fit_number: "{{ hostvars['localhost'].paper_interference_fit_number | default(2) }}"
+    paper_interference_fit_usrp: "{{ hostvars['localhost'].paper_interference_fit_usrp | default('b210') }}"
+    paper_interference_setup: "{{ hostvars['localhost'].paper_interference_setup | default(true) | bool }}"
+    paper_interference_freq: "{{ hostvars['localhost'].paper_interference_freq | default('3411.22M') }}"
+    paper_interference_gain: "{{ hostvars['localhost'].paper_interference_gain | default(110) }}"
+    paper_interference_noise_bandwidth: "{{ hostvars['localhost'].paper_interference_noise_bandwidth | default('15M') }}"
+    paper_interference_usrp_args: "{{ hostvars['localhost'].paper_interference_usrp_args | default('') }}"
+    paper_interference_precheck_enabled: "{{ hostvars['localhost'].paper_interference_precheck_enabled | default(true) | bool }}"
+    paper_interference_precheck_duration_seconds: "{{ hostvars['localhost'].paper_interference_precheck_duration_seconds | default(2) | int }}"
+    paper_interference_siggen_attempts: "{{ hostvars['localhost'].paper_interference_siggen_attempts | default(3) | int }}"
+    paper_interference_runtime_siggen_attempts: "{{ hostvars['localhost'].paper_interference_runtime_siggen_attempts | default(1) | int }}"
+    paper_interference_recovery_pause_seconds: "{{ hostvars['localhost'].paper_interference_recovery_pause_seconds | default(10) | int }}"
+    paper_stress_start_after_seconds: "{{ hostvars['localhost'].paper_stress_start_after_seconds | int }}"
+    paper_stress_duration_seconds: "{{ hostvars['localhost'].paper_stress_duration_seconds | int }}"
+    paper_stress_workers: "{{ hostvars['localhost'].paper_stress_workers | int }}"
+    paper_server_stress_workers: "{{ hostvars['localhost'].paper_server_stress_workers | int }}"
+    paper_upf_stress_workers: "{{ hostvars['localhost'].paper_upf_stress_workers | int }}"
+    paper_server_netem_delay_ms: "{{ hostvars['localhost'].paper_server_netem_delay_ms | int }}"
+    paper_server_netem_iface: "{{ hostvars['localhost'].paper_server_netem_iface | default('') }}"
+    paper_server_netem_ifb: "{{ hostvars['localhost'].paper_server_netem_ifb | default('ifb0') }}"
+    paper_server_netem_filter_prio: "{{ hostvars['localhost'].paper_server_netem_filter_prio | default(49200) | int }}"
+    paper_server_netem_match_all: "{{ hostvars['localhost'].paper_server_netem_match_all | default(true) | bool }}"
+    paper_stress_namespace: "{{ hostvars['localhost'].paper_stress_namespace | default('open5gs') }}"
+    paper_stress_pod_regex: "{{ hostvars['localhost'].paper_stress_pod_regex | default('upf') }}"
+    paper_stress_container_regex: "{{ hostvars['localhost'].paper_stress_container_regex | default('upf') }}"
+    paper_stress_k8s_control_host: "{{ hostvars['localhost'].paper_pod_log_control_host if (hostvars['localhost'].paper_pod_log_control_host | default('') | length > 0) else (groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else inventory_hostname) }}"
+    target_server: "{{ paper_target_server_ip }}"
+    ignore_task_errors: true
+    paper_scenarios:
+      - name: "01_decomp_baseline_all_ues"
+        title: "Decomposition baseline with qhat01, qhat02, and qhat03"
+        pause_after: true
+        steps:
+          - name: "all_qhat_p1"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 1
+            directions: ["ul", "dl"]
+            ue_roles:
+              qhat01: "baseline"
+              qhat02: "baseline"
+              qhat03: "baseline"
+          - name: "all_qhat_p2"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 2
+            directions: ["ul", "dl"]
+            ue_roles:
+              qhat01: "baseline"
+              qhat02: "baseline"
+              qhat03: "baseline"
+
+      - name: "02_decomp_far_ue_radio"
+        title: "RF/RAN degradation from physically far qhat02"
+        pause_after: true
+        steps:
+          - name: "near_reference_qhat01_qhat03_p2"
+            ues: ["qhat01", "qhat03"]
+            parallel_streams: 2
+            directions: ["ul", "dl"]
+            ue_roles:
+              qhat01: "near-reference"
+              qhat03: "near-reference"
+          - name: "far_reference_qhat02_p2"
+            ues: ["qhat02"]
+            parallel_streams: 2
+            directions: ["ul", "dl"]
+            ue_roles:
+              qhat02: "far-radio"
+          - name: "near_far_together_qhat02_far_p2"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 2
+            directions: ["ul", "dl"]
+            ue_roles:
+              qhat01: "near"
+              qhat02: "far-radio"
+              qhat03: "near"
+
+      - name: "03_decomp_upf_cpu_stress"
+        title: "UPF CPU stress to localize core/user-plane latency"
+        pause_after: true
+        steps:
+          - name: "all_qhat_upf_clean_stress_recovery_p2"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 2
+            directions: ["ul", "dl"]
+            stress: true
+            stress_target: "upf"
+            stress_workers: "{{ paper_upf_stress_workers }}"
+            stress_namespace: "{{ paper_stress_namespace }}"
+            stress_pod_regex: "{{ paper_stress_pod_regex }}"
+            stress_container_regex: "{{ paper_stress_container_regex }}"
+            stress_note: "CPU workers are launched inside matching UPF pod containers during the middle third of each iperf direction."
+            ue_roles:
+              qhat01: "probe-traffic"
+              qhat02: "probe-traffic"
+              qhat03: "probe-traffic"
+
+      - name: "04_decomp_target_server_netem_delay"
+        title: "Target-server ingress delay to localize endpoint-side latency"
+        pause_after: true
+        steps:
+          - name: "all_qhat_server_netem_clean_delay_recovery_p2"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 2
+            directions: ["ul"]
+            stress: true
+            stress_target: "server_netem"
+            stress_workers: 0
+            server_netem_delay_ms: "{{ paper_server_netem_delay_ms }}"
+            server_netem_iface: "{{ paper_server_netem_iface }}"
+            server_netem_ifb: "{{ paper_server_netem_ifb }}"
+            server_netem_filter_prio: "{{ paper_server_netem_filter_prio }}"
+            server_netem_match_all: "{{ paper_server_netem_match_all }}"
+            stress_note: "A temporary ingress IFB netem delay is applied on the target-server interface during the middle third of uplink iperf traffic."
+            ue_roles:
+              qhat01: "probe-traffic"
+              qhat02: "probe-traffic"
+              qhat03: "probe-traffic"
+
+      - name: "05_fit02_interference_near_ul_dl"
+        title: "FIT02 controlled Gaussian interference during separate uplink and downlink near-UE TCP"
+        pause_after: true
+        steps:
+          - name: "near_trio_ul_clean_noise_recovery_p4"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 4
+            interference: true
+            interference_direction: "ul"
+            traffic_type: "tcp"
+            interference_node: "fit02"
+            interference_fit_number: 2
+            interference_fit_usrp: "b210"
+            interference_gain: 70
+            interference_focus_ue: "qhat03"
+            interference_note: "FIT02 gain 70 is the controlled degradation point; higher gains were observed to disconnect UEs."
+          - name: "near_trio_dl_clean_noise_recovery_p4"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 4
+            interference: true
+            interference_direction: "dl"
+            traffic_type: "tcp"
+            interference_node: "fit02"
+            interference_fit_number: 2
+            interference_fit_usrp: "b210"
+            interference_gain: 70
+            interference_focus_ue: "qhat03"
+            interference_note: "FIT02 gain 70 is the controlled degradation point; higher gains were observed to disconnect UEs."
+
+      - name: "06_fit28_spatial_control_near_ul_dl"
+        title: "FIT28 spatial control Gaussian interference during separate uplink and downlink near-UE TCP"
+        pause_after: false
+        steps:
+          - name: "near_trio_ul_clean_noise_recovery_p4"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 4
+            interference: true
+            interference_direction: "ul"
+            traffic_type: "tcp"
+            interference_node: "fit28"
+            interference_fit_number: 28
+            interference_fit_usrp: "b205mini"
+            interference_gain: 50
+            interference_noise_bandwidth: "5M"
+            interference_focus_ue: "qhat03"
+            interference_note: "FIT28 spatial control with softer Gaussian noise: gain 50, bandwidth 5M."
+          - name: "near_trio_dl_clean_noise_recovery_p4"
+            ues: ["qhat01", "qhat02", "qhat03"]
+            parallel_streams: 4
+            interference: true
+            interference_direction: "dl"
+            traffic_type: "tcp"
+            interference_node: "fit28"
+            interference_fit_number: 28
+            interference_fit_usrp: "b205mini"
+            interference_gain: 50
+            interference_noise_bandwidth: "5M"
+            interference_focus_ue: "qhat03"
+            interference_note: "FIT28 spatial control with softer Gaussian noise: gain 50, bandwidth 5M."
+
+  tasks:
+    - name: Load active 5G profile
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+        name: fiveg
+
+    - name: Normalize selected paper scenarios
+      ansible.builtin.set_fact:
+        paper_selected_scenario_names: >-
+          {{
+            []
+            if (paper_scenario_names | default('all') | string | lower) == 'all'
+            else (
+              paper_scenario_names.split(',')
+              | map('trim')
+              | reject('equalto', '')
+              | list
+            )
+          }}
+
+    - name: Validate selected paper scenarios
+      ansible.builtin.fail:
+        msg: >
+          Unknown TCP paper scenario(s): {{ paper_selected_scenario_names | difference(paper_scenarios | map(attribute='name') | list) }}.
+          Valid names are: {{ paper_scenarios | map(attribute='name') | join(', ') }}
+      when:
+        - paper_selected_scenario_names | length > 0
+        - (paper_selected_scenario_names | difference(paper_scenarios | map(attribute='name') | list)) | length > 0
+
+    - name: Select scenarios to run
+      ansible.builtin.set_fact:
+        paper_scenarios_to_run: >-
+          {{
+            paper_scenarios
+            if paper_selected_scenario_names | length == 0
+            else (paper_scenarios | selectattr('name', 'in', paper_selected_scenario_names) | list)
+          }}
+
+    - name: Detect selected interference scenarios
+      ansible.builtin.set_fact:
+        paper_interference_steps: "{{ paper_scenarios_to_run | map(attribute='steps') | flatten | selectattr('interference', 'defined') | selectattr('interference') | list }}"
+
+    - name: Set interference-needed flag
+      ansible.builtin.set_fact:
+        paper_needs_interference: "{{ paper_interference_steps | length > 0 }}"
+
+    - name: Detect selected stress scenarios
+      ansible.builtin.set_fact:
+        paper_stress_steps: "{{ paper_scenarios_to_run | map(attribute='steps') | flatten | selectattr('stress', 'defined') | selectattr('stress') | list }}"
+
+    - name: Set stress-needed flag
+      ansible.builtin.set_fact:
+        paper_needs_stress: "{{ paper_stress_steps | length > 0 }}"
+
+    - name: Validate TCP paper stress task support
+      ansible.builtin.assert:
+        that:
+          - "'Run stress step' in lookup('file', playbook_dir + '/../tasks/run_tcp_paper_step.yml', errors='ignore')"
+          - "'Run stress step directions' in lookup('file', playbook_dir + '/../tasks/run_tcp_paper_stress_step.yml', errors='ignore')"
+          - "'Record clean-before-stress phase start' in lookup('file', playbook_dir + '/../tasks/run_tcp_paper_stress_direction.yml', errors='ignore')"
+        fail_msg: >-
+          A TCP paper stress scenario was selected, but the controller copy does
+          not contain the stress task routing files. Sync
+          tasks/run_tcp_paper_step.yml, tasks/run_tcp_paper_stress_step.yml, and
+          tasks/run_tcp_paper_stress_direction.yml before rerunning.
+      when: paper_needs_stress | bool
+
+    - name: Build selected stress archive host list
+      ansible.builtin.set_fact:
+        paper_stress_archive_hosts: >-
+          {{
+            (
+              [paper_target_server_host]
+              + ([paper_stress_k8s_control_host] if (paper_stress_steps | selectattr('stress_target', 'defined') | selectattr('stress_target', 'equalto', 'upf') | list | length > 0) else [])
+            )
+            | unique
+            | list
+          }}
+
+    - name: Initialize interference target list
+      ansible.builtin.set_fact:
+        paper_interference_targets: []
+
+    - name: Build selected interference target list
+      ansible.builtin.set_fact:
+        paper_interference_targets: >-
+          {{
+            paper_interference_targets + [
+              {
+                'node': item.interference_node | default(paper_interference_node),
+                'fit_number': item.interference_fit_number | default(paper_interference_fit_number),
+                'fit_usrp': item.interference_fit_usrp | default(paper_interference_fit_usrp)
+              }
+            ]
+          }}
+      loop: "{{ paper_interference_steps }}"
+      loop_control:
+        label: "{{ item.interference_node | default(paper_interference_node) }}"
+      when: paper_needs_interference | bool
+
+    - name: Deduplicate selected interference targets
+      ansible.builtin.set_fact:
+        paper_interference_targets: "{{ paper_interference_targets | unique(attribute='node') | list }}"
+      when: paper_needs_interference | bool
+
+    - name: Build active UE list from selected scenarios
+      ansible.builtin.set_fact:
+        paper_active_ues: "{{ paper_scenarios_to_run | map(attribute='steps') | flatten | map(attribute='ues') | flatten | unique | list }}"
+
+    - name: Validate active UEs are in the inventory qhats group
+      ansible.builtin.fail:
+        msg: "Missing required UEs from [qhats]: {{ paper_active_ues | difference(groups['qhats'] | default([])) }}"
+      when: (paper_active_ues | difference(groups['qhats'] | default([]))) | length > 0
+
+    - name: Validate active UEs are in the 5G profile
+      ansible.builtin.fail:
+        msg: "Missing required UEs from 5G profile: {{ paper_active_ues | difference(fiveg.ues.keys() | list) }}"
+      when: (paper_active_ues | difference(fiveg.ues.keys() | list)) | length > 0
+
+    - name: Build UE-to-port map
+      ansible.builtin.set_fact:
+        paper_ue_port_map: "{{ paper_ue_port_map | default({}) | combine({ item: (paper_base_port | int) + (ue_port_index | int) }) }}"
+      loop: "{{ paper_active_ues }}"
+      loop_control:
+        index_var: ue_port_index
+
+    - name: Show TCP paper run plan
+      ansible.builtin.debug:
+        msg:
+          - "Target server: {{ paper_target_server_host }} ({{ paper_target_server_ip }})"
+          - "UEs: {{ paper_active_ues | join(', ') }}"
+          - "Ports: {{ paper_ue_port_map }}"
+          - "Scenarios: {{ paper_scenarios_to_run | map(attribute='name') | join(', ') }}"
+          - "Duration per direction: {{ paper_duration }} seconds"
+          - "Pause between scenarios: {{ paper_pause_between_scenarios }} seconds"
+          - "Disconnect UEs at end: {{ paper_disconnect_ues }}"
+          - "Interference enabled: {{ paper_needs_interference }} targets={{ paper_interference_targets | default([]) }} default_freq={{ paper_interference_freq }} default_gain={{ paper_interference_gain }} default_bandwidth={{ paper_interference_noise_bandwidth }}; per-step overrides may apply"
+          - "Stress enabled: {{ paper_needs_stress }} archive_hosts={{ paper_stress_archive_hosts | default([]) }} default_start_after={{ paper_stress_start_after_seconds }}s default_duration={{ paper_stress_duration_seconds }}s default_workers={{ paper_stress_workers }}"
+
+    - name: Connect UEs, run scenarios, and collect logs
+      block:
+        - name: Initialize connected UE IP map
+          ansible.builtin.set_fact:
+            ue_ips: {}
+
+        - name: Record UE connection phase start
+          ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+          vars:
+            paper_timeline_event:
+              level: "ue_connect"
+              phase: "start"
+              name: "connect-required-ues"
+              ues: "{{ paper_active_ues }}"
+              target_server_host: "{{ paper_target_server_host }}"
+              target_server_ip: "{{ paper_target_server_ip }}"
+
+        - name: Connect required UEs and add routes to iperf server
+          ansible.builtin.include_tasks: ../roles/scenarios/iperf/ue-to-target_server/tasks/connect_ue.yml
+          loop: "{{ paper_active_ues }}"
+          loop_control:
+            loop_var: current_ue
+            label: "{{ current_ue }}"
+          vars:
+            target_server: "{{ paper_target_server_ip }}"
+            ignore_task_errors: true
+
+        - name: Compute connected UE list
+          ansible.builtin.set_fact:
+            paper_connected_ues: "{{ paper_active_ues | select('in', ue_ips.keys() | list) | list }}"
+
+        - name: Record UE connection phase end
+          ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+          vars:
+            paper_timeline_event:
+              level: "ue_connect"
+              phase: "end"
+              name: "connect-required-ues"
+              requested_ues: "{{ paper_active_ues }}"
+              connected_ues: "{{ paper_connected_ues }}"
+              ue_ips: "{{ ue_ips }}"
+
+        - name: Fail if any required UE did not get an IP address
+          ansible.builtin.fail:
+            msg: "UEs without wwan0 IP: {{ paper_active_ues | difference(paper_connected_ues) }}"
+          when: (paper_active_ues | difference(paper_connected_ues)) | length > 0
+
+        - name: Prepare per-UE remote log directory
+          ansible.builtin.shell: |
+            ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} \
+              "rm -rf /tmp/{{ paper_run_id }} && mkdir -p /tmp/{{ paper_run_id }}"
+          loop: "{{ paper_connected_ues }}"
+          changed_when: false
+
+        - name: Prepare selected FIT interference nodes
+          ansible.builtin.include_tasks: ../tasks/setup_tcp_paper_interference_target.yml
+          loop: "{{ paper_interference_targets | default([]) }}"
+          loop_control:
+            loop_var: paper_interference_target
+            label: "{{ paper_interference_target.node }}"
+          when:
+            - paper_needs_interference | bool
+            - paper_interference_setup | bool
+
+        - name: Record traffic campaign start
+          ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+          vars:
+            paper_timeline_event:
+              level: "traffic_campaign"
+              phase: "start"
+              name: "selected-tcp-paper-scenarios"
+              scenarios: "{{ paper_scenarios_to_run | map(attribute='name') | list }}"
+              ues: "{{ paper_connected_ues }}"
+
+        - name: Run all TCP paper scenarios
+          ansible.builtin.include_tasks: ../tasks/run_tcp_paper_scenario.yml
+          loop: "{{ paper_scenarios_to_run }}"
+          loop_control:
+            loop_var: paper_scenario
+            index_var: paper_scenario_index
+            label: "{{ paper_scenario.name }}"
+
+        - name: Record traffic campaign end
+          ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+          vars:
+            paper_timeline_event:
+              level: "traffic_campaign"
+              phase: "end"
+              name: "selected-tcp-paper-scenarios"
+              scenarios: "{{ paper_scenarios_to_run | map(attribute='name') | list }}"
+              ues: "{{ paper_connected_ues }}"
+
+      rescue:
+        - name: Mark TCP paper scenario failure for post-run collection
+          ansible.builtin.copy:
+            dest: "{{ paper_results_dir }}/scenario_failure.json"
+            mode: "0644"
+            content: "{{ paper_failure_metadata | to_nice_json }}"
+          delegate_to: localhost
+          vars:
+            paper_failure_metadata:
+              run_id: "{{ paper_run_id }}"
+              failed_task: "{{ ansible_failed_task.name | default('unknown') }}"
+              failed_action: "{{ ansible_failed_task.action | default('unknown') }}"
+              failed_host: "{{ inventory_hostname }}"
+              msg: "{{ ansible_failed_result.msg | default('') | string | truncate(4000, true, '...') }}"
+              rc: "{{ ansible_failed_result.rc | default('') }}"
+              stdout: "{{ ansible_failed_result.stdout | default('') | string | truncate(4000, true, '...') }}"
+              stderr: "{{ ansible_failed_result.stderr | default('') | string | truncate(4000, true, '...') }}"
+              scenario_names: "{{ paper_scenarios_to_run | map(attribute='name') | list }}"
+              active_ues: "{{ paper_active_ues }}"
+
+        - name: Record traffic campaign failure end
+          ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+          vars:
+            paper_timeline_event:
+              level: "traffic_campaign"
+              phase: "end"
+              name: "selected-tcp-paper-scenarios"
+              failed: true
+              failed_task: "{{ ansible_failed_task.name | default('unknown') }}"
+              failed_msg: "{{ ansible_failed_result.msg | default('') | string | truncate(1000, true, '...') }}"
+              scenarios: "{{ paper_scenarios_to_run | map(attribute='name') | list }}"
+              ues: "{{ paper_connected_ues | default(paper_active_ues) }}"
+          ignore_errors: true
+
+      always:
+        - name: Archive UE logs on each UE
+          ansible.builtin.shell: |
+            ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} \
+              "tar -C /tmp -czf /tmp/{{ paper_run_id }}_{{ item }}.tgz {{ paper_run_id }} 2>/dev/null || true"
+          loop: "{{ paper_active_ues }}"
+          changed_when: false
+          ignore_errors: true
+
+        - name: Fetch UE log archives
+          ansible.builtin.fetch:
+            src: "/tmp/{{ paper_run_id }}_{{ item }}.tgz"
+            dest: "{{ paper_results_dir }}/{{ item }}.tgz"
+            flat: true
+          delegate_to: "{{ item }}"
+          loop: "{{ paper_active_ues }}"
+          ignore_errors: true
+
+        - name: Stage FIT interference log archives on faraday
+          ansible.builtin.shell: |
+            ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item.node }} \
+              "tar -C /tmp -czf /tmp/{{ paper_run_id }}_{{ item.node }}_interference.tgz {{ paper_run_id }}/interference 2>/dev/null || true"
+            scp -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
+              root@{{ item.node }}:/tmp/{{ paper_run_id }}_{{ item.node }}_interference.tgz \
+              /tmp/{{ paper_run_id }}_{{ item.node }}_interference.tgz >/dev/null 2>&1 || true
+          loop: "{{ paper_interference_targets | default([]) }}"
+          loop_control:
+            label: "{{ item.node }}"
+          when: paper_needs_interference | default(false) | bool
+          changed_when: false
+          ignore_errors: true
+
+        - name: Fetch FIT interference log archives
+          ansible.builtin.fetch:
+            src: "/tmp/{{ paper_run_id }}_{{ item.node }}_interference.tgz"
+            dest: "{{ paper_results_dir }}/{{ item.node }}_interference.tgz"
+            flat: true
+          loop: "{{ paper_interference_targets | default([]) }}"
+          loop_control:
+            label: "{{ item.node }}"
+          when: paper_needs_interference | default(false) | bool
+          ignore_errors: true
+
+        - name: Stage stress log archives
+          ansible.builtin.shell: |
+            tar -C /tmp -czf /tmp/{{ paper_run_id }}_{{ item }}_stress.tgz {{ paper_run_id }}/stress 2>/dev/null || true
+          delegate_to: "{{ item }}"
+          become: true
+          loop: "{{ paper_stress_archive_hosts | default([]) }}"
+          loop_control:
+            label: "{{ item }}"
+          when: paper_needs_stress | default(false) | bool
+          changed_when: false
+          ignore_errors: true
+
+        - name: Fetch stress log archives
+          ansible.builtin.fetch:
+            src: "/tmp/{{ paper_run_id }}_{{ item }}_stress.tgz"
+            dest: "{{ paper_results_dir }}/{{ item }}_stress.tgz"
+            flat: true
+          delegate_to: "{{ item }}"
+          become: true
+          loop: "{{ paper_stress_archive_hosts | default([]) }}"
+          loop_control:
+            label: "{{ item }}"
+          when: paper_needs_stress | default(false) | bool
+          ignore_errors: true
+
+        - name: Stop required UEs
+          ansible.builtin.include_role:
+            name: r2lab/ue/stop
+          vars:
+            ue: "{{ item }}"
+          loop: "{{ paper_active_ues }}"
+          loop_control:
+            label: "{{ item }}"
+          when: paper_disconnect_ues | bool
+          ignore_errors: true
+
+- name: Collect TCP paper Kubernetes pod logs
+  hosts: "{{ hostvars['localhost'].paper_pod_log_control_host if (hostvars['localhost'].paper_pod_log_control_host | default('') | length > 0) else (groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else 'localhost') }}"
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+  vars:
+    ansible_remote_tmp: "/tmp/.ansible-{{ lookup('env', 'USER') | default('controller', true) }}/tmp"
+    paper_collect_pod_logs: "{{ hostvars['localhost'].paper_collect_pod_logs | default(true) }}"
+    paper_run_id: "{{ hostvars['localhost'].paper_run_id }}"
+    paper_results_dir: "{{ hostvars['localhost'].paper_results_dir }}"
+    paper_pod_log_namespaces_raw: "{{ hostvars['localhost'].paper_pod_log_namespaces | default([core | default('open5gs'), 'monitoring']) }}"
+    paper_kubeconfig: "{{ hostvars['localhost'].paper_kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+    paper_pod_log_since: "{{ hostvars['localhost'].paper_pod_log_since | default('8h') }}"
+    paper_pod_log_tail_lines: "{{ hostvars['localhost'].paper_pod_log_tail_lines | default(5000) }}"
+    paper_pod_log_include_previous: "{{ hostvars['localhost'].paper_pod_log_include_previous | default(true) }}"
+  tasks:
+    - name: Normalize Kubernetes pod log namespaces
+      ansible.builtin.set_fact:
+        paper_pod_log_namespaces_effective: >-
+          {{
+            (paper_pod_log_namespaces_raw.split(',') | map('trim') | reject('equalto', '') | list)
+            if (paper_pod_log_namespaces_raw is string)
+            else paper_pod_log_namespaces_raw
+          }}
+      when: paper_collect_pod_logs | bool
+
+    - name: Collect Kubernetes pod logs on control node
+      ansible.builtin.shell: |
+        set -u
+        OUT="/tmp/{{ paper_run_id }}_pod_logs"
+        ARCHIVE="/tmp/{{ paper_run_id }}_pod_logs.tgz"
+        NAMESPACES="{{ paper_pod_log_namespaces_effective | join(' ') }}"
+        SINCE="{{ paper_pod_log_since }}"
+        TAIL="{{ paper_pod_log_tail_lines | int }}"
+        INCLUDE_PREVIOUS="{{ (paper_pod_log_include_previous | bool) | ternary('1', '0') }}"
+
+        rm -rf "$OUT" "$ARCHIVE"
+        mkdir -p "$OUT"
+        {
+          echo "run_id={{ paper_run_id }}"
+          echo "host=$(hostname -f 2>/dev/null || hostname)"
+          echo "namespaces=${NAMESPACES}"
+          echo "kubeconfig={{ paper_kubeconfig }}"
+          echo "since=${SINCE}"
+          echo "tail=${TAIL}"
+          echo "include_previous=${INCLUDE_PREVIOUS}"
+          echo "collected_at=$(date -Is)"
+        } > "$OUT/collection_info.txt"
+
+        if ! command -v kubectl >/dev/null 2>&1; then
+          echo "kubectl not found on $(hostname)" > "$OUT/ERROR.txt"
+          tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
+          exit 0
+        fi
+
+        export KUBECONFIG="{{ paper_kubeconfig }}"
+        kubectl version > "$OUT/kubectl_version.txt" 2>&1 || true
+        kubectl config current-context > "$OUT/kubectl_context.txt" 2>&1 || true
+        kubectl get nodes -o wide > "$OUT/nodes.txt" 2>&1 || true
+        kubectl get pods -A -o wide > "$OUT/all_pods.txt" 2>&1 || true
+
+        for ns in $NAMESPACES; do
+          nsdir="$OUT/$ns"
+          mkdir -p "$nsdir"
+          if ! kubectl get namespace "$ns" > "$nsdir/namespace.txt" 2> "$nsdir/namespace.err"; then
+            echo "namespace $ns not found or not readable" > "$nsdir/SKIPPED.txt"
+            continue
+          fi
+
+          kubectl -n "$ns" get pods -o wide > "$nsdir/pods.txt" 2>&1 || true
+          kubectl -n "$ns" get events --sort-by=.lastTimestamp > "$nsdir/events.txt" 2>&1 || true
+
+          pods="$(kubectl -n "$ns" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+          for pod in $pods; do
+            safe_pod="$(printf '%s' "$pod" | tr -c 'A-Za-z0-9_.=-' '_')"
+            pdir="$nsdir/$safe_pod"
+            mkdir -p "$pdir"
+
+            kubectl -n "$ns" get pod "$pod" -o yaml > "$pdir/pod.yaml" 2>&1 || true
+            kubectl -n "$ns" describe pod "$pod" > "$pdir/describe.txt" 2>&1 || true
+
+            containers="$(kubectl -n "$ns" get pod "$pod" -o jsonpath='{range .spec.initContainers[*]}{.name}{"\n"}{end}{range .spec.containers[*]}{.name}{"\n"}{end}{range .spec.ephemeralContainers[*]}{.name}{"\n"}{end}' 2>/dev/null || true)"
+            for container in $containers; do
+              safe_container="$(printf '%s' "$container" | tr -c 'A-Za-z0-9_.=-' '_')"
+              kubectl -n "$ns" logs "$pod" -c "$container" --timestamps --since="$SINCE" --tail="$TAIL" \
+                > "$pdir/${safe_container}.log" 2> "$pdir/${safe_container}.log.err" || true
+              if [ "$INCLUDE_PREVIOUS" = "1" ]; then
+                kubectl -n "$ns" logs "$pod" -c "$container" --previous --timestamps --since="$SINCE" --tail="$TAIL" \
+                  > "$pdir/${safe_container}.previous.log" 2> "$pdir/${safe_container}.previous.log.err" || true
+              fi
+            done
+          done
+        done
+
+        tar -C /tmp -czf "$ARCHIVE" "$(basename "$OUT")"
+      args:
+        executable: /bin/bash
+      register: paper_pod_logs_collect_output
+      when: paper_collect_pod_logs | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Fetch Kubernetes pod log archive
+      ansible.builtin.fetch:
+        src: "/tmp/{{ paper_run_id }}_pod_logs.tgz"
+        dest: "{{ paper_results_dir }}/pod_logs.tgz"
+        flat: true
+      register: paper_pod_logs_fetch_output
+      when: paper_collect_pod_logs | bool
+      failed_when: false
+
+- name: Collect TCP scenario metrics and artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_remote_tmp: "/tmp/.ansible-{{ lookup('env', 'USER') | default('controller', true) }}/tmp"
+  tasks:
+    - name: Set paper run end epoch
+      ansible.builtin.set_fact:
+        paper_end_epoch: "{{ lookup('pipe', 'date +%s') }}"
+
+    - name: Record TCP paper campaign end
+      ansible.builtin.include_tasks: ../tasks/record_paper_timeline_event.yml
+      vars:
+        paper_timeline_event:
+          level: "campaign"
+          phase: "end"
+          name: "tcp-paper-scenarios"
+          kind: "tcp-paper-scenarios"
+          scenario_selector: "{{ paper_scenario_names }}"
+
+    - name: Resolve monitor host
+      ansible.builtin.set_fact:
+        paper_monitor_host: "{{ groups['monitor_node'][0] if (groups['monitor_node'] | default([]) | length > 0) else '' }}"
+
+    - name: Resolve Prometheus URL
+      ansible.builtin.set_fact:
+        paper_prometheus_url_effective: >-
+          {{
+            paper_prometheus_url | default('')
+            if (paper_prometheus_url | default('') | length > 0)
+            else (
+              'http://' ~ (hostvars[paper_monitor_host].ip | default(hostvars[paper_monitor_host].ansible_host | default(paper_monitor_host))) ~ ':30095'
+              if paper_monitor_host | length > 0
+              else ''
+            )
+          }}
+
+    - name: Normalize Kubernetes pod log namespaces
+      ansible.builtin.set_fact:
+        paper_pod_log_namespaces_effective: >-
+          {{
+            (paper_pod_log_namespaces.split(',') | map('trim') | reject('equalto', '') | list)
+            if (paper_pod_log_namespaces is string)
+            else paper_pod_log_namespaces
+          }}
+
+    - name: Resolve Kubernetes pod log collection host
+      ansible.builtin.set_fact:
+        paper_pod_log_control_host_effective: >-
+          {{
+            paper_pod_log_control_host | default('')
+            if (paper_pod_log_control_host | default('') | length > 0)
+            else (
+              groups['core_node'][0]
+              if (groups['core_node'] | default([]) | length > 0)
+              else 'localhost'
+            )
+          }}
+
+    - name: Write experiment metadata
+      ansible.builtin.copy:
+        dest: "{{ paper_results_dir }}/experiment_metadata.json"
+        mode: "0644"
+        content: "{{ experiment_metadata | to_nice_json }}"
+      vars:
+        experiment_metadata:
+          kind: "tcp-paper-scenarios"
+          run_id: "{{ paper_run_id }}"
+          results_dir: "{{ paper_results_dir }}"
+          start_epoch: "{{ paper_start_epoch }}"
+          end_epoch: "{{ paper_end_epoch }}"
+          target_server_host: "{{ paper_target_server_host }}"
+          target_server_ip: "{{ hostvars[paper_target_server_host].ip | default(hostvars[paper_target_server_host].ansible_host | default(paper_target_server_host)) }}"
+          required_ues: "{{ paper_required_ues }}"
+          scenario_names: "{{ paper_scenario_names }}"
+          duration: "{{ paper_duration }}"
+          pause_between_scenarios: "{{ paper_pause_between_scenarios }}"
+          prometheus_url: "{{ paper_prometheus_url_effective }}"
+          prometheus_step: "{{ paper_prometheus_step }}"
+          prometheus_queries_json: "{{ paper_prometheus_queries_json }}"
+          discover_metrics_regex: "{{ paper_discover_metrics_regex }}"
+          discover_metrics_limit: "{{ paper_discover_metrics_limit }}"
+          collect_pod_logs: "{{ paper_collect_pod_logs }}"
+          pod_log_control_host: "{{ paper_pod_log_control_host_effective }}"
+          pod_log_namespaces: "{{ paper_pod_log_namespaces_effective }}"
+          kubeconfig: "{{ paper_kubeconfig }}"
+          pod_log_since: "{{ paper_pod_log_since }}"
+          pod_log_tail_lines: "{{ paper_pod_log_tail_lines }}"
+          pod_log_include_previous: "{{ paper_pod_log_include_previous }}"
+          interference_precheck_enabled: "{{ paper_interference_precheck_enabled }}"
+          interference_precheck_duration_seconds: "{{ paper_interference_precheck_duration_seconds }}"
+          interference_siggen_attempts: "{{ paper_interference_siggen_attempts }}"
+          interference_runtime_siggen_attempts: "{{ paper_interference_runtime_siggen_attempts }}"
+          interference_recovery_pause_seconds: "{{ paper_interference_recovery_pause_seconds }}"
+          notes:
+            - "mode=core is logical uplink when direction label is absent."
+            - "mode=ran is logical downlink when direction label is absent."
+            - "Use timeline_summary.md/json/csv and by_window/* for per-scenario/per-task analysis windows."
+
+    - name: Check Kubernetes pod log archive
+      ansible.builtin.stat:
+        path: "{{ paper_results_dir }}/pod_logs.tgz"
+      register: paper_pod_logs_archive
+      when: paper_collect_pod_logs | bool
+
+    - name: Warn when Kubernetes pod logs could not be collected
+      ansible.builtin.debug:
+        msg:
+          - "Kubernetes pod logs were not collected. Other experiment artifacts are still usable."
+          - "Expected archive: {{ paper_results_dir }}/pod_logs.tgz"
+          - "Collection host: {{ paper_pod_log_control_host_effective }}"
+      when:
+        - paper_collect_pod_logs | bool
+        - not (paper_pod_logs_archive.stat.exists | default(false))
+
+    - name: Export Prometheus scenario time series
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/artifacts/prometheus_range_export.py"
+          - "--prometheus-url"
+          - "{{ paper_prometheus_url_effective }}"
+          - "--start"
+          - "{{ ([paper_start_epoch | int - paper_query_padding_seconds | int, 0] | max) }}"
+          - "--end"
+          - "{{ paper_end_epoch | int + paper_query_padding_seconds | int }}"
+          - "--step"
+          - "{{ paper_prometheus_step }}"
+          - "--queries-json"
+          - "{{ paper_prometheus_queries_json }}"
+          - "--discover-metrics-regex"
+          - "{{ paper_discover_metrics_regex }}"
+          - "--discover-metrics-limit"
+          - "{{ paper_discover_metrics_limit | string }}"
+          - "--out"
+          - "{{ paper_results_dir }}/prometheus_timeseries.csv"
+          - "--summary-json"
+          - "{{ paper_results_dir }}/prometheus_export_summary.json"
+      when:
+        - paper_collect_prometheus | bool
+        - paper_prometheus_url_effective | length > 0
+      changed_when: true
+      failed_when: false
+
+    - name: Finalize TCP paper timeline
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/artifacts/timeline_finalize.py"
+          - "--timeline-jsonl"
+          - "{{ paper_results_dir }}/timeline_events.jsonl"
+          - "--out-dir"
+          - "{{ paper_results_dir }}"
+          - "--run-id"
+          - "{{ paper_run_id }}"
+          - "--timezone"
+          - "{{ paper_local_timezone }}"
+      register: paper_timeline_finalize_output
+      changed_when: true
+      failed_when: false
+
+    - name: Split Prometheus CSV by timeline windows
+      ansible.builtin.command:
+        argv: "{{ [
+          'python3',
+          playbook_dir + '/../scripts/artifacts/split_prometheus_by_timeline.py',
+          '--full-csv',
+          paper_results_dir + '/prometheus_timeseries.csv',
+          '--timeline-json',
+          paper_results_dir + '/timeline_summary.json',
+          '--out-dir',
+          paper_results_dir + '/by_window',
+          '--window-types',
+          paper_split_window_types,
+          '--padding-seconds',
+          paper_split_padding_seconds | string
+        ] + (['--compress'] if (paper_split_compress | bool) else []) }}"
+      register: paper_timeline_split_output
+      when: paper_split_prometheus_by_timeline | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Split iperf artifacts by scenario
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../scripts/artifacts/split_iperf_by_scenario.py"
+          - "--results-dir"
+          - "{{ paper_results_dir }}"
+          - "--out-dir"
+          - "{{ paper_results_dir }}/by_window"
+      register: paper_iperf_split_output
+      when: paper_split_iperf_by_scenario | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Warn when iperf artifacts could not be split by scenario
+      ansible.builtin.debug:
+        msg:
+          - "iperf artifacts were not split by scenario. Root qhatXX.tgz archives are still usable."
+          - "{{ paper_iperf_split_output.stderr | default(paper_iperf_split_output.stdout | default('No command output captured.')) }}"
+      when:
+        - paper_split_iperf_by_scenario | bool
+        - paper_iperf_split_output.rc is defined
+        - paper_iperf_split_output.rc != 0
+
+    - name: Write TCP paper run README
+      ansible.builtin.copy:
+        dest: "{{ paper_results_dir }}/README.md"
+        mode: "0644"
+        content: |
+          # TCP Paper Scenario Run {{ paper_run_id }}
+
+          Main artifacts:
+          - `qhatXX.tgz`: per-UE iperf JSON logs.
+          - `fitXX_interference.tgz`: FIT-side `uhd_siggen` logs when interference scenarios run.
+          - `*_stress.tgz`: CPU stress and target-server netem logs from decomposition scenarios.
+          - `pod_logs.tgz`: Kubernetes pod inventory, events, describe output, and current/previous container logs.
+          - `prometheus_timeseries.csv`: 1-second Prometheus export when reachable.
+          - `prometheus_export_summary.json`: query inventory and row counts.
+          - `experiment_metadata.json`: run timing, Prometheus URL, and selected scenario metadata.
+          - `timeline_summary.md`: human-readable scenario, step, direction, and iperf-task recap.
+          - `timeline_summary.csv` / `timeline_summary.json`: machine-readable timing windows.
+          - `by_window/scenario/<scenario>/prometheus_timeseries.csv.gz`: metrics filtered to one scenario interval.
+          - `by_window/scenario/<scenario>/iperf/<step>/<direction>/iperf_qhatXX.json`: iperf logs split into each scenario folder.
+          - `by_window/scenario/iperf_inventory.csv`: inventory of all split iperf JSON/stderr artifacts.
+          - `by_window/task/<scenario_step_direction>/prometheus_timeseries.csv.gz`: metrics filtered to one step/direction interval.
+          - `by_window/interference_phase/<phase>/prometheus_timeseries.csv.gz`: clean/noise/recovery slices for interference scenarios.
+          - `by_window/stress_phase/<phase>/prometheus_timeseries.csv.gz`: clean/stress/recovery slices for UPF CPU stress and target-server netem scenarios.
+      register: paper_readme_output
+      failed_when: false
+
+    - name: Show TCP paper timeline recap
+      ansible.builtin.debug:
+        msg: "{{ paper_timeline_finalize_output.stdout_lines | default(['Timeline recap unavailable; check timeline_events.jsonl.']) }}"
+
+    - name: Show TCP paper output paths
+      ansible.builtin.debug:
+        msg:
+          - "TCP paper results: {{ paper_results_dir }}"
+          - "Prometheus CSV: {{ paper_results_dir }}/prometheus_timeseries.csv"
+          - "Kubernetes pod logs: {{ paper_results_dir }}/pod_logs.tgz"
+          - "Timeline recap: {{ paper_results_dir }}/timeline_summary.md"
+          - "Per-scenario metrics: {{ paper_results_dir }}/by_window/scenario"
+          - "Per-scenario iperf logs: {{ paper_results_dir }}/by_window/scenario/<scenario>/iperf"
+          - "Per-task metrics: {{ paper_results_dir }}/by_window/task"
+          - "Interference phase metrics: {{ paper_results_dir }}/by_window/interference_phase"
+          - "Stress phase metrics: {{ paper_results_dir }}/by_window/stress_phase"
+
+    - name: Check for TCP paper scenario failure marker
+      ansible.builtin.stat:
+        path: "{{ paper_results_dir }}/scenario_failure.json"
+      register: paper_scenario_failure_marker
+
+    - name: Show TCP paper scenario failure marker
+      ansible.builtin.debug:
+        msg:
+          - "A scenario failed, but artifacts were collected before failing the playbook."
+          - "Failure marker: {{ paper_results_dir }}/scenario_failure.json"
+      when: paper_scenario_failure_marker.stat.exists | bool
+
+    - name: Fail TCP paper run after collecting artifacts
+      ansible.builtin.fail:
+        msg: >
+          TCP paper scenario failed. Partial artifacts, qhat logs, and timeline files
+          were collected in {{ paper_results_dir }}.
+      when:
+        - paper_scenario_failure_marker.stat.exists | bool
+        - paper_fail_after_collect_on_error | default(true) | bool

@@ -1,0 +1,603 @@
+---
+- name: Set stress direction parameters
+  ansible.builtin.set_fact:
+    paper_stress_direction_args: "{{ '-R' if paper_stress_direction == 'dl' else '' }}"
+    paper_stress_target_effective: "{{ paper_step.stress_target | default('server') }}"
+    paper_stress_delay_seconds_effective: "{{ paper_step.stress_start_after_seconds | default(paper_stress_start_after_seconds | default(((paper_duration | int) // 3)), true) | int }}"
+    paper_stress_duration_seconds_effective: "{{ paper_step.stress_duration_seconds | default(paper_stress_duration_seconds | default(((paper_duration | int) // 3)), true) | int }}"
+    paper_stress_workers_effective: "{{ paper_step.stress_workers | default(paper_stress_workers | default(4), true) | int }}"
+    paper_stress_namespace_effective: "{{ paper_step.stress_namespace | default(paper_stress_namespace | default('open5gs'), true) }}"
+    paper_stress_pod_regex_effective: "{{ paper_step.stress_pod_regex | default(paper_stress_pod_regex | default('upf'), true) }}"
+    paper_stress_container_regex_effective: "{{ paper_step.stress_container_regex | default(paper_stress_container_regex | default('upf'), true) }}"
+    paper_stress_k8s_control_host_effective: "{{ paper_step.stress_k8s_control_host | default(paper_stress_k8s_control_host | default(groups['core_node'][0] if (groups['core_node'] | default([]) | length > 0) else inventory_hostname), true) }}"
+    paper_server_netem_delay_ms_effective: "{{ paper_step.server_netem_delay_ms | default(paper_server_netem_delay_ms | default(50), true) | int }}"
+    paper_server_netem_iface_effective: "{{ paper_step.server_netem_iface | default(paper_server_netem_iface | default(hostvars[paper_target_server_host].nic_interface | default('')), true) | string | trim }}"
+    paper_server_netem_ifb_effective: "{{ paper_step.server_netem_ifb | default(paper_server_netem_ifb | default('ifb0'), true) | string | trim }}"
+    paper_server_netem_filter_prio_effective: "{{ paper_step.server_netem_filter_prio | default(paper_server_netem_filter_prio | default(49200), true) | int }}"
+    paper_server_netem_match_all_effective: "{{ paper_step.server_netem_match_all | default(paper_server_netem_match_all | default(true), true) | bool }}"
+    paper_server_netem_peer_ips: "{{ paper_step_ues | map('extract', ue_ips) | list }}"
+    paper_stress_recovery_seconds_effective: "{{ [0, (paper_duration | int) - (paper_step.stress_start_after_seconds | default(paper_stress_start_after_seconds | default(((paper_duration | int) // 3)), true) | int) - (paper_step.stress_duration_seconds | default(paper_stress_duration_seconds | default(((paper_duration | int) // 3)), true) | int)] | max }}"
+    paper_step_bitrate: "{{ paper_step.bitrate | default(paper_step.tcp_bitrate | default('')) | string | trim }}"
+    paper_stress_job_id: ""
+    paper_stress_job_delegate_host: ""
+
+- name: Validate stress direction
+  ansible.builtin.fail:
+    msg: "Invalid stress direction {{ paper_stress_direction }}. Use ul or dl."
+  when: paper_stress_direction not in ['ul', 'dl']
+
+- name: Validate stress target
+  ansible.builtin.fail:
+    msg: "Invalid stress target {{ paper_stress_target_effective }}. Use server, upf, or server_netem."
+  when: paper_stress_target_effective not in ['server', 'upf', 'server_netem']
+
+- name: Show stress step details
+  ansible.builtin.debug:
+    msg:
+      - "Scenario: {{ paper_scenario.name }}"
+      - "Step: {{ paper_step.name }}"
+      - "Traffic: {{ paper_stress_direction }} TCP on {{ paper_step_ues | join(', ') }}"
+      - "Stress target: {{ paper_stress_target_effective }}"
+      - "Stress starts after: {{ paper_stress_delay_seconds_effective }}s"
+      - "Stress duration: {{ paper_stress_duration_seconds_effective }}s"
+      - "Recovery duration: {{ paper_stress_recovery_seconds_effective }}s"
+      - "Stress workers: {{ paper_stress_workers_effective if paper_stress_target_effective in ['server', 'upf'] else 'n/a' }}"
+      - "Server ingress netem when applicable: iface={{ paper_server_netem_iface_effective }} ifb={{ paper_server_netem_ifb_effective }} delay={{ paper_server_netem_delay_ms_effective }}ms match_all={{ paper_server_netem_match_all_effective }} peer_ips={{ paper_server_netem_peer_ips | join(', ') }}"
+      - "UPF selector when applicable: namespace={{ paper_stress_namespace_effective }} pod_regex={{ paper_stress_pod_regex_effective }} container_regex={{ paper_stress_container_regex_effective }} control_host={{ paper_stress_k8s_control_host_effective }}"
+
+- name: Record stress TCP direction start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "direction"
+      phase: "start"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_stress_direction }}"
+      traffic_type: "tcp"
+      ues: "{{ paper_step_ues }}"
+      parallel_streams: "{{ paper_step.parallel_streams | default(1) | int }}"
+      parallel_by_ue: "{{ paper_step.parallel_by_ue | default({}) }}"
+      ue_roles: "{{ paper_step.ue_roles | default({}) }}"
+      bitrate: "{{ paper_step_bitrate }}"
+      command_template: "iperf3 -c {{ paper_target_server_ip }} -t {{ paper_duration }} -P <per-UE> {{ ('-b ' ~ paper_step_bitrate) if paper_step_bitrate | length > 0 else '' }} {{ paper_stress_direction_args }} --json --get-server-output"
+      stress_target: "{{ paper_stress_target_effective }}"
+      stress_workers: "{{ paper_stress_workers_effective }}"
+      server_netem_delay_ms: "{{ paper_server_netem_delay_ms_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_iface: "{{ paper_server_netem_iface_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_ifb: "{{ paper_server_netem_ifb_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_match_all: "{{ paper_server_netem_match_all_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_peer_ips: "{{ paper_server_netem_peer_ips if paper_stress_target_effective == 'server_netem' else [] }}"
+
+- name: Start TCP iperf jobs for stress step
+  ansible.builtin.shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} '
+      set -e
+      LOG_DIR="/tmp/{{ paper_run_id }}/scenario={{ paper_scenario.name }}/step={{ paper_step.name }}/direction={{ paper_stress_direction }}"
+      mkdir -p "$LOG_DIR"
+      iperf3 \
+        -p {{ paper_ue_port_map[item] }} \
+        -B {{ ue_ips[item] }} \
+        -c {{ paper_target_server_ip }} \
+        -t {{ paper_duration }} \
+        -P {{ (paper_step.parallel_by_ue | default({}))[item] | default(paper_step.parallel_streams | default(1)) }} \
+        {{ ('-b ' ~ paper_step_bitrate) if paper_step_bitrate | length > 0 else '' }} \
+        {{ paper_stress_direction_args }} \
+        --json \
+        --get-server-output \
+        > "$LOG_DIR/iperf_{{ item }}.json" \
+        2> "$LOG_DIR/iperf_{{ item }}.stderr" || {
+          rc=$?
+          echo "TCP paper iperf failed during the real stress experiment job." >&2
+          echo "scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_stress_direction }} ue={{ item }} port={{ paper_ue_port_map[item] }} ue_ip={{ ue_ips[item] }} target={{ paper_target_server_ip }} stress_target={{ paper_stress_target_effective }} rc=$rc" >&2
+          echo "Remote logs: $LOG_DIR/iperf_{{ item }}.json and $LOG_DIR/iperf_{{ item }}.stderr" >&2
+          head -n 80 "$LOG_DIR/iperf_{{ item }}.json" >&2 || true
+          head -n 80 "$LOG_DIR/iperf_{{ item }}.stderr" >&2 || true
+          exit "$rc"
+        }
+      if grep -q '"error"[[:space:]]*:' "$LOG_DIR/iperf_{{ item }}.json"; then
+        echo "TCP paper iperf JSON reported an error during the real stress experiment job." >&2
+        echo "scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_stress_direction }} ue={{ item }} port={{ paper_ue_port_map[item] }} ue_ip={{ ue_ips[item] }} target={{ paper_target_server_ip }} stress_target={{ paper_stress_target_effective }}" >&2
+        echo "Remote logs: $LOG_DIR/iperf_{{ item }}.json and $LOG_DIR/iperf_{{ item }}.stderr" >&2
+        head -n 80 "$LOG_DIR/iperf_{{ item }}.json" >&2 || true
+        head -n 80 "$LOG_DIR/iperf_{{ item }}.stderr" >&2 || true
+        exit 1
+      fi
+    '
+  async: "{{ paper_duration | int + paper_async_grace | int }}"
+  poll: 0
+  loop: "{{ paper_step_ues }}"
+  loop_control:
+    label: "{{ item }}"
+  register: paper_iperf_jobs
+  changed_when: true
+  ignore_errors: "{{ ignore_task_errors | default(true) }}"
+
+- name: Record clean-before-stress phase start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "stress_phase"
+      phase: "start"
+      name: "clean_before_stress"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_stress_direction }}"
+      stress_target: "{{ paper_stress_target_effective }}"
+      stress_workers: "{{ paper_stress_workers_effective }}"
+      server_netem_delay_ms: "{{ paper_server_netem_delay_ms_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_iface: "{{ paper_server_netem_iface_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+
+- name: Wait before starting stress
+  ansible.builtin.pause:
+    seconds: "{{ paper_stress_delay_seconds_effective }}"
+
+- name: Record clean-before-stress phase end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "stress_phase"
+      phase: "end"
+      name: "clean_before_stress"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_stress_direction }}"
+      stress_target: "{{ paper_stress_target_effective }}"
+      stress_workers: "{{ paper_stress_workers_effective }}"
+      server_netem_delay_ms: "{{ paper_server_netem_delay_ms_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_iface: "{{ paper_server_netem_iface_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+
+- name: Start server CPU stress
+  ansible.builtin.shell: |
+    set -e
+    OUT="/tmp/{{ paper_run_id }}/stress"
+    mkdir -p "$OUT"
+    LOG="$OUT/stress_{{ paper_scenario.name }}_{{ paper_step.name }}_{{ paper_stress_direction }}_server.log"
+    WORKERS="{{ paper_stress_workers_effective }}"
+    DURATION="{{ paper_stress_duration_seconds_effective }}"
+    {
+      echo "==== server stress started at $(date -Is) ===="
+      echo "scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_stress_direction }}"
+      echo "target=$(hostname -f 2>/dev/null || hostname) workers=${WORKERS} duration=${DURATION}"
+    } >> "$LOG"
+    pids=""
+    cleanup() {
+      for pid in $pids; do
+        kill "$pid" >/dev/null 2>&1 || true
+      done
+      wait $pids >/dev/null 2>&1 || true
+    }
+    trap cleanup INT TERM EXIT
+    i=1
+    while [ "$i" -le "$WORKERS" ]; do
+      ( while :; do :; done ) &
+      pids="$pids $!"
+      i=$((i + 1))
+    done
+    {
+      echo "stress_pids=${pids}"
+    } >> "$LOG"
+    sleep "$DURATION"
+    cleanup
+    trap - INT TERM EXIT
+    echo "==== server stress finished at $(date -Is) ====" >> "$LOG"
+  args:
+    executable: /bin/bash
+  async: "{{ paper_stress_duration_seconds_effective | int + paper_async_grace | int }}"
+  poll: 0
+  delegate_to: "{{ paper_target_server_host }}"
+  become: true
+  register: paper_server_stress_job
+  changed_when: true
+  when: paper_stress_target_effective == 'server'
+
+- name: Start target-server ingress IFB netem delay
+  ansible.builtin.shell: |
+    set -e
+    OUT="/tmp/{{ paper_run_id }}/stress"
+    mkdir -p "$OUT"
+    LOG="$OUT/stress_{{ paper_scenario.name }}_{{ paper_step.name }}_{{ paper_stress_direction }}_server_netem.log"
+    IFACE="{{ paper_server_netem_iface_effective }}"
+    IFB="{{ paper_server_netem_ifb_effective }}"
+    DELAY_MS="{{ paper_server_netem_delay_ms_effective }}"
+    DURATION="{{ paper_stress_duration_seconds_effective }}"
+    PEER_IPS="{{ paper_server_netem_peer_ips | join(' ') }}"
+    PRIO_BASE="{{ paper_server_netem_filter_prio_effective }}"
+    MATCH_ALL="{{ paper_server_netem_match_all_effective | ternary('true', 'false') }}"
+
+    if [ -z "$IFACE" ]; then
+      echo "No target-server interface configured for server_netem" >> "$LOG"
+      exit 2
+    fi
+    if [ "$MATCH_ALL" != "true" ] && [ -z "$PEER_IPS" ]; then
+      echo "No UE IPs available for server_netem filters" >> "$LOG"
+      exit 3
+    fi
+
+    cleanup() {
+      tc filter del dev "$IFACE" ingress protocol ip prio "$PRIO_BASE" 2>/dev/null || true
+      if [ "$MATCH_ALL" != "true" ]; then
+        prio="$PRIO_BASE"
+        for peer_ip in $PEER_IPS; do
+          tc filter del dev "$IFACE" ingress protocol ip prio "$prio" 2>/dev/null || true
+          prio=$((prio + 1))
+        done
+      fi
+      tc qdisc del dev "$IFB" root 2>/dev/null || true
+      ip link set dev "$IFB" down 2>/dev/null || true
+      ip link delete "$IFB" type ifb 2>/dev/null || true
+    }
+
+    {
+      echo "==== server ingress netem started at $(date -Is) ===="
+      echo "scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_stress_direction }}"
+      echo "target=$(hostname -f 2>/dev/null || hostname) iface=${IFACE} ifb=${IFB} delay_ms=${DELAY_MS} duration=${DURATION}"
+      echo "peer_ips=${PEER_IPS}"
+      echo "prio_base=${PRIO_BASE}"
+      echo "match_all=${MATCH_ALL}"
+    } >> "$LOG"
+
+    modprobe ifb numifbs=1 2>/dev/null || true
+    cleanup
+    trap cleanup INT TERM EXIT
+
+    ip link add "$IFB" type ifb 2>/dev/null || true
+    ip link set dev "$IFB" up
+    tc qdisc del dev "$IFB" root 2>/dev/null || true
+    tc qdisc add dev "$IFB" root netem delay "${DELAY_MS}ms"
+    tc qdisc add dev "$IFACE" clsact 2>/dev/null || true
+
+    if [ "$MATCH_ALL" = "true" ]; then
+      tc filter add dev "$IFACE" ingress protocol ip prio "$PRIO_BASE" u32 \
+        match u32 0 0 \
+        action mirred egress redirect dev "$IFB"
+    else
+      prio="$PRIO_BASE"
+      for peer_ip in $PEER_IPS; do
+        tc filter add dev "$IFACE" ingress protocol ip prio "$prio" u32 \
+          match ip src "$peer_ip"/32 \
+          action mirred egress redirect dev "$IFB"
+        prio=$((prio + 1))
+      done
+    fi
+
+    {
+      echo "server_netem_filters_after_launch:"
+      tc qdisc show dev "$IFACE" || true
+      tc filter show dev "$IFACE" ingress || true
+      tc qdisc show dev "$IFB" || true
+    } >> "$LOG"
+
+    sleep "$DURATION"
+    {
+      echo "server_netem_filter_stats_before_cleanup:"
+      tc -s filter show dev "$IFACE" ingress || true
+      tc -s qdisc show dev "$IFB" || true
+    } >> "$LOG"
+    cleanup
+    trap - INT TERM EXIT
+    echo "==== server ingress netem finished at $(date -Is) ====" >> "$LOG"
+  args:
+    executable: /bin/bash
+  async: "{{ paper_stress_duration_seconds_effective | int + paper_async_grace | int }}"
+  poll: 0
+  delegate_to: "{{ paper_target_server_host }}"
+  become: true
+  register: paper_server_netem_job
+  changed_when: true
+  when: paper_stress_target_effective == 'server_netem'
+
+- name: Start UPF pod CPU stress
+  ansible.builtin.shell: |
+    set -e
+    export KUBECONFIG="{{ paper_kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+    OUT="/tmp/{{ paper_run_id }}/stress"
+    mkdir -p "$OUT"
+    LOG="$OUT/stress_{{ paper_scenario.name }}_{{ paper_step.name }}_{{ paper_stress_direction }}_upf.log"
+    NS="{{ paper_stress_namespace_effective }}"
+    POD_REGEX="{{ paper_stress_pod_regex_effective }}"
+    CONTAINER_REGEX="{{ paper_stress_container_regex_effective }}"
+    WORKERS="{{ paper_stress_workers_effective }}"
+    DURATION="{{ paper_stress_duration_seconds_effective }}"
+    {
+      echo "==== upf stress started at $(date -Is) ===="
+      echo "scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_stress_direction }}"
+      echo "namespace=${NS} pod_regex=${POD_REGEX} container_regex=${CONTAINER_REGEX} workers=${WORKERS} duration=${DURATION}"
+    } >> "$LOG"
+    pods="$(kubectl -n "$NS" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E "$POD_REGEX" || true)"
+    if [ -z "$pods" ]; then
+      echo "No UPF pod matched regex ${POD_REGEX} in namespace ${NS}" >> "$LOG"
+      exit 2
+    fi
+    pids=""
+    for pod in $pods; do
+      containers="$(kubectl -n "$NS" get pod "$pod" -o jsonpath='{range .spec.containers[*]}{.name}{"\n"}{end}')"
+      container="$(printf '%s\n' "$containers" | grep -E "$CONTAINER_REGEX" | head -n 1 || true)"
+      if [ -z "$container" ]; then
+        container="$(printf '%s\n' "$containers" | head -n 1)"
+      fi
+      echo "launching stress in pod=${pod} container=${container}" >> "$LOG"
+      kubectl -n "$NS" exec -c "$container" "$pod" -- sh -c '
+        WORKERS="$1"
+        DURATION="$2"
+        pids=""
+        cleanup() {
+          for pid in $pids; do
+            kill "$pid" >/dev/null 2>&1 || true
+          done
+          wait $pids >/dev/null 2>&1 || true
+        }
+        trap cleanup INT TERM EXIT
+        i=1
+        while [ "$i" -le "$WORKERS" ]; do
+          ( while :; do :; done ) &
+          pids="$pids $!"
+          i=$((i + 1))
+        done
+        echo "pod=$(hostname) stress_pids=${pids} workers=${WORKERS} duration=${DURATION}"
+        sleep "$DURATION"
+        cleanup
+        trap - INT TERM EXIT
+      ' sh "$WORKERS" "$DURATION" >> "$LOG" 2>&1 &
+      pids="$pids $!"
+    done
+    rc=0
+    for pid in $pids; do
+      wait "$pid" || rc=$?
+    done
+    echo "==== upf stress finished rc=${rc} at $(date -Is) ====" >> "$LOG"
+    exit "$rc"
+  args:
+    executable: /bin/bash
+  async: "{{ paper_stress_duration_seconds_effective | int + paper_async_grace | int }}"
+  poll: 0
+  delegate_to: "{{ paper_stress_k8s_control_host_effective }}"
+  become: true
+  register: paper_upf_stress_job
+  changed_when: true
+  when: paper_stress_target_effective == 'upf'
+
+- name: Remember stress async job
+  ansible.builtin.set_fact:
+    paper_stress_job_id: "{{ paper_server_stress_job.ansible_job_id }}"
+    paper_stress_job_delegate_host: "{{ paper_target_server_host }}"
+  when: paper_stress_target_effective == 'server'
+
+- name: Remember target-server netem async job
+  ansible.builtin.set_fact:
+    paper_stress_job_id: "{{ paper_server_netem_job.ansible_job_id }}"
+    paper_stress_job_delegate_host: "{{ paper_target_server_host }}"
+  when: paper_stress_target_effective == 'server_netem'
+
+- name: Remember UPF stress async job
+  ansible.builtin.set_fact:
+    paper_stress_job_id: "{{ paper_upf_stress_job.ansible_job_id }}"
+    paper_stress_job_delegate_host: "{{ paper_stress_k8s_control_host_effective }}"
+  when: paper_stress_target_effective == 'upf'
+
+- name: Fail if stress generator did not start
+  ansible.builtin.fail:
+    msg: "Stress job could not be launched for scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_stress_direction }} target={{ paper_stress_target_effective }}"
+  when: paper_stress_job_id | default('') | length == 0
+
+- name: Record stress-on phase start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "stress_phase"
+      phase: "start"
+      name: "stress_on"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_stress_direction }}"
+      stress_target: "{{ paper_stress_target_effective }}"
+      stress_node: "{{ paper_stress_job_delegate_host }}"
+      stress_workers: "{{ paper_stress_workers_effective }}"
+      stress_namespace: "{{ paper_stress_namespace_effective if paper_stress_target_effective == 'upf' else '' }}"
+      stress_pod_regex: "{{ paper_stress_pod_regex_effective if paper_stress_target_effective == 'upf' else '' }}"
+      server_netem_delay_ms: "{{ paper_server_netem_delay_ms_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_iface: "{{ paper_server_netem_iface_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+
+- name: Wait for stress/netem generator to finish
+  ansible.builtin.async_status:
+    jid: "{{ paper_stress_job_id }}"
+  register: paper_stress_wait
+  until: paper_stress_wait.finished
+  retries: "{{ ((paper_stress_duration_seconds_effective | int + paper_async_grace | int) // 5) + 30 }}"
+  delay: 5
+  delegate_to: "{{ paper_stress_job_delegate_host }}"
+  become: true
+  ignore_errors: "{{ ignore_task_errors | default(true) }}"
+
+- name: Record stress-on phase end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "stress_phase"
+      phase: "end"
+      name: "stress_on"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_stress_direction }}"
+      stress_target: "{{ paper_stress_target_effective }}"
+      stress_node: "{{ paper_stress_job_delegate_host }}"
+      stress_workers: "{{ paper_stress_workers_effective }}"
+      stress_namespace: "{{ paper_stress_namespace_effective if paper_stress_target_effective == 'upf' else '' }}"
+      stress_pod_regex: "{{ paper_stress_pod_regex_effective if paper_stress_target_effective == 'upf' else '' }}"
+      server_netem_delay_ms: "{{ paper_server_netem_delay_ms_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_iface: "{{ paper_server_netem_iface_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+
+- name: Stop TCP iperf jobs after stress failure
+  ansible.builtin.shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} \
+      "pkill -f 'iperf3 .* -c {{ paper_target_server_ip }}' >/dev/null 2>&1 || true"
+  loop: "{{ paper_step_ues }}"
+  changed_when: false
+  failed_when: false
+  when: >
+    (paper_stress_wait.failed | default(false) | bool) or
+    (paper_stress_wait.rc is defined and (paper_stress_wait.rc | int) != 0)
+
+- name: Fail if stress generator failed
+  ansible.builtin.fail:
+    msg: |
+      TCP paper stress generator failed during the real experiment window.
+      scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_stress_direction }}
+      stress_target={{ paper_stress_target_effective }} stress_delegate={{ paper_stress_job_delegate_host }}
+      rc={{ paper_stress_wait.rc | default('unknown') }}
+
+      stdout:
+      {{ paper_stress_wait.stdout | default('') }}
+
+      stderr:
+      {{ paper_stress_wait.stderr | default('') }}
+  when: >
+    (paper_stress_wait.failed | default(false) | bool) or
+    (paper_stress_wait.rc is defined and (paper_stress_wait.rc | int) != 0)
+
+- name: Cleanup stress async job file
+  ansible.builtin.async_status:
+    jid: "{{ paper_stress_job_id }}"
+    mode: cleanup
+  delegate_to: "{{ paper_stress_job_delegate_host }}"
+  become: true
+  ignore_errors: true
+
+- name: Record recovery-after-stress phase start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "stress_phase"
+      phase: "start"
+      name: "recovery_after_stress"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_stress_direction }}"
+      stress_target: "{{ paper_stress_target_effective }}"
+      stress_node: "{{ paper_stress_job_delegate_host }}"
+      stress_workers: "{{ paper_stress_workers_effective }}"
+      server_netem_delay_ms: "{{ paper_server_netem_delay_ms_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_iface: "{{ paper_server_netem_iface_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+
+- name: Wait for recovery after stress
+  ansible.builtin.pause:
+    seconds: "{{ paper_stress_recovery_seconds_effective }}"
+  when: (paper_stress_recovery_seconds_effective | int) > 0
+
+- name: Record recovery-after-stress phase end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "stress_phase"
+      phase: "end"
+      name: "recovery_after_stress"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_stress_direction }}"
+      stress_target: "{{ paper_stress_target_effective }}"
+      stress_node: "{{ paper_stress_job_delegate_host }}"
+      stress_workers: "{{ paper_stress_workers_effective }}"
+      server_netem_delay_ms: "{{ paper_server_netem_delay_ms_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_iface: "{{ paper_server_netem_iface_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+
+- name: Wait for stress-step TCP iperf jobs to finish
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: paper_iperf_wait
+  until: paper_iperf_wait.finished
+  retries: "{{ (paper_duration | int // 5) + 60 }}"
+  delay: 5
+  loop: "{{ paper_iperf_jobs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default(item.ansible_job_id | default('unknown')) }}"
+  when: item.ansible_job_id is defined
+  ignore_errors: "{{ ignore_task_errors | default(true) }}"
+
+- name: Collect failed stress-step TCP iperf wait jobs
+  ansible.builtin.set_fact:
+    paper_iperf_wait_failed_jobs: "{{ paper_iperf_wait.results | default([]) | selectattr('failed', 'defined') | selectattr('failed') | list }}"
+
+- name: Stop remaining stress-step iperf jobs after completion failure
+  ansible.builtin.shell: |
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no root@{{ item }} \
+      "pkill -f 'iperf3 .* -c {{ paper_target_server_ip }}' >/dev/null 2>&1 || true"
+  loop: "{{ paper_step_ues }}"
+  changed_when: false
+  failed_when: false
+  when: paper_iperf_wait_failed_jobs | length > 0
+
+- name: Fail if any real stress-step TCP iperf job failed
+  ansible.builtin.fail:
+    msg: |
+      TCP paper iperf failed during the real stress experiment window.
+      scenario={{ paper_scenario.name }} step={{ paper_step.name }} direction={{ paper_stress_direction }}
+      stress_target={{ paper_stress_target_effective }}
+      ue={{ item.item.item | default(item.item | default('unknown')) }}
+      rc={{ item.rc | default('unknown') }}
+      msg={{ item.msg | default('') }}
+      remote_json=/tmp/{{ paper_run_id }}/scenario={{ paper_scenario.name }}/step={{ paper_step.name }}/direction={{ paper_stress_direction }}/iperf_{{ item.item.item | default(item.item | default('unknown')) }}.json
+      remote_stderr=/tmp/{{ paper_run_id }}/scenario={{ paper_scenario.name }}/step={{ paper_step.name }}/direction={{ paper_stress_direction }}/iperf_{{ item.item.item | default(item.item | default('unknown')) }}.stderr
+
+      stdout:
+      {{ item.stdout | default('') }}
+
+      stderr:
+      {{ item.stderr | default('') }}
+  loop: "{{ paper_iperf_wait.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item | default(item.item | default('unknown')) }}"
+  when: >
+    (item.failed | default(false) | bool) or
+    (item.rc is defined and (item.rc | int) != 0)
+
+- name: Cleanup stress-step async job files
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+    mode: cleanup
+  loop: "{{ paper_iperf_jobs.results | default([]) }}"
+  when: item.ansible_job_id is defined
+  ignore_errors: true
+
+- name: Record stress TCP direction end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "direction"
+      phase: "end"
+      scenario: "{{ paper_scenario.name }}"
+      scenario_title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step: "{{ paper_step.name }}"
+      step_index: "{{ paper_step_index | int }}"
+      direction: "{{ paper_stress_direction }}"
+      traffic_type: "tcp"
+      ues: "{{ paper_step_ues }}"
+      parallel_streams: "{{ paper_step.parallel_streams | default(1) | int }}"
+      parallel_by_ue: "{{ paper_step.parallel_by_ue | default({}) }}"
+      ue_roles: "{{ paper_step.ue_roles | default({}) }}"
+      bitrate: "{{ paper_step_bitrate }}"
+      stress_target: "{{ paper_stress_target_effective }}"
+      stress_workers: "{{ paper_stress_workers_effective }}"
+      server_netem_delay_ms: "{{ paper_server_netem_delay_ms_effective if paper_stress_target_effective == 'server_netem' else '' }}"
+      server_netem_iface: "{{ paper_server_netem_iface_effective if paper_stress_target_effective == 'server_netem' else '' }}"

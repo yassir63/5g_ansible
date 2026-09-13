@@ -1,0 +1,113 @@
+---
+- hosts: all
+  gather_facts: true
+  tasks:
+    - name: Normalize booleans at playbook start
+      import_tasks: ../tasks/reload_booleans.yml
+
+# - name: Fail if using RFSIM (not yet supported)
+#   hosts: localhost
+#   ansible.builtin.fail:
+#     msg: "Error: RFSIM is not yet supported for the multi-UE scenario"
+#   when: rru == "rfsim"
+
+# ============================================================
+# Set global target_server variable (default: iperf_server_node)
+# Can be overridden with: ansible-playbook ... -e "target_server_host=hostname"
+# ============================================================
+- name: Set target server configuration
+  hosts: localhost
+  gather_facts: false
+  run_once: true
+  tasks:
+    - name: Determine target server host
+      set_fact:
+        target_server_host: >-
+          {{
+            target_server_host
+            | default(
+                (groups['iperf_server_node'] | default([]) | first),
+                true
+              )
+            | default(groups['core_node'][0])
+          }}
+        cacheable: yes
+      run_once: true
+    
+    - name: Get target server IP
+      set_fact:
+        target_server_ip: "{{ hostvars[target_server_host]['ip'] }}"
+      run_once: true
+    
+    - name: Display target server configuration
+      debug:
+        msg: |
+          ✓ Target Server Configuration:
+            Host: {{ target_server_host }}
+            IP: {{ target_server_ip }}
+      run_once: true
+
+    # - name: Define nuttcp version number
+    #   set_fact:
+    #     nuttcp_version: "8.1.4"
+    #   run_once: true
+
+    - name: Check if local archive of nuttcp code exists
+      ansible.builtin.stat:
+        path: ../include/nuttcp.tar.gz
+      register: nuttcp_exists
+      
+    - name: Download nuttcp unless local archive already exists
+      ansible.builtin.shell: |
+        wget -r -np -nH --cut-dirs=2 -R '*C=*O=*' -P ../include/nuttcp https://nuttcp.net/nuttcp/nuttcp-8.1.4/
+      when: not nuttcp_exists.stat.exists
+
+    - name: Compress nuttcp code unless archive already exists
+      community.general.archive:
+        path: ../include/nuttcp/
+        dest: ../include/nuttcp.tar.gz
+        format: gz
+      when: not nuttcp_exists.stat.exists
+
+- name: Install nuttcp on target server
+  hosts: "{{ hostvars['localhost'].get('target_server_host', groups['iperf_server_node'][0]) }}"
+  tasks:
+    - name: Install nuttcp on target server
+      include_tasks: ../roles/scenarios/nuttcp/clients/tasks/install.yml
+
+- name: Run nuttcp servers on target server
+  hosts: "{{ hostvars['localhost'].get('target_server_host', groups['iperf_server_node'][0]) }}"
+  become: true
+  vars:
+    target_server_host: "{{ hostvars['localhost'].get('target_server_host', groups['iperf_server_node'][0]) }}"
+    target_server_ip: "{{ hostvars[target_server_host]['ip'] }}"
+    ignore_task_errors: yes
+    nb_ues: "{{ 3 if rru == 'rfsim' else groups['qhats'] | length }}"
+  roles:
+    - role: scenarios/nuttcp/server
+
+# - name: Run RFSIM UE iperf tests (only if rru=rfsim)
+#   hosts: core_node
+#   become: true
+#   gather_facts: false
+#   vars:
+#     target_server_host: "{{ hostvars['localhost'].get('target_server_host', groups['iperf_server_node'][0]) }}"
+#     target_server_ip: "{{ hostvars[target_server_host]['ip'] }}"
+#     nb_ues: "{{ 3 if rru == 'rfsim' else groups['qhats'] | length }}"
+#     ignore_task_errors: yes
+#   tasks:
+#     - name: Run RFSIM role
+#       include_role:
+#         name: scenarios/iperf/rfsim-multi
+#       when: rru == "rfsim"
+
+- name: Optionally run UE to target_server iperf tests from Faraday
+  hosts: faraday
+  vars:
+    target_server_host: "{{ hostvars['localhost'].get('target_server_host', groups['iperf_server_node'][0]) }}"
+    ignore_task_errors: yes
+    nb_ues: "{{ groups['qhats'] | length }}"
+    target_server_ip: "{{ hostvars[target_server_host]['ip'] }}"
+  roles:
+    - role: scenarios/nuttcp/clients
+      when: rru != "rfsim"

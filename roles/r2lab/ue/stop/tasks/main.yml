@@ -1,5 +1,80 @@
 ---
-- name: Stop UE "{{ ue }}" via jump host
+# ue stands for the UE name, defined in the inventory.
+# mode (mbim|qmi) comes from the inventory host vars; defaults to mbim.
+#
+# Phones (hosts in the [phones] group) are stopped by turning airplane mode
+# back ON over adb, run on the tethering Mac (ansible_host=mac<ue>) from the
+# faraday jump host - same delegation pattern as the Quectel stop below.
+
+- name: START_UE_STOP
+  ansible.builtin.meta: noop
+  
+# The caller may pass the UE name as 'ue_item' (like the connect role) or 'ue'.
+# Normalize to 'ue' so the rest of this role is unchanged.
+- name: Normalize UE name (accept ue or ue_item)
+  set_fact:
+    ue: "{{ ue | default(ue_item) }}"
+    
+- name: Resolve UE connection mode
+  set_fact:
+    ue_mode: "{{ hostvars[ue].mode | default('mbim') }}"
+
+- name: Detect whether this UE is a phone
+  set_fact:
+    is_phone: "{{ ue in (groups['phones'] | default([])) }}"
+
+# ---------------------------------------------------------------------------
+# PHONE stop: airplane mode ON via adb on the tethering Mac.
+# faraday is the jump host, so it reaches mac<ue> directly (no ProxyJump here).
+# ---------------------------------------------------------------------------
+- name: "Phone: resolve adb / ssh parameters for {{ ue }}"
+  set_fact:
+    # ansible_user = macOS account that owns adb (e.g. 'tester'), not root.
+    phone_ssh: "{{ hostvars[ue].ansible_user | default('tester') }}@{{ hostvars[ue].ansible_host | default('mac' ~ ue) }}"
+    # Absolute adb path (non-interactive ssh has a minimal PATH on macOS).
+    adb_bin: "{{ hostvars[ue].adb_bin | default('adb') }}"
+    # serial= disambiguates several handsets sharing one Mac.
+    adb_opts: "{{ ('-s ' ~ hostvars[ue].serial) if (hostvars[ue].serial is defined and (hostvars[ue].serial | string | length) > 0) else '' }}"
+  when: is_phone
+
+- name: "Phone: airplane mode ON (disconnect) UE {{ ue }} via jump host"
+  shell: >
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no -i /home/faraday/r2lab-embedded/mac-ssh-keys/macphone
+    {{ phone_ssh }}
+    '{{ adb_bin }} {{ adb_opts }} shell cmd connectivity airplane-mode enable'
+  delegate_to: faraday.inria.fr
+  when: is_phone
+  ignore_errors: true
+
+- name: "Phone: verify airplane mode is ON for {{ ue }}"
+  shell: >
+    ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no -i /home/faraday/r2lab-embedded/mac-ssh-keys/macphone
+    {{ phone_ssh }}
+    '{{ adb_bin }} {{ adb_opts }} shell settings get global airplane_mode_on'
+  register: phone_apm
+  delegate_to: faraday.inria.fr
+  when: is_phone
+  changed_when: false
+  ignore_errors: true
+
+# ---------------------------------------------------------------------------
+# MBIM stop
+# ---------------------------------------------------------------------------
+- name: "MBIM: stop UE {{ ue }} via jump host"
   shell: ssh root@{{ ue }} 'stop.sh'
   delegate_to: faraday.inria.fr
+  when:
+    - not is_phone
+    - ue_mode == 'mbim'
+  ignore_errors: true
+
+# ---------------------------------------------------------------------------
+# QMI stop: detach the modem (AT port /dev/ttyUSB2), independent of quectel-CM.
+# ---------------------------------------------------------------------------
+- name: "QMI: detach UE {{ ue }} via jump host"
+  shell: ssh root@{{ ue }} 'python3 /usr/local/bin/ci_ctl_qtel.py /dev/ttyUSB2 detach'
+  delegate_to: faraday.inria.fr
+  when:
+    - not is_phone
+    - ue_mode == 'qmi'
   ignore_errors: true

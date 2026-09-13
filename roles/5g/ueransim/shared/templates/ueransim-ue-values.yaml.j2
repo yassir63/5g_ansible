@@ -1,0 +1,67 @@
+{#
+  ueransim-ue-values.yaml.j2
+  Generates Helm values override for one UE release (free5gc et OAI)
+  Variables: profile, net, ue_name, ue_data, slice_data
+#}
+{%- macro resolve_sd(sd) -%}
+  {%- if sd == 'EMPTY' -%}0xFFFFFF
+  {%- else -%}0x{{ '%06x' | format(sd | int(base=16)) }}
+  {%- endif -%}
+{%- endmacro -%}
+{%- set sd = resolve_sd(slice_data.sd) -%}
+
+gnb:
+  enabled: false
+
+ue:
+  enabled: true
+  replicaCount: 1
+
+  configmap:
+    name: "ue-configmap-{{ ue_name | lower }}"
+  volume:
+    name: "ue-volume-{{ ue_name | lower }}"
+
+  configuration: |-
+    supi: "imsi-{{ profile.plmn.mcc }}{{ profile.plmn.mnc }}{{ ue_data.imsi_suffix }}"
+    mcc: '{{ profile.plmn.mcc }}'
+    mnc: '{{ profile.plmn.mnc }}'
+    key: '{{ profile.security.full_key }}'
+    op: '{{ profile.security.opc }}'
+    opType: OPC
+    amf: '8000'
+    imei: '356938035643803'
+    imeiSv: '4370816125816151'
+    uacAic:
+      mps: false
+      mcs: false
+    uacAcc:
+      normalClass: 0
+      class11: false
+      class12: false
+      class13: false
+      class14: false
+      class15: false
+    sessions:
+      - type: IPv4
+        apn: {{ slice_data.dnn }}
+        slice:
+          sst: {{ slice_data.sst | int }}
+          sd: {{ sd }}
+    configured-nssai:
+      - sst: {{ slice_data.sst | int }}
+        sd: {{ sd }}
+    default-nssai:
+      - sst: {{ slice_data.sst | int }}
+        sd: {{ sd }}
+    integrity:
+      IA1: true
+      IA2: true
+      IA3: true
+    ciphering:
+      EA1: true
+      EA2: true
+      EA3: true
+    integrityMaxRate:
+      uplink: full
+      downlink: full

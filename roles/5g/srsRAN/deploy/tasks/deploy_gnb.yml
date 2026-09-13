@@ -1,24 +1,47 @@
 ---
+- name: Check if venv Python exists
+  ansible.builtin.stat:
+    path: /opt/ansible-venv/bin/python
+  register: venv_python
+  when: rru in ['benetel1', 'benetel2']
+
+- name: Force Ansible to use venv Python
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/ansible-venv/bin/python
+  when:
+    - rru in ['benetel1', 'benetel2']
+    - venv_python.stat.exists | default(false)
+
+- name: Check if helm exists
+  ansible.builtin.command: helm version --short
+  register: helm_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Helm if missing
+  ansible.builtin.shell: |
+    set -e
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  when: helm_check.rc != 0
+  args:
+    executable: /bin/bash
 
 - name: Load common variables
   include_vars:
     file: "../../common/defaults/main.yml"
 
-- name: Uninstall existing srsran-gnb release if present
-  shell: >
-    helm list -n {{ ran_ns }} -a -q |
-    grep -w "^srsran-gnb$" | wc -l
+- name: Check srsran-gnb release
+  ansible.builtin.command: helm status srsran-gnb -n {{ ran_ns }}
   register: gnb_release_exists
   changed_when: false
   failed_when: false
 
 - name: Uninstall srsran-gnb
-  shell: helm uninstall srsran-gnb -n {{ ran_ns }} --no-hooks
-  when: gnb_release_exists.stdout | trim | int > 0
-  failed_when: false
+  ansible.builtin.command: helm uninstall srsran-gnb -n {{ ran_ns }} --no-hooks
+  when: gnb_release_exists.rc == 0
 
 - name: Deploy srsRAN gNB (only when not rfsim)
-  when: rru != 'rfsim'
+  when: rru in ['n300', 'n320']
   block:
 
     - name: Set initial retry facts
@@ -44,8 +67,136 @@
         msg: "srsRAN gNB is running successfully!"
       when: gnb_startup_success
 
+- name: Configure SR-IOV for Benetel with DPDK
+  when: rru in ['benetel1', 'benetel2']
+  block:
+    - name: Load ran_node vars
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/ran_node.yml"
+        name: ran_vars
+
+    - name: "Verify sriov_nnp_create has already created policies"
+      kubernetes.core.k8s_info:
+        api_version: sriovnetwork.openshift.io/v1
+        kind: SriovNetworkNodePolicy
+        name: "{{ ran_vars.sriovResourceNameCplane }}"
+        namespace: sriov-network-operator
+      register: cplane_policy
+      failed_when: cplane_policy.resources | length == 0
+
+    - name: "Detect FIRST VF (VF 0) from ruvfioc policy"
+      shell: |
+        lspci | grep "Virtual Function" | grep "3a:09" | head -1 | awk '{print $1}'
+      register: vf_detect
+      changed_when: false
+      failed_when: vf_detect.stdout == ""
+
+    - name: "Update Helm: sriovResourceName to use C-plane resource"
+      ansible.builtin.lineinfile:
+        path: "{{ values_file }}"
+        regexp: '^\s*sriovResourceName:'
+        line: '  sriovResourceName: "{{ ran_vars.sriovResourceNameCplane }}"'
+
+    - name: "Update Helm: pciAddress with detected VF"
+      ansible.builtin.lineinfile:
+        path: "{{ values_file }}"
+        regexp: '^\s*pciAddress:'
+        line: '  pciAddress: "0000:{{ vf_detect.stdout }}"'
+
+    - name: "Update srsRAN config: eal_args with detected VF"
+      ansible.builtin.lineinfile:
+        path: "{{ values_file }}"
+        regexp: 'eal_args:.*-a 0000:3a:09\.[0-9]'
+        line: '    eal_args: "-l 6,7,8,9,10,11 --main-lcore 6 --force-max-simd-bitwidth 64 -a 0000:{{ vf_detect.stdout }}"'
+
+    - name: "Update srsRAN config: network_interface with detected VF"
+      ansible.builtin.lineinfile:
+        path: "{{ values_file }}"
+        regexp: '^\s*-\s*network_interface:'
+        line: '      - network_interface: "0000:{{ vf_detect.stdout }}"'
+
+- name: Set CPU scaling governor to performance on ran node
+  when: rru in ['benetel1', 'benetel2']
+  block:
+
+    - name: Set performance governor via pod
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: set-governor
+            namespace: "{{ ran_ns }}"
+          spec:
+            nodeName: "{{ ran_node_name }}"
+            restartPolicy: Never
+            hostPID: true
+            containers:
+              - name: set-governor
+                image: busybox
+                securityContext:
+                  privileged: true
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    echo "Before:"
+                    cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
+
+                    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+                      echo performance > $cpu 2>/dev/null || true
+                    done
+
+                    echo "After:"
+                    cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
+
+                    echo "Done"
+                volumeMounts:
+                  - mountPath: /sys
+                    name: sysfs
+            volumes:
+              - name: sysfs
+                hostPath:
+                  path: /sys
+                  type: Directory
+
+    - name: Wait for governor pod to complete
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: set-governor
+        namespace: "{{ ran_ns }}"
+      register: governor_pod
+      until: governor_pod.resources[0].status.phase == "Succeeded"
+      retries: 20
+      delay: 3
+
+    - name: Read governor from pod logs
+      shell: kubectl logs -n {{ ran_ns }} set-governor
+      register: governor_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Extract governor value
+      set_fact:
+        governor_value: "{{ governor_logs.stdout | regex_search('After:\\n(.*)', '\\1') | default('unknown') }}"
+
+    - name: Show governor status
+      ansible.builtin.debug:
+        msg: "CPU governor on {{ ran_node_name }}: {{ governor_value }}"
+
+    - name: Cleanup governor pod
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        name: set-governor
+        namespace: "{{ ran_ns }}"
+      failed_when: false
+
 - name: Deploy srsRAN gNB using Helm
-  when: rru == 'rfsim'
+  when: not rru in ['n300', 'n320']
   kubernetes.core.helm:
     name: srsran-gnb
     chart_ref: "{{ [repo_dest_abs, 'charts', 'srsran-gnb'] | path_join }}"
@@ -53,6 +204,14 @@
     values_files:
       - "{{ values_file }}"
     state: present
-    wait: False # True # False for debug
+    wait: False
     atomic: True
     timeout: 180s
+
+- name: Reset ansible_python_interpreter to system python3
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /usr/bin/python3
+  when:
+    - rru in ['benetel1', 'benetel2']
+    - venv_python.stat.exists | default(false)
+

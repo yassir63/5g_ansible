@@ -1,15 +1,20 @@
 ---
+
 - name: Set defaults
   set_fact:
     duration: "{{ iperf_duration | default(30) }}"
     sleep: "{{ iperf_sleep | default(5) }}"
     # Use target_server_ip if provided, else core_node IP
     target_server: "{{ target_server_ip | default(hostvars[groups['core_node'][0]].ip) }}"
+    target_server_name: "{{ target_server_host | default(groups['core_node'][0]) }}"
     core_ns: "{{ core }}"
     valid_ues: []
+    rfsim_iperf_direction_effective: "{{ rfsim_iperf_direction | default('both') }}"
+    rfsim_iperf_fail_on_error_effective: "{{ rfsim_iperf_fail_on_error | default(false) | bool }}"
+    srsran: "{{ ran == 'srsRAN' }}"
     free5gc_srsran: "{{ core == 'free5gc' and ran == 'srsRAN' }}"
     open5gs_srsran: "{{ core == 'open5gs' and ran == 'srsRAN' }}"
-    single_pod_srsran: "{{ (core == 'free5gc' or core == 'open5gs') and ran == 'srsRAN' }}"
+    oai_srsran: "{{ core == 'oai' and ran == 'srsRAN' }}"
     ue_name: >-
       {{ 'srsran-ue-srsran-ue' if ran == 'srsRAN'
          else 'oai-nr-ue' if ran == 'oai'
@@ -18,6 +23,27 @@
       {{ 'tun_srsue1' if ran == 'srsRAN'
          else 'oaitun_ue1' if ran == 'oai'
          else 'uesimtun0' }}
+
+- name: Validate RFSIM iperf direction
+  ansible.builtin.assert:
+    that:
+      - rfsim_iperf_direction_effective in ['both', 'ul', 'dl']
+    fail_msg: "Invalid rfsim_iperf_direction={{ rfsim_iperf_direction_effective }}. Use both, ul, or dl."
+
+- name: Detect N3 interface
+  shell: "ip link show n3br >/dev/null 2>&1 && echo n3br || echo cbr0"
+  register: n3_dev_detect
+  changed_when: false
+
+- name: Set N3 device
+  set_fact:
+    n3_dev: "{{ n3_dev_detect.stdout | trim }}"
+
+- name: Load active 5G profile
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+    name: fiveg
+  when: srsran | bool
 
 - name: Display RFSIM iperf configuration
   debug:
@@ -28,6 +54,8 @@
         RAN: {{ ran }}
         Duration: {{ duration }}s
         Sleep: {{ sleep }}s
+        Direction: {{ rfsim_iperf_direction_effective }}
+        Fail on iperf error: {{ rfsim_iperf_fail_on_error_effective }}
 
 # ============================================================
 # Get UE pods
@@ -42,6 +70,13 @@
 - name: Filter UE pods by name
   set_fact:
     ue_resources: "{{ all_pods.resources | selectattr('metadata.name', 'search', '^' + ue_name) | list }}"
+
+- name: Ensure at least one UE pod exists
+  assert:
+    that:
+      - ue_resources | length > 0
+    fail_msg: "No UE pods found matching {{ ue_name }} in namespace {{ core_ns }}"
+    success_msg: "Found {{ ue_resources | length }} UE pod(s)"
 
 # ============================================================
 # Install iperf3 (on all UE pods)
@@ -64,64 +99,45 @@
   loop_control:
     label: "Installing iperf3 on {{ item.metadata.name }}"
   register: install_check
-  failed_when: install_check.rc != 0
+  failed_when: install_check.rc is defined and install_check.rc != 0
+
 
 # ============================================================
-# Build valid_ues - free5gc+srsRAN: single pod, numbered tuns
+# Build valid_ues - srsRAN: single pod for all UEs
 # ============================================================
 
-- name: Get tun IPs from single UE pod (free5gc+srsRAN)
+- name: Get tun IPs from single UE pod (srsRAN)
   shell: |
-    kubectl exec -n {{ core_ns }} {{ ue_resources[0].metadata.name }} -- bash -c "
+    kubectl exec -n {{ core_ns }} {{ (ue_resources | first).metadata.name }} -- bash -c "
     for i in \$(seq 1 {{ nb_ues }}); do
       ip -4 addr show tun_srsue\${i} 2>/dev/null \
         | awk -v tun=\"tun_srsue\${i}\" '/inet / {print tun, \$2}'
     done"
-  register: free5gc_tun_raw
+  register: tun_raw
   changed_when: false
-  when: free5gc_srsran | bool
+  when: srsran | bool
 
-- name: Build valid_ues (free5gc+srsRAN)
+- name: Build valid_ues (srsRAN)
   set_fact:
-    valid_ues: "{{ valid_ues + [{'pod': ue_resources[0].metadata.name,
-                                 'ip': item.split()[1] | regex_replace('/.*', ''),
-                                 'tun': item.split()[0]}] }}"
-  loop: "{{ free5gc_tun_raw.stdout_lines | default([]) }}"
-  loop_control:
-    label: "{{ item }}"
+    valid_ues: "{{ valid_ues + [{
+      'pod': (ue_resources | first).metadata.name,
+      'tun': tun,
+      'ip': ip,
+      'slice': slice
+    }] }}"
+  vars:
+    parts: "{{ item.split() }}"
+    tun: "{{ parts[0] }}"
+    ip: "{{ parts[1] | regex_replace('/.*', '') }}"
+    idx: "{{ tun | regex_replace('tun_srsue', '') | int }}"
+    slice: "{{ fiveg.ues['uesim%02d' | format(idx | int)].slice }}"
+  loop: "{{ tun_raw.stdout_lines | default([]) }}"
   when:
-    - free5gc_srsran | bool
+    - srsran | bool
     - item | trim != ''
 
 # ============================================================
-# Build valid_ues - open5gs+srsRAN: single pod, numbered tuns
-# ============================================================
-
-- name: Get tun IPs from single UE pod (open5gs+srsRAN)
-  shell: |
-    kubectl exec -n {{ core_ns }} {{ ue_resources[0].metadata.name }} -- bash -c "
-    for i in \$(seq 1 {{ nb_ues }}); do
-      ip -4 addr show tun_srsue\${i} 2>/dev/null \
-        | awk -v tun=\"tun_srsue\${i}\" '/inet / {print tun, \$2}'
-    done"
-  register: open5gs_tun_raw
-  changed_when: false
-  when: open5gs_srsran | bool
-
-- name: Build valid_ues (open5gs+srsRAN)
-  set_fact:
-    valid_ues: "{{ valid_ues + [{'pod': ue_resources[0].metadata.name,
-                                 'ip': item.split()[1] | regex_replace('/.*', ''),
-                                 'tun': item.split()[0]}] }}"
-  loop: "{{ open5gs_tun_raw.stdout_lines | default([]) }}"
-  loop_control:
-    label: "{{ item }}"
-  when:
-    - open5gs_srsran | bool
-    - item | trim != ''
-
-# ============================================================
-# Build valid_ues - others: one pod per UE
+# Build valid_ues - OAI/UERANSIM RAN: one pod per UE
 # ============================================================
 
 - name: Get tun IP per pod (others)
@@ -133,25 +149,31 @@
     label: "Getting IP for {{ item.metadata.name }}"
   register: ue_ip_results
   changed_when: false
-  when: not (single_pod_srsran | bool)
+  when: not (srsran | bool)
 
 - name: Build valid_ues (others)
   set_fact:
-    valid_ues: "{{ valid_ues + [{'pod': item.item.metadata.name,
-                                 'ip': item.stdout | trim,
-                                 'tun': tun_name}] }}"
+    valid_ues: "{{ valid_ues + [{
+      'pod': item.item.metadata.name,
+      'ip': item.stdout | trim,
+      'tun': tun_name
+    }] }}"
   loop: "{{ ue_ip_results.results | default([]) }}"
   loop_control:
     index_var: loop_idx
     label: "{{ item.item.metadata.name if item.item is defined else 'skipped' }}"
   when:
-    - not (single_pod_srsran | bool)
+    - not (srsran | bool)
     - item.skipped is not defined or not item.skipped
     - item.stdout is defined
-    - item.stdout | trim is search('^[0-9.]+$')
+    - item.stdout | trim is match('^[0-9.]+$')
 
+- name: Debug valid UEs
+  debug:
+    var: valid_ues
+    
 # ============================================================
-# Configure MTU and routes
+# Configure MTU 
 # ============================================================
 
 - name: Configure UE MTU to 1350
@@ -163,162 +185,163 @@
     label: "Setting MTU 1350 on {{ item.pod }} ({{ item.tun }})"
   failed_when: false
 
-# ============================================================
-# Routing setup - others (not single_pod_srsran)
-# ============================================================
-
-- name: Add ip route to target_server (others)
-  shell: |
-    kubectl exec -n {{ core_ns }} {{ item.pod }} -- \
-    ip route add {{ target_server }} via {{ item.ip.split('.')[:2] | join('.') }}.1.1 dev {{ item.tun }} 2>/dev/null || true
-  loop: "{{ valid_ues }}"
-  loop_control:
-    label: "Setting route on {{ item.pod }} via {{ item.tun }}"
-  failed_when: false
-  when: not (single_pod_srsran | bool)
 
 # ============================================================
-# Routing setup - free5gc+srsRAN: PSA-UPF routes on core node
-# + ip rule per UE source IP in UE pod
+# OAI Routing
 # ============================================================
 
-- name: Get PSA-UPF pods (free5gc+srsRAN)
-  kubernetes.core.k8s_info:
-    kind: Pod
-    namespace: "{{ core_ns }}"
-    label_selectors:
-      - "nf =~ psaupf"
-  register: psaupf_pods
-  when: free5gc_srsran | bool
-
-- name: Get GTP routes from each PSA-UPF (free5gc+srsRAN)
-  shell: |
-    kubectl exec -n {{ core_ns }} {{ item.metadata.name }} -- \
-    ip route | grep upfgtp | awk '{print $1}'
-  loop: "{{ psaupf_pods.resources | default([]) }}"
-  loop_control:
-    label: "{{ item.metadata.name }}"
-  register: psaupf_routes
-  changed_when: false
-  when: free5gc_srsran | bool
-
-- name: Add routes on core node via each PSA-UPF (free5gc+srsRAN)
-  shell: |
-    ip route add {{ item.1 }} via {{ item.0.item.status.podIP }} dev cni0 2>/dev/null || true
-  loop: "{{ psaupf_routes.results | default([]) | subelements('stdout_lines') }}"
-  loop_control:
-    label: "{{ item.1 }} via {{ item.0.item.status.podIP }}"
+- name: Add UE/UPF routing on iperf target node
   become: true
-  failed_when: false
-  when: free5gc_srsran | bool
-
-- name: Remove simple host route to target_server in UE pod (free5gc+srsRAN)
   shell: |
-    kubectl exec -n {{ core_ns }} {{ ue_resources[0].metadata.name }} -- \
-    ip route del {{ target_server }} 2>/dev/null || true
-  failed_when: false
-  when: free5gc_srsran | bool
+    ip route replace 12.1.0.0/16 via 192.168.3.202
+  when: oai_srsran | bool
+  delegate_to: "{{ target_server_name }}"
 
-- name: Add ip rule per UE source IP in UE pod (free5gc+srsRAN)
-  shell: |
-    kubectl exec -n {{ core_ns }} {{ item.pod }} -- bash -c "
-    ip rule add from {{ item.ip }} table {{ 100 + idx + 1 }} 2>/dev/null || true
-    ip route add {{ target_server }} dev {{ item.tun }} table {{ 100 + idx + 1 }} 2>/dev/null || true"
-  loop: "{{ valid_ues }}"
-  loop_control:
-    index_var: idx
-    label: "ip rule from {{ item.ip }} -> {{ item.tun }} (table {{ 100 + idx + 1 }})"
-  failed_when: false
-  when: free5gc_srsran | bool
+- name: Add route to iperf target node on srsue pod
+  shell: >
+    kubectl exec -n {{ core_ns }} {{ (ue_resources | first).metadata.name }} --
+    ip route replace {{ target_server }} via 12.1.1.1
+  when: oai_srsran | bool
+
+# ============================================================
+# OPEN5GS ROUTING
+# ============================================================
+
+- name: UPF + slice routing configuration (open5gs + srsRAN)
+  block:
+
+    - name: Define UPF mapping (open5gs+srsRAN)
+      set_fact:
+        upf_map:
+          upf1:
+            ip: "10.10.3.1"
+          upf2:
+            ip: "10.10.3.2"
+
+    - name: Build slice-to-UPF mapping
+      set_fact:
+        slice_upf_map:
+          slice1: upf1
+          slice2: upf2
+
+    - name: Add routes to UPFs via N3 device
+      become: true
+      shell: |
+        ip route add {{ item.ip }} dev {{ n3_dev }} 2>/dev/null || true
+      loop:
+        - "{{ upf_map.upf1 }}"
+        - "{{ upf_map.upf2 }}"
+      delegate_to: "{{ target_server_name }}"
+
+    - name: Add UE routes per slice via correct UPF
+      become: true
+      shell: |
+        ip route add {{ item.ip }} via {{ upf_map[slice_upf_map[item.slice]].ip }} dev {{ n3_dev }} 2>/dev/null || true
+      loop: "{{ valid_ues }}"
+      delegate_to: "{{ target_server_name }}"
+
+    - name: Add routes for UE subnet per slice via correct UPF
+      become: true
+      shell: |
+        ip route add {{ item.ip_prefix }}.0/24 via {{ upf_map[slice_upf_map[item.name]].ip }} dev {{ n3_dev }} 2>/dev/null || true
+      loop: "{{ fiveg.slices }}"
+      delegate_to: "{{ target_server_name }}"
+
+  when: open5gs_srsran | bool
 
 # ============================================================
 # iperf uplink
 # ============================================================
 
-- name: Show iperf uplink command
-  debug:
-    msg: >
-      kubectl exec -n {{ core_ns }} {{ item.pod }} --
-      iperf3 -B {{ item.ip }}
-      -c {{ target_server }}
-      -p {{ 5201 + idx }}
-      -t {{ duration | int }}
+- name: Run iperf uplink with temporary UE route
+  shell: |
+    set -e
+    echo "Running route add"
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- ip route replace {{ target_server }} dev {{ item.tun }} 2>/dev/null || true
+
+    echo "Running iperf uplink pod={{ item.pod }} ip={{ item.ip }} port={{ 5201 + idx }}"
+    set +e
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ 5201 + idx }} -t {{ duration }}
+    rc=$?
+    set -e
+
+    echo "Cleaning route"
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- ip route del {{ target_server }} dev {{ item.tun }} 2>/dev/null || true
+    exit "$rc"
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
-    label: "Uplink CMD: {{ item.pod }} ({{ item.tun }})"
+  register: iperf_uplink
+  ignore_errors: "{{ not (rfsim_iperf_fail_on_error_effective | bool) }}"
+  when:
+    - srsran | bool
+    - rfsim_iperf_direction_effective in ['both', 'ul']
 
 - name: Run iperf uplink
-  shell: >
-    kubectl exec -n {{ core_ns }} {{ item.pod }} --
-    iperf3 -B {{ item.ip }}
-    -c {{ target_server }}
-    -p {{ 5201 + idx }}
-    -t {{ duration | int }}
+  shell: |
+    set -e
+    echo "Running iperf uplink pod={{ item.pod }} ip={{ item.ip }} port={{ 5201 + idx }}"
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ 5201 + idx }} -t {{ duration }}
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
-    label: "Uplink: {{ item.pod }} {{ item.tun }} (Port: {{ 5201 + idx }})"
-  register: iperf_results
-  failed_when: false
-  ignore_errors: yes
+  register: iperf_uplink
+  ignore_errors: "{{ not (rfsim_iperf_fail_on_error_effective | bool) }}"
+  when:
+    - not (srsran | bool)
+    - rfsim_iperf_direction_effective in ['both', 'ul']
 
-# wait 1s to prevent Bad file descriptor error
+- name: SHOW uplink commands
+  debug:
+    msg: "UPLINK {{ item.item.pod }} {{ item.item.ip }} port {{ 5201 + item.idx }} skipped={{ item.skipped | default(false) }}"
+  loop: "{{ iperf_uplink.results | default([]) }}"
+
 - pause:
     seconds: 1
-
-- name: Kill iperf3 servers before downlink (srsRAN only)
-  shell: pkill iperf3 || true
-  delegate_to: "{{ groups['core_node'][0] }}"
-  become: true
-  when: ran == 'srsRAN'
-
-- name: Get timestamp
-  command: date +"%Y%m%d_%H%M%S"
-  register: iperf_R_timestamp
-  changed_when: false
-
-- name: Restart iperf3 servers between uplink and downlink (srsRAN only)
-  shell: >
-    /usr/bin/iperf3 -s -B {{ target_server }} -p {{ 5201 + item }} -D
-    --logfile /root/IPERF/iperf_R_{{ 5201 + item }}_{{ iperf_R_timestamp.stdout }}.log
-  loop: "{{ range(0, valid_ues | length) | list }}"
-  loop_control:
-    label: "Starting iperf3 server on port {{ 5201 + item }}"
-  delegate_to: "{{ groups['core_node'][0] }}"
-  become: true
-  when: ran == 'srsRAN'
-
-- name: Wait for sockets to clear
-  pause:
-    seconds: "{{ sleep }}"
 
 # ============================================================
 # iperf downlink
 # ============================================================
 
-- name: Show iperf downlink command
-  debug:
-    msg: >
-      kubectl exec -n {{ core_ns }} {{ item.pod }} --
-      iperf3 -B {{ item.ip }}
-      -c {{ target_server }}
-      -p {{ 5201 + idx }}
-      -t {{ duration | int }} -R
+- name: Run iperf downlink with temporary UE route
+  shell: |
+    set -e
+    echo "Running route add"
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- ip route replace {{ target_server }} dev {{ item.tun }} 2>/dev/null || true
+
+    echo "Running iperf downlink pod={{ item.pod }} ip={{ item.ip }} port={{ 5201 + idx }}"
+    set +e
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ 5201 + idx }} -t {{ duration }} -R
+    rc=$?
+    set -e
+
+    echo "Cleaning route"
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- ip route del {{ target_server }} dev {{ item.tun }} 2>/dev/null || true
+    exit "$rc"
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
-    label: "Downlink CMD: {{ item.pod }} ({{ item.tun }})"
+  register: iperf_downlink
+  ignore_errors: "{{ not (rfsim_iperf_fail_on_error_effective | bool) }}"
+  when:
+    - srsran | bool
+    - rfsim_iperf_direction_effective in ['both', 'dl']
 
 - name: Run iperf downlink
-  shell: >
-    kubectl exec -n {{ core_ns }} {{ item.pod }} --
-    iperf3 -B {{ item.ip }}
-    -c {{ target_server }}
-    -p {{ 5201 + idx }}
-    -t {{ duration | int }} -R
+  shell: |
+    set -e
+    echo "Running iperf downlink pod={{ item.pod }} ip={{ item.ip }} port={{ 5201 + idx }}"
+    kubectl exec -n {{ core_ns }} {{ item.pod }} -- iperf3 -B {{ item.ip }} -c {{ target_server }} -p {{ 5201 + idx }} -t {{ duration }} -R
   loop: "{{ valid_ues }}"
   loop_control:
     index_var: idx
-    label: "Downlink: {{ item.pod }} {{ item.tun }} (Port: {{ 5201 + idx }})"
-  ignore_errors: yes
+  register: iperf_downlink
+  ignore_errors: "{{ not (rfsim_iperf_fail_on_error_effective | bool) }}"
+  when:
+    - not (srsran | bool)
+    - rfsim_iperf_direction_effective in ['both', 'dl']
+
+- name: SHOW downlink commands
+  debug:
+    msg: "DOWNLINK {{ item.item.pod }} {{ item.item.ip }} port {{ 5201 + item.idx }} skipped={{ item.skipped | default(false) }}"
+  loop: "{{ iperf_downlink.results | default([]) }}"

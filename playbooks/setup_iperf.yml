@@ -6,7 +6,7 @@
         name: r2lab/ue/connect
       vars:
         ue_item: "{{ item }}"
-      loop: "{{ groups['qhats'] }}"
+      loop: "{{ groups['qhats'] + groups['qfits'] }}"
       loop_control:
         label: "{{ item }}"
       ignore_errors: true

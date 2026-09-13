@@ -29,6 +29,14 @@
 - name: Build UHD + GNU Radio only if target versions not installed
   block:
 
+    - name: Remove conflicting system UHD libraries
+      shell: |
+        apt-get remove --purge -y libuhd4.1.0 libuhd-dev uhd-host 2>/dev/null || true
+        find /usr/lib /lib -name "libuhd*.so*" -delete 2>/dev/null || true
+        ldconfig
+      args:
+        executable: /bin/bash
+
     # --- Required packages for minimal GRC + Qt build ---
     - name: Ensure required packages are installed (Ubuntu/Debian)
       apt:
@@ -68,7 +76,7 @@
           - libusb-1.0-0-dev
 
           # SDR
-          - libuhd-dev
+          #- libuhd-dev
 
           # Critical runtime dependencies
           - libvolk2-dev
@@ -147,8 +155,15 @@
         set -e
         mkdir -p {{ gnuradio_src_dir }}/build
         cd {{ gnuradio_src_dir }}/build
+        ldconfig
         cmake ../ \
           -DCMAKE_INSTALL_PREFIX={{ install_prefix }} \
+          -DCMAKE_PREFIX_PATH={{ install_prefix }} \
+          -DCMAKE_LIBRARY_PATH={{ install_prefix }}/lib \
+          -DCMAKE_INCLUDE_PATH={{ install_prefix }}/include \
+          -DUHD_DIR={{ install_prefix }}/lib/cmake/uhd \
+          -DUHD_LIBRARIES={{ install_prefix }}/lib/libuhd.so \
+          -DUHD_INCLUDE_DIRS={{ install_prefix }}/include \
           -DENABLE_DEFAULT=OFF \
           -DENABLE_GNURADIO_RUNTIME=ON \
           -DENABLE_PYTHON=ON \

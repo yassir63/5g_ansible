@@ -1,0 +1,69 @@
+---
+- name: Show scenario header
+  ansible.builtin.debug:
+    msg:
+      - "Starting scenario {{ paper_scenario_index | int + 1 }}: {{ paper_scenario.name }}"
+      - "{{ paper_scenario.title | default('') }}"
+
+- name: Record scenario start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "scenario"
+      phase: "start"
+      scenario: "{{ paper_scenario.name }}"
+      title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+      step_count: "{{ paper_scenario.steps | length }}"
+      ues: "{{ paper_scenario.steps | map(attribute='ues') | flatten | unique | list }}"
+
+- name: Run scenario steps
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/run_tcp_paper_step.yml"
+  loop: "{{ paper_scenario.steps }}"
+  loop_control:
+    loop_var: paper_step
+    index_var: paper_step_index
+    label: "{{ paper_step.name }}"
+
+- name: Record scenario end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "scenario"
+      phase: "end"
+      scenario: "{{ paper_scenario.name }}"
+      title: "{{ paper_scenario.title | default('') }}"
+      scenario_index: "{{ paper_scenario_index | int }}"
+
+- name: Record inter-scenario pause start
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "pause"
+      phase: "start"
+      name: "after-{{ paper_scenario.name }}"
+      scenario: "{{ paper_scenario.name }}"
+      seconds: "{{ paper_pause_between_scenarios | int }}"
+  when:
+    - paper_scenario.pause_after | default(true) | bool
+    - (paper_scenario_index | int + 1) < (paper_scenarios_to_run | length)
+
+- name: Wait between scenarios
+  ansible.builtin.pause:
+    seconds: "{{ paper_pause_between_scenarios }}"
+  when:
+    - paper_scenario.pause_after | default(true) | bool
+    - (paper_scenario_index | int + 1) < (paper_scenarios_to_run | length)
+
+- name: Record inter-scenario pause end
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/record_paper_timeline_event.yml"
+  vars:
+    paper_timeline_event:
+      level: "pause"
+      phase: "end"
+      name: "after-{{ paper_scenario.name }}"
+      scenario: "{{ paper_scenario.name }}"
+      seconds: "{{ paper_pause_between_scenarios | int }}"
+  when:
+    - paper_scenario.pause_after | default(true) | bool
+    - (paper_scenario_index | int + 1) < (paper_scenarios_to_run | length)
