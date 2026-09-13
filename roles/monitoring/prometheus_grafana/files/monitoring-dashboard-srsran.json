@@ -650,8 +650,8 @@
             "uid": "monitoring-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (direction, snssai) (slice_throughput{snssai!=\"unknown\",snssai!=\"\",snssai=~\"${snssai:regex}\"})",
-          "legendFormat": "{{direction}}",
+          "expr": "sum by (direction, snssai, seid) (slice_throughput{snssai!=\"unknown\",snssai!=\"\",snssai=~\"${snssai:regex}\"})",
+          "legendFormat": "{{direction}} seid={{seid}}",
           "range": true,
           "refId": "A"
         }
@@ -2163,6 +2163,6 @@
   "timezone": "",
   "title": "Monitoring Dashboard",
   "uid": "f1471646-a245-4f23-a3e1-452baa6558c8",
-  "version": 5,
+  "version": 6,
   "weekStart": ""
 }
