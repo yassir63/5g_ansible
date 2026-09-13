@@ -1926,17 +1926,9 @@ deploy() {
     if [[ "${monitoring_enabled:-false}" == true ]] && ! extra_var_defined "monitoring_loki_enabled"; then
       ANSIBLE_EXTRA_ARGS+=(-e "monitoring_loki_enabled=${monitoring_loki_enabled:-true}")
     fi
-    if [[ "$REDCAP" == "true" ]]; then
-	EXTRA_VARS_ARRAY+=("redcap=true")
+    if [[ "$REDCAP" == "true" ]] && ! extra_var_defined "redcap"; then
+      ANSIBLE_EXTRA_ARGS+=(-e "redcap=true")
     fi
-
-    for ev in "${EXTRA_VARS_ARRAY[@]:-}"; do
-      # Clean argument if it starts by -- so that ansible handles it as a variable
-      clean_ev=$(echo "$ev" | sed 's/^--//')
-      vars="$vars $clean_ev"
-    done
-
-    ANSIBLE_EXTRA_ARGS+=(-e "$vars")
 
     echo "Launching deployment..."
 
