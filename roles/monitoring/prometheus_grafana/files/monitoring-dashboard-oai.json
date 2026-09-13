@@ -489,7 +489,7 @@
             "uid": "monitoring-prometheus"
           },
           "editorMode": "code",
-          "expr": "gtp_teid_latency_ns{imsi=\"$imsi\",probe_role=~\"gnb|upf\"} / 1000000",
+          "expr": "gtp_teid_latency_ns{imsi=~\"${imsi:regex}\",probe_role=~\"gnb|upf\"} / 1000000",
           "legendFormat": "{{mode}},{{probe_role}}",
           "range": true,
           "refId": "A"
@@ -587,7 +587,7 @@
             "uid": "monitoring-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, imsi, ue_ip, slice, probe_role) (rate(gtp_teid_latency_observed_ns_bucket{mode=\"ran\",imsi=~\"$imsi\"}[30s]))) / 1000000",
+          "expr": "histogram_quantile(0.95, sum by (le, imsi, ue_ip, slice, probe_role) (rate(gtp_teid_latency_observed_ns_bucket{mode=\"ran\",imsi=~\"${imsi:regex}\"}[30s]))) / 1000000",
           "legendFormat": "{{imsi}} | {{ue_ip}} | {{slice}} | {{probe_role}}",
           "range": true,
           "refId": "A"
@@ -2054,11 +2054,10 @@
   "templating": {
     "list": [
       {
-        "allValue": ".*",
         "current": {
           "selected": true,
           "text": "All",
-          "value": ".*"
+          "value": "$__all"
         },
         "datasource": {
           "type": "prometheus",
@@ -2102,6 +2101,6 @@
   "timezone": "",
   "title": "Monitoring Dashboard For Demo",
   "uid": "afhb8p8jld91cb",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
