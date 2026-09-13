@@ -489,7 +489,7 @@
             "uid": "monitoring-prometheus"
           },
           "editorMode": "code",
-          "expr": "gtp_teid_latency_ns{imsi=~\"${imsi:regex}\",probe_role=~\"gnb|upf\"} / 1000000",
+          "expr": "gtp_teid_latency_ns{imsi!=\"unknown\",imsi!=\"\",imsi=~\"${imsi:regex}\",probe_role=~\"gnb|upf\"} / 1000000",
           "legendFormat": "{{mode}},{{probe_role}}",
           "range": true,
           "refId": "A"
@@ -587,7 +587,7 @@
             "uid": "monitoring-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, imsi, ue_ip, slice, probe_role) (rate(gtp_teid_latency_observed_ns_bucket{mode=\"ran\",imsi=~\"${imsi:regex}\"}[30s]))) / 1000000",
+          "expr": "histogram_quantile(0.95, sum by (le, imsi, ue_ip, slice, probe_role) (rate(gtp_teid_latency_observed_ns_bucket{mode=\"ran\",imsi!=\"unknown\",imsi!=\"\",slice!=\"unknown\",slice!=\"\",imsi=~\"${imsi:regex}\"}[30s]))) / 1000000",
           "legendFormat": "{{imsi}} | {{ue_ip}} | {{slice}} | {{probe_role}}",
           "range": true,
           "refId": "A"
@@ -702,7 +702,7 @@
             "uid": "monitoring-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (direction, snssai) (slice_throughput{snssai=~\"${snssai:regex}\"})",
+          "expr": "sum by (direction, snssai) (slice_throughput{snssai!=\"unknown\",snssai!=\"\",snssai=~\"${snssai:regex}\"})",
           "legendFormat": "{{direction}}",
           "range": true,
           "refId": "A"
@@ -1982,16 +1982,16 @@
           "type": "prometheus",
           "uid": "monitoring-prometheus"
         },
-        "definition": "label_values(gtp_teid_latency_ns, imsi)",
+        "definition": "label_values(gtp_teid_latency_ns{imsi!=\"unknown\",imsi!=\"\"}, imsi)",
         "hide": 0,
         "includeAll": true,
         "label": "IMSI",
         "multi": true,
         "name": "imsi",
         "options": [],
-        "query": "label_values(gtp_teid_latency_ns, imsi)",
+        "query": "label_values(gtp_teid_latency_ns{imsi!=\"unknown\",imsi!=\"\"}, imsi)",
         "refresh": 1,
-        "regex": "",
+        "regex": "/^(?!unknown$).+/",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
@@ -2006,16 +2006,16 @@
           "type": "prometheus",
           "uid": "monitoring-prometheus"
         },
-        "definition": "label_values(slice_throughput, snssai)",
+        "definition": "label_values(slice_throughput{snssai!=\"unknown\",snssai!=\"\"}, snssai)",
         "hide": 0,
         "includeAll": true,
         "label": "S-NSSAI",
         "multi": true,
         "name": "snssai",
         "options": [],
-        "query": "label_values(slice_throughput, snssai)",
+        "query": "label_values(slice_throughput{snssai!=\"unknown\",snssai!=\"\"}, snssai)",
         "refresh": 1,
-        "regex": "",
+        "regex": "/^(?!unknown$).+/",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
@@ -2044,6 +2044,6 @@
   "timezone": "",
   "title": "Monitoring Dashboard For Demo",
   "uid": "afhb8p8jld91cb",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
