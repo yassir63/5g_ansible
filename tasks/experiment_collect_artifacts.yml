@@ -26,7 +26,7 @@
   ansible.builtin.command:
     argv:
       - python3
-      - "{{ playbook_dir }}/../scripts/validation/prometheus_range_export.py"
+      - "{{ playbook_dir }}/../scripts/artifacts/prometheus_range_export.py"
       - "--prometheus-url"
       - "{{ experiment_prometheus_url }}"
       - "--start"
@@ -57,7 +57,7 @@
   ansible.builtin.command:
     argv:
       - python3
-      - "{{ playbook_dir }}/../scripts/validation/paper_timeline_finalize.py"
+      - "{{ playbook_dir }}/../scripts/artifacts/timeline_finalize.py"
       - "--timeline-jsonl"
       - "{{ experiment_results_dir }}/timeline_events.jsonl"
       - "--out-dir"
@@ -74,7 +74,7 @@
   ansible.builtin.command:
     argv: "{{ [
       'python3',
-      playbook_dir + '/../scripts/validation/split_prometheus_by_timeline.py',
+      playbook_dir + '/../scripts/artifacts/split_prometheus_by_timeline.py',
       '--full-csv',
       experiment_results_dir + '/prometheus_timeseries.csv',
       '--timeline-json',

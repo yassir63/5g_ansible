@@ -50,7 +50,7 @@ The output is written to:
 results/experiment-<run_id>/
 ```
 
-To test the mechanism without changing your paper scenarios, run the included
+To test the mechanism without changing existing scenarios, run the included
 smoke-test scenario:
 
 ```bash
@@ -457,16 +457,15 @@ pcap:
 If a configured pcap target cannot start, the section fails before the workload
 continues.
 
-## Existing TCP And Validation Playbooks
+## Existing TCP Scenario Playbook
 
-The TCP paper and latency validation playbooks now share the same generic
-timeline event recorder and default Prometheus query file.
+The TCP scenario playbook uses the same generic timeline event recorder and
+default Prometheus query file as generic experiments.
 
 Useful switches:
 
 ```bash
 -e paper_collect_artifacts=false
--e validation_collect_artifacts=false
 ```
 
 Specific switches still work:
@@ -474,8 +473,7 @@ Specific switches still work:
 ```bash
 -e paper_collect_prometheus=false
 -e paper_collect_pod_logs=false
--e validation_capture_pcaps=false
--e validation_prometheus_queries_json=configs/artifacts/my_queries.json
+-e paper_prometheus_queries_json=configs/artifacts/my_queries.json
 ```
 
 ## Templates

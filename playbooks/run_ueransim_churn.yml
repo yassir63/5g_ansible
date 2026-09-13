@@ -18,7 +18,7 @@
         churn_require_monitoring_ready: "{{ churn_require_monitoring_ready | default(true) }}"
         churn_require_ue_mapper_ready: "{{ churn_require_ue_mapper_ready | default(true) }}"
         churn_prometheus_step: "{{ churn_prometheus_step | default('1s') }}"
-        churn_prometheus_queries_json: "{{ churn_prometheus_queries_json | default(playbook_dir + '/../scripts/validation/ueransim_churn_prometheus_queries.json') }}"
+        churn_prometheus_queries_json: "{{ churn_prometheus_queries_json | default(playbook_dir + '/../configs/artifacts/ueransim_churn_prometheus_queries.json') }}"
         churn_discover_metrics_regex: "{{ churn_discover_metrics_regex | default('(?i)(ue.?mapper|mapper|amf|smf|upf|ueransim|statefulset|pod_status|container_cpu|container_memory)') }}"
         churn_discover_metrics_limit: "{{ churn_discover_metrics_limit | default(0) }}"
         churn_query_padding_seconds: "{{ churn_query_padding_seconds | default(30) }}"
@@ -1733,7 +1733,7 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../scripts/validation/prometheus_range_export.py"
+          - "{{ playbook_dir }}/../scripts/artifacts/prometheus_range_export.py"
           - "--prometheus-url"
           - "{{ churn_prometheus_url_effective }}"
           - "--start"
@@ -1762,7 +1762,7 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../scripts/validation/summarize_churn_overhead.py"
+          - "{{ playbook_dir }}/../scripts/experiments/ueransim_churn/summarize_churn_overhead.py"
           - "--csv"
           - "{{ churn_prometheus_work_csv }}"
           - "--out-dir"
@@ -1788,7 +1788,7 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../scripts/validation/summarize_ue_mapper_samples.py"
+          - "{{ playbook_dir }}/../scripts/experiments/ueransim_churn/summarize_ue_mapper_samples.py"
           - "--snapshots-tgz"
           - "{{ churn_results_dir }}/ue_mapper_snapshots.tgz"
           - "--out-dir"
@@ -1801,7 +1801,7 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../scripts/validation/correlate_ueransim_churn.py"
+          - "{{ playbook_dir }}/../scripts/experiments/ueransim_churn/correlate_ueransim_churn.py"
           - "--results-dir"
           - "{{ churn_results_dir }}"
           - "--imsi-prefix"
@@ -1815,7 +1815,7 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../scripts/validation/paper_timeline_finalize.py"
+          - "{{ playbook_dir }}/../scripts/artifacts/timeline_finalize.py"
           - "--timeline-jsonl"
           - "{{ churn_results_dir }}/timeline_events.jsonl"
           - "--out-dir"

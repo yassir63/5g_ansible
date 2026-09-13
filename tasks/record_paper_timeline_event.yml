@@ -1,10 +1,10 @@
 ---
-# Compatibility wrapper for older paper/validation playbooks.
+# Compatibility wrapper for existing TCP scenario playbooks.
 # New generic scenarios should include tasks/experiment_record_event.yml directly.
 - name: Record timeline event through generic experiment recorder
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
   vars:
     experiment_timeline_event: "{{ paper_timeline_event }}"
-    experiment_results_dir: "{{ paper_results_dir | default(validation_results_dir) }}"
-    experiment_run_id: "{{ paper_run_id | default(validation_run_id) }}"
-    experiment_local_timezone: "{{ paper_local_timezone | default(validation_local_timezone | default('Europe/Paris')) }}"
+    experiment_results_dir: "{{ paper_results_dir }}"
+    experiment_run_id: "{{ paper_run_id }}"
+    experiment_local_timezone: "{{ paper_local_timezone | default('Europe/Paris') }}"

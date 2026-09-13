@@ -42,7 +42,6 @@
         paper_split_padding_seconds: "{{ paper_split_padding_seconds | default(0) }}"
         paper_split_compress: "{{ paper_split_compress | default(true) }}"
         paper_split_iperf_by_scenario: "{{ paper_split_iperf_by_scenario | default(paper_collect_artifacts | default(true)) }}"
-        paper_create_notebooks: "{{ paper_create_notebooks | default(paper_collect_artifacts | default(true)) }}"
         paper_fail_after_collect_on_error: "{{ paper_fail_after_collect_on_error | default(true) }}"
         paper_collect_pod_logs: "{{ paper_collect_pod_logs | default(paper_collect_artifacts | default(true)) }}"
         paper_pod_log_control_host: "{{ paper_pod_log_control_host | default('') }}"
@@ -136,7 +135,6 @@
           split_padding_seconds: {{ paper_split_padding_seconds }}
           split_compress: {{ paper_split_compress }}
           split_iperf_by_scenario: {{ paper_split_iperf_by_scenario }}
-          create_notebooks: {{ paper_create_notebooks }}
           fail_after_collect_on_error: {{ paper_fail_after_collect_on_error }}
           collect_pod_logs: {{ paper_collect_pod_logs }}
           pod_log_control_host: {{ paper_pod_log_control_host }}
@@ -836,7 +834,7 @@
       when: paper_collect_pod_logs | bool
       failed_when: false
 
-- name: Collect TCP paper metrics and create analysis notebook
+- name: Collect TCP scenario metrics and artifacts
   hosts: localhost
   connection: local
   gather_facts: false
@@ -932,7 +930,6 @@
           interference_runtime_siggen_attempts: "{{ paper_interference_runtime_siggen_attempts }}"
           interference_recovery_pause_seconds: "{{ paper_interference_recovery_pause_seconds }}"
           notes:
-            - "Automatic notebook generated for supervisor review."
             - "mode=core is logical uplink when direction label is absent."
             - "mode=ran is logical downlink when direction label is absent."
             - "Use timeline_summary.md/json/csv and by_window/* for per-scenario/per-task analysis windows."
@@ -957,7 +954,7 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../scripts/validation/prometheus_range_export.py"
+          - "{{ playbook_dir }}/../scripts/artifacts/prometheus_range_export.py"
           - "--prometheus-url"
           - "{{ paper_prometheus_url_effective }}"
           - "--start"
@@ -986,7 +983,7 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../scripts/validation/paper_timeline_finalize.py"
+          - "{{ playbook_dir }}/../scripts/artifacts/timeline_finalize.py"
           - "--timeline-jsonl"
           - "{{ paper_results_dir }}/timeline_events.jsonl"
           - "--out-dir"
@@ -1003,7 +1000,7 @@
       ansible.builtin.command:
         argv: "{{ [
           'python3',
-          playbook_dir + '/../scripts/validation/split_prometheus_by_timeline.py',
+          playbook_dir + '/../scripts/artifacts/split_prometheus_by_timeline.py',
           '--full-csv',
           paper_results_dir + '/prometheus_timeseries.csv',
           '--timeline-json',
@@ -1024,7 +1021,7 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../scripts/validation/split_iperf_by_scenario.py"
+          - "{{ playbook_dir }}/../scripts/artifacts/split_iperf_by_scenario.py"
           - "--results-dir"
           - "{{ paper_results_dir }}"
           - "--out-dir"
@@ -1044,83 +1041,6 @@
         - paper_iperf_split_output.rc is defined
         - paper_iperf_split_output.rc != 0
 
-    - name: Create per-scenario analysis notebooks
-      ansible.builtin.command:
-        argv:
-          - python3
-          - "{{ playbook_dir }}/../scripts/validation/create_scenario_analysis_notebooks.py"
-          - "--results-dir"
-          - "{{ paper_results_dir }}"
-          - "--scenario-root"
-          - "{{ paper_results_dir }}/by_window/scenario"
-      register: paper_scenario_notebook_output
-      when:
-        - paper_create_notebooks | bool
-        - paper_split_iperf_by_scenario | bool
-      changed_when: paper_scenario_notebook_output.rc == 0
-      failed_when: false
-
-    - name: Warn when per-scenario analysis notebooks could not be created
-      ansible.builtin.debug:
-        msg:
-          - "Per-scenario analysis notebooks were not created. Scenario CSV and iperf files are still usable."
-          - "{{ paper_scenario_notebook_output.stderr | default(paper_scenario_notebook_output.stdout | default('No command output captured.')) }}"
-      when:
-        - paper_create_notebooks | bool
-        - paper_split_iperf_by_scenario | bool
-        - paper_scenario_notebook_output.rc is defined
-        - paper_scenario_notebook_output.rc != 0
-
-    - name: Create automatic experiment analysis notebook
-      ansible.builtin.command:
-        argv:
-          - python3
-          - "{{ playbook_dir }}/../scripts/validation/create_experiment_analysis_notebook.py"
-          - "--results-dir"
-          - "{{ paper_results_dir }}"
-          - "--kind"
-          - "scenario"
-          - "--title"
-          - "TCP Paper Scenario Experiment Analysis"
-      register: paper_experiment_notebook_output
-      when: paper_create_notebooks | bool
-      changed_when: paper_experiment_notebook_output.rc == 0
-      failed_when: false
-
-    - name: Warn when automatic experiment analysis notebook could not be created
-      ansible.builtin.debug:
-        msg:
-          - "Automatic experiment analysis notebook was not created. The experiment data is still usable."
-          - "{{ paper_experiment_notebook_output.stderr | default(paper_experiment_notebook_output.stdout | default('No command output captured.')) }}"
-      when:
-        - paper_create_notebooks | bool
-        - paper_experiment_notebook_output.rc is defined
-        - paper_experiment_notebook_output.rc != 0
-
-    - name: Create Grafana-style dashboard notebook
-      ansible.builtin.command:
-        argv:
-          - python3
-          - "{{ playbook_dir }}/../scripts/validation/create_grafana_dashboard_notebook.py"
-          - "--results-dir"
-          - "{{ paper_results_dir }}"
-          - "--title"
-          - "TCP Paper Grafana-Style Dashboard Figures"
-      register: paper_grafana_notebook_output
-      when: paper_create_notebooks | bool
-      changed_when: paper_grafana_notebook_output.rc == 0
-      failed_when: false
-
-    - name: Warn when Grafana-style dashboard notebook could not be created
-      ansible.builtin.debug:
-        msg:
-          - "Grafana-style dashboard notebook was not created. The exported CSV/timeline files are still usable."
-          - "{{ paper_grafana_notebook_output.stderr | default(paper_grafana_notebook_output.stdout | default('No command output captured.')) }}"
-      when:
-        - paper_create_notebooks | bool
-        - paper_grafana_notebook_output.rc is defined
-        - paper_grafana_notebook_output.rc != 0
-
     - name: Write TCP paper run README
       ansible.builtin.copy:
         dest: "{{ paper_results_dir }}/README.md"
@@ -1128,7 +1048,7 @@
         content: |
           # TCP Paper Scenario Run {{ paper_run_id }}
 
-          Open `experiment_analysis.ipynb` from this directory. It automatically loads:
+          Main artifacts:
           - `qhatXX.tgz`: per-UE iperf JSON logs.
           - `fitXX_interference.tgz`: FIT-side `uhd_siggen` logs when interference scenarios run.
           - `*_stress.tgz`: CPU stress and target-server netem logs from decomposition scenarios.
@@ -1140,16 +1060,10 @@
           - `timeline_summary.csv` / `timeline_summary.json`: machine-readable timing windows.
           - `by_window/scenario/<scenario>/prometheus_timeseries.csv.gz`: metrics filtered to one scenario interval.
           - `by_window/scenario/<scenario>/iperf/<step>/<direction>/iperf_qhatXX.json`: iperf logs split into each scenario folder.
-          - `by_window/scenario/<scenario>/scenario_analysis.ipynb`: local notebook that reads only that scenario's data.
           - `by_window/scenario/iperf_inventory.csv`: inventory of all split iperf JSON/stderr artifacts.
           - `by_window/task/<scenario_step_direction>/prometheus_timeseries.csv.gz`: metrics filtered to one step/direction interval.
           - `by_window/interference_phase/<phase>/prometheus_timeseries.csv.gz`: clean/noise/recovery slices for interference scenarios.
           - `by_window/stress_phase/<phase>/prometheus_timeseries.csv.gz`: clean/stress/recovery slices for UPF CPU stress and target-server netem scenarios.
-          - `grafana_dashboard_figures.ipynb`: recreates the monitoring dashboard as static notebook figures.
-
-          The notebook shows all exported metrics and paper-candidate plots:
-          CDFs, tail CCDFs, box plots, latency time series, decomposition gap,
-          same-packet validation, throughput, radio context, and overhead.
       register: paper_readme_output
       failed_when: false
 
@@ -1161,13 +1075,10 @@
       ansible.builtin.debug:
         msg:
           - "TCP paper results: {{ paper_results_dir }}"
-          - "Experiment notebook: {{ paper_results_dir }}/experiment_analysis.ipynb"
-          - "Grafana-style notebook: {{ paper_results_dir }}/grafana_dashboard_figures.ipynb"
           - "Prometheus CSV: {{ paper_results_dir }}/prometheus_timeseries.csv"
           - "Kubernetes pod logs: {{ paper_results_dir }}/pod_logs.tgz"
           - "Timeline recap: {{ paper_results_dir }}/timeline_summary.md"
           - "Per-scenario metrics: {{ paper_results_dir }}/by_window/scenario"
-          - "Per-scenario notebooks: {{ paper_results_dir }}/by_window/scenario/<scenario>/scenario_analysis.ipynb"
           - "Per-scenario iperf logs: {{ paper_results_dir }}/by_window/scenario/<scenario>/iperf"
           - "Per-task metrics: {{ paper_results_dir }}/by_window/task"
           - "Interference phase metrics: {{ paper_results_dir }}/by_window/interference_phase"
@@ -1188,8 +1099,8 @@
     - name: Fail TCP paper run after collecting artifacts
       ansible.builtin.fail:
         msg: >
-          TCP paper scenario failed. Partial artifacts, qhat logs, timeline files,
-          and notebooks were collected in {{ paper_results_dir }}.
+          TCP paper scenario failed. Partial artifacts, qhat logs, and timeline files
+          were collected in {{ paper_results_dir }}.
       when:
         - paper_scenario_failure_marker.stat.exists | bool
         - paper_fail_after_collect_on_error | default(true) | bool

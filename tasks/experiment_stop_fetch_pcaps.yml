@@ -139,7 +139,7 @@
   ansible.builtin.command:
     argv:
       - python3
-      - "{{ playbook_dir }}/../scripts/validation/pcap_artifact_summary.py"
+      - "{{ playbook_dir }}/../scripts/artifacts/pcap_artifact_summary.py"
       - "--pcap-dir"
       - "{{ experiment_results_dir }}/pcaps"
       - "--out"

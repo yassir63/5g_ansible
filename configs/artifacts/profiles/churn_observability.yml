@@ -5,7 +5,7 @@ collect:
     enabled: true
     url: "http://127.0.0.1:30095"
     step: "1s"
-    queries_file: "scripts/validation/ueransim_churn_prometheus_queries.json"
+    queries_file: "configs/artifacts/ueransim_churn_prometheus_queries.json"
     padding_seconds: 30
     discover_metrics_regex: "(?i)(ue.?mapper|mapper|amf|smf|upf|ueransim|statefulset|pod_status|container_cpu|container_memory)"
     discover_metrics_limit: 0

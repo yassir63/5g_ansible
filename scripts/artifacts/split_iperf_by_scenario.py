@@ -140,7 +140,6 @@ def write_scenario_context(results_dir: Path, out_dir: Path, records: list[dict[
                     "- `prometheus_timeseries.csv(.gz)`: all exported Prometheus metrics inside this scenario timeline.",
                     "- `timeline_summary.csv/json`: only this scenario's windows, steps, directions, and interference phases.",
                     "- `iperf/`: qhat iperf JSON/stderr logs for this scenario.",
-                    "- `scenario_analysis.ipynb`: notebook tailored to this scenario folder.",
                     "- `scenario_metadata.json`: paths and extracted iperf inventory.",
                     "",
                 ]

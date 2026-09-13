@@ -22,7 +22,7 @@ sections:
         churn_collect_ue_mapper_samples: "{{ churn_collect_ue_mapper_samples | default(true) }}"
         churn_prometheus_url: "{{ churn_prometheus_url | default(experiment_prometheus_url | default('')) }}"
         churn_prometheus_step: "{{ churn_prometheus_step | default('1s') }}"
-        churn_prometheus_queries_json: "{{ playbook_dir }}/../scripts/validation/ueransim_churn_prometheus_queries.json"
+        churn_prometheus_queries_json: "{{ playbook_dir }}/../configs/artifacts/ueransim_churn_prometheus_queries.json"
         ueransim_churn_subscribers: "{{ ueransim_churn_subscribers | default(100) }}"
         ueransim_churn_counts: "{{ ueransim_churn_counts | default('10 25 50') }}"
         ueransim_churn_settle_seconds: "{{ ueransim_churn_settle_seconds | default(60) }}"

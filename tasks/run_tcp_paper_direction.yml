@@ -67,16 +67,6 @@
   changed_when: true
   ignore_errors: "{{ ignore_task_errors | default(true) }}"
 
-- name: Stop validation pcap window after bounded capture time
-  block:
-    - name: Wait for validation pcap window
-      ansible.builtin.pause:
-        seconds: "{{ validation_pcap_capture_seconds_for_direction | default(15) | int }}"
-
-    - name: Stop and fetch validation pcap window
-      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/validation_pcap_stop_fetch.yml"
-  when: validation_pcap_capture_active_for_direction | default(false) | bool
-
 - name: Wait for TCP iperf jobs to finish
   ansible.builtin.async_status:
     jid: "{{ item.ansible_job_id }}"

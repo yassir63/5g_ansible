@@ -13,12 +13,9 @@ SKIP_INPUTS=false
 SCENARIO_ONLY=false
 REQUESTED_EXPERIMENT_MODE=""
 REQUESTED_TCP_PAPER_SCENARIOS=""
-REQUESTED_VALIDATION_SCENARIOS=""
 REQUESTED_TARGET_SERVER=""
 REQUESTED_PROMETHEUS_URL=""
 REQUESTED_EXPERIMENT_DURATION=""
-REQUESTED_VALIDATION_TCP_BITRATE=""
-REQUESTED_VALIDATION_MTU_PING_SIZE=""
 REQUESTED_MONITORING_LOKI=""
 
 SCENARIO_RFSIM="Iperf RFSIM scenario without interference"
@@ -48,26 +45,18 @@ usage() {
     echo "-r, --no-reservation     Skip node/R2lab reservations"
     echo "--no-auto-start          Only configure iperf scenario, don't start it after 5G deployment"
     echo "--scenario-only          Skip reservation/deployment and only run the selected scenario workflow"
-    echo "--tcp-paper <names>      Run TCP paper scenarios and create experiment_analysis.ipynb"
+    echo "--tcp-paper <names>      Run TCP scenario experiments"
     echo "                         <names> can be all or a comma-separated scenario list"
-    echo "                         Current TCP paper scenarios:"
+    echo "                         Current TCP scenario experiments:"
     echo "                         01_decomp_baseline_all_ues"
     echo "                         02_decomp_far_ue_radio"
     echo "                         03_decomp_upf_cpu_stress"
     echo "                         04_decomp_target_server_netem_delay"
     echo "                         05_fit02_interference_near_ul_dl"
     echo "                         06_fit28_spatial_control_near_ul_dl"
-    echo "--validation <names>     Run latency validation and create paper figures/notebooks"
-    echo "                         <names> can be all, v01_candidate_signal_baseline,"
-    echo "                         v02_icmp_ping_correctness, v03_controlled_delay,"
-    echo "                         v04_tc_pass_baseline, v05_tcp_icmp_parallel_median,"
-    echo "                         v06_tcp_icmp_parallel_mtu_ping,"
-    echo "                         or a comma-separated validation scenario list"
     echo "--target-server <node>   Bare-metal target server for iperf, e.g. sopnode-w3"
     echo "--prometheus-url <url>   Override Prometheus URL only if needed, e.g. http://172.28.2.76:30095"
-    echo "--duration <seconds>     Override TCP scenario/validation traffic duration"
-    echo "--validation-tcp-bitrate <rate>  Override validation TCP cap, e.g. 30Mb or 0"
-    echo "--validation-mtu-ping-size <bytes>  Override v06 ICMP payload size; 1472 gives a 1500-byte IPv4 packet"
+    echo "--duration <seconds>     Override TCP scenario or generic experiment traffic duration"
     echo "--with-loki              Keep Grafana Loki enabled with monitoring (default)"
     echo "--no-loki                Disable Grafana Loki log collection"
     echo "--experiment <file|name> Run a generic experiment scenario through playbooks/run_experiment.yml"
@@ -181,12 +170,6 @@ parse_args() {
           REQUESTED_TCP_PAPER_SCENARIOS="${1:-all}"
           ;;
 
-        --validation)
-          shift
-          REQUESTED_EXPERIMENT_MODE="validation"
-          REQUESTED_VALIDATION_SCENARIOS="${1:-all}"
-          ;;
-
         --experiment|--generic-experiment)
           shift
           REQUESTED_EXPERIMENT_MODE="generic-experiment"
@@ -217,16 +200,6 @@ parse_args() {
           REQUESTED_EXPERIMENT_DURATION="${1:-}"
           ;;
 
-        --validation-tcp-bitrate)
-          shift
-          REQUESTED_VALIDATION_TCP_BITRATE="${1:-}"
-          ;;
-
-        --validation-mtu-ping-size)
-          shift
-          REQUESTED_VALIDATION_MTU_PING_SIZE="${1:-}"
-          ;;
-
         --with-loki)
           REQUESTED_MONITORING_LOKI="true"
           ;;
@@ -245,21 +218,6 @@ parse_args() {
       esac
       shift
     done
-}
-
-normalize_validation_tcp_bitrate() {
-    local value="${1:-}"
-    value="${value//[[:space:]]/}"
-
-    if [[ -z "$value" || "$value" == "0" ]]; then
-      printf '%s' "$value"
-    elif [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-      printf '%sMb' "$value"
-    elif [[ "$value" =~ ^[0-9]+([.][0-9]+)?[kKmMgGtT]$ ]]; then
-      printf '%sb' "$value"
-    else
-      printf '%s' "$value"
-    fi
 }
 
 extra_var_value() {
@@ -757,9 +715,6 @@ collect_user_inputs() {
     monitor_node=""
     if [[ "$core" == "open5gs" || "$ran" != "ueransim" ]]; then
       echo ""
-      if [[ "$core" == "open5gs" && "$ran" == "ueransim" ]]; then
-        echo "Monitoring is required for UERANSIM churn CPU, memory, and UE-mapper measurements."
-      fi
       read -rp "Do you want to deploy monitoring? [y/N]: " mon_choice
       if [[ "$mon_choice" =~ ^[Yy]$ ]]; then
         monitoring_enabled=true
@@ -968,13 +923,8 @@ optional_scenarios() {
     DISTINCT_IPERF_SERVER=false
     iperf_server_node=""
     paper_scenario_names="all"
-    validation_scenario_names="all"
     paper_prometheus_url=""
-    validation_prometheus_url=""
     paper_duration_override=""
-    validation_duration_override=""
-    validation_tcp_bitrate_override=""
-    validation_mtu_ping_size_override=""
     experiment_scenario_file=""
     experiment_artifacts_file=""
     experiment_artifacts_enabled=true
@@ -990,18 +940,9 @@ optional_scenarios() {
       "05_fit02_interference_near_ul_dl"
       "06_fit28_spatial_control_near_ul_dl"
     )
-    VALIDATION_SCENARIOS=(
-      "v01_candidate_signal_baseline"
-      "v02_icmp_ping_correctness"
-      "v05_tcp_icmp_parallel_median"
-      "v06_tcp_icmp_parallel_mtu_ping"
-      "v03_controlled_delay"
-      "v04_tc_pass_baseline"
-    )
-
     if [[ -n "${REQUESTED_EXPERIMENT_MODE:-}" ]]; then
       if [[ "$REQUESTED_EXPERIMENT_MODE" != "generic-experiment" && "$platform" != "r2lab" ]]; then
-        echo "❌ Automated paper/validation workflows currently require platform=r2lab."
+        echo "❌ Automated TCP scenario workflows currently require platform=r2lab."
         exit 1
       fi
 
@@ -1077,56 +1018,6 @@ optional_scenarios() {
           echo "TCP paper scenario selected; ensuring required UEs are in inventory: ${tcp_paper_required_ues[*]}"
           ;;
 
-        "validation")
-          scenario="Latency validation pipeline"
-          validation_scenario_names="${REQUESTED_VALIDATION_SCENARIOS:-all}"
-          validation_tcp_bitrate_override="${REQUESTED_VALIDATION_TCP_BITRATE:-${VALIDATION_TCP_BITRATE:-}}"
-          validation_mtu_ping_size_override="${REQUESTED_VALIDATION_MTU_PING_SIZE:-${VALIDATION_MTU_PING_SIZE:-}}"
-          if [[ -n "${validation_mtu_ping_size_override}" && ! "${validation_mtu_ping_size_override}" =~ ^[0-9]+$ ]]; then
-            echo "❌ Invalid MTU-sized ping payload: ${validation_mtu_ping_size_override}"
-            exit 1
-          fi
-          echo "Latency validation scenario names: ${validation_scenario_names}"
-
-          validation_required_ues=()
-          add_validation_required_ue() {
-            local ue="$1"
-            if ! printf '%s\n' "${validation_required_ues[@]}" | grep -qx "$ue"; then
-              validation_required_ues+=("$ue")
-            fi
-          }
-
-          if [[ "$validation_scenario_names" == "all" ]]; then
-            add_validation_required_ue "qhat01"
-            add_validation_required_ue "qhat02"
-          else
-            IFS=',' read -ra selected_validation_scenarios_for_ues <<< "$validation_scenario_names"
-            for selected_validation_scenario in "${selected_validation_scenarios_for_ues[@]}"; do
-              case "$selected_validation_scenario" in
-                "v01_candidate_signal_baseline")
-                  add_validation_required_ue "qhat01"
-                  add_validation_required_ue "qhat02"
-                  ;;
-                "v02_icmp_ping_correctness"|"v03_controlled_delay"|"v04_tc_pass_baseline"|"v05_tcp_icmp_parallel_median"|"v06_tcp_icmp_parallel_mtu_ping")
-                  add_validation_required_ue "qhat01"
-                  ;;
-                *)
-                  echo "❌ Unknown validation scenario: $selected_validation_scenario"
-                  exit 1
-                  ;;
-              esac
-            done
-          fi
-
-          for required_ue in "${validation_required_ues[@]}"; do
-            if ! printf '%s\n' "${R2LAB_UES[@]}" | grep -qx "$required_ue"; then
-              R2LAB_UES+=("$required_ue")
-            fi
-          done
-          enable_monitoring_for_workflow "Latency validation artifacts and latency probes"
-          echo "Latency validation selected; ensuring required UEs are in inventory: ${validation_required_ues[*]}"
-          ;;
-
         *)
           echo "❌ Unknown requested experiment mode: ${REQUESTED_EXPERIMENT_MODE}"
           exit 1
@@ -1154,13 +1045,8 @@ monitoring_loki_enabled="$monitoring_loki_enabled"
 monitor_node="$monitor_node"
 iperf_server_node="$iperf_server_node"
 paper_scenario_names="$paper_scenario_names"
-validation_scenario_names="$validation_scenario_names"
 paper_prometheus_url="${REQUESTED_PROMETHEUS_URL:-}"
-validation_prometheus_url="${REQUESTED_PROMETHEUS_URL:-}"
 paper_duration_override="${REQUESTED_EXPERIMENT_DURATION:-}"
-validation_duration_override="${REQUESTED_EXPERIMENT_DURATION:-}"
-validation_tcp_bitrate_override="${REQUESTED_VALIDATION_TCP_BITRATE:-${VALIDATION_TCP_BITRATE:-}}"
-validation_mtu_ping_size_override="${REQUESTED_VALIDATION_MTU_PING_SIZE:-${VALIDATION_MTU_PING_SIZE:-}}"
 experiment_scenario_file="$experiment_scenario_file"
 experiment_artifacts_file="$experiment_artifacts_file"
 experiment_artifacts_enabled="$experiment_artifacts_enabled"
@@ -1197,17 +1083,8 @@ EOF
       if [[ "$platform" == "r2lab" ]]; then
         options+=("TCP paper scenarios")
       fi
-      if [[ "$platform" == "r2lab" ]]; then
-        options+=("Latency validation pipeline")
-      fi
       options+=("Generic experiment")
-      if [[ "$core" == "open5gs" && "$ran" == "ueransim" ]]; then
-        options+=("UERANSIM attach/detach churn")
-      else
-        echo "Note: UERANSIM churn is available only with Open5GS core and UERANSIM RAN."
-        echo "Current selection: core=${core}, ran=${ran}"
-      fi
-      
+
       for i in "${!options[@]}"; do
         echo "$((i+1))) ${options[$i]}"
       done
@@ -1308,7 +1185,7 @@ EOF
           done
           enable_monitoring_for_workflow "TCP paper scenario artifacts and latency probes"
           echo "TCP paper scenario selected; ensuring required UEs are in inventory: ${tcp_paper_required_ues[*]}"
-          echo "This workflow will export Prometheus at 1s and create experiment_analysis.ipynb automatically."
+          echo "This workflow will export Prometheus at 1s and collect experiment artifacts."
           echo ""
           read -rp "TCP paper iperf duration in seconds [default: 300]: " paper_duration_input
           if [[ -n "${paper_duration_input}" ]]; then
@@ -1320,93 +1197,6 @@ EOF
             fi
           fi
           DEFAULT_IPERF_SERVER_NODE="sopnode-w3"
-        elif [[ "$scenario" == "Latency validation pipeline" ]]; then
-          echo ""
-          echo "Select latency validation scenario(s) to run:"
-          echo "0) all validation scenarios"
-          for i in "${!VALIDATION_SCENARIOS[@]}"; do
-            echo "$((i + 1))) ${VALIDATION_SCENARIOS[i]}"
-          done
-          read -rp "Enter choices separated by spaces [0-${#VALIDATION_SCENARIOS[@]}]: " -a validation_choices
-          if [[ "${#validation_choices[@]}" -eq 0 || "${validation_choices[0]}" == "0" ]]; then
-            validation_scenario_names="all"
-          else
-            selected_validation_scenarios=()
-            for choice in "${validation_choices[@]}"; do
-              if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#VALIDATION_SCENARIOS[@]} )); then
-                selected_validation_scenarios+=("${VALIDATION_SCENARIOS[$((choice - 1))]}")
-              else
-                echo "❌ Invalid validation scenario choice: $choice"
-                exit 1
-              fi
-            done
-            validation_scenario_names=$(IFS=,; echo "${selected_validation_scenarios[*]}")
-          fi
-          echo "Latency validation scenario names: ${validation_scenario_names}"
-
-          validation_required_ues=()
-          add_validation_required_ue() {
-            local ue="$1"
-            if ! printf '%s\n' "${validation_required_ues[@]}" | grep -qx "$ue"; then
-              validation_required_ues+=("$ue")
-            fi
-          }
-
-          if [[ "$validation_scenario_names" == "all" ]]; then
-            add_validation_required_ue "qhat01"
-            add_validation_required_ue "qhat02"
-          else
-            IFS=',' read -ra selected_validation_scenarios_for_ues <<< "$validation_scenario_names"
-            for selected_validation_scenario in "${selected_validation_scenarios_for_ues[@]}"; do
-              case "$selected_validation_scenario" in
-                "v01_candidate_signal_baseline")
-                  add_validation_required_ue "qhat01"
-                  add_validation_required_ue "qhat02"
-                  ;;
-                "v02_icmp_ping_correctness"|"v03_controlled_delay"|"v04_tc_pass_baseline"|"v05_tcp_icmp_parallel_median"|"v06_tcp_icmp_parallel_mtu_ping")
-                  add_validation_required_ue "qhat01"
-                  ;;
-                *)
-                  echo "❌ Unknown validation scenario: $selected_validation_scenario"
-                  exit 1
-                  ;;
-              esac
-            done
-          fi
-
-          for required_ue in "${validation_required_ues[@]}"; do
-            if ! printf '%s\n' "${R2LAB_UES[@]}" | grep -qx "$required_ue"; then
-              R2LAB_UES+=("$required_ue")
-            fi
-          done
-          enable_monitoring_for_workflow "Latency validation artifacts and latency probes"
-          echo "Latency validation selected; ensuring required UEs are in inventory: ${validation_required_ues[*]}"
-          echo "This workflow will export Prometheus at 1s and create experiment_analysis.ipynb automatically."
-          echo ""
-          read -rp "Validation traffic duration in seconds [default: 120; ICMP uses ping_count instead]: " validation_duration_input
-          if [[ -n "${validation_duration_input}" ]]; then
-            if [[ "$validation_duration_input" =~ ^[0-9]+$ ]]; then
-              validation_duration_override="$validation_duration_input"
-            else
-              echo "❌ Invalid duration: $validation_duration_input"
-              exit 1
-            fi
-          fi
-          read -rp "Validation TCP bitrate cap [default: 30Mb; use 0 for iperf unlimited]: " validation_tcp_bitrate_input
-          if [[ -n "${validation_tcp_bitrate_input}" ]]; then
-            validation_tcp_bitrate_override="$(normalize_validation_tcp_bitrate "$validation_tcp_bitrate_input")"
-            echo "Validation TCP bitrate cap normalized to: ${validation_tcp_bitrate_override}"
-          fi
-          read -rp "MTU-sized ICMP ping payload for v06 in bytes [default: 1472, IPv4 packet 1500]: " validation_mtu_ping_size_input
-	          if [[ -n "${validation_mtu_ping_size_input}" ]]; then
-	            if [[ "$validation_mtu_ping_size_input" =~ ^[0-9]+$ ]]; then
-	              validation_mtu_ping_size_override="$validation_mtu_ping_size_input"
-	            else
-	              echo "❌ Invalid MTU-sized ping payload: $validation_mtu_ping_size_input"
-	              exit 1
-	            fi
-	          fi
-	          DEFAULT_IPERF_SERVER_NODE="sopnode-w3"
         else
 	          DEFAULT_IPERF_SERVER_NODE=${core_node}
 	        fi
@@ -1451,13 +1241,8 @@ monitoring_loki_enabled="$monitoring_loki_enabled"
 monitor_node="$monitor_node"
 iperf_server_node="$iperf_server_node"
 paper_scenario_names="$paper_scenario_names"
-validation_scenario_names="$validation_scenario_names"
 paper_prometheus_url="$paper_prometheus_url"
-validation_prometheus_url="$validation_prometheus_url"
 paper_duration_override="$paper_duration_override"
-validation_duration_override="$validation_duration_override"
-validation_tcp_bitrate_override="$validation_tcp_bitrate_override"
-validation_mtu_ping_size_override="$validation_mtu_ping_size_override"
 experiment_scenario_file="$experiment_scenario_file"
 experiment_artifacts_file="$experiment_artifacts_file"
 experiment_artifacts_enabled="$experiment_artifacts_enabled"
@@ -1613,7 +1398,7 @@ print_summary() {
       echo "  NOISE_BANDWIDTH: $NOISE_BANDWIDTH"
     fi
 	    if [[ "${run_scenario}" == true ]]; then
-	      if [[ "$scenario" == "Generic experiment" || "$scenario" == "TCP paper scenarios" || "$scenario" == "Latency validation pipeline" ]]; then
+	      if [[ "$scenario" == "Generic experiment" || "$scenario" == "TCP paper scenarios" ]]; then
 	        echo "Scenario:    enabled"
 	      else
 	        echo "Iperf Test: enabled"
@@ -1631,7 +1416,7 @@ print_summary() {
         ;;
         "TCP paper scenarios")
           echo "Will run selected TCP paper scenario(s): ${paper_scenario_names:-all}. UEs are left connected at the end."
-          echo "Artifacts will include iperf JSON logs, 1s Prometheus CSV, and experiment_analysis.ipynb."
+          echo "Artifacts will include iperf JSON logs, 1s Prometheus CSV, and timeline/window splits."
           [[ -n "${paper_duration_override:-}" ]] && echo "  Duration override: ${paper_duration_override}s"
           [[ -n "${paper_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${paper_prometheus_url}"
         ;;
@@ -1657,14 +1442,6 @@ print_summary() {
           [[ -n "${REQUESTED_PROMETHEUS_URL:-}" ]] && echo "  Prometheus URL override: ${REQUESTED_PROMETHEUS_URL}"
           [[ -n "${REQUESTED_TARGET_SERVER:-}" ]] && echo "  Target server override: ${REQUESTED_TARGET_SERVER}"
         ;;
-	        "Latency validation pipeline")
-	          echo "Will run latency validation scenario(s): ${validation_scenario_names:-all}. UEs are left connected at the end."
-	          echo "Artifacts will include iperf JSON logs, 1s Prometheus CSV, optional pcaps, and experiment_analysis.ipynb."
-	          [[ -n "${validation_duration_override:-}" ]] && echo "  Duration override: ${validation_duration_override}s"
-	          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  TCP bitrate override: ${validation_tcp_bitrate_override}"
-	          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  v06 MTU-sized ping payload override: ${validation_mtu_ping_size_override} bytes"
-	          [[ -n "${validation_prometheus_url:-}" ]] && echo "  Prometheus URL override: ${validation_prometheus_url}"
-	        ;;
         "$SCENARIO_R2LAB_MULTI")
           echo "Will run iperf on each UE individually (${R2LAB_QHAT_UES[0]}), and then all UEs simultaneously.  Will test uplink and downlink for both TCP and UDP.  Each test lasts 30s (use the iperf_duration and iperf_sleep ansible parameters to change the default values (in s))"
         ;;
@@ -2200,44 +1977,19 @@ run_scenario() {
       ANSIBLE_EXTRA_ARGS+=(-e "paper_prometheus_url=${paper_prometheus_url}")
     fi
 
-    if [[ -n "${validation_prometheus_url:-}" ]]; then
-      ANSIBLE_EXTRA_ARGS+=(-e "validation_prometheus_url=${validation_prometheus_url}")
-    fi
-
     if [[ -n "${paper_duration_override:-}" ]]; then
       ANSIBLE_EXTRA_ARGS+=(-e "paper_duration=${paper_duration_override}")
     fi
 
-    if [[ -n "${validation_duration_override:-}" ]]; then
-      ANSIBLE_EXTRA_ARGS+=(-e "validation_duration=${validation_duration_override}")
-    fi
-
-    if [[ -n "${validation_tcp_bitrate_override:-}" ]]; then
-      validation_tcp_bitrate_override="$(normalize_validation_tcp_bitrate "$validation_tcp_bitrate_override")"
-      ANSIBLE_EXTRA_ARGS+=(-e "{\"validation_tcp_bitrate\":\"${validation_tcp_bitrate_override}\"}")
-    fi
-
-    if [[ -n "${validation_mtu_ping_size_override:-}" ]]; then
-      if [[ ! "${validation_mtu_ping_size_override}" =~ ^[0-9]+$ ]]; then
-        echo "❌ Invalid MTU-sized ping payload: ${validation_mtu_ping_size_override}"
-        exit 1
-      fi
-      ANSIBLE_EXTRA_ARGS+=(-e "validation_mtu_ping_size=${validation_mtu_ping_size_override}")
-    fi
-
-    if [[ -n "${REQUESTED_PROMETHEUS_URL:-}" && -z "${paper_prometheus_url:-}" && -z "${validation_prometheus_url:-}" ]]; then
+    if [[ -n "${REQUESTED_PROMETHEUS_URL:-}" && -z "${paper_prometheus_url:-}" ]]; then
       ANSIBLE_EXTRA_ARGS+=(-e "paper_prometheus_url=${REQUESTED_PROMETHEUS_URL}")
-      ANSIBLE_EXTRA_ARGS+=(-e "validation_prometheus_url=${REQUESTED_PROMETHEUS_URL}")
       ANSIBLE_EXTRA_ARGS+=(-e "experiment_prometheus_url=${REQUESTED_PROMETHEUS_URL}")
     fi
 
-    if [[ -n "${REQUESTED_EXPERIMENT_DURATION:-}" && -z "${paper_duration_override:-}" && -z "${validation_duration_override:-}" ]]; then
+    if [[ -n "${REQUESTED_EXPERIMENT_DURATION:-}" && -z "${paper_duration_override:-}" ]]; then
       case "${REQUESTED_EXPERIMENT_MODE:-}" in
         "tcp-paper")
           ANSIBLE_EXTRA_ARGS+=(-e "paper_duration=${REQUESTED_EXPERIMENT_DURATION}")
-          ;;
-        "validation")
-          ANSIBLE_EXTRA_ARGS+=(-e "validation_duration=${REQUESTED_EXPERIMENT_DURATION}")
           ;;
         "generic-experiment")
           ANSIBLE_EXTRA_ARGS+=(-e "iperf_duration=${REQUESTED_EXPERIMENT_DURATION}")
@@ -2245,23 +1997,9 @@ run_scenario() {
           ;;
         *)
           ANSIBLE_EXTRA_ARGS+=(-e "paper_duration=${REQUESTED_EXPERIMENT_DURATION}")
-          ANSIBLE_EXTRA_ARGS+=(-e "validation_duration=${REQUESTED_EXPERIMENT_DURATION}")
           ;;
       esac
     fi
-
-    if [[ -n "${REQUESTED_VALIDATION_TCP_BITRATE:-}" ]]; then
-      REQUESTED_VALIDATION_TCP_BITRATE="$(normalize_validation_tcp_bitrate "$REQUESTED_VALIDATION_TCP_BITRATE")"
-      ANSIBLE_EXTRA_ARGS+=(-e "{\"validation_tcp_bitrate\":\"${REQUESTED_VALIDATION_TCP_BITRATE}\"}")
-    fi
-
-	    if [[ -n "${REQUESTED_VALIDATION_MTU_PING_SIZE:-}" && -z "${validation_mtu_ping_size_override:-}" ]]; then
-	      if [[ ! "${REQUESTED_VALIDATION_MTU_PING_SIZE}" =~ ^[0-9]+$ ]]; then
-	        echo "❌ Invalid MTU-sized ping payload: ${REQUESTED_VALIDATION_MTU_PING_SIZE}"
-	        exit 1
-	      fi
-	      ANSIBLE_EXTRA_ARGS+=(-e "validation_mtu_ping_size=${REQUESTED_VALIDATION_MTU_PING_SIZE}")
-	    fi
 
     if [[ -n "${REQUESTED_EXPERIMENT_MODE:-}" ]]; then
       run_scenario=true
@@ -2270,10 +2008,6 @@ run_scenario() {
         "tcp-paper")
           scenario="TCP paper scenarios"
           paper_scenario_names="${REQUESTED_TCP_PAPER_SCENARIOS:-${paper_scenario_names:-all}}"
-          ;;
-        "validation")
-          scenario="Latency validation pipeline"
-          validation_scenario_names="${REQUESTED_VALIDATION_SCENARIOS:-${validation_scenario_names:-all}}"
           ;;
         "generic-experiment")
           scenario="Generic experiment"
@@ -2340,23 +2074,6 @@ run_scenario() {
               playbooks/run_experiment.yml
             scenario_status=$?
             ;;
-	          "Latency validation pipeline")
-	            extra_var_defined "validation_extract_pcap_rtt" || ANSIBLE_EXTRA_ARGS+=(-e "validation_extract_pcap_rtt=false")
-	            extra_var_defined "validation_install_tshark" || ANSIBLE_EXTRA_ARGS+=(-e "validation_install_tshark=false")
-	            extra_var_defined "validation_create_paper_figures" || ANSIBLE_EXTRA_ARGS+=(-e "validation_create_paper_figures=true")
-            extra_var_defined "validation_compress_pcaps" || ANSIBLE_EXTRA_ARGS+=(-e "validation_compress_pcaps=true")
-            extra_var_defined "validation_compress_prometheus_csv" || ANSIBLE_EXTRA_ARGS+=(-e "validation_compress_prometheus_csv=true")
-            if [[ -z "${validation_tcp_bitrate_override:-}" && -z "${REQUESTED_VALIDATION_TCP_BITRATE:-}" ]] && ! extra_var_defined "validation_tcp_bitrate"; then
-              ANSIBLE_EXTRA_ARGS+=(-e '{"validation_tcp_bitrate":"30Mb"}')
-            fi
-            run_logged_cmd "${DIR_LOGS}/logs-scenario_latency-validation.txt" \
-              ansible-playbook -i "$INVENTORY" \
-              "${ANSIBLE_EXTRA_ARGS[@]}" \
-              -e "target_server_host=${iperf_server_node}" \
-	              -e "validation_scenario_names=${validation_scenario_names:-all}" \
-	              playbooks/run_latency_validation.yml
-	            scenario_status=$?
-            ;;
           "$SCENARIO_R2LAB"|"$SCENARIO_RFSIM")
             run_cmd ./run_scenario.sh -d --inventory="${NAME_INVENTORY}" \
               "${ANSIBLE_EXTRA_ARGS[@]}"  2>&1 | tee ${DIR_LOGS}/logs-scenario_iperf.txt
@@ -2410,13 +2127,6 @@ run_scenario() {
           [[ -n "${REQUESTED_TARGET_SERVER:-}" ]] && echo "  add: --target-server ${REQUESTED_TARGET_SERVER}"
           [[ -n "${REQUESTED_EXPERIMENT_DURATION:-}" ]] && echo "  add: --duration ${REQUESTED_EXPERIMENT_DURATION}"
           [[ -n "${REQUESTED_PROMETHEUS_URL:-}" ]] && echo "  add: --prometheus-url ${REQUESTED_PROMETHEUS_URL}"
-	        elif [[ "$scenario" == "Latency validation pipeline" ]]; then
-	          echo "Just launch:"
-	          echo "ansible-playbook -i ${INVENTORY} -e fiveg_profile=${PROFILE_5G} -e target_server_host=${iperf_server_node} -e validation_scenario_names=${validation_scenario_names:-all} playbooks/run_latency_validation.yml"
-	          [[ -n "${validation_duration_override:-}" ]] && echo "  add: -e validation_duration=${validation_duration_override}"
-	          [[ -n "${validation_tcp_bitrate_override:-}" ]] && echo "  add: -e validation_tcp_bitrate=${validation_tcp_bitrate_override}"
-	          [[ -n "${validation_mtu_ping_size_override:-}" ]] && echo "  add: -e validation_mtu_ping_size=${validation_mtu_ping_size_override}"
-	          [[ -n "${validation_prometheus_url:-}" ]] && echo "  add: -e validation_prometheus_url=${validation_prometheus_url}"
 	        else
 	          echo "Just launch ./run_scenario.sh to start it !"
 	        fi

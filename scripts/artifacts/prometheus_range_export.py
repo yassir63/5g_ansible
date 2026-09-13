@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export latency-validation Prometheus ranges to a flat CSV file.
+"""Export Prometheus query ranges to a flat CSV file.
 
 The script intentionally uses only Python's standard library so it can run on
 the webshell without a dependency install step.
