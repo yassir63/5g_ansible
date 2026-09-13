@@ -495,7 +495,7 @@
           "refId": "A"
         }
       ],
-      "title": "Latency: $imsi",
+      "title": "Latency of IMSI : $imsi",
       "type": "timeseries"
     },
     {
@@ -597,108 +597,25 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "monitoring-prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "bps"
-        },
-        "overrides": []
-      },
+      "collapsed": false,
+      "description": "dynamic-slice-throughput",
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 6,
+        "h": 1,
+        "w": 24,
+        "x": 0,
         "y": 24
       },
-      "id": 2,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "monitoring-prometheus"
-          },
-          "editorMode": "code",
-          "expr": "slice_throughput{direction=\"downlink\",snssai=\"1\"}",
-          "instant": false,
-          "legendFormat": "seid={{seid}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Downlink Slice Throughput at UPF (Slice 1)",
-      "type": "timeseries"
+      "id": 43,
+      "panels": [],
+      "title": "Slice Throughput",
+      "type": "row"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "monitoring-prometheus"
       },
+      "description": "dynamic-slice-throughput",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -713,7 +630,7 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -722,12 +639,12 @@
             },
             "insertNulls": false,
             "lineInterpolation": "linear",
-            "lineWidth": 2,
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -756,12 +673,13 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 24
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 25
       },
-      "id": 4,
+      "id": 44,
+      "maxPerRow": 2,
       "options": {
         "legend": {
           "calcs": [],
@@ -775,6 +693,8 @@
         }
       },
       "pluginVersion": "11.3.0",
+      "repeat": "snssai",
+      "repeatDirection": "h",
       "targets": [
         {
           "datasource": {
@@ -782,14 +702,13 @@
             "uid": "monitoring-prometheus"
           },
           "editorMode": "code",
-          "expr": "slice_throughput{direction=\"uplink\",snssai=\"1\"}",
-          "instant": false,
-          "legendFormat": "seid={{seid}}",
+          "expr": "sum by (direction, snssai) (slice_throughput{snssai=~\"${snssai:regex}\"})",
+          "legendFormat": "{{direction}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Uplink Slice Throughput at UPF (Slice 1)",
+      "title": "Slice Throughput at UPF : $snssai",
       "type": "timeseries"
     },
     {
@@ -888,7 +807,7 @@
         "h": 25,
         "w": 6,
         "x": 18,
-        "y": 24
+        "y": 33
       },
       "id": 32,
       "options": {
@@ -989,7 +908,7 @@
         "h": 7,
         "w": 6,
         "x": 6,
-        "y": 31
+        "y": 40
       },
       "id": 12,
       "options": {
@@ -1087,7 +1006,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 31
+        "y": 40
       },
       "id": 14,
       "options": {
@@ -1151,7 +1070,7 @@
         "h": 6,
         "w": 3,
         "x": 0,
-        "y": 38
+        "y": 47
       },
       "id": 36,
       "options": {
@@ -1219,7 +1138,7 @@
         "h": 6,
         "w": 3,
         "x": 3,
-        "y": 38
+        "y": 47
       },
       "id": 37,
       "options": {
@@ -1321,7 +1240,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 38
+        "y": 47
       },
       "id": 13,
       "options": {
@@ -1418,7 +1337,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 38
+        "y": 47
       },
       "id": 34,
       "options": {
@@ -1521,7 +1440,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 44
+        "y": 53
       },
       "id": 25,
       "options": {
@@ -1617,7 +1536,7 @@
         "h": 7,
         "w": 6,
         "x": 6,
-        "y": 44
+        "y": 53
       },
       "id": 16,
       "options": {
@@ -1713,7 +1632,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 44
+        "y": 53
       },
       "id": 35,
       "options": {
@@ -1815,7 +1734,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 51
+        "y": 60
       },
       "id": 18,
       "options": {
@@ -1912,7 +1831,7 @@
         "h": 7,
         "w": 6,
         "x": 6,
-        "y": 51
+        "y": 60
       },
       "id": 38,
       "options": {
@@ -2008,7 +1927,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 51
+        "y": 60
       },
       "id": 39,
       "options": {
@@ -2076,6 +1995,30 @@
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "monitoring-prometheus"
+        },
+        "definition": "label_values(slice_throughput, snssai)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "S-NSSAI",
+        "multi": true,
+        "name": "snssai",
+        "options": [],
+        "query": "label_values(slice_throughput, snssai)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
       }
     ]
   },
@@ -2101,6 +2044,6 @@
   "timezone": "",
   "title": "Monitoring Dashboard For Demo",
   "uid": "afhb8p8jld91cb",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
