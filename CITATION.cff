@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the reference paper below."
+title: "5g_ansible: Automated multi-stack 5G deployment and monitoring with Ansible"
+abstract: >-
+  Ansible framework to deploy and monitor sliced private 5G networks on Kubernetes,
+  unifying the configuration of the OAI, Open5GS and free5GC cores, the OAI and
+  srsRAN RAN, and the UERANSIM simulator, for scenarios on the R2Lab / SophiaNode
+  testbed with real 5G devices and RAN simulation (OAI RFsim, UERANSIM).
+type: software
+repository-code: "https://github.com/sopnode/5g_ansible"
+license: Apache-2.0
+authors:
+  - family-names: Amami
+    given-names: Yassir
+    affiliation: "Inria, Université Côte d'Azur"
+  - family-names: Mabrouk
+    given-names: Ziyad
+    affiliation: "Inria, Université Côte d'Azur"
+  - family-names: Barakat
+    given-names: Chadi
+    affiliation: "Inria, Université Côte d'Azur"
+  - family-names: Turletti
+    given-names: Thierry
+    affiliation: "Inria, Université Côte d'Azur"
+preferred-citation:
+  type: conference-paper
+  title: "Toward Real-Time RAN Observability in Open-Source 5G Systems"
+  authors:
+    - family-names: Amami
+      given-names: Yassir
+    - family-names: Mabrouk
+      given-names: Ziyad
+    - family-names: Barakat
+      given-names: Chadi
+    - family-names: Turletti
+      given-names: Thierry
+  collection-title: "29th Conference on Innovation in Clouds, Internet and Networks (ICIN 2026)"
+  conference:
+    name: "ICIN 2026"
+    city: Athens
+    country: GR
+  year: 2026
+  month: 3
+  doi: "10.1109/ICIN69025.2026.11481836"
+  url: "https://inria.hal.science/hal-05448027v1"
