@@ -25,6 +25,24 @@ It supports:
 
 This work was done by **Yassir Amami** and **Ziyad Mabrouk** as part of our mission at [Inria Sophia Antipolis](https://www.inria.fr/en/inria-centre-universite-cote-azur).
 
+
+## How to cite
+
+If you use `5g_ansible`, please cite:
+
+> Y. Amami, Z. Mabrouk, C. Barakat, T. Turletti, "Toward Real-Time RAN
+> Observability in Open-Source 5G Systems," 29th Conference on Innovation in
+> Clouds, Internet and Networks (ICIN 2026), Athens, Greece, Mar. 2026.
+> DOI: 10.1109/ICIN69025.2026.11481836 — https://inria.hal.science/hal-05448027
+
+Developed at Inria Sophia Antipolis (SophiaNode / R2Lab, SLICES-RI).
+
+## License
+
+This project is licensed under the **Apache License 2.0** — see the [LICENSE](LICENSE) file for details.
+
+Copyright 2026 Inria.
+
 ---
 
 
