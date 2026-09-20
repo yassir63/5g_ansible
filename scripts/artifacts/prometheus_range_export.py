@@ -66,11 +66,11 @@ sum by (imsi, ue_ip, slice, probe_role, mode) (
         "query": """
 (
   sum by (imsi, ue_ip, slice, probe_role, mode, direction) (
-    rate(gtp_same_packet_upf_rtt_ns_sum[30s])
+    rate(gtp_same_packet_upf_rtt_observed_ns_sum[30s])
   )
 /
   sum by (imsi, ue_ip, slice, probe_role, mode, direction) (
-    rate(gtp_same_packet_upf_rtt_ns_count[30s])
+    rate(gtp_same_packet_upf_rtt_observed_ns_count[30s])
   )
 ) / 1000000
 """,
@@ -80,11 +80,11 @@ sum by (imsi, ue_ip, slice, probe_role, mode) (
         "query": """
 (
   sum by (imsi, ue_ip, slice, probe_role, mode, direction) (
-    rate(gtp_same_packet_gnb_rtt_ns_sum[30s])
+    rate(gtp_same_packet_gnb_rtt_observed_ns_sum[30s])
   )
 /
   sum by (imsi, ue_ip, slice, probe_role, mode, direction) (
-    rate(gtp_same_packet_gnb_rtt_ns_count[30s])
+    rate(gtp_same_packet_gnb_rtt_observed_ns_count[30s])
   )
 ) / 1000000
 """,
@@ -94,11 +94,11 @@ sum by (imsi, ue_ip, slice, probe_role, mode) (
         "query": """
 (
   sum by (imsi, ue_ip, slice, probe_role, mode, direction) (
-    rate(gtp_same_packet_rtt_gap_ns_sum[30s])
+    rate(gtp_same_packet_rtt_gap_observed_ns_sum[30s])
   )
 /
   sum by (imsi, ue_ip, slice, probe_role, mode, direction) (
-    rate(gtp_same_packet_rtt_gap_ns_count[30s])
+    rate(gtp_same_packet_rtt_gap_observed_ns_count[30s])
   )
 ) / 1000000
 """,
