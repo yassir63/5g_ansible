@@ -38,4 +38,9 @@ spec:
     - name: latency
       port: 9100
   selector:
+{% if ran | default('') == 'srsRAN' %}
+    app: srsran
+    component: gnb
+{% else %}
     nf: gnb
+{% endif %}

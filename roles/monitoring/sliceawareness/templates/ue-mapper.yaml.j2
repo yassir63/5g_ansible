@@ -13,9 +13,8 @@ spec:
       labels:
         app: ue-mapper-api
       annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/path: "/metrics"
-        prometheus.io/port: "{{ ue_mapper_api_port | default(8080) }}"
+        # This API does not expose a Prometheus endpoint.
+        prometheus.io/scrape: "false"
     spec:
       containers:
       - name: ue-mapper-api
@@ -33,9 +32,7 @@ metadata:
   name: ue-mapper-api
   namespace: {{ sliceawareness_namespace }}
   annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/path: "/metrics"
-    prometheus.io/port: "80"
+    prometheus.io/scrape: "false"
 spec:
   selector:
     app: ue-mapper-api

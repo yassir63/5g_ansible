@@ -4,6 +4,11 @@ test_pod:
 loki:
   enabled: true
   isDefault: false
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    # The annotation-based scraper resolves numeric ports, not port names.
+    prometheus.io/port: "3100"
   service:
     type: NodePort
     nodePort: {{ monitoring_loki_node_port }}
