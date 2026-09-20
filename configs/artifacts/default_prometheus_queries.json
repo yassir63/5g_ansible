@@ -154,5 +154,165 @@
   {
     "name": "node_cpu_softirq_cores_30s",
     "query": "sum by (instance) (rate(node_cpu_seconds_total{mode=\"softirq\"}[30s]))"
+  },
+  {
+    "name": "container_cpu_throttled_seconds_per_second_1m",
+    "query": "rate(container_cpu_cfs_throttled_seconds_total{container!=\"\",container!=\"POD\",pod!=\"\"}[1m])"
+  },
+  {
+    "name": "container_cpu_throttled_period_fraction_1m",
+    "query": "rate(container_cpu_cfs_throttled_periods_total{container!=\"\",container!=\"POD\",pod!=\"\"}[1m]) / (rate(container_cpu_cfs_periods_total{container!=\"\",container!=\"POD\",pod!=\"\"}[1m]) > 0)"
+  },
+  {
+    "name": "container_oom_events_total",
+    "query": "container_oom_events_total{container!=\"\",container!=\"POD\",pod!=\"\"}"
+  },
+  {
+    "name": "pod_container_restarts_total",
+    "query": "kube_pod_container_status_restarts_total"
+  },
+  {
+    "name": "pod_container_last_termination_reason",
+    "query": "kube_pod_container_status_last_terminated_reason"
+  },
+  {
+    "name": "pod_container_waiting_reason",
+    "query": "kube_pod_container_status_waiting_reason"
+  },
+  {
+    "name": "pod_ready",
+    "query": "kube_pod_status_ready{condition=\"true\"}"
+  },
+  {
+    "name": "pod_phase",
+    "query": "kube_pod_status_phase"
+  },
+  {
+    "name": "pod_container_resource_requests",
+    "query": "kube_pod_container_resource_requests{resource=~\"cpu|memory\"}"
+  },
+  {
+    "name": "pod_container_resource_limits",
+    "query": "kube_pod_container_resource_limits{resource=~\"cpu|memory\"}"
+  },
+  {
+    "name": "pod_node_identity",
+    "query": "kube_pod_info"
+  },
+  {
+    "name": "pod_container_identity",
+    "query": "kube_pod_container_info"
+  },
+  {
+    "name": "node_resource_allocatable",
+    "query": "kube_node_status_allocatable{resource=~\"cpu|memory\"}"
+  },
+  {
+    "name": "node_conditions",
+    "query": "kube_node_status_condition{condition=~\"Ready|MemoryPressure|DiskPressure|PIDPressure\"}"
+  },
+  {
+    "name": "node_cpu_mode_seconds_per_second_1m",
+    "query": "sum by (instance, node, mode) (rate(node_cpu_seconds_total[1m]))"
+  },
+  {
+    "name": "node_cpu_pressure_waiting_fraction_1m",
+    "query": "rate(node_pressure_cpu_waiting_seconds_total[1m])"
+  },
+  {
+    "name": "node_memory_pressure_waiting_fraction_1m",
+    "query": "rate(node_pressure_memory_waiting_seconds_total[1m])"
+  },
+  {
+    "name": "node_io_pressure_waiting_fraction_1m",
+    "query": "rate(node_pressure_io_waiting_seconds_total[1m])"
+  },
+  {
+    "name": "node_scheduler_wait_seconds_per_second_1m",
+    "query": "sum by (instance, node) (rate(node_schedstat_waiting_seconds_total[1m]))"
+  },
+  {
+    "name": "node_processes_runnable",
+    "query": "node_procs_running"
+  },
+  {
+    "name": "node_memory_available_bytes",
+    "query": "node_memory_MemAvailable_bytes"
+  },
+  {
+    "name": "node_memory_total_bytes",
+    "query": "node_memory_MemTotal_bytes"
+  },
+  {
+    "name": "node_network_receive_bytes_per_second_1m",
+    "query": "rate(node_network_receive_bytes_total{device!=\"lo\"}[1m])"
+  },
+  {
+    "name": "node_network_transmit_bytes_per_second_1m",
+    "query": "rate(node_network_transmit_bytes_total{device!=\"lo\"}[1m])"
+  },
+  {
+    "name": "node_network_receive_drops_per_second_1m",
+    "query": "rate(node_network_receive_drop_total{device!=\"lo\"}[1m])"
+  },
+  {
+    "name": "node_network_transmit_drops_per_second_1m",
+    "query": "rate(node_network_transmit_drop_total{device!=\"lo\"}[1m])"
+  },
+  {
+    "name": "node_network_receive_errors_per_second_1m",
+    "query": "rate(node_network_receive_errs_total{device!=\"lo\"}[1m])"
+  },
+  {
+    "name": "node_network_transmit_errors_per_second_1m",
+    "query": "rate(node_network_transmit_errs_total{device!=\"lo\"}[1m])"
+  },
+  {
+    "name": "pod_network_receive_bytes_per_second_1m",
+    "query": "rate(container_network_receive_bytes_total{pod!=\"\",interface!=\"lo\"}[1m])"
+  },
+  {
+    "name": "pod_network_transmit_bytes_per_second_1m",
+    "query": "rate(container_network_transmit_bytes_total{pod!=\"\",interface!=\"lo\"}[1m])"
+  },
+  {
+    "name": "pod_network_receive_drops_per_second_1m",
+    "query": "rate(container_network_receive_packets_dropped_total{pod!=\"\",interface!=\"lo\"}[1m])"
+  },
+  {
+    "name": "pod_network_transmit_drops_per_second_1m",
+    "query": "rate(container_network_transmit_packets_dropped_total{pod!=\"\",interface!=\"lo\"}[1m])"
+  },
+  {
+    "name": "node_disk_io_busy_fraction_1m",
+    "query": "rate(node_disk_io_time_seconds_total[1m])"
+  },
+  {
+    "name": "node_filesystem_available_bytes",
+    "query": "node_filesystem_avail_bytes"
+  },
+  {
+    "name": "node_clock_synchronized",
+    "query": "node_timex_sync_status"
+  },
+  {
+    "name": "node_clock_offset_seconds",
+    "query": "node_timex_offset_seconds"
+  },
+  {
+    "name": "node_identity",
+    "query": "node_uname_info"
+  },
+  {
+    "name": "node_collector_success",
+    "query": "node_scrape_collector_success"
+  },
+  {
+    "name": "monitoring_target_up",
+    "query": "up"
+  },
+  {
+    "name": "monitoring_scrape_duration_seconds",
+    "query": "scrape_duration_seconds"
   }
 ]

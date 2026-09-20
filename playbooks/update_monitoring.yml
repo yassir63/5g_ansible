@@ -1,0 +1,6 @@
+---
+- name: Update monitoring on an existing cluster
+  hosts: monitor_node
+  gather_facts: false
+  roles:
+    - role: monitoring/prometheus_grafana

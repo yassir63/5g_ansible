@@ -104,10 +104,30 @@ prometheus:
             target_label: pod
 
 nodeExporter:
-  enabled: false
+  enabled: {{ monitoring_node_exporter_enabled | bool | lower }}
+
+prometheus-node-exporter:
+  extraArgs:
+    - --collector.pressure
+    - --collector.schedstat
+    - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+    - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
+  prometheus:
+    monitor:
+      interval: "{{ monitoring_infrastructure_interval }}"
+      scrapeTimeout: "{{ monitoring_infrastructure_scrape_timeout }}"
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
 
 kubeStateMetrics:
   enabled: true
+
+kube-state-metrics:
+  prometheus:
+    monitor:
+      interval: "{{ monitoring_infrastructure_interval }}"
+      scrapeTimeout: "{{ monitoring_infrastructure_scrape_timeout }}"
 
 kubeApiServer:
   enabled: false
@@ -129,6 +149,28 @@ kubeScheduler:
 
 kubelet:
   enabled: true
+  serviceMonitor:
+    cAdvisor: true
+    # Keep throttled time; retain the other drop rules from chart 51.9.4.
+    cAdvisorMetricRelabelings:
+      - sourceLabels: [__name__]
+        action: drop
+        regex: 'container_cpu_(load_average_10s|system_seconds_total|user_seconds_total)'
+      - sourceLabels: [__name__]
+        action: drop
+        regex: 'container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)'
+      - sourceLabels: [__name__]
+        action: drop
+        regex: 'container_memory_(mapped_file|swap)'
+      - sourceLabels: [__name__]
+        action: drop
+        regex: 'container_(file_descriptors|tasks_state|threads_max)'
+      - sourceLabels: [__name__]
+        action: drop
+        regex: 'container_spec.*'
+      - sourceLabels: [id, pod]
+        action: drop
+        regex: '.+;'
 
 prometheusOperator:
   kubeletService:

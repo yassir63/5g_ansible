@@ -13,6 +13,9 @@ monitoring_prometheus_service_name: monitoring-prometheus
 monitoring_loki_service_name: loki
 
 monitoring_interval: "1s"
+monitoring_node_exporter_enabled: true
+monitoring_infrastructure_interval: "5s"
+monitoring_infrastructure_scrape_timeout: "4s"
 monitoring_retention: "5d"
 monitoring_loki_retention: "5d"
 monitoring_prometheus_node_port: 30095
