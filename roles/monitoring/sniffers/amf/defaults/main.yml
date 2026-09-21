@@ -1,7 +1,8 @@
 ---
-# Disabled until a separately built NGAP-procedure image is selected.
-amf_ngap_probe_enabled: false
-amf_ngap_probe_image: ""
-amf_ngap_probe_interface: n2
-amf_ngap_probe_metrics_port: 9102
-amf_ngap_probe_pending_timeout_seconds: 30
+amf_sniffer_image: "r2labuser/amf-sniffer:2026w10"
+# Disabled until an AMF-sniffer image containing probes/ngap_procedure/metrics.py is selected.
+amf_ngap_metrics_enabled: false
+amf_ngap_metrics_port: 9102
+amf_ngap_pending_timeout_seconds: 30
+# Empty preserves the deployment-specific default: n3 for Open5GS and n2 otherwise.
+amf_sniffer_capture_interface: ""

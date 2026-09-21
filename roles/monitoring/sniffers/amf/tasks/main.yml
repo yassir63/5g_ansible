@@ -120,41 +120,41 @@
 
 - name: Select AMF sniffer interface based on core
   set_fact:
-    amf_sniffer_interface: "{{ 'n3' if core == 'open5gs' else 'n2' }}"
+    amf_sniffer_interface: "{{ amf_sniffer_capture_interface | default('n3' if core == 'open5gs' else 'n2', true) }}"
 
 - name: Set AMF Redis host
   set_fact:
     amf_redis_host: "{{ redis_host | default('redis') }}"
 
-- name: Validate NGAP procedure probe settings when enabled
+- name: Validate NGAP procedure metrics settings when enabled
   ansible.builtin.assert:
     that:
-      - amf_ngap_probe_image is string
-      - amf_ngap_probe_image | length > 0
-      - amf_ngap_probe_interface is string
-      - amf_ngap_probe_interface | length > 0
-      - amf_ngap_probe_metrics_port is integer
-      - amf_ngap_probe_metrics_port >= 1
-      - amf_ngap_probe_metrics_port <= 65535
-      - amf_ngap_probe_pending_timeout_seconds is number
-      - amf_ngap_probe_pending_timeout_seconds > 0
+      - amf_sniffer_image is string
+      - amf_sniffer_image | length > 0
+      - amf_sniffer_interface is string
+      - amf_sniffer_interface | length > 0
+      - amf_ngap_metrics_port is integer
+      - amf_ngap_metrics_port >= 1
+      - amf_ngap_metrics_port <= 65535
+      - amf_ngap_pending_timeout_seconds is number
+      - amf_ngap_pending_timeout_seconds > 0
     fail_msg: >-
-      Build and select amf_ngap_probe_image, then provide valid NGAP procedure
-      probe interface, metrics port and pending timeout before enabling it.
-  when: amf_ngap_probe_enabled | bool
+      Build and select an AMF-sniffer image with NGAP metrics, then provide a valid
+      capture interface, metrics port and pending timeout before enabling metrics.
+  when: amf_ngap_metrics_enabled | bool
 
-- name: Render NGAP procedure probe metrics Service
+- name: Render AMF NGAP metrics Service
   ansible.builtin.template:
-    src: ngap-procedure-probe-service.yaml.j2
-    dest: /tmp/ngap-procedure-probe-service.yaml
+    src: amf-ngap-metrics-service.yaml.j2
+    dest: /tmp/amf-ngap-metrics-service.yaml
     mode: "0644"
-  when: amf_ngap_probe_enabled | bool
+  when: amf_ngap_metrics_enabled | bool
 
-- name: Apply NGAP procedure probe metrics Service
-  ansible.builtin.command: kubectl -n {{ core }} apply -f /tmp/ngap-procedure-probe-service.yaml
-  register: amf_ngap_probe_service_apply
-  changed_when: "'created' in amf_ngap_probe_service_apply.stdout or 'configured' in amf_ngap_probe_service_apply.stdout"
-  when: amf_ngap_probe_enabled | bool
+- name: Apply AMF NGAP metrics Service
+  ansible.builtin.command: kubectl -n {{ core }} apply -f /tmp/amf-ngap-metrics-service.yaml
+  register: amf_ngap_metrics_service_apply
+  changed_when: "'created' in amf_ngap_metrics_service_apply.stdout or 'configured' in amf_ngap_metrics_service_apply.stdout"
+  when: amf_ngap_metrics_enabled | bool
 
 - name: Inject AMF sniffer ephemeral container
   vars:
@@ -164,13 +164,19 @@
     existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
     amf_ephemeral_container:
       name: amf-sniffer
-      image: r2labuser/amf-sniffer:2026w10
+      image: "{{ amf_sniffer_image }}"
       imagePullPolicy: IfNotPresent
       env:
         - name: amf_sniffer_iface
           value: "{{ amf_sniffer_interface }}"
         - name: REDIS_HOST
           value: "{{ amf_redis_host }}"
+        - name: AMF_NGAP_METRICS_ENABLED
+          value: "{{ amf_ngap_metrics_enabled | bool | lower }}"
+        - name: AMF_NGAP_METRICS_PORT
+          value: "{{ amf_ngap_metrics_port | string }}"
+        - name: AMF_NGAP_PENDING_TIMEOUT_SECONDS
+          value: "{{ amf_ngap_pending_timeout_seconds | string }}"
       targetContainerName: "{{ target_container_name }}"
       stdin: true
       tty: true
@@ -207,70 +213,6 @@
   ansible.builtin.debug:
     msg: "AMF sniffer already present in pod {{ item.metadata.name }}, skipping injection."
   when: "'amf-sniffer' in ((item.spec.ephemeralContainers | default([])) | map(attribute='name') | list)"
-  loop: "{{ amf_pod_list }}"
-  loop_control:
-    label: "{{ item.metadata.name }}"
-
-- name: Inject NGAP procedure probe ephemeral container
-  vars:
-    pod_name: "{{ item.metadata.name }}"
-    target_container_name: "{{ item.spec.containers[0].name }}"
-    existing_ephemeral: "{{ item.spec.ephemeralContainers | default([]) }}"
-    existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
-    amf_ngap_probe_container:
-      name: ngap-procedure-probe
-      image: "{{ amf_ngap_probe_image }}"
-      imagePullPolicy: IfNotPresent
-      env:
-        - name: NGAP_PROBE_INTERFACE
-          value: "{{ amf_ngap_probe_interface }}"
-        - name: NGAP_PROBE_METRICS_PORT
-          value: "{{ amf_ngap_probe_metrics_port | string }}"
-        - name: NGAP_PROBE_PENDING_TIMEOUT_SECONDS
-          value: "{{ amf_ngap_probe_pending_timeout_seconds | string }}"
-      targetContainerName: "{{ target_container_name }}"
-      stdin: true
-      tty: true
-      securityContext:
-        privileged: true
-        allowPrivilegeEscalation: true
-        runAsUser: 0
-        runAsNonRoot: false
-        capabilities:
-          add:
-            - NET_ADMIN
-            - NET_RAW
-            - SYS_ADMIN
-    amf_ngap_probe_patch:
-      metadata:
-        name: "{{ pod_name }}"
-      spec:
-        ephemeralContainers: "{{ existing_ephemeral + [amf_ngap_probe_container] }}"
-  ansible.builtin.shell: |
-    kubectl -n {{ core }} patch pod {{ pod_name }} \
-      --subresource='ephemeralcontainers' \
-      --type='strategic' \
-      -p '{{ amf_ngap_probe_patch | to_json }}'
-  args:
-    executable: /bin/bash
-  when:
-    - amf_ngap_probe_enabled | bool
-    - "'ngap-procedure-probe' not in existing_ephemeral_names"
-  loop: "{{ amf_pod_list }}"
-  loop_control:
-    label: "{{ item.metadata.name }}"
-  register: amf_ngap_probe_injection_result
-  changed_when: true
-
-- name: Report existing NGAP procedure probe
-  ansible.builtin.debug:
-    msg: >-
-      NGAP procedure probe already exists in pod {{ item.metadata.name }}. Its
-      ephemeral-container image and settings cannot be changed; recreate the AMF
-      pod in a planned window before applying different probe settings.
-  when:
-    - amf_ngap_probe_enabled | bool
-    - "'ngap-procedure-probe' in ((item.spec.ephemeralContainers | default([])) | map(attribute='name') | list)"
   loop: "{{ amf_pod_list }}"
   loop_control:
     label: "{{ item.metadata.name }}"

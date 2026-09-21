@@ -10,7 +10,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("ngap_procedure_probe", ROOT / "probes/ngap_procedure/probe.py")
+spec = importlib.util.spec_from_file_location("ngap_procedure_metrics", ROOT / "probes/ngap_procedure/metrics.py")
 probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
 
@@ -113,26 +113,30 @@ class TrackerTests(unittest.TestCase):
 
 
 class IntegrationTests(unittest.TestCase):
-    def test_probe_service_is_explicit_and_headless(self):
-        template = Environment().from_string((ROOT / "roles/monitoring/sniffers/amf/templates/ngap-procedure-probe-service.yaml.j2").read_text())
-        service = yaml.safe_load(template.render(core="open5gs", amf_ngap_probe_metrics_port=9102))
+    def test_amf_sniffer_metrics_service_is_explicit_and_headless(self):
+        template = Environment().from_string((ROOT / "roles/monitoring/sniffers/amf/templates/amf-ngap-metrics-service.yaml.j2").read_text())
+        service = yaml.safe_load(template.render(core="open5gs", amf_ngap_metrics_port=9102))
         self.assertEqual(service["spec"]["clusterIP"], "None")
         self.assertEqual(service["spec"]["ports"][0]["targetPort"], 9102)
         self.assertEqual(service["metadata"]["annotations"]["prometheus.io/path"], "/metrics")
         self.assertEqual(service["spec"]["selector"], {"nf": "amf", "app": "monitoring"})
 
-    def test_disabled_defaults_and_injection_guard_are_present(self):
+    def test_disabled_defaults_and_single_sniffer_injection_are_present(self):
         defaults = yaml.safe_load((ROOT / "roles/monitoring/sniffers/amf/defaults/main.yml").read_text())
         tasks = (ROOT / "roles/monitoring/sniffers/amf/tasks/main.yml").read_text()
-        self.assertFalse(defaults["amf_ngap_probe_enabled"])
-        self.assertEqual(defaults["amf_ngap_probe_image"], "")
-        self.assertIn("ngap-procedure-probe", tasks)
-        self.assertIn("amf_ngap_probe_enabled | bool", tasks)
-        self.assertIn("cannot be changed", tasks)
+        self.assertFalse(defaults["amf_ngap_metrics_enabled"])
+        self.assertEqual(defaults["amf_sniffer_image"], "r2labuser/amf-sniffer:2026w10")
+        self.assertIn("amf-sniffer", tasks)
+        self.assertIn("amf_ngap_metrics_enabled | bool", tasks)
+        self.assertIn("AMF_NGAP_METRICS_ENABLED", tasks)
+        self.assertNotIn("ngap-procedure-probe", tasks)
 
     def test_build_context_and_artifact_queries(self):
-        dockerfile = (ROOT / "probes/ngap_procedure/Dockerfile").read_text()
-        self.assertIn("COPY probes/ngap_procedure/probe.py", dockerfile)
+        dockerfile = (ROOT / "monitoring/sliceawareness/amfsniffer/Dockerfile").read_text()
+        sniffer = (ROOT / "monitoring/sliceawareness/amfsniffer/amf_sniffer.py").read_text()
+        self.assertIn("COPY probes/ngap_procedure/metrics.py", dockerfile)
+        self.assertIn("PduSessionSetupTracker", sniffer)
+        self.assertIn("ngap_tracker.observe_layer", sniffer)
         queries = json.loads((ROOT / "configs/artifacts/default_prometheus_queries.json").read_text())
         names = [query["name"] for query in queries]
         self.assertEqual(len(names), len(set(names)))

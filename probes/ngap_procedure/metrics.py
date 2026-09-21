@@ -1,15 +1,12 @@
-#!/usr/bin/env python3
-"""Passively expose bounded NGAP PDU-session setup observations."""
+"""Passive, low-cardinality NGAP PDU-session setup metrics for the AMF sniffer."""
 
 from __future__ import annotations
 
-import argparse
-import os
 import re
 import threading
 import time
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, start_http_server
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 
 def _normal(text) -> str:
@@ -85,15 +82,13 @@ def _session_ids(layer) -> frozenset[str]:
 def _ue_key(layer) -> str:
     amf = next((value for value in (
         _positive_int(item, (1 << 40) - 1)
-        for item in _values(layer, ("aMF_UE_NGAP_ID", "amf_ue_ngap_id", "amf_ue_ngap_id"))
+        for item in _values(layer, ("aMF_UE_NGAP_ID", "amf_ue_ngap_id"))
     ) if value), "")
     ran = next((value for value in (
         _positive_int(item, (1 << 40) - 1)
-        for item in _values(layer, ("rAN_UE_NGAP_ID", "ran_ue_ngap_id", "ran_ue_ngap_id"))
+        for item in _values(layer, ("rAN_UE_NGAP_ID", "ran_ue_ngap_id"))
     ) if value), "")
-    if amf and ran:
-        return f"{amf}:{ran}"
-    return ""
+    return f"{amf}:{ran}" if amf and ran else ""
 
 
 class PduSessionSetupTracker:
@@ -174,21 +169,13 @@ class PduSessionSetupTracker:
                 self.unmatched.inc()
                 return "unmatched_response"
             self.pending_gauge.set(len(self.pending))
-            observed_duration = max(0, now - started)
             self.completed.labels(outcome).inc()
-            self.duration.labels(outcome).observe(observed_duration)
+            self.duration.labels(outcome).observe(max(0, now - started))
             return outcome
-
-    def observe_packet(self, packet) -> str:
-        try:
-            layer = packet["ngap"]
-        except (KeyError, TypeError, AttributeError):
-            return "ignored"
-        return self.observe_layer(layer)
 
 
 class _ExpiryCollector:
-    """Run expiry before the registered counters are rendered for a scrape."""
+    """Run expiry before registered counters are rendered for a scrape."""
 
     def __init__(self, tracker: PduSessionSetupTracker):
         self.tracker = tracker
@@ -199,32 +186,3 @@ class _ExpiryCollector:
 
     def describe(self):
         return []
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--interface", default=os.getenv("NGAP_PROBE_INTERFACE", "n2"))
-    parser.add_argument("--metrics-port", type=int, default=int(os.getenv("NGAP_PROBE_METRICS_PORT", "9102")))
-    parser.add_argument("--pending-timeout-seconds", type=float, default=float(os.getenv("NGAP_PROBE_PENDING_TIMEOUT_SECONDS", "30")))
-    args = parser.parse_args()
-    if not args.interface or not 1 <= args.metrics_port <= 65535 or args.pending_timeout_seconds <= 0:
-        parser.error("a capture interface, valid metrics port, and positive pending timeout are required")
-    try:
-        import pyshark
-    except ImportError as exc:
-        raise SystemExit("pyshark is required in the probe image") from exc
-    tracker = PduSessionSetupTracker(args.pending_timeout_seconds)
-    start_http_server(args.metrics_port, addr="0.0.0.0", registry=tracker.registry)
-    capture = pyshark.LiveCapture(interface=args.interface, bpf_filter="sctp")
-    tracker.mark_capture_started()
-    print(f"NGAP procedure probe started on {args.interface}; metrics port {args.metrics_port}", flush=True)
-    for packet in capture.sniff_continuously():
-        try:
-            tracker.observe_packet(packet)
-        except Exception:
-            tracker.record_decode_error()
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

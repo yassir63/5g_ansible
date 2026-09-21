@@ -1,46 +1,52 @@
-# NGAP PDU-session setup probe: prepared, image build pending
+# NGAP PDU-session setup metrics: merged into the AMF sniffer
 
-This independent, privileged ephemeral-container probe captures SCTP on the AMF
-pod's N2 interface and exposes Prometheus metrics on port 9102. It does not change
-the AMF, gNB, Redis mapper or user-plane packet path. It runs beside the existing
-`amf-sniffer`, so enabling it does not replace UE-context reconstruction.
+This module is an additional output of the existing `amf-sniffer`; it is not a
+second capture process or ephemeral container. The AMF sniffer captures SCTP once,
+then both updates Redis for UE/TEID mapping and observes NGAP PDU-session setup.
+It does not change the AMF, gNB, Redis mapper data model or user-plane packet path.
 
-No image has been built or published. It is disabled by default with
-`amf_ngap_probe_enabled: false`; no Pod, Service or Prometheus target changes
-until it is explicitly enabled after building an image.
+No image has been built or published. NGAP metrics are disabled by default with
+`amf_ngap_metrics_enabled: false`, so no Service or Prometheus target changes
+until the rebuilt AMF-sniffer image is selected and explicitly enabled.
 
 ## Build and enable later
 
-Build from the repository root, choosing an immutable tag available to Kubernetes
-nodes of the intended architecture:
+Build the existing AMF-sniffer image from the repository root, choosing an immutable
+tag available to Kubernetes nodes of the intended architecture:
 
 ```bash
-docker build -f probes/ngap_procedure/Dockerfile \
-  -t REGISTRY/amf-ngap-procedure:TAG .
-docker push REGISTRY/amf-ngap-procedure:TAG
+docker build -f monitoring/sliceawareness/amfsniffer/Dockerfile \
+  -t REGISTRY/amf-sniffer:TAG .
+docker push REGISTRY/amf-sniffer:TAG
 ```
 
 Then set these deployment variables before a normal deployment:
 
 ```yaml
-amf_ngap_probe_enabled: true
-amf_ngap_probe_image: REGISTRY/amf-ngap-procedure:TAG
-# Override only when the AMF's N2 interface is not named n2.
-# amf_ngap_probe_interface: n2
+amf_sniffer_image: REGISTRY/amf-sniffer:TAG
+amf_ngap_metrics_enabled: true
+# Optional: only override when the AMF control-plane capture interface differs.
+# amf_sniffer_capture_interface: n3
 ```
 
-The AMF sniffer role injects an ephemeral container named
-`ngap-procedure-probe` and applies a headless Service that Prometheus discovers.
+The AMF sniffer role injects its existing `amf-sniffer` ephemeral container and,
+when metrics are enabled, applies a headless Service that Prometheus discovers.
 It selects the same AMF pod labels as the existing AMF metrics Service. Check that
 it has endpoints and that `ngap_pdu_session_setup_capture_started` is `1` before
-interpreting empty procedure metrics. A missing or wrong N2 interface leaves the
-capture alive but produces no NGAP observations.
+interpreting empty procedure metrics. A missing or wrong control-plane interface
+leaves the capture alive but produces no NGAP observations.
 
 Ephemeral containers cannot be edited or removed. Changing the image, interface
 or timeout after injection requires recreating the AMF pod so the role can inject
-a new `ngap-procedure-probe`; do this in a planned deployment window. The probe
+the new `amf-sniffer` image; do this in a planned deployment window. The sniffer
 has no resource requests/limits because Kubernetes does not allow them for
 ephemeral containers. Include its CPU and memory use in overhead evaluation.
+
+In this repository's Open5GS configuration, the AMF binds its N2 address on the
+Multus interface named `n3`, so the existing default capture interface remains
+`n3`. This is a deployment-specific interface name, not an assertion that NGAP
+uses N3. For a different core or network attachment, set
+`amf_sniffer_capture_interface` to the actual AMF control-plane interface.
 
 ## What is measured
 

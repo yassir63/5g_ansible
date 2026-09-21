@@ -2,6 +2,8 @@ import pyshark
 import os
 import sys
 import redis
+from prometheus_client import start_http_server
+from ngap_procedure_metrics import PduSessionSetupTracker
 
 # -------------------------
 # Config
@@ -18,6 +20,25 @@ redis_host = os.getenv("REDIS_HOST", "redis.monitoring.svc.cluster.local")
 rdb = redis.Redis(host=redis_host, port=6379, decode_responses=True)
 
 ue_sessions = {}
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
+
+
+ngap_tracker = None
+if env_bool("AMF_NGAP_METRICS_ENABLED"):
+    try:
+        ngap_metrics_port = int(os.getenv("AMF_NGAP_METRICS_PORT", "9102"))
+        ngap_pending_timeout = float(os.getenv("AMF_NGAP_PENDING_TIMEOUT_SECONDS", "30"))
+        if not 1 <= ngap_metrics_port <= 65535 or ngap_pending_timeout <= 0:
+            raise ValueError("invalid metrics port or pending timeout")
+        ngap_tracker = PduSessionSetupTracker(ngap_pending_timeout)
+        start_http_server(ngap_metrics_port, addr="0.0.0.0", registry=ngap_tracker.registry)
+        print(f"[*] NGAP procedure metrics enabled on port {ngap_metrics_port}")
+    except Exception as exc:
+        print(f"❌ NGAP procedure metrics initialization failed: {exc}")
+        sys.exit(1)
 
 # -------------------------
 # Helpers
@@ -189,6 +210,13 @@ def process_packet(pkt):
         return
     ngap = pkt["ngap"]
 
+    # Procedure metrics never block the existing UE/TEID reconstruction path.
+    if ngap_tracker:
+        try:
+            ngap_tracker.observe_layer(ngap)
+        except Exception:
+            ngap_tracker.record_decode_error()
+
     ran_id = getattr(ngap, "ran_ue_ngap_id", None)
     if not ran_id:
         return
@@ -237,10 +265,11 @@ def process_packet(pkt):
 
 print(f"[*] Starting pyshark NGAP sniffer on interface '{interface}'...")
 capture = pyshark.LiveCapture(interface=interface, bpf_filter="sctp")
+if ngap_tracker:
+    ngap_tracker.mark_capture_started()
 
 for pkt in capture.sniff_continuously():
     try:
         process_packet(pkt)
     except Exception:
         continue
-

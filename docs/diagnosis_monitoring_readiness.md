@@ -118,11 +118,11 @@ only require rerunning collection while the source data remains in retention.
   already referenced by `monitoring-dashboard-srsran.json`: UL/DL bitrate,
   successful/failed transmissions, MCS, rank, CQI, PUCCH/PUSCH SNR and DL buffer
   occupancy. The same queries automatically enter the availability check.
-- **Pending image build:** the independent AMF NGAP procedure probe observes
+- **Pending image build:** the existing AMF sniffer now also observes NGAP
   PDU-session resource setup requests/responses, exact local correlations and
-  data-quality signals for missed observations. Build/select an image and set
-  `amf_ngap_probe_enabled: true` only when ready. See the
-  [NGAP probe checklist](../probes/ngap_procedure/README.md).
+  data-quality signals for missed observations. Build/select the new sniffer
+  image and set `amf_ngap_metrics_enabled: true` only when ready. See the
+  [NGAP metrics checklist](../probes/ngap_procedure/README.md).
 
 These RAN queries retain every source label, including RNTI and exporter identity
 when provided. They do not join RNTI to the mapper's NGAP RAN UE ID: those identifiers
