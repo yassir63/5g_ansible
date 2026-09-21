@@ -13,6 +13,30 @@ from pathlib import Path
 from prometheus_range_export import http_json, load_queries, query_range
 
 
+def load_expectations(path: str) -> list[dict]:
+    """Load required readiness conditions without folding them into artifacts."""
+
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("Expectation file must contain a JSON list")
+    expectations = []
+    names = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Each readiness expectation must be an object")
+        name = item.get("name")
+        query = item.get("query")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Each readiness expectation needs a non-empty name")
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError(f"Readiness expectation {name!r} needs a non-empty query")
+        if name in names:
+            raise ValueError(f"Duplicate readiness expectation: {name}")
+        names.add(name)
+        expectations.append({"name": name, "query": query})
+    return expectations
+
+
 def summarize_query(payload: dict) -> dict:
     if payload.get("status") != "success":
         return {"status": "error", "error": payload.get("error", str(payload))}
@@ -90,15 +114,26 @@ def main() -> int:
         "--queries-json",
         default=str(Path(__file__).resolve().parents[2] / "configs/artifacts/default_prometheus_queries.json"),
     )
+    parser.add_argument(
+        "--expectations-json",
+        help=(
+            "Optional JSON list of required readiness queries. "
+            "Each condition must return at least one finite sample."
+        ),
+    )
     parser.add_argument("--lookback-seconds", type=int, default=300)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     if args.lookback_seconds < 120:
         parser.error("--lookback-seconds must be at least 120 for rate queries")
     queries = load_queries(args.queries_json)
+    try:
+        expectations = load_expectations(args.expectations_json) if args.expectations_json else []
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        parser.error(f"Could not load readiness expectations: {exc}")
     end = time.time()
     start = end - args.lookback_seconds
-    report = {"start": start, "end": end, "queries": []}
+    report = {"start": start, "end": end, "queries": [], "expectations": []}
     errors = False
     try:
         report["scrape_targets"] = check_targets(args.prometheus_url)
@@ -114,6 +149,15 @@ def main() -> int:
         report["queries"].append(item)
         errors |= item["status"] == "error"
         print(f"{item['status']:12} {item['name']} ({item.get('series', 0)} series)", flush=True)
+    for expectation in expectations:
+        try:
+            status = summarize_query(query_range(args.prometheus_url, expectation["query"], start, end, "15s"))
+        except (OSError, ValueError, TimeoutError) as exc:
+            status = {"status": "error", "error": str(exc)}
+        item = {**expectation, **status}
+        report["expectations"].append(item)
+        errors |= item["status"] != "available"
+        print(f"required {item['status']:12} {item['name']} ({item.get('series', 0)} series)", flush=True)
     if args.loki_url:
         try:
             report["loki"] = check_loki(args.loki_url, args.loki_selector, start, end)
@@ -122,6 +166,7 @@ def main() -> int:
         errors |= report["loki"]["status"] == "error"
         print(f"Loki: {report['loki']['status']}")
     report["counts"] = dict(Counter(item["status"] for item in report["queries"]))
+    report["expectation_counts"] = dict(Counter(item["status"] for item in report["expectations"]))
     targets = report["scrape_targets"].get("targets", [])
     unhealthy = [item for item in targets if item["health"] != "up"]
     report["unhealthy_targets"] = unhealthy
@@ -129,6 +174,8 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"\nQuery availability: {report['counts']}; unhealthy targets: {len(unhealthy)}")
+    if expectations:
+        print(f"Required readiness: {report['expectation_counts']}")
     print(f"Report: {out}")
     print("Empty results are unknown/conditional, not healthy zeros. Review coverage per node and pod.")
     return 2 if errors or unhealthy else 0

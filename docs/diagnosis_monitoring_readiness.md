@@ -39,7 +39,27 @@ Prometheus labels remain available in the exported CSV's `metric_json` column.
 
 ## One deployment, followed by a coverage check
 
-1. Deploy from a checkout containing these changes with monitoring enabled.
+1. Build the updated mapper, AMF-sniffer, SMF-sniffer, and shared user-plane
+   probe images, then deploy from a checkout containing these changes with
+   monitoring enabled. The repository includes
+   configs/monitoring/profiles/ml_live_observability.yml, which enables the
+   full live stack and pins the four required image tags.
+
+    docker build -f monitoring/sliceawareness/ue_mapper/Dockerfile -t r2labuser/ue_mapper_api:2026w10-ml .
+    docker build -f probes/amf_sniffer/Dockerfile -t r2labuser/amf-sniffer:2026w10-ml .
+    docker build -f probes/smf_sniffer/Dockerfile -t r2labuser/smf-sniffer:2026w10-ml .
+    docker build -f probes/user_plane_path/Dockerfile -t r2labuser/user-plane-path-probe:2026w10-ml .
+
+    docker push r2labuser/ue_mapper_api:2026w10-ml
+    docker push r2labuser/amf-sniffer:2026w10-ml
+    docker push r2labuser/smf-sniffer:2026w10-ml
+    docker push r2labuser/user-plane-path-probe:2026w10-ml
+
+    ./deploy.sh -n -e @configs/monitoring/profiles/ml_live_observability.yml
+
+The deployment recreates the network-function pods before injecting the
+ephemeral sniffers and user-plane probes. A monitoring-only update cannot
+replace an existing ephemeral container.
 2. Allow at least two minutes of scrapes. Run normal traffic with the intended
    latency probes active; packet-dependent metrics need actual traffic.
 3. From a machine that can reach the monitor node, run:
@@ -48,6 +68,7 @@ Prometheus labels remain available in the exported CSV's `metric_json` column.
 python3 scripts/artifacts/check_observability.py \
   --prometheus-url http://MONITOR_HOST:30095 \
   --loki-url http://MONITOR_HOST:31000 \
+  --expectations-json configs/monitoring/ml_live_expectations.json \
   --out results/observability_check.json
 ```
 
@@ -56,6 +77,11 @@ by artifact exports, inventories active scrape targets, and optionally checks
 for a recent Loki log entry. It requires only Python's standard library. A
 successful check does not certify diagnostic completeness: inspect the report
 for coverage of every intended node, pod, interface and probe role.
+
+The optional expectation file is deliberately stricter than the general query
+report. It requires the mapper and Redis, the AMF and SMF captures, the gNB N3
+path, and the UPF N3/N6 paths to report healthy values. It does not require
+traffic-dependent packet rates: those are checked during the traffic test.
 
 Statuses distinguish finite samples (including valid zeros), empty results,
 non-finite values, mixed finite/non-finite values, and query errors. Empty OOM or

@@ -1,0 +1,20 @@
+---
+# Enable the complete live monitoring stack after building the images below.
+# This is a deliberate deployment profile; role defaults stay disabled.
+monitoring_enabled: true
+monitoring_loki_enabled: true
+
+ue_mapper_api_image: "r2labuser/ue_mapper_api:2026w10-ml"
+ue_mapper_metrics_enabled: true
+
+amf_sniffer_image: "r2labuser/amf-sniffer:2026w10-ml"
+amf_ngap_metrics_enabled: true
+
+smf_sniffer_image: "r2labuser/smf-sniffer:2026w10-ml"
+smf_pfcp_metrics_enabled: true
+
+# One shared image is injected beside both user-plane anchors.
+gnb_data_plane_probe_image: "r2labuser/user-plane-path-probe:2026w10-ml"
+gnb_data_plane_probe_enabled: true
+upf_data_plane_probe_image: "r2labuser/user-plane-path-probe:2026w10-ml"
+upf_data_plane_probe_enabled: true

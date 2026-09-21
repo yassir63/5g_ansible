@@ -1,0 +1,38 @@
+[
+  {
+    "name": "ue_mapper_collection_healthy",
+    "query": "ue_mapper_collection_success == 1"
+  },
+  {
+    "name": "ue_mapper_redis_healthy",
+    "query": "ue_mapper_redis_up == 1"
+  },
+  {
+    "name": "amf_ngap_capture_started",
+    "query": "ngap_pdu_session_setup_capture_started == 1"
+  },
+  {
+    "name": "smf_pfcp_capture_started",
+    "query": "pfcp_session_establishment_capture_started == 1"
+  },
+  {
+    "name": "gnb_n3_path_ready",
+    "query": "user_plane_probe_path_ready{anchor=\"gnb\",path=\"n3\"} == 1"
+  },
+  {
+    "name": "gnb_user_plane_collection_healthy",
+    "query": "user_plane_probe_collection_success{anchor=\"gnb\"} == 1"
+  },
+  {
+    "name": "upf_n3_path_ready",
+    "query": "user_plane_probe_path_ready{anchor=\"upf\",path=\"n3\"} == 1"
+  },
+  {
+    "name": "upf_n6_path_ready",
+    "query": "user_plane_probe_path_ready{anchor=\"upf\",path=\"n6\"} == 1"
+  },
+  {
+    "name": "upf_user_plane_collection_healthy",
+    "query": "user_plane_probe_collection_success{anchor=\"upf\"} == 1"
+  }
+]
