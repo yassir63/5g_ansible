@@ -119,10 +119,12 @@ fault-revealing scenario names out of model inputs. The generic runner already
 records windows and artifacts; validate a complete baseline/fault/recovery run
 before collecting a campaign.
 
-The current artifact collector archives Kubernetes logs; it does not export
-Loki windows. Archive relevant logs and historical UE-mapper snapshots for
-reproducible offline diagnosis before retention expires. Loki export and a
-generic historical mapper collector are follow-up work, not implemented here.
+The default observability artifact profile archives setup snapshots before and
+after a run and polls UE-mapper inventory every two seconds during the workload.
+See [experiment artifacts](experiment_artifacts.md#setup-snapshots-and-ue-context-history)
+for configuration and completeness checks. The collector archives Kubernetes
+logs; exporting Loki windows remains follow-up work. Preserve relevant logs
+before retention expires for reproducible offline diagnosis.
 
 ## Upstream references
 

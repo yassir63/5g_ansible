@@ -111,6 +111,10 @@
       This directory was produced by the generic experiment artifact collector.
 
       Main artifacts:
+      - `setup/before/` and `setup/after/`: host and cluster snapshots, selected profile settings, source revision, and collection status when enabled.
+      - `ue_context/history.jsonl`: timestamped UE inventory observations and failed polls when enabled.
+      - `ue_context/summary.json` / `collection_status.json`: sampling coverage and retrieval status.
+      - `experiment_status.json`: success/failure of the experiment workload.
       - `timeline_events.jsonl`: raw start/end events emitted by the runner or scenario.
       - `timeline_summary.md` / `.csv` / `.json`: paired campaign, section, scenario, step, direction, and phase windows.
       - `section_logs/<section>/`: stdout, stderr, result JSON, and fetched runner files for command/playbook sections.

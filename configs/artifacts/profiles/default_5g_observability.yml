@@ -1,6 +1,14 @@
 ---
 collect:
   enabled: true
+  setup:
+    enabled: true
+  ue_context:
+    enabled: true
+    interval_seconds: 2
+    timeout_seconds: 5
+    max_seconds: 7200
+    limit: 5000
   prometheus:
     enabled: true
     url: "http://127.0.0.1:30095"

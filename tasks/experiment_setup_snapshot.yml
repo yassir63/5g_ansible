@@ -1,0 +1,93 @@
+---
+- name: Create setup snapshot directory
+  ansible.builtin.file:
+    path: "{{ experiment_results_dir }}/setup/{{ experiment_setup_phase }}"
+    state: directory
+    mode: "0700"
+
+- name: Initialize host setup snapshots
+  ansible.builtin.set_fact:
+    experiment_host_snapshots: []
+
+- name: Collect each host setup snapshot
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_setup_host.yml"
+  loop: "{{ experiment_setup_hosts | unique }}"
+  loop_control:
+    loop_var: experiment_setup_host
+
+- name: Save host setup snapshots and collection status
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/setup/{{ experiment_setup_phase }}/hosts.json"
+    mode: "0600"
+    content: "{{ experiment_host_snapshots | to_nice_json }}\n"
+
+- name: Read cluster setup snapshot
+  ansible.builtin.script:
+    cmd: "{{ playbook_dir }}/../scripts/artifacts/collect_setup.py --mode cluster --kubeconfig {{ experiment_kubeconfig | quote }}"
+    executable: python3
+  delegate_to: "{{ experiment_context_control_host }}"
+  remote_user: "{{ hostvars[experiment_context_control_host].ansible_user | default('root') }}"
+  vars:
+    ansible_connection: "{{ hostvars[experiment_context_control_host].ansible_connection | default('local' if experiment_context_control_host in ['localhost', '127.0.0.1'] else 'ssh') }}"
+  register: experiment_cluster_snapshot
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+
+- name: Save cluster snapshot and collection status
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/setup/{{ experiment_setup_phase }}/cluster.json"
+    mode: "0600"
+    content: "{{ experiment_cluster_snapshot | to_nice_json }}\n"
+
+- name: Record source revision
+  ansible.builtin.command:
+    argv: [git, rev-parse, HEAD]
+    chdir: "{{ playbook_dir }}/.."
+  register: experiment_setup_revision
+  changed_when: false
+  failed_when: false
+
+- name: Record tracked source modifications
+  ansible.builtin.command:
+    argv: [git, status, --porcelain, --untracked-files=no]
+    chdir: "{{ playbook_dir }}/.."
+  register: experiment_setup_dirty
+  changed_when: false
+  failed_when: false
+
+- name: Locate selected 5G profile
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+  register: experiment_setup_profile_file
+
+- name: Read selected 5G profile
+  ansible.builtin.include_vars:
+    file: "{{ experiment_setup_profile_file.stat.path }}"
+    name: experiment_setup_profile
+  when: experiment_setup_profile_file.stat.exists
+  no_log: true
+
+- name: Save selected deployment settings without subscriber credentials
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/setup/{{ experiment_setup_phase }}/deployment.json"
+    mode: "0600"
+    content: >-
+      {{ {
+        'run_id': experiment_run_id,
+        'source_revision': experiment_setup_revision.stdout | default(''),
+        'tracked_modifications': experiment_setup_dirty.stdout_lines | default([]),
+        'core': core | default('unknown'), 'ran': ran | default('unknown'),
+        'rru': rru | default('unknown'), 'fiveg_profile': fiveg_profile | default('default'),
+        'profile_found': experiment_setup_profile_file.stat.exists,
+        'selected_profile': {
+          'plmn': experiment_setup_profile.plmn | default({}),
+          'dnns': experiment_setup_profile.dnns | default([]),
+          'slices': experiment_setup_profile.slices | default([]),
+          'ues': experiment_setup_profile.ues | default({})
+        },
+        'hosts': experiment_setup_hosts, 'control_host': experiment_context_control_host,
+        'target_server': target_server_host | default(''),
+        'experiment_metadata': '../../experiment_metadata.json',
+        'note': 'Selected profile is source configuration, not proof of runtime configuration. ConfigMap fingerprints and pod snapshots describe the deployed state.'
+      } | to_nice_json }}

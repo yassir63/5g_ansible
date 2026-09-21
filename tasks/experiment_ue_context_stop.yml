@@ -1,0 +1,77 @@
+---
+- name: Ensure local UE context status directory exists
+  ansible.builtin.file:
+    path: "{{ experiment_results_dir }}/ue_context"
+    state: directory
+    mode: "0700"
+
+- name: Stop and retrieve experiment UE context history
+  block:
+    - name: Request final UE context observation and stop
+      ansible.builtin.copy:
+        dest: "{{ experiment_context_temp.path }}/STOP"
+        content: "stop\n"
+        mode: "0600"
+      register: experiment_context_stop_signal
+      ignore_errors: true
+      ignore_unreachable: true
+
+    - name: Wait for bounded UE context sampler to exit
+      ansible.builtin.async_status:
+        jid: "{{ experiment_context_job.ansible_job_id }}"
+      register: experiment_context_exit
+      until: experiment_context_exit.finished | default(false)
+      retries: "{{ (experiment_context_timeout | int + 15) }}"
+      delay: 2
+      when: experiment_context_job.ansible_job_id is defined
+      ignore_errors: true
+      ignore_unreachable: true
+
+    - name: Retrieve UE history files
+      ansible.builtin.fetch:
+        src: "{{ experiment_context_temp.path }}/{{ item }}"
+        dest: "{{ experiment_results_dir }}/ue_context/{{ item }}"
+        flat: true
+      loop: [history.jsonl, summary.json, ready.json]
+      register: experiment_context_fetch
+      ignore_errors: true
+      ignore_unreachable: true
+
+    - name: Remove finished async job record
+      ansible.builtin.async_status:
+        jid: "{{ experiment_context_job.ansible_job_id }}"
+        mode: cleanup
+      when:
+        - experiment_context_job.ansible_job_id is defined
+        - experiment_context_exit.finished | default(false)
+      ignore_errors: true
+      ignore_unreachable: true
+
+    - name: Remove remote sampler files only after successful retrieval
+      ansible.builtin.file:
+        path: "{{ experiment_context_temp.path }}"
+        state: absent
+      when:
+        - experiment_context_exit.finished | default(false)
+        - not (experiment_context_fetch.failed | default(false))
+        - not (experiment_context_fetch.unreachable | default(false))
+      ignore_errors: true
+      ignore_unreachable: true
+
+  delegate_to: "{{ experiment_context_control_host }}"
+  remote_user: "{{ hostvars[experiment_context_control_host].ansible_user | default('root') }}"
+  vars:
+    ansible_connection: "{{ hostvars[experiment_context_control_host].ansible_connection | default('local' if experiment_context_control_host in ['localhost', '127.0.0.1'] else 'ssh') }}"
+  when: experiment_context_temp.path is defined
+
+- name: Save UE context collection status
+  ansible.builtin.copy:
+    dest: "{{ experiment_results_dir }}/ue_context/collection_status.json"
+    mode: "0600"
+    content: >-
+      {{ {'control_host': experiment_context_control_host,
+          'remote_directory': experiment_context_temp.path | default(''),
+          'startup': experiment_context_job | default({}),
+          'stop': experiment_context_stop_signal | default({}),
+          'exit': experiment_context_exit | default({}),
+          'fetch': experiment_context_fetch | default({})} | to_nice_json }}

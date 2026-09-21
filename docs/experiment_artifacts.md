@@ -253,6 +253,96 @@ with:
 
 or set `default_section_seconds` in the scenario YAML.
 
+## Setup Snapshots And UE Context History
+
+The `default_5g_observability` profile now enables both collectors. Other profiles
+and self-contained scenarios retain their previous behavior unless enabled:
+
+```yaml
+collect:
+  enabled: true
+  # Optional; defaults to the pod-log control host (monitor node, then core).
+  control_host: sopnode-f1
+  setup:
+    enabled: true
+    # Optional; defaults to core, RAN, monitor and traffic-server inventory hosts.
+    hosts: [sopnode-f1, sopnode-w3]
+  ue_context:
+    enabled: true
+    namespace: monitoring
+    service: ue-mapper-api
+    interval_seconds: 2
+    timeout_seconds: 5
+    max_seconds: 7200
+    limit: 5000
+    # Optional API base URL reachable from control_host; bypasses the service proxy.
+    # url: http://MAPPER_HOST:PORT
+```
+
+Set either `enabled` to `false` to disable it; `collect.enabled: false` overrides
+both. Dry runs validate and show the configuration without creating directories,
+connecting to hosts, or starting a sampler. Hosts need Python 3; the control host
+also needs kubectl and a working kubeconfig. Existing `experiment_kubeconfig`
+applies to both collectors. Auto mode uses KUBECONFIG when set, otherwise the
+first readable file among the user's kubeconfig, root's kubeconfig and
+`/etc/kubernetes/admin.conf`. Set an explicit path if multiple contexts exist.
+
+The sampler uses the Kubernetes service proxy for the mapper's port 80. It
+does not need a new NodePort or a long-running port-forward. For a different
+service port, provide a directly reachable `url`.
+
+The runner writes:
+
+```text
+setup/
+  before/{hosts,cluster,deployment}.json
+  after/{hosts,cluster,deployment}.json
+ue_context/
+  history.jsonl
+  ready.json
+  summary.json
+  collection_status.json
+experiment_status.json
+```
+
+Host snapshots contain CPU/NUMA information from lscpu, memory, OS/kernel,
+interfaces, routes and clock status. Cluster snapshots contain Kubernetes
+versions, node capacity, pod placement, requested resources, container image IDs,
+network attachments, service selectors and ConfigMap fingerprints. Missing tools
+or inaccessible hosts are recorded as collection errors, not healthy results.
+`hosts.json` and `cluster.json` retain Ansible return metadata; their `stdout`
+fields contain the collector's JSON snapshot. Each command has collection times.
+
+`deployment.json` records the source revision, tracked modifications, selected
+RAN/core/RU/profile, traffic-server host and selected profile sections (PLMN,
+DNNs, slices, UE assignments). It excludes the profile's security section and
+does not archive Kubernetes Secrets or container environment values. ConfigMaps
+are fingerprinted rather than copied because they may contain credentials.
+The selected profile describes source settings, not necessarily the exact
+effective runtime radio configuration; use image IDs and configuration
+fingerprints to identify changes and preserve relevant sanitized config elsewhere
+when required. `experiment_metadata.json` remains the source for resolved section
+and traffic-runner settings. Explicitly add external UE/traffic hosts to `hosts`
+when they are not in the default groups. Inventory SSH settings are reused.
+
+Setup collection happens outside individual workload sections. UE sampling starts
+before the first section and stops after the last, with a final observation. A
+failed section still triggers sampler shutdown, history retrieval, final setup
+collection and normal artifact collection; the playbook then reports the original
+failure. `experiment_status.json` reports workload failure separately from
+collection status. A killed Ansible controller or unreachable machine can prevent
+cleanup; the sampler has a maximum duration and remote files are retained when
+retrieval fails. Inspect `collection_status.json` before assuming completeness.
+
+Sample times are observation times, not exact attach/detach times. Missing or
+possibly truncated responses must not be interpreted as UE departures. Raise the
+maximum duration for campaigns longer than two hours and verify cross-host clock
+alignment before correlating the history with metrics and logs.
+
+This addition does not add RAN export queries, an LLM, or a live UE-context metrics
+endpoint. Those remain separate follow-up steps. Source configuration and
+fault-revealing section names are evaluation context, not automatic model inputs.
+
 ## Runner Types
 
 Run a shell command:

@@ -1,0 +1,17 @@
+---
+- name: Read host setup snapshot
+  ansible.builtin.script:
+    cmd: "{{ playbook_dir }}/../scripts/artifacts/collect_setup.py --mode host"
+    executable: python3
+  delegate_to: "{{ experiment_setup_host }}"
+  remote_user: "{{ hostvars[experiment_setup_host].ansible_user | default('root') }}"
+  vars:
+    ansible_connection: "{{ hostvars[experiment_setup_host].ansible_connection | default('local' if experiment_setup_host in ['localhost', '127.0.0.1'] else 'ssh') }}"
+  register: experiment_host_snapshot
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+
+- name: Append host snapshot and collection status
+  ansible.builtin.set_fact:
+    experiment_host_snapshots: "{{ experiment_host_snapshots + [experiment_host_snapshot | combine({'host': experiment_setup_host})] }}"

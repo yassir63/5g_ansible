@@ -1,0 +1,42 @@
+---
+- name: Validate setup and UE context collection blocks
+  ansible.builtin.assert:
+    that:
+      - experiment_collect_config.setup | default({}) is mapping
+      - experiment_collect_config.ue_context | default({}) is mapping
+    fail_msg: "collect.setup and collect.ue_context must be maps."
+
+- name: Set experiment context defaults
+  ansible.builtin.set_fact:
+    experiment_collect_setup: "{{ experiment_collect_enabled | bool and (experiment_collect_config.setup.enabled | default(false) | bool) }}"
+    experiment_collect_ue_context: "{{ experiment_collect_enabled | bool and (experiment_collect_config.ue_context.enabled | default(false) | bool) }}"
+    experiment_context_control_host: "{{ experiment_collect_config.control_host | default(experiment_pod_log_control_host_effective) }}"
+    experiment_setup_hosts: >-
+      {{ experiment_collect_config.setup.hosts | default(
+        ((groups['core_node'] | default([])) + (groups['ran_node'] | default([])) +
+         (groups['monitor_node'] | default([])) + (groups['iperf_server_node'] | default([])) +
+         ([target_server_host] if target_server_host | default('') | length > 0 else [])) | unique | list) }}
+    experiment_context_interval: "{{ experiment_collect_config.ue_context.interval_seconds | default(2) }}"
+    experiment_context_timeout: "{{ experiment_collect_config.ue_context.timeout_seconds | default(5) }}"
+    experiment_context_max_seconds: "{{ experiment_collect_config.ue_context.max_seconds | default(7200) }}"
+    experiment_context_limit: "{{ experiment_collect_config.ue_context.limit | default(5000) }}"
+    experiment_context_namespace: "{{ experiment_collect_config.ue_context.namespace | default(sliceawareness_namespace | default('monitoring')) }}"
+    experiment_context_service: "{{ experiment_collect_config.ue_context.service | default('ue-mapper-api') }}"
+    experiment_context_url: "{{ experiment_collect_config.ue_context.url | default('') }}"
+
+- name: Validate experiment context settings
+  ansible.builtin.assert:
+    that:
+      - experiment_collect_config.setup.enabled | default(false) is boolean
+      - experiment_collect_config.ue_context.enabled | default(false) is boolean
+      - experiment_setup_hosts is sequence and experiment_setup_hosts is not string and experiment_setup_hosts is not mapping
+      - experiment_setup_hosts | select('string') | list | length == experiment_setup_hosts | length
+      - experiment_context_interval is number and experiment_context_interval >= 0.1 and experiment_context_interval <= 3600
+      - experiment_context_timeout is integer and experiment_context_timeout >= 1 and experiment_context_timeout <= 60
+      - experiment_context_max_seconds is integer and experiment_context_max_seconds >= 1
+      - experiment_context_limit is integer and experiment_context_limit >= 1
+      - experiment_context_control_host is string and experiment_context_control_host | length > 0
+      - experiment_context_namespace is string and experiment_context_namespace | length > 0
+      - experiment_context_service is string and experiment_context_service | length > 0
+      - experiment_context_url is string
+    fail_msg: "Invalid setup/UE context settings; use boolean switches, a host list, and positive numeric sampling settings."

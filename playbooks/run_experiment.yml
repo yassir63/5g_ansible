@@ -249,6 +249,9 @@
     - name: Validate experiment schema after defaults
       ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_validate_config.yml"
 
+    - name: Configure setup and UE context collection
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_context_defaults.yml"
+
     - name: Show generic experiment dry-run preview
       ansible.builtin.debug:
         msg:
@@ -267,6 +270,17 @@
             artifacts_file_resolved: "{{ experiment_artifacts_file_resolved | default('') }}"
           collection:
             enabled: "{{ experiment_collect_enabled | bool }}"
+            setup:
+              enabled: "{{ experiment_collect_setup }}"
+              hosts: "{{ experiment_setup_hosts }}"
+              control_host: "{{ experiment_context_control_host }}"
+            ue_context:
+              enabled: "{{ experiment_collect_ue_context }}"
+              interval_seconds: "{{ experiment_context_interval }}"
+              max_seconds: "{{ experiment_context_max_seconds }}"
+              limit: "{{ experiment_context_limit }}"
+              namespace: "{{ experiment_context_namespace }}"
+              service: "{{ experiment_context_service }}"
             prometheus:
               enabled: "{{ experiment_collect_prometheus | bool }}"
               url: "{{ experiment_prometheus_url }}"
@@ -351,29 +365,89 @@
           scenario_file: "{{ experiment_scenario_file }}"
           artifacts_file: "{{ experiment_artifacts_file | default('') }}"
 
-    - name: Run experiment sections
-      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_run_section.yml"
-      loop: "{{ experiment_sections_effective }}"
-      loop_control:
-        loop_var: experiment_section
-        index_var: experiment_section_index
-        label: "{{ experiment_section.name | default('unnamed') }}"
+    - name: Initialize experiment lifecycle status
+      ansible.builtin.set_fact:
+        experiment_failed: false
 
-    - name: Record experiment campaign end
-      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
-      vars:
-        experiment_timeline_event:
-          level: "campaign"
-          phase: "end"
-          name: "{{ experiment_name }}"
-          title: "{{ experiment_title }}"
-          kind: "generic-experiment"
-          scenario_file: "{{ experiment_scenario_file }}"
-          artifacts_file: "{{ experiment_artifacts_file | default('') }}"
+    - name: Run sections with setup and UE history lifecycle
+      block:
+        - name: Capture setup before the workload
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_setup_snapshot.yml"
+          vars:
+            experiment_setup_phase: before
+          when: experiment_collect_setup | bool
 
-    - name: Collect experiment artifacts
-      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_collect_artifacts.yml"
-      when: experiment_collect_enabled | bool
+        - name: Create local UE history directory
+          ansible.builtin.file:
+            path: "{{ experiment_results_dir }}/ue_context"
+            state: directory
+            mode: "0700"
+          when: experiment_collect_ue_context | bool
+
+        - name: Start UE context history
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_ue_context_start.yml"
+          when: experiment_collect_ue_context | bool
+
+        - name: Run experiment sections
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_run_section.yml"
+          loop: "{{ experiment_sections_effective }}"
+          loop_control:
+            loop_var: experiment_section
+            index_var: experiment_section_index
+            label: "{{ experiment_section.name | default('unnamed') }}"
+
+      rescue:
+        - name: Preserve the experiment failure for final reporting
+          ansible.builtin.set_fact:
+            experiment_failed: true
+            experiment_failure_task: "{{ ansible_failed_task.name }}"
+            experiment_failure_message: "{{ ansible_failed_result.msg | default('Experiment section failed') }}"
+
+      always:
+        - name: Stop and retrieve UE context history
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_ue_context_stop.yml"
+          when: experiment_collect_ue_context | bool
+
+        - name: Record workload end before final setup collection
+          ansible.builtin.set_fact:
+            experiment_end_epoch: "{{ lookup('pipe', 'date +%s') }}"
+
+        - name: Record experiment campaign end
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_record_event.yml"
+          vars:
+            experiment_timeline_event:
+              level: campaign
+              phase: end
+              name: "{{ experiment_name }}"
+              title: "{{ experiment_title }}"
+              kind: generic-experiment
+              failed: "{{ experiment_failed }}"
+              scenario_file: "{{ experiment_scenario_file }}"
+              artifacts_file: "{{ experiment_artifacts_file | default('') }}"
+
+        - name: Capture setup after the workload
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_setup_snapshot.yml"
+          vars:
+            experiment_setup_phase: after
+          when: experiment_collect_setup | bool
+
+        - name: Save experiment outcome
+          ansible.builtin.copy:
+            dest: "{{ experiment_results_dir }}/experiment_status.json"
+            mode: "0600"
+            content: >-
+              {{ {'failed': experiment_failed,
+                  'failure_task': experiment_failure_task | default(''),
+                  'failure_message': experiment_failure_message | default('')} | to_nice_json }}
+
+        - name: Collect experiment artifacts
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/experiment_collect_artifacts.yml"
+          when: experiment_collect_enabled | bool
+
+    - name: Report original experiment failure after saving artifacts
+      ansible.builtin.fail:
+        msg: "{{ experiment_failure_task }}: {{ experiment_failure_message }}. Available artifacts: {{ experiment_results_dir }}"
+      when: experiment_failed | bool
 
     - name: Show artifacts-disabled message
       ansible.builtin.debug:

@@ -1,0 +1,55 @@
+---
+- name: Start experiment UE inventory history collector
+  block:
+    - name: Allocate unique remote UE history directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: experiment-ue-context-
+      register: experiment_context_temp
+
+    - name: Install UE context sampler in run directory
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../probes/ue_context/probe.py"
+        dest: "{{ experiment_context_temp.path }}/probe.py"
+        mode: "0700"
+
+    - name: Start bounded UE context sampling
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ experiment_context_temp.path }}/probe.py"
+          - --out-dir
+          - "{{ experiment_context_temp.path }}"
+          - --stop-file
+          - "{{ experiment_context_temp.path }}/STOP"
+          - --run-id
+          - "{{ experiment_run_id }}"
+          - --url
+          - "{{ experiment_context_url }}"
+          - --namespace
+          - "{{ experiment_context_namespace }}"
+          - --service
+          - "{{ experiment_context_service }}"
+          - --kubeconfig
+          - "{{ experiment_kubeconfig }}"
+          - --interval-seconds
+          - "{{ experiment_context_interval | string }}"
+          - --timeout-seconds
+          - "{{ experiment_context_timeout | string }}"
+          - --max-seconds
+          - "{{ experiment_context_max_seconds | string }}"
+          - --limit
+          - "{{ experiment_context_limit | string }}"
+      async: "{{ experiment_context_max_seconds | int + experiment_context_timeout | int + 30 }}"
+      poll: 0
+      register: experiment_context_job
+
+    - name: Wait for first UE context observation before sections
+      ansible.builtin.wait_for:
+        path: "{{ experiment_context_temp.path }}/ready.json"
+        timeout: "{{ experiment_context_timeout | int + 15 }}"
+
+  delegate_to: "{{ experiment_context_control_host }}"
+  remote_user: "{{ hostvars[experiment_context_control_host].ansible_user | default('root') }}"
+  vars:
+    ansible_connection: "{{ hostvars[experiment_context_control_host].ansible_connection | default('local' if experiment_context_control_host in ['localhost', '127.0.0.1'] else 'ssh') }}"
