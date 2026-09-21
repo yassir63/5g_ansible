@@ -1,0 +1,7 @@
+---
+# Disabled until a separately built NGAP-procedure image is selected.
+amf_ngap_probe_enabled: false
+amf_ngap_probe_image: ""
+amf_ngap_probe_interface: n2
+amf_ngap_probe_metrics_port: 9102
+amf_ngap_probe_pending_timeout_seconds: 30

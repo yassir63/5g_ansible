@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: amf-ngap-procedure-probe-metrics
+  namespace: {{ core }}
+  labels:
+    app: monitoring
+    component: ngap-procedure-probe
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "{{ amf_ngap_probe_metrics_port }}"
+spec:
+  clusterIP: "None"
+  selector:
+    nf: amf
+    app: monitoring
+  ports:
+    - name: metrics
+      port: {{ amf_ngap_probe_metrics_port }}
+      targetPort: {{ amf_ngap_probe_metrics_port }}
+      protocol: TCP

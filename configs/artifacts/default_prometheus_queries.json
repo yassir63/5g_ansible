@@ -1,5 +1,57 @@
 [
   {
+    "name": "ngap_pdu_session_setup_request_rate_hz_30s",
+    "query": "rate(ngap_pdu_session_setup_requests_total[30s])"
+  },
+  {
+    "name": "ngap_pdu_session_setup_response_rate_hz_30s",
+    "query": "sum by (outcome) (rate(ngap_pdu_session_setup_responses_total[30s]))"
+  },
+  {
+    "name": "ngap_pdu_session_setup_completed_rate_hz_30s",
+    "query": "sum by (outcome) (rate(ngap_pdu_session_setup_completed_total[30s]))"
+  },
+  {
+    "name": "ngap_pdu_session_setup_mean_ms_30s",
+    "query": "(sum by (outcome) (rate(ngap_pdu_session_setup_duration_seconds_sum[30s])) / sum by (outcome) (rate(ngap_pdu_session_setup_duration_seconds_count[30s]))) * 1000"
+  },
+  {
+    "name": "ngap_pdu_session_setup_p95_ms_30s",
+    "query": "histogram_quantile(0.95, sum by (le, outcome) (rate(ngap_pdu_session_setup_duration_seconds_bucket[30s]))) * 1000"
+  },
+  {
+    "name": "ngap_pdu_session_setup_pending",
+    "query": "ngap_pdu_session_setup_pending"
+  },
+  {
+    "name": "ngap_pdu_session_setup_expired_rate_hz_30s",
+    "query": "rate(ngap_pdu_session_setup_expired_total[30s])"
+  },
+  {
+    "name": "ngap_pdu_session_setup_unmatched_response_rate_hz_30s",
+    "query": "rate(ngap_pdu_session_setup_unmatched_responses_total[30s])"
+  },
+  {
+    "name": "ngap_pdu_session_setup_untrackable_request_rate_hz_30s",
+    "query": "rate(ngap_pdu_session_setup_untrackable_requests_total[30s])"
+  },
+  {
+    "name": "ngap_pdu_session_setup_untrackable_response_rate_hz_30s",
+    "query": "rate(ngap_pdu_session_setup_untrackable_responses_total[30s])"
+  },
+  {
+    "name": "ngap_pdu_session_setup_overlap_rate_hz_30s",
+    "query": "rate(ngap_pdu_session_setup_overlapping_requests_total[30s])"
+  },
+  {
+    "name": "ngap_pdu_session_setup_decode_error_rate_hz_30s",
+    "query": "rate(ngap_pdu_session_setup_decode_errors_total[30s])"
+  },
+  {
+    "name": "ngap_pdu_session_setup_capture_started",
+    "query": "ngap_pdu_session_setup_capture_started"
+  },
+  {
     "name": "ue_mapper_collection_success",
     "query": "ue_mapper_collection_success"
   },
