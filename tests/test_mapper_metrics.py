@@ -13,6 +13,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'monitoring/sliceawareness/ue_mapper'))
+sys.path.insert(0, str(ROOT / 'probes/ue_mapper_metrics'))
 from mapper_metrics import MapperMetrics
 
 

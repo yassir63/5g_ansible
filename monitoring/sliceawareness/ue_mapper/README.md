@@ -2,6 +2,7 @@
 
 The API now serves `/metrics` using the
 [Prometheus Python custom collector](https://prometheus.github.io/client_python/collector/custom/).
+The probe-specific collector code lives in `probes/ue_mapper_metrics/`.
 Existing lookup and inventory responses are unchanged. Metrics read Redis directly
 and include incomplete stored contexts that `/inventory/ues` filters out.
 
@@ -12,8 +13,9 @@ the existing image and `ue_mapper_metrics_enabled: false` by default.
 
 Before the next deployment:
 
-1. Build and push `monitoring/sliceawareness/ue_mapper` with a new immutable tag
-   appropriate for the deployment machines' architecture.
+1. Build and push the Dockerfile in `monitoring/sliceawareness/ue_mapper` from
+   the repository root with a new immutable tag appropriate for the deployment
+   machines' architecture.
 2. Set `ue_mapper_api_image` to that tag and `ue_mapper_metrics_enabled: true`.
 3. Apply the sliceawareness role through your deployment workflow. The generic
    `update_monitoring.yml` playbook does not deploy the sliceawareness API.

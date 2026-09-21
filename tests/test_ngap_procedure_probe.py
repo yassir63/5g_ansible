@@ -132,8 +132,9 @@ class IntegrationTests(unittest.TestCase):
         self.assertNotIn("ngap-procedure-probe", tasks)
 
     def test_build_context_and_artifact_queries(self):
-        dockerfile = (ROOT / "monitoring/sliceawareness/amfsniffer/Dockerfile").read_text()
-        sniffer = (ROOT / "monitoring/sliceawareness/amfsniffer/amf_sniffer.py").read_text()
+        dockerfile = (ROOT / "probes/amf_sniffer/Dockerfile").read_text()
+        sniffer = (ROOT / "probes/amf_sniffer/amf_sniffer.py").read_text()
+        self.assertIn("COPY probes/amf_sniffer/amf_sniffer.py", dockerfile)
         self.assertIn("COPY probes/ngap_procedure/metrics.py", dockerfile)
         self.assertIn("PduSessionSetupTracker", sniffer)
         self.assertIn("ngap_tracker.observe_layer", sniffer)

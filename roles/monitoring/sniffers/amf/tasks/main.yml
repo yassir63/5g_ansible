@@ -55,7 +55,7 @@
 # - name: Copy amf_sniffer.py into AMF pod (/tmp)
 #   ansible.builtin.shell: |
 #     kubectl -n {{ core }} cp \
-#       ~/monitoring/sliceawareness/amfsniffer/amf_sniffer.py \
+#       ~/probes/amf_sniffer/amf_sniffer.py \
 #       {{ amf_pod }}:/tmp/amf_sniffer.py
 #   register: amf_sniffer_copy
 #   changed_when: amf_sniffer_copy.rc == 0

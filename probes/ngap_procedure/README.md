@@ -15,7 +15,7 @@ Build the existing AMF-sniffer image from the repository root, choosing an immut
 tag available to Kubernetes nodes of the intended architecture:
 
 ```bash
-docker build -f monitoring/sliceawareness/amfsniffer/Dockerfile \
+docker build -f probes/amf_sniffer/Dockerfile \
   -t REGISTRY/amf-sniffer:TAG .
 docker push REGISTRY/amf-sniffer:TAG
 ```
