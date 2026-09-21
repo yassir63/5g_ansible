@@ -1,0 +1,26 @@
+---
+# Disabled until probes/upf_data_plane has been built and published.
+upf_data_plane_probe_enabled: false
+upf_data_plane_probe_image: "r2labuser/upf-data-plane-probe:2026w10"
+upf_data_plane_probe_metrics_port: 9103
+upf_data_plane_probe_collection_interval_seconds: 5
+
+# An explicit interface always takes precedence over automated discovery.
+upf_data_plane_probe_n3_interface: ""
+upf_data_plane_probe_n6_interface: ""
+
+# Set this list to override the profile default for a deployment with a custom
+# Multus N3 NetworkAttachmentDefinition name.
+upf_data_plane_probe_n3_network_names: []
+upf_data_plane_probe_default_n3_network_names_by_core:
+  open5gs:
+    - n3network
+  free5gc:
+    - n3network
+  oai: []
+
+# Pod names are used only to find candidate UPFs. Selected pods receive a
+# dedicated label, which the probe metrics Service uses for discovery.
+upf_data_plane_probe_pod_name_pattern: "(?i)(upf|spgwu)"
+upf_data_plane_probe_target_label_key: "monitoring.5g.example/upf-data-plane-probe"
+upf_data_plane_probe_target_label_value: "enabled"

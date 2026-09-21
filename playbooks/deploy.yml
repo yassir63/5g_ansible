@@ -316,6 +316,8 @@
       vars:
         # redis_host: redis
         redis_host: "redis.{{ monitoring_namespace | default('monitoring') }}.svc.cluster.local"
+    - role: monitoring/sniffers/upf
+      when: monitoring_enabled and (upf_data_plane_probe_enabled | default(false) | bool)
 
 - name: Deploy SliceAware Mechanisms
   hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"

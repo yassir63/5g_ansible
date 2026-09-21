@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: upf-data-plane-probe-metrics
+  namespace: {{ core }}
+  labels:
+    app: monitoring
+    component: upf-data-plane-probe
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "{{ upf_data_plane_probe_metrics_port }}"
+spec:
+  clusterIP: "None"
+  selector:
+    "{{ upf_data_plane_probe_target_label_key }}": "{{ upf_data_plane_probe_target_label_value }}"
+  ports:
+    - name: metrics
+      port: {{ upf_data_plane_probe_metrics_port }}
+      targetPort: {{ upf_data_plane_probe_metrics_port }}
+      protocol: TCP

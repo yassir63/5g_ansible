@@ -52,6 +52,50 @@
     "query": "ngap_pdu_session_setup_capture_started"
   },
   {
+    "name": "upf_probe_path_ready",
+    "query": "upf_probe_path_ready"
+  },
+  {
+    "name": "upf_probe_interface_receive_bytes_per_second_30s",
+    "query": "sum by (path) (rate(upf_probe_interface_receive_bytes_total[30s]))"
+  },
+  {
+    "name": "upf_probe_interface_transmit_bytes_per_second_30s",
+    "query": "sum by (path) (rate(upf_probe_interface_transmit_bytes_total[30s]))"
+  },
+  {
+    "name": "upf_probe_interface_drops_per_second_30s",
+    "query": "sum by (path) (rate(upf_probe_interface_receive_drops_total[30s]) + rate(upf_probe_interface_transmit_drops_total[30s]))"
+  },
+  {
+    "name": "upf_probe_interface_errors_per_second_30s",
+    "query": "sum by (path) (rate(upf_probe_interface_receive_errors_total[30s]) + rate(upf_probe_interface_transmit_errors_total[30s]))"
+  },
+  {
+    "name": "upf_probe_gtpu_packets_per_second_30s",
+    "query": "sum by (direction) (rate(upf_probe_gtpu_packets_total[30s]))"
+  },
+  {
+    "name": "upf_probe_gtpu_bytes_per_second_30s",
+    "query": "sum by (direction) (rate(upf_probe_gtpu_bytes_total[30s]))"
+  },
+  {
+    "name": "upf_probe_gtpu_capture_active",
+    "query": "upf_probe_gtpu_capture_active"
+  },
+  {
+    "name": "upf_probe_gtpu_seen",
+    "query": "upf_probe_gtpu_seen"
+  },
+  {
+    "name": "upf_probe_collection_success",
+    "query": "upf_probe_collection_success"
+  },
+  {
+    "name": "upf_probe_collection_error_rate_hz_30s",
+    "query": "sum by (operation) (rate(upf_probe_collection_errors_total[30s]))"
+  },
+  {
     "name": "ue_mapper_collection_success",
     "query": "ue_mapper_collection_success"
   },

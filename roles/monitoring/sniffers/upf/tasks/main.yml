@@ -1,0 +1,133 @@
+---
+- name: Get candidate UPF pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ core }}"
+  register: upf_probe_all_pods
+  no_log: true
+
+- name: Build UPF probe pod list
+  ansible.builtin.set_fact:
+    upf_data_plane_probe_pods: >-
+      {{
+        upf_probe_all_pods.resources
+        | selectattr('metadata.name', 'search', upf_data_plane_probe_pod_name_pattern)
+        | list
+      }}
+  no_log: true
+
+- name: Fail if no UPF pod was found for the data-plane probe
+  ansible.builtin.fail:
+    msg: >-
+      No UPF pod matched {{ upf_data_plane_probe_pod_name_pattern }} in namespace={{ core }}.
+      Set upf_data_plane_probe_pod_name_pattern for this core deployment.
+  when: upf_data_plane_probe_pods | length == 0
+
+- name: Select N3 network names for the UPF probe
+  ansible.builtin.set_fact:
+    upf_data_plane_probe_n3_network_names_effective: >-
+      {{
+        upf_data_plane_probe_n3_network_names
+        if (upf_data_plane_probe_n3_network_names | length > 0)
+        else upf_data_plane_probe_default_n3_network_names_by_core[core] | default([])
+      }}
+
+- name: Validate UPF data-plane probe settings
+  ansible.builtin.assert:
+    that:
+      - upf_data_plane_probe_image is string
+      - upf_data_plane_probe_image | length > 0
+      - upf_data_plane_probe_metrics_port is integer
+      - upf_data_plane_probe_metrics_port >= 1
+      - upf_data_plane_probe_metrics_port <= 65535
+      - upf_data_plane_probe_collection_interval_seconds is number
+      - upf_data_plane_probe_collection_interval_seconds > 0
+      - upf_data_plane_probe_target_label_key is string
+      - upf_data_plane_probe_target_label_key | length > 0
+      - upf_data_plane_probe_target_label_value is string
+      - upf_data_plane_probe_target_label_value | length > 0
+    fail_msg: >-
+      Build and select a UPF data-plane probe image, then provide valid metrics,
+      interval, and target-label settings before enabling the probe.
+
+- name: Render UPF data-plane probe metrics Service
+  ansible.builtin.template:
+    src: upf-data-plane-probe-service.yaml.j2
+    dest: /tmp/upf-data-plane-probe-service.yaml
+    mode: "0644"
+
+- name: Apply UPF data-plane probe metrics Service
+  ansible.builtin.command: kubectl -n {{ core }} apply -f /tmp/upf-data-plane-probe-service.yaml
+  register: upf_data_plane_probe_service_apply
+  changed_when: "'created' in upf_data_plane_probe_service_apply.stdout or 'configured' in upf_data_plane_probe_service_apply.stdout"
+
+- name: Label selected UPF pods for probe metrics discovery
+  ansible.builtin.command: >-
+    kubectl -n {{ core }} label pod {{ item.metadata.name }}
+    {{ upf_data_plane_probe_target_label_key }}={{ upf_data_plane_probe_target_label_value }} --overwrite
+  loop: "{{ upf_data_plane_probe_pods }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  changed_when: false
+
+- name: Inject UPF data-plane probe ephemeral container
+  vars:
+    pod_name: "{{ item.metadata.name }}"
+    target_container_name: "{{ item.spec.containers[0].name }}"
+    existing_ephemeral: "{{ item.spec.ephemeralContainers | default([]) }}"
+    existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
+    pod_network_status: "{{ (item.metadata.annotations | default({}))['k8s.v1.cni.cncf.io/network-status'] | default('') }}"
+    upf_probe_ephemeral_container:
+      name: upf-data-plane-probe
+      image: "{{ upf_data_plane_probe_image }}"
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: UPF_PROBE_METRICS_PORT
+          value: "{{ upf_data_plane_probe_metrics_port | string }}"
+        - name: UPF_PROBE_COLLECTION_INTERVAL_SECONDS
+          value: "{{ upf_data_plane_probe_collection_interval_seconds | string }}"
+        - name: UPF_PROBE_NETWORK_STATUS_JSON
+          value: "{{ pod_network_status }}"
+        - name: UPF_PROBE_N3_NETWORK_NAMES
+          value: "{{ upf_data_plane_probe_n3_network_names_effective | to_json }}"
+        - name: UPF_PROBE_N3_INTERFACE
+          value: "{{ upf_data_plane_probe_n3_interface }}"
+        - name: UPF_PROBE_N6_INTERFACE
+          value: "{{ upf_data_plane_probe_n6_interface }}"
+      targetContainerName: "{{ target_container_name }}"
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsUser: 0
+        runAsNonRoot: false
+        capabilities:
+          drop:
+            - ALL
+          add:
+            - NET_RAW
+    upf_probe_patch:
+      metadata:
+        name: "{{ pod_name }}"
+      spec:
+        ephemeralContainers: "{{ existing_ephemeral + [upf_probe_ephemeral_container] }}"
+  ansible.builtin.shell: |
+    kubectl -n {{ core }} patch pod {{ pod_name }} \
+      --subresource='ephemeralcontainers' \
+      --type='strategic' \
+      -p '{{ upf_probe_patch | to_json }}'
+  args:
+    executable: /bin/bash
+  when: "'upf-data-plane-probe' not in existing_ephemeral_names"
+  loop: "{{ upf_data_plane_probe_pods }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: upf_data_plane_probe_injection_result
+  changed_when: true
+
+- name: Report existing UPF data-plane probe ephemeral container
+  ansible.builtin.debug:
+    msg: "UPF data-plane probe already present in pod {{ item.metadata.name }}, skipping injection."
+  when: "'upf-data-plane-probe' in ((item.spec.ephemeralContainers | default([])) | map(attribute='name') | list)"
+  loop: "{{ upf_data_plane_probe_pods }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
