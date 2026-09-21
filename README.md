@@ -349,6 +349,32 @@ ues:
 
 ---
 
+## Monitoring Configuration
+
+Monitoring has two layers. The **5G metrics stack** deploys Prometheus, Grafana, Loki/Promtail by default, and KPI calculators that expose derived core/RAN metrics such as slice throughput. The **latency pipeline** adds AMF and SMF sniffers, Redis and the UE mapper, the Kopf controller, and eBPF latency probes. The sniffers provide UE/session context to the mapper; the controller reads the resulting TEIDs and manages probes on matching gNB pods. Prometheus scrapes the metrics produced by these components, and Grafana displays them. Prometheus/Grafana alone do not measure per-UE latency.
+
+When monitoring is enabled, `./deploy.sh` defaults to both layers. To choose a profile, use `--monitoring-profile` with a profile name or YAML path:
+
+```bash
+./deploy.sh --monitoring-profile full
+./deploy.sh --monitoring-profile 5g_only
+./deploy.sh -n --monitoring-profile configs/monitoring/profiles/5g_only.yml
+```
+
+The profile has exactly two switches:
+
+```yaml
+monitoring_components:
+  stack: true    # Prometheus, Grafana, Loki/Promtail by default, and 5G KPIs
+  latency: false # AMF/SMF sniffers, UE mapper, controller, and probes
+```
+
+`configs/monitoring/profiles/full.yml` enables both; `configs/monitoring/profiles/5g_only.yml` keeps 5G metrics without the latency pipeline. `monitoring_enabled` remains the master switch: when it is false, neither layer is deployed. If a key is omitted, it defaults to true for compatibility with existing deployments. The playbook rejects `latency: true` with `stack: false`, because probe metrics would have no Prometheus collector. **Loki is part of the stack by default**, not a third profile switch: use `--no-loki` to omit log collection while keeping Prometheus, Grafana, and 5G KPIs; `--with-loki` explicitly enables it. Experiment artifact collection uses its own profile.
+
+Setting a layer to `false` **skips it during that deployment**; it does not uninstall resources left by an earlier run. Also, enabling a layer does not guarantee every panel has data: the relevant UEs, core/RAN pods, mapping, and exporters must be active.
+
+---
+
 ## Monitoring Dashboard Access
 
 After deployment, instructions will be printed to your terminal with the SSH command required to access the **Grafana monitoring dashboard**.
@@ -393,7 +419,7 @@ Grafana also provisions a `Loki` datasource. Promtail runs as a DaemonSet and fo
 
 The deployment also provisions a `5G Component Logs` dashboard. It contains separate Loki log panels for AMF, SMF, UPF, gNB/RAN, UE simulator pods, sniffers, UE mapper, and the monitoring controller/probe/exporter components. Core and UE namespace selectors default to all known core namespaces, so Open5GS, free5GC, and OAI logs show up without changing the dropdown first. UE simulator logs keep their own `ue_namespace` selector for future deployments where UE pods move elsewhere. UE mapper logs and AMF/SMF sniffer containers are expected in the core namespace; the sniffer panels match the sniffer container inside the AMF/SMF pods. The dashboard keeps a separate RAN namespace selector for gNB and RAN-side probe/exporter logs.
 
-Loki is enabled automatically whenever monitoring is deployed. It can still be disabled or tuned through Ansible variables:
+Loki is enabled by default when the monitoring stack is deployed. It can still be disabled with `--no-loki` or tuned through Ansible variables:
 
 ```yaml
 monitoring_loki_enabled: false

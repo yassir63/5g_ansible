@@ -17,6 +17,7 @@ REQUESTED_TARGET_SERVER=""
 REQUESTED_PROMETHEUS_URL=""
 REQUESTED_EXPERIMENT_DURATION=""
 REQUESTED_MONITORING_LOKI=""
+REQUESTED_MONITORING_PROFILE=""
 
 SCENARIO_RFSIM="Iperf RFSIM scenario without interference"
 SCENARIO_R2LAB="Iperf R2lab scenario without interference"
@@ -59,6 +60,8 @@ usage() {
     echo "--duration <seconds>     Override TCP scenario or generic experiment traffic duration"
     echo "--with-loki              Keep Grafana Loki enabled with monitoring (default)"
     echo "--no-loki                Disable Grafana Loki log collection"
+    echo "--monitoring-profile <name|file>"
+    echo "                         Monitoring components profile from configs/monitoring/profiles/"
     echo "--experiment <file|name> Run a generic experiment scenario through playbooks/run_experiment.yml"
     echo "                         Names resolve from scenarios/experiment_examples/<name>.yml"
     echo "--experiment-artifacts <file|name>"
@@ -206,6 +209,11 @@ parse_args() {
 
         --no-loki)
           REQUESTED_MONITORING_LOKI="false"
+          ;;
+
+        --monitoring-profile)
+          shift
+          REQUESTED_MONITORING_PROFILE="${1:-}"
           ;;
         
         -h|--help)
@@ -1921,6 +1929,17 @@ reserve_r2lab() {
 deploy() {
 
     ANSIBLE_EXTRA_ARGS=(-e "fiveg_profile=${PROFILE_5G}")
+    if [[ -n "$REQUESTED_MONITORING_PROFILE" ]]; then
+      local monitoring_profile_file="$REQUESTED_MONITORING_PROFILE"
+      if [[ ! -f "$monitoring_profile_file" ]]; then
+        monitoring_profile_file="configs/monitoring/profiles/${REQUESTED_MONITORING_PROFILE}.yml"
+      fi
+      if [[ ! -f "$monitoring_profile_file" ]]; then
+        echo "Monitoring profile not found: $REQUESTED_MONITORING_PROFILE" >&2
+        return 1
+      fi
+      ANSIBLE_EXTRA_ARGS+=(-e "@${monitoring_profile_file}")
+    fi
     append_cli_extra_vars
 
     if [[ "${monitoring_enabled:-false}" == true ]] && ! extra_var_defined "monitoring_loki_enabled"; then
