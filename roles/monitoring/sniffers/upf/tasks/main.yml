@@ -83,17 +83,21 @@
       image: "{{ upf_data_plane_probe_image }}"
       imagePullPolicy: IfNotPresent
       env:
-        - name: UPF_PROBE_METRICS_PORT
+        - name: USER_PLANE_PROBE_ANCHOR
+          value: upf
+        - name: USER_PLANE_PROBE_MONITOR_N6
+          value: "true"
+        - name: USER_PLANE_PROBE_METRICS_PORT
           value: "{{ upf_data_plane_probe_metrics_port | string }}"
-        - name: UPF_PROBE_COLLECTION_INTERVAL_SECONDS
+        - name: USER_PLANE_PROBE_COLLECTION_INTERVAL_SECONDS
           value: "{{ upf_data_plane_probe_collection_interval_seconds | string }}"
-        - name: UPF_PROBE_NETWORK_STATUS_JSON
+        - name: USER_PLANE_PROBE_NETWORK_STATUS_JSON
           value: "{{ pod_network_status }}"
-        - name: UPF_PROBE_N3_NETWORK_NAMES
+        - name: USER_PLANE_PROBE_N3_NETWORK_NAMES
           value: "{{ upf_data_plane_probe_n3_network_names_effective | to_json }}"
-        - name: UPF_PROBE_N3_INTERFACE
+        - name: USER_PLANE_PROBE_N3_INTERFACE
           value: "{{ upf_data_plane_probe_n3_interface }}"
-        - name: UPF_PROBE_N6_INTERFACE
+        - name: USER_PLANE_PROBE_N6_INTERFACE
           value: "{{ upf_data_plane_probe_n6_interface }}"
       targetContainerName: "{{ target_container_name }}"
       securityContext:

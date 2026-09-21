@@ -1,0 +1,29 @@
+---
+# Disabled until probes/user_plane_path has been built and published.
+gnb_data_plane_probe_enabled: false
+gnb_data_plane_probe_image: "r2labuser/user-plane-path-probe:2026w10"
+gnb_data_plane_probe_metrics_port: 9103
+gnb_data_plane_probe_collection_interval_seconds: 5
+
+# Use a separate RAN namespace when the gNB does not run beside the core.
+gnb_data_plane_probe_namespace: "{{ ran_ns | default(core) }}"
+
+# An explicit interface always takes precedence over automated discovery.
+gnb_data_plane_probe_n3_interface: ""
+
+# Set this list to override the profile default for a deployment with a custom
+# Multus N3 NetworkAttachmentDefinition name.
+gnb_data_plane_probe_n3_network_names: []
+gnb_data_plane_probe_default_n3_network_names_by_ran:
+  srsran:
+    - n3network
+  oai:
+    - n3network
+  ueransim:
+    - n3network
+
+# Pod names are used only to find candidate gNBs. Selected pods receive a
+# dedicated label, which the probe metrics Service uses for discovery.
+gnb_data_plane_probe_pod_name_pattern: "(?i)gnb"
+gnb_data_plane_probe_target_label_key: "monitoring.5g.example/gnb-data-plane-probe"
+gnb_data_plane_probe_target_label_value: "enabled"

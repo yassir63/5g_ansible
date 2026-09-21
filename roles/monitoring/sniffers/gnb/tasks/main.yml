@@ -1,0 +1,145 @@
+---
+- name: Get candidate gNB pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ gnb_data_plane_probe_namespace }}"
+  register: gnb_probe_all_pods
+  no_log: true
+
+- name: Build gNB probe pod list
+  ansible.builtin.set_fact:
+    gnb_data_plane_probe_pods: >-
+      {{
+        gnb_probe_all_pods.resources
+        | selectattr('metadata.name', 'search', gnb_data_plane_probe_pod_name_pattern)
+        | list
+      }}
+  no_log: true
+
+- name: Fail if no gNB pod was found for the data-plane probe
+  ansible.builtin.fail:
+    msg: >-
+      No gNB pod matched {{ gnb_data_plane_probe_pod_name_pattern }} in
+      namespace={{ gnb_data_plane_probe_namespace }}. Set
+      gnb_data_plane_probe_namespace or gnb_data_plane_probe_pod_name_pattern
+      for this RAN deployment.
+  when: gnb_data_plane_probe_pods | length == 0
+
+- name: Select N3 network names for the gNB probe
+  ansible.builtin.set_fact:
+    gnb_data_plane_probe_n3_network_names_effective: >-
+      {{
+        gnb_data_plane_probe_n3_network_names
+        if (gnb_data_plane_probe_n3_network_names | length > 0)
+        else gnb_data_plane_probe_default_n3_network_names_by_ran[
+          ran | default('') | lower
+        ] | default([])
+      }}
+
+- name: Validate gNB data-plane probe settings
+  ansible.builtin.assert:
+    that:
+      - gnb_data_plane_probe_image is string
+      - gnb_data_plane_probe_image | length > 0
+      - gnb_data_plane_probe_metrics_port is integer
+      - gnb_data_plane_probe_metrics_port >= 1
+      - gnb_data_plane_probe_metrics_port <= 65535
+      - gnb_data_plane_probe_collection_interval_seconds is number
+      - gnb_data_plane_probe_collection_interval_seconds > 0
+      - gnb_data_plane_probe_target_label_key is string
+      - gnb_data_plane_probe_target_label_key | length > 0
+      - gnb_data_plane_probe_target_label_value is string
+      - gnb_data_plane_probe_target_label_value | length > 0
+    fail_msg: >-
+      Build and select a gNB data-plane probe image, then provide valid
+      metrics, interval, and target-label settings before enabling the probe.
+
+- name: Render gNB data-plane probe metrics Service
+  ansible.builtin.template:
+    src: gnb-data-plane-probe-service.yaml.j2
+    dest: /tmp/gnb-data-plane-probe-service.yaml
+    mode: "0644"
+
+- name: Apply gNB data-plane probe metrics Service
+  ansible.builtin.command: >-
+    kubectl -n {{ gnb_data_plane_probe_namespace }} apply -f
+    /tmp/gnb-data-plane-probe-service.yaml
+  register: gnb_data_plane_probe_service_apply
+  changed_when: >-
+    'created' in gnb_data_plane_probe_service_apply.stdout or
+    'configured' in gnb_data_plane_probe_service_apply.stdout
+
+- name: Label selected gNB pods for probe metrics discovery
+  ansible.builtin.command: >-
+    kubectl -n {{ gnb_data_plane_probe_namespace }} label pod
+    {{ item.metadata.name }}
+    {{ gnb_data_plane_probe_target_label_key }}={{ gnb_data_plane_probe_target_label_value }}
+    --overwrite
+  loop: "{{ gnb_data_plane_probe_pods }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  changed_when: false
+
+- name: Inject gNB data-plane probe ephemeral container
+  vars:
+    pod_name: "{{ item.metadata.name }}"
+    target_container_name: "{{ item.spec.containers[0].name }}"
+    existing_ephemeral: "{{ item.spec.ephemeralContainers | default([]) }}"
+    existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
+    pod_network_status: "{{ (item.metadata.annotations | default({}))['k8s.v1.cni.cncf.io/network-status'] | default('') }}"
+    gnb_probe_ephemeral_container:
+      name: gnb-data-plane-probe
+      image: "{{ gnb_data_plane_probe_image }}"
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: USER_PLANE_PROBE_ANCHOR
+          value: gnb
+        - name: USER_PLANE_PROBE_MONITOR_N6
+          value: "false"
+        - name: USER_PLANE_PROBE_METRICS_PORT
+          value: "{{ gnb_data_plane_probe_metrics_port | string }}"
+        - name: USER_PLANE_PROBE_COLLECTION_INTERVAL_SECONDS
+          value: "{{ gnb_data_plane_probe_collection_interval_seconds | string }}"
+        - name: USER_PLANE_PROBE_NETWORK_STATUS_JSON
+          value: "{{ pod_network_status }}"
+        - name: USER_PLANE_PROBE_N3_NETWORK_NAMES
+          value: "{{ gnb_data_plane_probe_n3_network_names_effective | to_json }}"
+        - name: USER_PLANE_PROBE_N3_INTERFACE
+          value: "{{ gnb_data_plane_probe_n3_interface }}"
+      targetContainerName: "{{ target_container_name }}"
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsUser: 0
+        runAsNonRoot: false
+        capabilities:
+          drop:
+            - ALL
+          add:
+            - NET_RAW
+    gnb_probe_patch:
+      metadata:
+        name: "{{ pod_name }}"
+      spec:
+        ephemeralContainers: "{{ existing_ephemeral + [gnb_probe_ephemeral_container] }}"
+  ansible.builtin.shell: |
+    kubectl -n {{ gnb_data_plane_probe_namespace }} patch pod {{ pod_name }} \
+      --subresource='ephemeralcontainers' \
+      --type='strategic' \
+      -p '{{ gnb_probe_patch | to_json }}'
+  args:
+    executable: /bin/bash
+  when: "'gnb-data-plane-probe' not in existing_ephemeral_names"
+  loop: "{{ gnb_data_plane_probe_pods }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: gnb_data_plane_probe_injection_result
+  changed_when: true
+
+- name: Report existing gNB data-plane probe ephemeral container
+  ansible.builtin.debug:
+    msg: "gNB data-plane probe already present in pod {{ item.metadata.name }}, skipping injection."
+  when: "'gnb-data-plane-probe' in ((item.spec.ephemeralContainers | default([])) | map(attribute='name') | list)"
+  loop: "{{ gnb_data_plane_probe_pods }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"

@@ -316,6 +316,8 @@
       vars:
         # redis_host: redis
         redis_host: "redis.{{ monitoring_namespace | default('monitoring') }}.svc.cluster.local"
+    - role: monitoring/sniffers/gnb
+      when: monitoring_enabled and (gnb_data_plane_probe_enabled | default(false) | bool)
     - role: monitoring/sniffers/upf
       when: monitoring_enabled and (upf_data_plane_probe_enabled | default(false) | bool)
 

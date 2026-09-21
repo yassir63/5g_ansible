@@ -1,10 +1,10 @@
-"""Passive UPF N3/N6 interface and GTP-U observation probe.
+"""Passive N3/N6 interface and GTP-U observation probe.
 
-The probe deliberately knows nothing about a UPF implementation.  The Ansible
-role passes the Multus network-status annotation from the target pod; this
-module resolves the configured N3 network from that annotation and resolves
-N6 from the pod network namespace's default route.  Explicit interface
-overrides always win.
+The probe is external to the network function. Its role supplies the Multus
+network-status annotation from the target pod, from which this module resolves
+the configured N3 attachment. At a UPF it can additionally resolve N6 from
+the pod network namespace's default route; at a gNB it observes N3 only.
+Explicit interface overrides always win.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Iterable
 from prometheus_client import CollectorRegistry, Counter, Gauge, start_http_server
 
 
-LOG = logging.getLogger("upf_data_plane_probe")
+LOG = logging.getLogger("user_plane_path_probe")
 ETH_P_ALL = 0x0003
 ETH_P_IP = 0x0800
 ETH_P_IPV6 = 0x86DD
@@ -31,6 +31,7 @@ ETH_P_8021Q = 0x8100
 ETH_P_8021AD = 0x88A8
 PACKET_OUTGOING = 4
 GTPU_PORT = 2152
+VALID_ANCHORS = frozenset(("gnb", "upf"))
 
 
 @dataclass(frozen=True)
@@ -93,7 +94,7 @@ def discover_n3_interface(
 
 
 def discover_n6_interface(route_table: str, override: str = "") -> PathDiscovery:
-    """Resolve N6 as the single default route in the UPF pod namespace."""
+    """Resolve N6 as the single default route in a UPF pod namespace."""
 
     if str(override).strip():
         return PathDiscovery(str(override).strip(), "override")
@@ -172,7 +173,7 @@ def is_gtpu_frame(frame: bytes) -> bool:
     elif ether_type == ETH_P_IPV6:
         if len(frame) < offset + 48 or frame[offset] >> 4 != 6:
             return False
-        # Extension headers are intentionally not guessed.  The common N3 path
+        # Extension headers are intentionally not guessed. The common N3 path
         # is direct IPv6/UDP; a non-direct packet remains observable in /proc.
         if frame[offset + 6] != socket.IPPROTO_UDP:
             return False
@@ -187,7 +188,7 @@ def is_gtpu_frame(frame: bytes) -> bool:
 class GtpUCaptureWorker:
     """Small AF_PACKET observer for evidence that the discovered N3 carries GTP-U."""
 
-    def __init__(self, interface: str, probe: "UPFDataPlaneProbe"):
+    def __init__(self, interface: str, probe: "UserPlanePathProbe"):
         self.interface = interface
         self.probe = probe
         self.stop_event = threading.Event()
@@ -211,7 +212,7 @@ class GtpUCaptureWorker:
             return False
         self.socket = raw_socket
         self.active = True
-        self.probe.capture_active.set(1)
+        self.probe.capture_active.labels(self.probe.anchor).set(1)
         self.thread = threading.Thread(target=self._run, name="gtpu-observer", daemon=True)
         self.thread.start()
         return True
@@ -233,7 +234,7 @@ class GtpUCaptureWorker:
                 direction = "tx" if packet_type == PACKET_OUTGOING else "rx"
                 self.probe.record_gtpu(direction, len(frame))
         self.active = False
-        self.probe.capture_active.set(0)
+        self.probe.capture_active.labels(self.probe.anchor).set(0)
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -243,76 +244,85 @@ class GtpUCaptureWorker:
             self.thread.join(timeout=2)
 
 
-class UPFDataPlaneProbe:
-    """Export low-cardinality UPF path counters and discovery evidence."""
+class UserPlanePathProbe:
+    """Export low-cardinality N3/N6 counters and discovery evidence for one anchor."""
 
     def __init__(
         self,
+        anchor: str,
         network_status: str,
         n3_network_names: Iterable[str],
         n3_interface_override: str = "",
         n6_interface_override: str = "",
+        monitor_n6: bool = True,
         proc_net_dev_path: str = "/proc/net/dev",
         proc_route_path: str = "/proc/net/route",
         registry=None,
     ):
+        self.anchor = str(anchor).strip().lower()
+        if self.anchor not in VALID_ANCHORS:
+            raise ValueError("anchor must be one of: gnb, upf")
         self.network_status = network_status
         self.n3_network_names = tuple(n3_network_names)
         self.n3_interface_override = n3_interface_override
         self.n6_interface_override = n6_interface_override
+        self.monitor_n6 = bool(monitor_n6)
         self.proc_net_dev_path = proc_net_dev_path
         self.proc_route_path = proc_route_path
         self.registry = registry if registry is not None else CollectorRegistry()
         self.n3 = PathDiscovery("", "not_discovered")
-        self.n6 = PathDiscovery("", "not_discovered")
+        self.n6 = PathDiscovery("", "disabled")
         self.capture: GtpUCaptureWorker | None = None
         self.last_capture_attempt = 0.0
 
-        self.path_ready = Gauge("upf_probe_path_ready", "One when a path interface was resolved locally.", ["path"], registry=self.registry)
-        self.path_info = Gauge("upf_probe_path_info", "Resolved interface and local discovery method for a path.", ["path", "interface", "source"], registry=self.registry)
-        self.interface_available = Gauge("upf_probe_interface_available", "One when the resolved interface is present in /proc/net/dev.", ["path"], registry=self.registry)
-        self.rx_bytes = Gauge("upf_probe_interface_receive_bytes_total", "Kernel receive-byte counter for the resolved interface.", ["path"], registry=self.registry)
-        self.rx_packets = Gauge("upf_probe_interface_receive_packets_total", "Kernel receive-packet counter for the resolved interface.", ["path"], registry=self.registry)
-        self.rx_errors = Gauge("upf_probe_interface_receive_errors_total", "Kernel receive-error counter for the resolved interface.", ["path"], registry=self.registry)
-        self.rx_drops = Gauge("upf_probe_interface_receive_drops_total", "Kernel receive-drop counter for the resolved interface.", ["path"], registry=self.registry)
-        self.tx_bytes = Gauge("upf_probe_interface_transmit_bytes_total", "Kernel transmit-byte counter for the resolved interface.", ["path"], registry=self.registry)
-        self.tx_packets = Gauge("upf_probe_interface_transmit_packets_total", "Kernel transmit-packet counter for the resolved interface.", ["path"], registry=self.registry)
-        self.tx_errors = Gauge("upf_probe_interface_transmit_errors_total", "Kernel transmit-error counter for the resolved interface.", ["path"], registry=self.registry)
-        self.tx_drops = Gauge("upf_probe_interface_transmit_drops_total", "Kernel transmit-drop counter for the resolved interface.", ["path"], registry=self.registry)
-        self.collection_success = Gauge("upf_probe_collection_success", "One when all resolved path counters were read in the latest collection.", registry=self.registry)
-        self.last_collection = Gauge("upf_probe_last_collection_timestamp_seconds", "Unix timestamp of the most recent interface-counter collection.", registry=self.registry)
-        self.errors = Counter("upf_probe_collection_errors", "Probe errors by local operation.", ["operation"], registry=self.registry)
-        self.capture_active = Gauge("upf_probe_gtpu_capture_active", "One when the AF_PACKET GTP-U observer is active.", registry=self.registry)
-        self.gtpu_seen = Gauge("upf_probe_gtpu_seen", "One after the local observer has seen at least one N3 GTP-U packet.", registry=self.registry)
-        self.gtpu_packets = Counter("upf_probe_gtpu_packets", "N3 GTP-U packets seen by the local raw-socket observer.", ["direction"], registry=self.registry)
-        self.gtpu_bytes = Counter("upf_probe_gtpu_bytes", "Ethernet-frame bytes of N3 GTP-U packets seen by the local raw-socket observer.", ["direction"], registry=self.registry)
-        self.gtpu_last_packet = Gauge("upf_probe_gtpu_last_packet_timestamp_seconds", "Unix timestamp of the most recently observed N3 GTP-U packet.", registry=self.registry)
-        self.collection_success.set(0)
-        self.capture_active.set(0)
-        self.gtpu_seen.set(0)
+        self.path_ready = Gauge("user_plane_probe_path_ready", "One when a path interface was resolved locally.", ["anchor", "path"], registry=self.registry)
+        self.path_info = Gauge("user_plane_probe_path_info", "Resolved interface and local discovery method for a path.", ["anchor", "path", "interface", "source"], registry=self.registry)
+        self.interface_available = Gauge("user_plane_probe_interface_available", "One when the resolved interface is present in /proc/net/dev.", ["anchor", "path"], registry=self.registry)
+        self.rx_bytes = Gauge("user_plane_probe_interface_receive_bytes_total", "Kernel receive-byte counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
+        self.rx_packets = Gauge("user_plane_probe_interface_receive_packets_total", "Kernel receive-packet counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
+        self.rx_errors = Gauge("user_plane_probe_interface_receive_errors_total", "Kernel receive-error counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
+        self.rx_drops = Gauge("user_plane_probe_interface_receive_drops_total", "Kernel receive-drop counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
+        self.tx_bytes = Gauge("user_plane_probe_interface_transmit_bytes_total", "Kernel transmit-byte counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
+        self.tx_packets = Gauge("user_plane_probe_interface_transmit_packets_total", "Kernel transmit-packet counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
+        self.tx_errors = Gauge("user_plane_probe_interface_transmit_errors_total", "Kernel transmit-error counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
+        self.tx_drops = Gauge("user_plane_probe_interface_transmit_drops_total", "Kernel transmit-drop counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
+        self.collection_success = Gauge("user_plane_probe_collection_success", "One when all configured path counters were read in the latest collection.", ["anchor"], registry=self.registry)
+        self.last_collection = Gauge("user_plane_probe_last_collection_timestamp_seconds", "Unix timestamp of the most recent interface-counter collection.", ["anchor"], registry=self.registry)
+        self.errors = Counter("user_plane_probe_collection_errors", "Probe errors by local operation.", ["anchor", "operation"], registry=self.registry)
+        self.capture_active = Gauge("user_plane_probe_gtpu_capture_active", "One when the AF_PACKET GTP-U observer is active.", ["anchor"], registry=self.registry)
+        self.gtpu_seen = Gauge("user_plane_probe_gtpu_seen", "One after the local observer has seen at least one N3 GTP-U packet.", ["anchor"], registry=self.registry)
+        self.gtpu_packets = Counter("user_plane_probe_gtpu_packets", "N3 GTP-U packets seen by the local raw-socket observer.", ["anchor", "direction"], registry=self.registry)
+        self.gtpu_bytes = Counter("user_plane_probe_gtpu_bytes", "Ethernet-frame bytes of N3 GTP-U packets seen by the local raw-socket observer.", ["anchor", "direction"], registry=self.registry)
+        self.gtpu_last_packet = Gauge("user_plane_probe_gtpu_last_packet_timestamp_seconds", "Unix timestamp of the most recently observed N3 GTP-U packet.", ["anchor"], registry=self.registry)
+        self.collection_success.labels(self.anchor).set(0)
+        self.capture_active.labels(self.anchor).set(0)
+        self.gtpu_seen.labels(self.anchor).set(0)
 
     def record_error(self, operation: str) -> None:
-        self.errors.labels(operation).inc()
+        self.errors.labels(self.anchor, operation).inc()
 
     def record_gtpu(self, direction: str, frame_bytes: int) -> None:
-        self.gtpu_packets.labels(direction).inc()
-        self.gtpu_bytes.labels(direction).inc(frame_bytes)
-        self.gtpu_seen.set(1)
-        self.gtpu_last_packet.set(time.time())
+        self.gtpu_packets.labels(self.anchor, direction).inc()
+        self.gtpu_bytes.labels(self.anchor, direction).inc(frame_bytes)
+        self.gtpu_seen.labels(self.anchor).set(1)
+        self.gtpu_last_packet.labels(self.anchor).set(time.time())
 
     def discover_paths(self) -> None:
-        try:
-            with open(self.proc_route_path, encoding="utf-8") as route_file:
-                route_table = route_file.read()
-        except OSError as error:
-            self.record_error("route_read")
-            LOG.warning("cannot read %s: %s", self.proc_route_path, error)
-            route_table = ""
         self.n3 = discover_n3_interface(self.network_status, self.n3_network_names, self.n3_interface_override)
-        self.n6 = discover_n6_interface(route_table, self.n6_interface_override)
-        for path, discovery in (("n3", self.n3), ("n6", self.n6)):
-            self.path_ready.labels(path).set(1 if discovery.interface else 0)
-            self.path_info.labels(path, discovery.interface or "unknown", discovery.source).set(1)
+        discoveries = [("n3", self.n3)]
+        if self.monitor_n6:
+            try:
+                with open(self.proc_route_path, encoding="utf-8") as route_file:
+                    route_table = route_file.read()
+            except OSError as error:
+                self.record_error("route_read")
+                LOG.warning("cannot read %s: %s", self.proc_route_path, error)
+                route_table = ""
+            self.n6 = discover_n6_interface(route_table, self.n6_interface_override)
+            discoveries.append(("n6", self.n6))
+        for path, discovery in discoveries:
+            self.path_ready.labels(self.anchor, path).set(1 if discovery.interface else 0)
+            self.path_info.labels(self.anchor, path, discovery.interface or "unknown", discovery.source).set(1)
 
     def _read_interface_counters(self) -> dict[str, InterfaceCounters]:
         try:
@@ -326,17 +336,17 @@ class UPFDataPlaneProbe:
     def _export_path_counters(self, path: str, interface: str, counters: dict[str, InterfaceCounters]) -> bool:
         values = counters.get(interface)
         if values is None:
-            self.interface_available.labels(path).set(0)
+            self.interface_available.labels(self.anchor, path).set(0)
             return False
-        self.interface_available.labels(path).set(1)
-        self.rx_bytes.labels(path).set(values.receive_bytes)
-        self.rx_packets.labels(path).set(values.receive_packets)
-        self.rx_errors.labels(path).set(values.receive_errors)
-        self.rx_drops.labels(path).set(values.receive_drops)
-        self.tx_bytes.labels(path).set(values.transmit_bytes)
-        self.tx_packets.labels(path).set(values.transmit_packets)
-        self.tx_errors.labels(path).set(values.transmit_errors)
-        self.tx_drops.labels(path).set(values.transmit_drops)
+        self.interface_available.labels(self.anchor, path).set(1)
+        self.rx_bytes.labels(self.anchor, path).set(values.receive_bytes)
+        self.rx_packets.labels(self.anchor, path).set(values.receive_packets)
+        self.rx_errors.labels(self.anchor, path).set(values.receive_errors)
+        self.rx_drops.labels(self.anchor, path).set(values.receive_drops)
+        self.tx_bytes.labels(self.anchor, path).set(values.transmit_bytes)
+        self.tx_packets.labels(self.anchor, path).set(values.transmit_packets)
+        self.tx_errors.labels(self.anchor, path).set(values.transmit_errors)
+        self.tx_drops.labels(self.anchor, path).set(values.transmit_drops)
         return True
 
     def ensure_gtpu_capture(self) -> None:
@@ -351,13 +361,15 @@ class UPFDataPlaneProbe:
             self.capture = candidate
 
     def refresh(self) -> None:
-        if self.n3.source == "not_discovered" or self.n6.source == "not_discovered":
+        if self.n3.source == "not_discovered" or (self.monitor_n6 and self.n6.source == "not_discovered"):
             self.discover_paths()
         counters = self._read_interface_counters()
-        paths = (("n3", self.n3), ("n6", self.n6))
+        paths = [("n3", self.n3)]
+        if self.monitor_n6:
+            paths.append(("n6", self.n6))
         available = [self._export_path_counters(path, result.interface, counters) for path, result in paths if result.interface]
-        self.collection_success.set(1 if available and all(available) and len(available) == 2 else 0)
-        self.last_collection.set(time.time())
+        self.collection_success.labels(self.anchor).set(1 if len(available) == len(paths) and all(available) else 0)
+        self.last_collection.labels(self.anchor).set(time.time())
         self.ensure_gtpu_capture()
 
     def stop(self) -> None:
@@ -378,20 +390,31 @@ def _json_list_from_env(name: str) -> list[str]:
     return [str(value) for value in values]
 
 
-def main() -> int:
-    logging.basicConfig(level=os.environ.get("UPF_PROBE_LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
-    port = int(os.environ.get("UPF_PROBE_METRICS_PORT", "9103"))
-    interval = float(os.environ.get("UPF_PROBE_COLLECTION_INTERVAL_SECONDS", "5"))
-    if not 1 <= port <= 65535:
-        raise ValueError("UPF_PROBE_METRICS_PORT must be between 1 and 65535")
-    if interval <= 0:
-        raise ValueError("UPF_PROBE_COLLECTION_INTERVAL_SECONDS must be positive")
+def _bool_from_env(name: str, default: bool) -> bool:
+    value = os.environ.get(name, str(default)).strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(f"{name} must be a boolean")
 
-    probe = UPFDataPlaneProbe(
-        network_status=os.environ.get("UPF_PROBE_NETWORK_STATUS_JSON", ""),
-        n3_network_names=_json_list_from_env("UPF_PROBE_N3_NETWORK_NAMES"),
-        n3_interface_override=os.environ.get("UPF_PROBE_N3_INTERFACE", ""),
-        n6_interface_override=os.environ.get("UPF_PROBE_N6_INTERFACE", ""),
+
+def main() -> int:
+    logging.basicConfig(level=os.environ.get("USER_PLANE_PROBE_LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
+    port = int(os.environ.get("USER_PLANE_PROBE_METRICS_PORT", "9103"))
+    interval = float(os.environ.get("USER_PLANE_PROBE_COLLECTION_INTERVAL_SECONDS", "5"))
+    if not 1 <= port <= 65535:
+        raise ValueError("USER_PLANE_PROBE_METRICS_PORT must be between 1 and 65535")
+    if interval <= 0:
+        raise ValueError("USER_PLANE_PROBE_COLLECTION_INTERVAL_SECONDS must be positive")
+
+    probe = UserPlanePathProbe(
+        anchor=os.environ.get("USER_PLANE_PROBE_ANCHOR", "upf"),
+        network_status=os.environ.get("USER_PLANE_PROBE_NETWORK_STATUS_JSON", ""),
+        n3_network_names=_json_list_from_env("USER_PLANE_PROBE_N3_NETWORK_NAMES"),
+        n3_interface_override=os.environ.get("USER_PLANE_PROBE_N3_INTERFACE", ""),
+        n6_interface_override=os.environ.get("USER_PLANE_PROBE_N6_INTERFACE", ""),
+        monitor_n6=_bool_from_env("USER_PLANE_PROBE_MONITOR_N6", True),
     )
     stopping = threading.Event()
 
@@ -402,7 +425,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop_handler)
     probe.refresh()
     start_http_server(port, registry=probe.registry)
-    LOG.info("UPF data-plane probe listening on port %s", port)
+    LOG.info("%s user-plane path probe listening on port %s", probe.anchor, port)
     while not stopping.wait(interval):
         probe.refresh()
     probe.stop()

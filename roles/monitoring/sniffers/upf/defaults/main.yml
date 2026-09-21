@@ -1,7 +1,7 @@
 ---
-# Disabled until probes/upf_data_plane has been built and published.
+# Disabled until probes/user_plane_path has been built and published.
 upf_data_plane_probe_enabled: false
-upf_data_plane_probe_image: "r2labuser/upf-data-plane-probe:2026w10"
+upf_data_plane_probe_image: "r2labuser/user-plane-path-probe:2026w10"
 upf_data_plane_probe_metrics_port: 9103
 upf_data_plane_probe_collection_interval_seconds: 5
 

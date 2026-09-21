@@ -12,7 +12,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("upf_data_plane_probe", ROOT / "probes/upf_data_plane/probe.py")
+spec = importlib.util.spec_from_file_location("user_plane_path_probe", ROOT / "probes/user_plane_path/probe.py")
 probe = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = probe
 spec.loader.exec_module(probe)
@@ -63,46 +63,98 @@ class DiscoveryTests(unittest.TestCase):
 
 
 class MetricsTests(unittest.TestCase):
-    def test_probe_exports_resolved_path_counters_without_identifiers(self):
+    def _probe_output(self, anchor, monitor_n6):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             dev = directory / "dev"
             route = directory / "route"
             dev.write_text(PROC_NET_DEV)
             route.write_text(ROUTE_TABLE)
-            instance = probe.UPFDataPlaneProbe(NETWORK_STATUS, ["n3network"], proc_net_dev_path=str(dev), proc_route_path=str(route), registry=CollectorRegistry())
+            instance = probe.UserPlanePathProbe(
+                anchor=anchor,
+                network_status=NETWORK_STATUS,
+                n3_network_names=["n3network"],
+                monitor_n6=monitor_n6,
+                proc_net_dev_path=str(dev),
+                proc_route_path=str(route),
+                registry=CollectorRegistry(),
+            )
             instance.refresh()
             instance.stop()
-            output = generate_latest(instance.registry).decode()
-        samples = {sample.name: sample.value for family in text_string_to_metric_families(output) for sample in family.samples if sample.name == "upf_probe_path_ready" and sample.labels.get("path") == "n3"}
-        self.assertEqual(samples["upf_probe_path_ready"], 1)
-        self.assertIn('path="n3"', output)
+            return generate_latest(instance.registry).decode()
+
+    def test_gnb_exports_n3_only_and_marks_collection_success(self):
+        output = self._probe_output("gnb", monitor_n6=False)
+        samples = {
+            (sample.name, tuple(sorted(sample.labels.items()))): sample.value
+            for family in text_string_to_metric_families(output)
+            for sample in family.samples
+        }
+        self.assertEqual(samples[("user_plane_probe_path_ready", (("anchor", "gnb"), ("path", "n3")))], 1)
+        self.assertEqual(samples[("user_plane_probe_collection_success", (("anchor", "gnb"),))], 1)
+        self.assertNotIn('path="n6"', output)
+        self.assertIn('anchor="gnb"', output)
         self.assertNotIn("10.10.", output)
+
+    def test_upf_requires_both_n3_and_n6_paths(self):
+        output = self._probe_output("upf", monitor_n6=True)
+        samples = {
+            (sample.name, tuple(sorted(sample.labels.items()))): sample.value
+            for family in text_string_to_metric_families(output)
+            for sample in family.samples
+        }
+        self.assertEqual(samples[("user_plane_probe_path_ready", (("anchor", "upf"), ("path", "n3")))], 1)
+        self.assertEqual(samples[("user_plane_probe_path_ready", (("anchor", "upf"), ("path", "n6")))], 1)
+        self.assertEqual(samples[("user_plane_probe_collection_success", (("anchor", "upf"),))], 1)
+
+    def test_invalid_anchor_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "anchor"):
+            probe.UserPlanePathProbe("amf", NETWORK_STATUS, ["n3network"])
 
 
 class IntegrationTests(unittest.TestCase):
-    def test_role_defaults_service_and_deploy_wiring(self):
+    def test_upf_role_uses_the_shared_probe(self):
         defaults = yaml.safe_load((ROOT / "roles/monitoring/sniffers/upf/defaults/main.yml").read_text())
         template = Environment().from_string((ROOT / "roles/monitoring/sniffers/upf/templates/upf-data-plane-probe-service.yaml.j2").read_text())
         service = yaml.safe_load(template.render(core="open5gs", upf_data_plane_probe_metrics_port=9103, upf_data_plane_probe_target_label_key="monitoring.5g.example/upf-data-plane-probe", upf_data_plane_probe_target_label_value="enabled"))
         tasks = (ROOT / "roles/monitoring/sniffers/upf/tasks/main.yml").read_text()
-        deploy = (ROOT / "playbooks/deploy.yml").read_text()
         self.assertFalse(defaults["upf_data_plane_probe_enabled"])
         self.assertEqual(defaults["upf_data_plane_probe_default_n3_network_names_by_core"]["open5gs"], ["n3network"])
+        self.assertIn("user-plane-path-probe", defaults["upf_data_plane_probe_image"])
         self.assertEqual(service["spec"]["clusterIP"], "None")
         self.assertEqual(service["spec"]["selector"], {"monitoring.5g.example/upf-data-plane-probe": "enabled"})
-        self.assertIn("UPF_PROBE_NETWORK_STATUS_JSON", tasks)
+        self.assertIn("USER_PLANE_PROBE_ANCHOR", tasks)
+        self.assertIn('value: upf', tasks)
+        self.assertIn('value: "true"', tasks)
         self.assertIn("NET_RAW", tasks)
-        self.assertIn("monitoring/sniffers/upf", deploy)
 
-    def test_dockerfile_and_artifact_queries_are_present(self):
-        dockerfile = (ROOT / "probes/upf_data_plane/Dockerfile").read_text()
+    def test_gnb_role_uses_n3_only_with_no_vendor_selector(self):
+        defaults = yaml.safe_load((ROOT / "roles/monitoring/sniffers/gnb/defaults/main.yml").read_text())
+        template = Environment().from_string((ROOT / "roles/monitoring/sniffers/gnb/templates/gnb-data-plane-probe-service.yaml.j2").read_text())
+        service = yaml.safe_load(template.render(gnb_data_plane_probe_namespace="open5gs", gnb_data_plane_probe_metrics_port=9103, gnb_data_plane_probe_target_label_key="monitoring.5g.example/gnb-data-plane-probe", gnb_data_plane_probe_target_label_value="enabled"))
+        tasks = (ROOT / "roles/monitoring/sniffers/gnb/tasks/main.yml").read_text()
+        self.assertFalse(defaults["gnb_data_plane_probe_enabled"])
+        self.assertEqual(defaults["gnb_data_plane_probe_default_n3_network_names_by_ran"]["srsran"], ["n3network"])
+        self.assertIn("user-plane-path-probe", defaults["gnb_data_plane_probe_image"])
+        self.assertEqual(service["spec"]["clusterIP"], "None")
+        self.assertEqual(service["spec"]["selector"], {"monitoring.5g.example/gnb-data-plane-probe": "enabled"})
+        self.assertIn("USER_PLANE_PROBE_ANCHOR", tasks)
+        self.assertIn('value: gnb', tasks)
+        self.assertIn('value: "false"', tasks)
+        self.assertNotIn("USER_PLANE_PROBE_N6_INTERFACE", tasks)
+        self.assertIn("NET_RAW", tasks)
+
+    def test_dockerfile_artifacts_and_deploy_wiring_are_present(self):
+        dockerfile = (ROOT / "probes/user_plane_path/Dockerfile").read_text()
         queries = json.loads((ROOT / "configs/artifacts/default_prometheus_queries.json").read_text())
         names = [entry["name"] for entry in queries]
-        self.assertIn("COPY probes/upf_data_plane/probe.py", dockerfile)
+        deploy = (ROOT / "playbooks/deploy.yml").read_text()
+        self.assertIn("COPY probes/user_plane_path/probe.py", dockerfile)
         self.assertEqual(len(names), len(set(names)))
-        self.assertIn("upf_probe_path_ready", names)
-        self.assertIn("upf_probe_gtpu_packets_per_second_30s", names)
+        self.assertIn("user_plane_probe_path_ready", names)
+        self.assertIn("user_plane_probe_gtpu_packets_per_second_30s", names)
+        self.assertIn("monitoring/sniffers/gnb", deploy)
+        self.assertIn("monitoring/sniffers/upf", deploy)
 
 
 if __name__ == "__main__":

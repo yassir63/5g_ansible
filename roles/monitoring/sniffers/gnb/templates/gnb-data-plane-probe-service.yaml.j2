@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gnb-data-plane-probe-metrics
+  namespace: {{ gnb_data_plane_probe_namespace }}
+  labels:
+    app: monitoring
+    component: gnb-data-plane-probe
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "{{ gnb_data_plane_probe_metrics_port }}"
+spec:
+  clusterIP: "None"
+  selector:
+    "{{ gnb_data_plane_probe_target_label_key }}": "{{ gnb_data_plane_probe_target_label_value }}"
+  ports:
+    - name: metrics
+      port: {{ gnb_data_plane_probe_metrics_port }}
+      targetPort: {{ gnb_data_plane_probe_metrics_port }}
+      protocol: TCP

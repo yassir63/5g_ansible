@@ -104,48 +104,48 @@
     "query": "pfcp_session_establishment_capture_started"
   },
   {
-    "name": "upf_probe_path_ready",
-    "query": "upf_probe_path_ready"
+    "name": "user_plane_probe_path_ready",
+    "query": "user_plane_probe_path_ready"
   },
   {
-    "name": "upf_probe_interface_receive_bytes_per_second_30s",
-    "query": "sum by (path) (rate(upf_probe_interface_receive_bytes_total[30s]))"
+    "name": "user_plane_probe_interface_receive_bytes_per_second_30s",
+    "query": "sum by (anchor, path) (rate(user_plane_probe_interface_receive_bytes_total[30s]))"
   },
   {
-    "name": "upf_probe_interface_transmit_bytes_per_second_30s",
-    "query": "sum by (path) (rate(upf_probe_interface_transmit_bytes_total[30s]))"
+    "name": "user_plane_probe_interface_transmit_bytes_per_second_30s",
+    "query": "sum by (anchor, path) (rate(user_plane_probe_interface_transmit_bytes_total[30s]))"
   },
   {
-    "name": "upf_probe_interface_drops_per_second_30s",
-    "query": "sum by (path) (rate(upf_probe_interface_receive_drops_total[30s]) + rate(upf_probe_interface_transmit_drops_total[30s]))"
+    "name": "user_plane_probe_interface_drops_per_second_30s",
+    "query": "sum by (anchor, path) (rate(user_plane_probe_interface_receive_drops_total[30s]) + rate(user_plane_probe_interface_transmit_drops_total[30s]))"
   },
   {
-    "name": "upf_probe_interface_errors_per_second_30s",
-    "query": "sum by (path) (rate(upf_probe_interface_receive_errors_total[30s]) + rate(upf_probe_interface_transmit_errors_total[30s]))"
+    "name": "user_plane_probe_interface_errors_per_second_30s",
+    "query": "sum by (anchor, path) (rate(user_plane_probe_interface_receive_errors_total[30s]) + rate(user_plane_probe_interface_transmit_errors_total[30s]))"
   },
   {
-    "name": "upf_probe_gtpu_packets_per_second_30s",
-    "query": "sum by (direction) (rate(upf_probe_gtpu_packets_total[30s]))"
+    "name": "user_plane_probe_gtpu_packets_per_second_30s",
+    "query": "sum by (anchor, direction) (rate(user_plane_probe_gtpu_packets_total[30s]))"
   },
   {
-    "name": "upf_probe_gtpu_bytes_per_second_30s",
-    "query": "sum by (direction) (rate(upf_probe_gtpu_bytes_total[30s]))"
+    "name": "user_plane_probe_gtpu_bytes_per_second_30s",
+    "query": "sum by (anchor, direction) (rate(user_plane_probe_gtpu_bytes_total[30s]))"
   },
   {
-    "name": "upf_probe_gtpu_capture_active",
-    "query": "upf_probe_gtpu_capture_active"
+    "name": "user_plane_probe_gtpu_capture_active",
+    "query": "user_plane_probe_gtpu_capture_active"
   },
   {
-    "name": "upf_probe_gtpu_seen",
-    "query": "upf_probe_gtpu_seen"
+    "name": "user_plane_probe_gtpu_seen",
+    "query": "user_plane_probe_gtpu_seen"
   },
   {
-    "name": "upf_probe_collection_success",
-    "query": "upf_probe_collection_success"
+    "name": "user_plane_probe_collection_success",
+    "query": "user_plane_probe_collection_success"
   },
   {
-    "name": "upf_probe_collection_error_rate_hz_30s",
-    "query": "sum by (operation) (rate(upf_probe_collection_errors_total[30s]))"
+    "name": "user_plane_probe_collection_error_rate_hz_30s",
+    "query": "sum by (anchor, operation) (rate(user_plane_probe_collection_errors_total[30s]))"
   },
   {
     "name": "ue_mapper_collection_success",
