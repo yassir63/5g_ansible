@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: smf-pfcp-procedure-metrics
+  namespace: {{ core }}
+  labels:
+    app: monitoring
+    component: smf-pfcp-procedure
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scheme: "http"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "{{ smf_pfcp_metrics_port }}"
+spec:
+  clusterIP: "None"
+  selector:
+    "{{ smf_pfcp_target_label_key }}": "{{ smf_pfcp_target_label_value }}"
+  ports:
+    - name: metrics
+      port: {{ smf_pfcp_metrics_port }}
+      targetPort: {{ smf_pfcp_metrics_port }}
+      protocol: TCP

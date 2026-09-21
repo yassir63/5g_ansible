@@ -1,0 +1,10 @@
+---
+smf_sniffer_image: "r2labuser/smf-sniffer:2026w10"
+# Disabled until an SMF-sniffer image containing probes/pfcp_procedure/metrics.py is selected.
+smf_pfcp_metrics_enabled: false
+smf_pfcp_metrics_port: 9104
+smf_pfcp_pending_timeout_seconds: 30
+# Empty preserves the deployment-specific default: n4 for Open5GS and eth0 otherwise.
+smf_sniffer_capture_interface: ""
+smf_pfcp_target_label_key: "monitoring.5g.example/smf-pfcp-probe"
+smf_pfcp_target_label_value: "enabled"

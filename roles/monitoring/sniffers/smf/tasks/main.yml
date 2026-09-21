@@ -57,7 +57,7 @@
 # - name: Copy smf_sniffer.py into each SMF pod
 #   ansible.builtin.shell: |
 #     kubectl -n {{ core }} cp \
-#       ~/monitoring/sliceawareness/smfsniffer/smf_sniffer.py \
+#       ~/probes/smf_sniffer/smf_sniffer.py \
 #       {{ item }}:/tmp/smf_sniffer.py
 #   loop: "{{ smf_pod_list }}"
 #   register: smf_sniffer_copy
@@ -107,11 +107,64 @@
 
 - name: Select SMF sniffer interface based on core
   set_fact:
-    smf_sniffer_interface: "{{ 'n4' if core == 'open5gs' else 'eth0' }}"
+    smf_sniffer_interface: "{{ smf_sniffer_capture_interface | default('n4' if core == 'open5gs' else 'eth0', true) }}"
 
 - name: Set SMF Redis host
   set_fact:
     smf_redis_host: "{{ redis_host | default('redis') }}"
+
+- name: Validate PFCP procedure metrics settings when enabled
+  ansible.builtin.assert:
+    that:
+      - smf_sniffer_image is string
+      - smf_sniffer_image | length > 0
+      - smf_sniffer_interface is string
+      - smf_sniffer_interface | length > 0
+      - smf_pfcp_metrics_port is integer
+      - smf_pfcp_metrics_port >= 1
+      - smf_pfcp_metrics_port <= 65535
+      - smf_pfcp_pending_timeout_seconds is number
+      - smf_pfcp_pending_timeout_seconds > 0
+    fail_msg: >-
+      Build and select an SMF-sniffer image with PFCP procedure metrics, then provide a valid
+      capture interface, metrics port and pending timeout before enabling metrics.
+  when: smf_pfcp_metrics_enabled | bool
+
+- name: Fail when an existing SMF sniffer cannot be upgraded in place
+  ansible.builtin.fail:
+    msg: >-
+      Pod {{ item.metadata.name }} already has an smf-sniffer ephemeral container.
+      Ephemeral containers cannot be edited; recreate the SMF pod, then rerun this role
+      to inject the selected image with PFCP procedure metrics.
+  when:
+    - smf_pfcp_metrics_enabled | bool
+    - "'smf-sniffer' in ((item.spec.ephemeralContainers | default([])) | map(attribute='name') | list)"
+  loop: "{{ smf_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Render SMF PFCP procedure metrics Service
+  ansible.builtin.template:
+    src: smf-pfcp-metrics-service.yaml.j2
+    dest: /tmp/smf-pfcp-metrics-service.yaml
+    mode: "0644"
+  when: smf_pfcp_metrics_enabled | bool
+
+- name: Apply SMF PFCP procedure metrics Service
+  ansible.builtin.command: kubectl -n {{ core }} apply -f /tmp/smf-pfcp-metrics-service.yaml
+  register: smf_pfcp_metrics_service_apply
+  changed_when: "'created' in smf_pfcp_metrics_service_apply.stdout or 'configured' in smf_pfcp_metrics_service_apply.stdout"
+  when: smf_pfcp_metrics_enabled | bool
+
+- name: Label selected SMF pods for PFCP metrics discovery
+  ansible.builtin.command: >-
+    kubectl -n {{ core }} label pod {{ item.metadata.name }}
+    {{ smf_pfcp_target_label_key }}={{ smf_pfcp_target_label_value }} --overwrite
+  loop: "{{ smf_pod_list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  changed_when: false
+  when: smf_pfcp_metrics_enabled | bool
 
 - name: Inject SMF sniffer ephemeral container into each SMF pod
   vars:
@@ -121,13 +174,19 @@
     existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
     smf_ephemeral_container:
       name: smf-sniffer
-      image: r2labuser/smf-sniffer:2026w10
+      image: "{{ smf_sniffer_image }}"
       imagePullPolicy: IfNotPresent
       env:
         - name: smf_sniffer_iface
           value: "{{ smf_sniffer_interface }}"
         - name: REDIS_HOST
           value: "{{ smf_redis_host }}"
+        - name: SMF_PFCP_METRICS_ENABLED
+          value: "{{ smf_pfcp_metrics_enabled | bool | lower }}"
+        - name: SMF_PFCP_METRICS_PORT
+          value: "{{ smf_pfcp_metrics_port | string }}"
+        - name: SMF_PFCP_PENDING_TIMEOUT_SECONDS
+          value: "{{ smf_pfcp_pending_timeout_seconds | string }}"
       targetContainerName: "{{ target_container_name }}"
       stdin: true
       tty: true

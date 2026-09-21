@@ -3,8 +3,10 @@ import sys
 import redis
 import ast
 import ipaddress
-from scapy.all import sniff
+from prometheus_client import start_http_server
+from scapy.all import IP, IPv6, sniff
 from scapy.contrib.pfcp import PFCP
+from pfcp_procedure_metrics import PFCPSessionEstablishmentTracker
 
 # -------------------------
 # Config
@@ -22,6 +24,14 @@ print(f"🔗 Connecting to Redis at {redis_host}:6379...")
 rdb = redis.Redis(host=redis_host, port=6379, decode_responses=True)
 
 DEBUG = os.getenv("PFCP_DEBUG", "0") in ("1", "true", "True", "YES", "yes")
+PFCP_METRICS_ENABLED = os.getenv("SMF_PFCP_METRICS_ENABLED", "false").lower() in ("1", "true", "yes")
+PFCP_METRICS_PORT = int(os.getenv("SMF_PFCP_METRICS_PORT", "9104"))
+PFCP_PENDING_TIMEOUT_SECONDS = float(os.getenv("SMF_PFCP_PENDING_TIMEOUT_SECONDS", "30"))
+pfcp_tracker = (
+    PFCPSessionEstablishmentTracker(PFCP_PENDING_TIMEOUT_SECONDS)
+    if PFCP_METRICS_ENABLED
+    else None
+)
 
 # -------------------------
 # State
@@ -191,6 +201,27 @@ def get_attr(obj, *names):
             v = getattr(obj, n)
             if v is not None:
                 return v
+    return None
+
+def pfcp_peer_key(pkt) -> str:
+    """Return a private, direction-independent peer key for strict correlation."""
+    for layer_type in (IP, IPv6):
+        layer = pkt.getlayer(layer_type)
+        if layer is None:
+            continue
+        source = str(getattr(layer, "src", "") or "").strip()
+        destination = str(getattr(layer, "dst", "") or "").strip()
+        if source and destination:
+            return "|".join(sorted((source, destination)))
+    return ""
+
+def pfcp_response_cause(pfcp):
+    """Extract the PFCP Cause IE value without retaining any session identity."""
+    for ie in extract_all_ies(pfcp):
+        if ie_type(ie) == 19 or "CAUSE" in ie_name(ie).upper():
+            value = get_attr(ie, "cause", "Cause", "value")
+            if value is not None:
+                return value
     return None
 
 def extract_ipv4_from_ue_ip_ie(ie) -> str | None:
@@ -425,14 +456,31 @@ def parse_pfcp(pkt):
 def handle_pfcp(pkt):
     if not pkt.haslayer(PFCP):
         return
+    if pfcp_tracker is not None:
+        try:
+            pfcp = pkt[PFCP]
+            pfcp_tracker.observe(
+                getattr(pfcp, "message_type", None),
+                getattr(pfcp, "seq", None),
+                pfcp_peer_key(pkt),
+                pfcp_response_cause(pfcp),
+            )
+        except Exception:
+            pfcp_tracker.record_decode_error()
     try:
         parse_pfcp(pkt)
     except Exception:
-        return
+        if pfcp_tracker is not None:
+            pfcp_tracker.record_decode_error()
 
 def main():
     print(f"🚀 PFCP sniffer running on '{interface}' (udp/8805)...")
-    sniff(filter="udp port 8805", iface=interface, prn=handle_pfcp, store=0)
+    sniff_options = {"filter": "udp port 8805", "iface": interface, "prn": handle_pfcp, "store": 0}
+    if pfcp_tracker is not None:
+        start_http_server(PFCP_METRICS_PORT, registry=pfcp_tracker.registry)
+        sniff_options["started_callback"] = pfcp_tracker.mark_capture_started
+        print(f"PFCP procedure metrics listening on port {PFCP_METRICS_PORT}.")
+    sniff(**sniff_options)
 
 if __name__ == "__main__":
     main()

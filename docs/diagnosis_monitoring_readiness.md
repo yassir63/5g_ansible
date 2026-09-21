@@ -123,6 +123,11 @@ only require rerunning collection while the source data remains in retention.
   data-quality signals for missed observations. Build/select the new sniffer
   image and set `amf_ngap_metrics_enabled: true` only when ready. See the
   [NGAP metrics checklist](../probes/ngap_procedure/README.md).
+- **Pending image build:** the existing SMF sniffer now also observes PFCP
+  Session Establishment request/response exchanges on N4, parsed outcomes and
+  local correlation-quality signals. Build/select the new sniffer image and set
+  `smf_pfcp_metrics_enabled: true` only when ready. See the
+  [PFCP metrics checklist](../probes/pfcp_procedure/README.md).
 
 These RAN queries retain every source label, including RNTI and exporter identity
 when provided. They do not join RNTI to the mapper's NGAP RAN UE ID: those identifiers
