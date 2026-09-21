@@ -108,6 +108,27 @@ only require rerunning collection while the source data remains in retention.
 
 ## Next evidence to add only when the experiment needs it
 
+### Prepared for the next deployment
+
+- **Pending image build:** the UE-mapper API now has `/metrics`. Build/push a new
+  mapper image, select it with `ue_mapper_api_image`, and only then enable
+  `ue_mapper_metrics_enabled`. Scraping remains disabled by default. See the
+  [mapper checklist](../monitoring/sliceawareness/ue_mapper/README.md).
+- **No image build needed:** artifact queries now include the srsRAN metrics
+  already referenced by `monitoring-dashboard-srsran.json`: UL/DL bitrate,
+  successful/failed transmissions, MCS, rank, CQI, PUCCH/PUSCH SNR and DL buffer
+  occupancy. The same queries automatically enter the availability check.
+
+These RAN queries retain every source label, including RNTI and exporter identity
+when provided. They do not join RNTI to the mapper's NGAP RAN UE ID: those identifiers
+are not interchangeable. They also do not assume the transmission values are
+cumulative counters or that buffer/bitrate units match a particular exporter
+version. Preserve the raw values; verify units, update interval and counter reset
+semantics against the deployed exporter before computing BLER or training a model.
+Idle or unsupported metrics remain missing, not zero. OAI and UERANSIM deployments
+are not expected to provide these srsRAN series. PRB and HARQ-specific metrics still
+need source verification; this change does not instrument the RAN implementation.
+
 The N2 probe still needs live validation for observable procedure outcomes and
 durations. RAN evidence should reuse the existing implementation-specific
 exporters/logs (for example BLER, HARQ, MCS, PRB use and radio quality where

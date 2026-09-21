@@ -1,4 +1,6 @@
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
+from prometheus_client import CollectorRegistry, CONTENT_TYPE_LATEST, generate_latest
+from mapper_metrics import MapperMetrics
 import redis
 import os
 
@@ -6,6 +8,18 @@ app = Flask(__name__)
 
 redis_host = os.getenv("REDIS_HOST", "redis")
 rdb = redis.Redis(host=redis_host, port=6379, decode_responses=True)
+
+# Isolate bounded metrics reads from existing API request connections.
+metrics_registry = CollectorRegistry()
+metrics_registry.register(MapperMetrics(redis.Redis(
+    host=redis_host, port=6379, decode_responses=True,
+    socket_connect_timeout=1, socket_timeout=1,
+)))
+
+
+@app.route("/metrics")
+def metrics():
+    return Response(generate_latest(metrics_registry), content_type=CONTENT_TYPE_LATEST)
 
 
 # -------------------------------------------------
@@ -376,7 +390,8 @@ def root():
             "/imsi/<imsi>",
             "/resolve/ue/imsi/<imsi>",
             "/resolve/slice?sst=..&sd=..",
-            "/inventory/ues"
+            "/inventory/ues",
+            "/metrics"
         ]
     })
 

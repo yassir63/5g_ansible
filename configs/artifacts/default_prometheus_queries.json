@@ -1,5 +1,97 @@
 [
   {
+    "name": "ue_mapper_collection_success",
+    "query": "ue_mapper_collection_success"
+  },
+  {
+    "name": "ue_mapper_collection_busy",
+    "query": "ue_mapper_collection_busy"
+  },
+  {
+    "name": "ue_mapper_redis_up",
+    "query": "ue_mapper_redis_up"
+  },
+  {
+    "name": "ue_mapper_collection_duration_seconds",
+    "query": "ue_mapper_collection_duration_seconds"
+  },
+  {
+    "name": "ue_mapper_context_records",
+    "query": "ue_mapper_context_records"
+  },
+  {
+    "name": "ue_mapper_context_records_by_slice",
+    "query": "ue_mapper_context_records_by_slice"
+  },
+  {
+    "name": "ue_mapper_identified_ues_by_slice",
+    "query": "ue_mapper_identified_ues_by_slice"
+  },
+  {
+    "name": "ue_mapper_paired_contexts_by_slice",
+    "query": "ue_mapper_paired_contexts_by_slice"
+  },
+  {
+    "name": "ue_mapper_context_missing_fields",
+    "query": "ue_mapper_context_missing_fields"
+  },
+  {
+    "name": "srsran_dl_bitrate_raw",
+    "query": "ue_dl_brate"
+  },
+  {
+    "name": "srsran_ul_bitrate_raw",
+    "query": "ue_ul_brate"
+  },
+  {
+    "name": "srsran_dl_transmissions_ok_raw",
+    "query": "ue_dl_nof_ok"
+  },
+  {
+    "name": "srsran_dl_transmissions_nok_raw",
+    "query": "ue_dl_nof_nok"
+  },
+  {
+    "name": "srsran_ul_transmissions_ok_raw",
+    "query": "ue_ul_nof_ok"
+  },
+  {
+    "name": "srsran_ul_transmissions_nok_raw",
+    "query": "ue_ul_nof_nok"
+  },
+  {
+    "name": "srsran_dl_mcs",
+    "query": "ue_dl_mcs"
+  },
+  {
+    "name": "srsran_ul_mcs",
+    "query": "ue_ul_mcs"
+  },
+  {
+    "name": "srsran_dl_rank_indicator",
+    "query": "ue_dl_ri"
+  },
+  {
+    "name": "srsran_ul_rank_indicator",
+    "query": "ue_ul_ri"
+  },
+  {
+    "name": "srsran_cqi",
+    "query": "ue_cqi"
+  },
+  {
+    "name": "srsran_pucch_snr_db",
+    "query": "ue_pucch_snr_db"
+  },
+  {
+    "name": "srsran_pusch_snr_db",
+    "query": "ue_pusch_snr_db"
+  },
+  {
+    "name": "srsran_dl_buffer_raw",
+    "query": "ue_dl_bs"
+  },
+  {
     "name": "direct_latest_ms",
     "query": "gtp_teid_latency_ns / 1000000"
   },

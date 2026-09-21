@@ -13,7 +13,7 @@ spec:
       labels:
         app: ue-mapper-api
       annotations:
-        # This API does not expose a Prometheus endpoint.
+        # Service-only scraping avoids duplicate pod and service series.
         prometheus.io/scrape: "false"
     spec:
       containers:
@@ -32,7 +32,9 @@ metadata:
   name: ue-mapper-api
   namespace: {{ sliceawareness_namespace }}
   annotations:
-    prometheus.io/scrape: "false"
+    prometheus.io/scrape: "{{ ue_mapper_metrics_enabled | default(false) | bool | lower }}"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "80"
 spec:
   selector:
     app: ue-mapper-api
