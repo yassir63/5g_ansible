@@ -155,6 +155,10 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("user_plane_probe_gtpu_packets_per_second_30s", names)
         self.assertIn("monitoring/sniffers/gnb", deploy)
         self.assertIn("monitoring/sniffers/upf", deploy)
+        self.assertGreater(
+            deploy.index("Attach gNB user-plane probe after RAN deployment"),
+            deploy.index("- name: Deploy srsRAN"),
+        )
 
 
 if __name__ == "__main__":

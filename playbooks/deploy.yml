@@ -316,8 +316,6 @@
       vars:
         # redis_host: redis
         redis_host: "redis.{{ monitoring_namespace | default('monitoring') }}.svc.cluster.local"
-    - role: monitoring/sniffers/gnb
-      when: monitoring_enabled and (gnb_data_plane_probe_enabled | default(false) | bool)
     - role: monitoring/sniffers/upf
       when: monitoring_enabled and (upf_data_plane_probe_enabled | default(false) | bool)
 
@@ -470,6 +468,16 @@
       when: 
         - ran == 'srsRAN'
         - csi_logger_enabled | default(false)
+
+- name: Attach gNB user-plane probe after RAN deployment
+  hosts: ran_node
+  gather_facts: false
+  roles:
+    - role: monitoring/sniffers/gnb
+      when:
+        - monitoring_enabled
+        - gnb_data_plane_probe_enabled | default(false) | bool
+        - (ran | default('')) in ['oai', 'srsRAN']
 
 - name: Deploy ueransim for oai core
   hosts: ran_node
