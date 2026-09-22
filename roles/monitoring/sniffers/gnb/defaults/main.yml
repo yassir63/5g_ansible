@@ -18,7 +18,7 @@ gnb_data_plane_probe_default_n3_network_names_by_ran:
   srsran:
     - n3network
   oai:
-    - n3network
+    - oai-gnb-n3
   ueransim:
     - n3network
 

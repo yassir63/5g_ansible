@@ -135,6 +135,14 @@ class IntegrationTests(unittest.TestCase):
         tasks = (ROOT / "roles/monitoring/sniffers/gnb/tasks/main.yml").read_text()
         self.assertFalse(defaults["gnb_data_plane_probe_enabled"])
         self.assertEqual(defaults["gnb_data_plane_probe_default_n3_network_names_by_ran"]["srsran"], ["n3network"])
+        self.assertEqual(defaults["gnb_data_plane_probe_default_n3_network_names_by_ran"]["oai"], ["oai-gnb-n3"])
+        self.assertEqual(
+            probe.discover_n3_interface(
+                json.dumps([{"name": "open5gs/oai-gnb-n3", "interface": "n3"}]),
+                defaults["gnb_data_plane_probe_default_n3_network_names_by_ran"]["oai"],
+            ),
+            probe.PathDiscovery("n3", "network_status"),
+        )
         self.assertIn("user-plane-path-probe", defaults["gnb_data_plane_probe_image"])
         self.assertEqual(service["spec"]["clusterIP"], "None")
         self.assertEqual(service["spec"]["selector"], {"monitoring.5g.example/gnb-data-plane-probe": "enabled"})
