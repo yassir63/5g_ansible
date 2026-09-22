@@ -15,7 +15,6 @@ spec:
   clusterIP: "None"
   selector:
     nf: amf
-    app: monitoring
   ports:
     - name: metrics
       port: {{ amf_ngap_metrics_port }}

@@ -119,7 +119,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(service["spec"]["clusterIP"], "None")
         self.assertEqual(service["spec"]["ports"][0]["targetPort"], 9102)
         self.assertEqual(service["metadata"]["annotations"]["prometheus.io/path"], "/metrics")
-        self.assertEqual(service["spec"]["selector"], {"nf": "amf", "app": "monitoring"})
+        self.assertEqual(service["spec"]["selector"], {"nf": "amf"})
 
     def test_disabled_defaults_and_single_sniffer_injection_are_present(self):
         defaults = yaml.safe_load((ROOT / "roles/monitoring/sniffers/amf/defaults/main.yml").read_text())
