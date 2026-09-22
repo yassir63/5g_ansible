@@ -4,9 +4,9 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from jinja2 import Environment, StrictUndefined
-from jinja2.nativetypes import NativeEnvironment
+from jinja2 import Environment
 from prometheus_client import CollectorRegistry, generate_latest
 from prometheus_client.parser import text_string_to_metric_families
 import yaml
@@ -34,11 +34,11 @@ PROC_NET_DEV = """Inter-|   Receive                                             
 """
 
 
-def ipv4_udp_frame(source_port=2152, destination_port=40000, vlan=False):
+def ipv4_udp_frame(source_port=2152, destination_port=40000, vlan=False, gtpu_flags=0x30):
     ethernet = b"\x00" * 12 + (b"\x81\x00\x00\x01\x08\x00" if vlan else b"\x08\x00")
-    ip = bytes([0x45, 0, 0, 28, 0, 0, 0, 0, 64, 17, 0, 0]) + b"\x00" * 8
-    udp = source_port.to_bytes(2, "big") + destination_port.to_bytes(2, "big") + b"\x00\x08\x00\x00"
-    return ethernet + ip + udp
+    ip = bytes([0x45, 0, 0, 36, 0, 0, 0, 0, 64, 17, 0, 0]) + b"\x00" * 8
+    udp = source_port.to_bytes(2, "big") + destination_port.to_bytes(2, "big") + b"\x00\x10\x00\x00"
+    return ethernet + ip + udp + bytes([gtpu_flags, 0xFF, 0, 0, 0, 0, 0, 1])
 
 
 class DiscoveryTests(unittest.TestCase):
@@ -49,6 +49,16 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(probe.discover_n3_interface("not-json", [], "n3"), probe.PathDiscovery("n3", "override"))
         ambiguous = json.dumps([{"name": "n3network", "interface": "net1"}, {"name": "n3network", "interface": "net2"}])
         self.assertEqual(probe.discover_n3_interface(ambiguous, ["n3network"]), probe.PathDiscovery("", "network_status_ambiguous"))
+
+    def test_n3_name_hint_is_independent_of_ran_vendor(self):
+        primary = {"name": "cbr0", "interface": "eth0", "default": True}
+        for name in ("open5gs/oai-gnb-n3", "open5gs/n3network"):
+            status = json.dumps([primary, {"name": name, "interface": "net1"}])
+            self.assertEqual(probe.discover_n3_interface(status, []), probe.PathDiscovery("net1", "name_hint"))
+        no_hint = json.dumps([primary, {"name": "data-network", "interface": "net1"}])
+        self.assertEqual(probe.discover_n3_interface(no_hint, []), probe.PathDiscovery("", "name_hint_missing"))
+        ambiguous = json.dumps([primary, {"name": "n3-a", "interface": "net1"}, {"name": "n3-b", "interface": "net2"}])
+        self.assertEqual(probe.discover_n3_interface(ambiguous, []), probe.PathDiscovery("", "name_hint_ambiguous"))
 
     def test_n6_uses_one_default_route_or_reports_ambiguity(self):
         self.assertEqual(probe.discover_n6_interface(ROUTE_TABLE), probe.PathDiscovery("eth0", "default_route"))
@@ -61,6 +71,8 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(probe.is_gtpu_frame(ipv4_udp_frame()))
         self.assertTrue(probe.is_gtpu_frame(ipv4_udp_frame(vlan=True)))
         self.assertFalse(probe.is_gtpu_frame(ipv4_udp_frame(source_port=53, destination_port=54)))
+        self.assertFalse(probe.is_gtpu_frame(ipv4_udp_frame(gtpu_flags=0x00)))
+        self.assertFalse(probe.is_gtpu_frame(ipv4_udp_frame()[:-8]))
 
 
 class MetricsTests(unittest.TestCase):
@@ -112,6 +124,65 @@ class MetricsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "anchor"):
             probe.UserPlanePathProbe("amf", NETWORK_STATUS, ["n3network"])
 
+    def test_gnb_traffic_confirms_or_corrects_name_hint_without_blocking_idle_pod(self):
+        status = json.dumps([
+            {"name": "cbr0", "interface": "eth0", "default": True},
+            {"name": "n3-test", "interface": "net1"},
+            {"name": "other-data", "interface": "net2"},
+        ])
+        instance = probe.UserPlanePathProbe("gnb", status, [], monitor_n6=False, registry=CollectorRegistry())
+        instance.discover_paths()
+        self.assertEqual(instance.n3, probe.PathDiscovery("net1", "name_hint"))
+        self.assertEqual(instance.path_confirmed.labels("gnb", "n3")._value.get(), 0)
+        instance.rx_bytes.labels("gnb", "n3").set(42)
+        instance.record_gtpu("rx", 100, "net2")
+        self.assertEqual(instance.n3, probe.PathDiscovery("net2", "gtpu_confirmed"))
+        self.assertEqual(instance.path_confirmed.labels("gnb", "n3")._value.get(), 1)
+        self.assertFalse(instance.rx_bytes.collect()[0].samples)
+        instance.collection_success.labels("gnb").set(1)
+        instance.record_gtpu("rx", 100, "net1")
+        self.assertEqual(instance.n3, probe.PathDiscovery("", "gtpu_ambiguous"))
+        self.assertEqual(instance.path_confirmed.labels("gnb", "n3")._value.get(), 0)
+        self.assertEqual(instance.path_ready.labels("gnb", "n3")._value.get(), 0)
+        self.assertEqual(instance.collection_success.labels("gnb")._value.get(), 0)
+
+    def test_gnb_without_name_hint_waits_for_traffic(self):
+        status = json.dumps([{"name": "data-a", "interface": "net1"}, {"name": "data-b", "interface": "net2"}])
+        instance = probe.UserPlanePathProbe("gnb", status, [], monitor_n6=False, registry=CollectorRegistry())
+        instance.discover_paths()
+        self.assertEqual(instance.n3, probe.PathDiscovery("", "name_hint_missing"))
+        self.assertEqual(instance.path_confirmed.labels("gnb", "n3")._value.get(), 0)
+        instance.record_gtpu("tx", 100, "net2")
+        self.assertEqual(instance.n3, probe.PathDiscovery("net2", "gtpu_confirmed"))
+        self.assertEqual(instance.path_confirmed.labels("gnb", "n3")._value.get(), 1)
+
+    def test_idle_gnb_starts_pod_wide_observer_without_n3_candidate(self):
+        instance = probe.UserPlanePathProbe("gnb", "[]", [], monitor_n6=False, registry=CollectorRegistry())
+        with patch.object(probe.GtpUCaptureWorker, "start", return_value=True) as start:
+            instance.refresh()
+        start.assert_called_once()
+        self.assertIsNone(instance.capture.interface)
+        self.assertEqual(instance.path_ready.labels("gnb", "n3")._value.get(), 0)
+        self.assertEqual(instance.path_confirmed.labels("gnb", "n3")._value.get(), 0)
+
+    def test_pod_wide_capture_uses_receiving_interface(self):
+        instance = probe.UserPlanePathProbe("gnb", "[]", [], monitor_n6=False, registry=CollectorRegistry())
+        instance.discover_paths()
+        worker = probe.GtpUCaptureWorker(None, instance)
+
+        class OnePacketSocket:
+            def recvfrom(self, _size):
+                worker.stop_event.set()
+                return ipv4_udp_frame(), ("net2", 0, probe.PACKET_OUTGOING, 0, b"")
+
+            def close(self):
+                pass
+
+        worker.socket = OnePacketSocket()
+        worker._run()
+        self.assertEqual(instance.n3, probe.PathDiscovery("net2", "gtpu_confirmed"))
+        self.assertEqual(instance.gtpu_seen.labels("gnb")._value.get(), 1)
+
 
 class IntegrationTests(unittest.TestCase):
     def test_upf_role_uses_the_shared_probe(self):
@@ -145,29 +216,6 @@ class IntegrationTests(unittest.TestCase):
         self.assertNotIn("USER_PLANE_PROBE_N6_INTERFACE", tasks)
         self.assertIn("NET_RAW", tasks)
 
-    def test_gnb_network_name_is_selected_from_each_pod(self):
-        tasks = yaml.safe_load((ROOT / "roles/monitoring/sniffers/gnb/tasks/main.yml").read_text())
-        injection = next(task for task in tasks if task["name"] == "Inject gNB data-plane probe ephemeral container")
-        variables = injection["vars"]
-        environment = NativeEnvironment(undefined=StrictUndefined)
-        environment.filters["from_json"] = json.loads
-
-        def selected_names(attachments, configured=None):
-            context = {
-                "item": {"metadata": {"annotations": {"k8s.v1.cni.cncf.io/network-status": json.dumps(attachments)}}},
-                "gnb_data_plane_probe_n3_network_names_effective": configured or [],
-            }
-            for name in ("pod_network_status", "pod_network_status_records", "pod_secondary_networks", "pod_n3_network_names"):
-                context[name] = environment.from_string(variables[name]).render(**context)
-            return context["pod_n3_network_names"]
-
-        primary = {"name": "cbr0", "interface": "eth0", "default": True}
-        self.assertEqual(selected_names([primary, {"name": "open5gs/oai-gnb-n3", "interface": "n3"}]), ["open5gs/oai-gnb-n3"])
-        self.assertEqual(selected_names([primary, {"name": "open5gs/n3network", "interface": "n3"}]), ["open5gs/n3network"])
-        multiple = [primary, {"name": "n2", "interface": "n2"}, {"name": "n3", "interface": "n3"}]
-        self.assertEqual(selected_names(multiple), [])
-        self.assertEqual(selected_names(multiple, ["n3"]), ["n3"])
-
     def test_dockerfile_artifacts_and_deploy_wiring_are_present(self):
         dockerfile = (ROOT / "probes/user_plane_path/Dockerfile").read_text()
         queries = json.loads((ROOT / "configs/artifacts/default_prometheus_queries.json").read_text())
@@ -176,6 +224,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("COPY probes/user_plane_path/probe.py", dockerfile)
         self.assertEqual(len(names), len(set(names)))
         self.assertIn("user_plane_probe_path_ready", names)
+        self.assertIn("user_plane_probe_path_confirmed", names)
         self.assertIn("user_plane_probe_gtpu_packets_per_second_30s", names)
         self.assertIn("monitoring/sniffers/gnb", deploy)
         self.assertIn("monitoring/sniffers/upf", deploy)

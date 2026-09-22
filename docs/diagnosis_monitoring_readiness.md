@@ -48,12 +48,12 @@ Prometheus labels remain available in the exported CSV's `metric_json` column.
     docker build -f monitoring/sliceawareness/ue_mapper/Dockerfile -t r2labuser/ue_mapper_api:2026w10-ml .
     docker build -f probes/amf_sniffer/Dockerfile -t r2labuser/amf-sniffer:2026w10-ml .
     docker build -f probes/smf_sniffer/Dockerfile -t r2labuser/smf-sniffer:2026w10-ml .
-    docker build -f probes/user_plane_path/Dockerfile -t r2labuser/user-plane-path-probe:2026w10-ml .
+    docker build -f probes/user_plane_path/Dockerfile -t r2labuser/user-plane-path-probe:2026w39-ml-n3 .
 
     docker push r2labuser/ue_mapper_api:2026w10-ml
     docker push r2labuser/amf-sniffer:2026w10-ml
     docker push r2labuser/smf-sniffer:2026w10-ml
-    docker push r2labuser/user-plane-path-probe:2026w10-ml
+    docker push r2labuser/user-plane-path-probe:2026w39-ml-n3
 
     ./deploy.sh -n -e @configs/monitoring/profiles/ml_live_observability.yml
 

@@ -1,10 +1,9 @@
 """Passive N3/N6 interface and GTP-U observation probe.
 
-The probe is external to the network function. Its role supplies the Multus
-network-status annotation from the target pod, from which this module resolves
-the configured N3 attachment. At a UPF it can additionally resolve N6 from
-the pod network namespace's default route; at a gNB it observes N3 only.
-Explicit interface overrides always win.
+The probe is external to the network function. The gNB uses N3-like names as
+provisional hints and observes GTP-U across the pod network namespace to
+confirm or discover N3. The UPF uses its configured N3 attachment and resolves
+N6 from the pod's default route. Explicit interface overrides always win.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import signal
 import socket
 import struct
@@ -58,19 +58,21 @@ def _short_network_name(name: object) -> str:
     return str(name or "").strip().rsplit("/", 1)[-1]
 
 
+def _looks_like_n3(name: object) -> bool:
+    return re.search(r"(?:^|[^a-z0-9])n3(?:$|[^0-9])", str(name or "").lower()) is not None
+
+
 def discover_n3_interface(
     network_status: str,
     network_names: Iterable[str],
     override: str = "",
 ) -> PathDiscovery:
-    """Resolve N3 only from an explicit override or matching Multus status."""
+    """Select an N3 candidate from a configured name or an N3-like local name."""
 
     if str(override).strip():
         return PathDiscovery(str(override).strip(), "override")
 
     expected = {_short_network_name(name) for name in network_names if str(name).strip()}
-    if not expected:
-        return PathDiscovery("", "network_name_not_configured")
 
     try:
         records = json.loads(network_status)
@@ -79,18 +81,23 @@ def discover_n3_interface(
     if not isinstance(records, list):
         return PathDiscovery("", "network_status_invalid")
 
-    matches = {
-        str(record.get("interface", "")).strip()
-        for record in records
-        if isinstance(record, dict)
-        and _short_network_name(record.get("name")) in expected
-        and str(record.get("interface", "")).strip()
-    }
+    matches = set()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        interface = str(record.get("interface", "")).strip()
+        if not interface:
+            continue
+        name = _short_network_name(record.get("name"))
+        if expected and name in expected:
+            matches.add(interface)
+        elif not expected and (_looks_like_n3(name) or _looks_like_n3(interface)):
+            matches.add(interface)
     if len(matches) == 1:
-        return PathDiscovery(next(iter(matches)), "network_status")
+        return PathDiscovery(next(iter(matches)), "network_status" if expected else "name_hint")
     if not matches:
-        return PathDiscovery("", "network_not_attached")
-    return PathDiscovery("", "network_status_ambiguous")
+        return PathDiscovery("", "network_not_attached" if expected else "name_hint_missing")
+    return PathDiscovery("", "network_status_ambiguous" if expected else "name_hint_ambiguous")
 
 
 def discover_n6_interface(route_table: str, override: str = "") -> PathDiscovery:
@@ -146,7 +153,7 @@ def parse_interface_counters(text: str) -> dict[str, InterfaceCounters]:
 
 
 def is_gtpu_frame(frame: bytes) -> bool:
-    """Recognize Ethernet IPv4/IPv6 UDP frames carrying the standard GTP-U port."""
+    """Recognize Ethernet IPv4/IPv6 UDP frames with a valid GTPv1-U header."""
 
     if len(frame) < 14:
         return False
@@ -182,13 +189,19 @@ def is_gtpu_frame(frame: bytes) -> bool:
         return False
 
     source_port, destination_port = struct.unpack("!HH", frame[udp_offset:udp_offset + 4])
-    return source_port == GTPU_PORT or destination_port == GTPU_PORT
+    if source_port != GTPU_PORT and destination_port != GTPU_PORT:
+        return False
+    gtpu_offset = udp_offset + 8
+    if len(frame) < gtpu_offset + 8:
+        return False
+    flags = frame[gtpu_offset]
+    return (flags & 0xF0) == 0x30
 
 
 class GtpUCaptureWorker:
-    """Small AF_PACKET observer for evidence that the discovered N3 carries GTP-U."""
+    """Small AF_PACKET observer, optionally bound to a selected N3 interface."""
 
-    def __init__(self, interface: str, probe: "UserPlanePathProbe"):
+    def __init__(self, interface: str | None, probe: "UserPlanePathProbe"):
         self.interface = interface
         self.probe = probe
         self.stop_event = threading.Event()
@@ -202,11 +215,15 @@ class GtpUCaptureWorker:
             self.probe.record_error("gtpu_capture_unsupported")
             LOG.warning("AF_PACKET is unavailable; GTP-U capture cannot run on %s", self.interface)
             return False
+        raw_socket = None
         try:
             raw_socket = socket.socket(packet_family, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
-            raw_socket.bind((self.interface, 0))
+            if self.interface:
+                raw_socket.bind((self.interface, 0))
             raw_socket.settimeout(1.0)
         except OSError as error:
+            if raw_socket is not None:
+                raw_socket.close()
             self.probe.record_error("gtpu_capture_open")
             LOG.warning("cannot open GTP-U observer on %s: %s", self.interface, error)
             return False
@@ -230,11 +247,13 @@ class GtpUCaptureWorker:
                     LOG.warning("GTP-U observer stopped on %s: %s", self.interface, error)
                 break
             if is_gtpu_frame(frame):
+                interface = address[0] if address else ""
                 packet_type = address[2] if len(address) > 2 else -1
                 direction = "tx" if packet_type == PACKET_OUTGOING else "rx"
-                self.probe.record_gtpu(direction, len(frame))
+                self.probe.record_gtpu(direction, len(frame), interface)
         self.active = False
         self.probe.capture_active.labels(self.probe.anchor).set(0)
+        self.socket.close()
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -272,11 +291,14 @@ class UserPlanePathProbe:
         self.registry = registry if registry is not None else CollectorRegistry()
         self.n3 = PathDiscovery("", "not_discovered")
         self.n6 = PathDiscovery("", "disabled")
+        self.observed_gtpu_interfaces: set[str] = set()
+        self.discovery_lock = threading.Lock()
         self.capture: GtpUCaptureWorker | None = None
         self.last_capture_attempt = 0.0
 
-        self.path_ready = Gauge("user_plane_probe_path_ready", "One when a path interface was resolved locally.", ["anchor", "path"], registry=self.registry)
+        self.path_ready = Gauge("user_plane_probe_path_ready", "One when a path interface candidate was selected locally; it may be unconfirmed.", ["anchor", "path"], registry=self.registry)
         self.path_info = Gauge("user_plane_probe_path_info", "Resolved interface and local discovery method for a path.", ["anchor", "path", "interface", "source"], registry=self.registry)
+        self.path_confirmed = Gauge("user_plane_probe_path_confirmed", "One after valid GTP-U was observed on the selected N3 interface.", ["anchor", "path"], registry=self.registry)
         self.interface_available = Gauge("user_plane_probe_interface_available", "One when the resolved interface is present in /proc/net/dev.", ["anchor", "path"], registry=self.registry)
         self.rx_bytes = Gauge("user_plane_probe_interface_receive_bytes_total", "Kernel receive-byte counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
         self.rx_packets = Gauge("user_plane_probe_interface_receive_packets_total", "Kernel receive-packet counter for the resolved interface.", ["anchor", "path"], registry=self.registry)
@@ -290,20 +312,49 @@ class UserPlanePathProbe:
         self.last_collection = Gauge("user_plane_probe_last_collection_timestamp_seconds", "Unix timestamp of the most recent interface-counter collection.", ["anchor"], registry=self.registry)
         self.errors = Counter("user_plane_probe_collection_errors", "Probe errors by local operation.", ["anchor", "operation"], registry=self.registry)
         self.capture_active = Gauge("user_plane_probe_gtpu_capture_active", "One when the AF_PACKET GTP-U observer is active.", ["anchor"], registry=self.registry)
-        self.gtpu_seen = Gauge("user_plane_probe_gtpu_seen", "One after the local observer has seen at least one N3 GTP-U packet.", ["anchor"], registry=self.registry)
+        self.gtpu_seen = Gauge("user_plane_probe_gtpu_seen", "One after the local observer has seen a valid GTP-U packet.", ["anchor"], registry=self.registry)
         self.gtpu_packets = Counter("user_plane_probe_gtpu_packets", "N3 GTP-U packets seen by the local raw-socket observer.", ["anchor", "direction"], registry=self.registry)
         self.gtpu_bytes = Counter("user_plane_probe_gtpu_bytes", "Ethernet-frame bytes of N3 GTP-U packets seen by the local raw-socket observer.", ["anchor", "direction"], registry=self.registry)
         self.gtpu_last_packet = Gauge("user_plane_probe_gtpu_last_packet_timestamp_seconds", "Unix timestamp of the most recently observed N3 GTP-U packet.", ["anchor"], registry=self.registry)
         self.collection_success.labels(self.anchor).set(0)
+        self.path_confirmed.labels(self.anchor, "n3").set(0)
         self.capture_active.labels(self.anchor).set(0)
         self.gtpu_seen.labels(self.anchor).set(0)
 
     def record_error(self, operation: str) -> None:
         self.errors.labels(self.anchor, operation).inc()
 
-    def record_gtpu(self, direction: str, frame_bytes: int) -> None:
-        self.gtpu_packets.labels(self.anchor, direction).inc()
-        self.gtpu_bytes.labels(self.anchor, direction).inc(frame_bytes)
+    def record_gtpu(self, direction: str, frame_bytes: int, interface: str) -> None:
+        with self.discovery_lock:
+            if interface:
+                self.observed_gtpu_interfaces.add(interface)
+            if self.anchor == "gnb" and not self.n3_interface_override and not self.n3_network_names:
+                discovered = (
+                    PathDiscovery(interface, "gtpu_confirmed")
+                    if len(self.observed_gtpu_interfaces) == 1 and interface
+                    else PathDiscovery("", "gtpu_ambiguous")
+                )
+                if discovered != self.n3:
+                    previous = self.n3
+                    if previous.source != "not_discovered":
+                        self.path_info.remove(self.anchor, "n3", previous.interface or "unknown", previous.source)
+                    if previous.interface != discovered.interface:
+                        self.collection_success.labels(self.anchor).set(0)
+                        for metric in (self.interface_available, self.rx_bytes, self.rx_packets,
+                                       self.rx_errors, self.rx_drops, self.tx_bytes, self.tx_packets,
+                                       self.tx_errors, self.tx_drops):
+                            try:
+                                metric.remove(self.anchor, "n3")
+                            except KeyError:
+                                pass
+                    self.n3 = discovered
+                    self.path_ready.labels(self.anchor, "n3").set(1 if discovered.interface else 0)
+                    self.path_info.labels(self.anchor, "n3", discovered.interface or "unknown", discovered.source).set(1)
+            confirmed = bool(self.n3.interface and self.n3.interface == interface and len(self.observed_gtpu_interfaces) == 1)
+            self.path_confirmed.labels(self.anchor, "n3").set(1 if confirmed else 0)
+            if confirmed:
+                self.gtpu_packets.labels(self.anchor, direction).inc()
+                self.gtpu_bytes.labels(self.anchor, direction).inc(frame_bytes)
         self.gtpu_seen.labels(self.anchor).set(1)
         self.gtpu_last_packet.labels(self.anchor).set(time.time())
 
@@ -350,13 +401,16 @@ class UserPlanePathProbe:
         return True
 
     def ensure_gtpu_capture(self) -> None:
-        if not self.n3.interface or self.capture is not None:
+        if self.anchor == "upf" and not self.n3.interface:
             return
+        if self.capture is not None and self.capture.active:
+            return
+        self.capture = None
         now = time.monotonic()
         if now - self.last_capture_attempt < 10:
             return
         self.last_capture_attempt = now
-        candidate = GtpUCaptureWorker(self.n3.interface, self)
+        candidate = GtpUCaptureWorker(self.n3.interface if self.anchor == "upf" else None, self)
         if candidate.start():
             self.capture = candidate
 
@@ -364,11 +418,12 @@ class UserPlanePathProbe:
         if self.n3.source == "not_discovered" or (self.monitor_n6 and self.n6.source == "not_discovered"):
             self.discover_paths()
         counters = self._read_interface_counters()
-        paths = [("n3", self.n3)]
-        if self.monitor_n6:
-            paths.append(("n6", self.n6))
-        available = [self._export_path_counters(path, result.interface, counters) for path, result in paths if result.interface]
-        self.collection_success.labels(self.anchor).set(1 if len(available) == len(paths) and all(available) else 0)
+        with self.discovery_lock:
+            paths = [("n3", self.n3)]
+            if self.monitor_n6:
+                paths.append(("n6", self.n6))
+            available = [self._export_path_counters(path, result.interface, counters) for path, result in paths if result.interface]
+            self.collection_success.labels(self.anchor).set(1 if len(available) == len(paths) and all(available) else 0)
         self.last_collection.labels(self.anchor).set(time.time())
         self.ensure_gtpu_capture()
 

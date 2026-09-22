@@ -5,26 +5,30 @@ does not enter, patch, or otherwise modify the network-function process or its
 source code. It sees the pod network namespace and exports low-cardinality
 Prometheus metrics at `/metrics`.
 
-The deployment role reads the pod's Multus `network-status` annotation. For a
-gNB with exactly one non-default attachment, it passes that attachment's name
-to the probe for N3 discovery. If there are several, selection fails closed
-unless a network name or interface is explicitly configured. At a UPF, N3 is
-selected by a configured network name and N6 by the single default route in
-the pod network namespace.
+The deployment role passes the pod's Multus `network-status` annotation to the
+probe. For a gNB, an N3-like attachment or interface name is a provisional
+candidate. A pod-wide passive observer can confirm that candidate or select a
+different interface when it sees valid GTP-U there. No traffic is required for
+deployment: an idle pod stays provisional or unknown. If GTP-U appears on more
+than one interface, the automatic result becomes ambiguous. Explicit network
+names or an interface override take precedence over automatic selection. At a
+UPF, N3 still uses a configured network name and N6 uses the single default
+route in the pod network namespace.
 
 It exports Linux `/proc/net/dev` counters for each resolved path: receive and
-transmit bytes, packets, errors, and drops. It also opens a passive raw socket
-on N3 and counts frames carrying UDP port 2152. This is evidence that the
-selected interface carries GTP-U; it is not a packet-loss measurement and does
-not correlate individual UE packets.
+transmit bytes, packets, errors, and drops. Its passive raw socket recognizes
+UDP port 2152 with a GTPv1-U header. At a gNB it listens across the pod's
+interfaces to discover N3; at a UPF it listens on the configured N3 interface.
+This is not a packet-loss measurement and does not correlate UE packets.
 
 Every metric has a static `anchor=gnb|upf` label. It does not export UE
 identifiers, IP addresses, TEIDs, or packet payloads. The
-`user_plane_probe_path_info` metric records the selected local interface and
-discovery method, while `user_plane_probe_path_ready`,
-`user_plane_probe_gtpu_capture_active`, and `user_plane_probe_gtpu_seen`
-make an unresolved or inactive observation explicit. An idle N3 can
-legitimately leave `user_plane_probe_gtpu_seen` at zero.
+`user_plane_probe_path_info` records the selected local interface and discovery
+method. `user_plane_probe_path_ready` means a candidate interface is selected;
+`user_plane_probe_path_confirmed` means valid GTP-U was observed on it.
+`user_plane_probe_gtpu_capture_active` and `user_plane_probe_gtpu_seen` show
+whether capture is active and whether any valid GTP-U has appeared. An idle N3
+can legitimately remain unconfirmed.
 
 ## Enable after building the image
 
@@ -44,7 +48,7 @@ gnb_data_plane_probe_image: REGISTRY/user-plane-path-probe:TAG
 ```
 
 The gNB role does not use vendor-specific network names. Override the network
-name or interface when the gNB has multiple non-default attachments. The UPF
+name or interface only when automatic selection remains ambiguous. The UPF
 role still needs an N3 network name when several secondary networks exist:
 
 ```yaml

@@ -108,6 +108,10 @@
     "query": "user_plane_probe_path_ready"
   },
   {
+    "name": "user_plane_probe_path_confirmed",
+    "query": "user_plane_probe_path_confirmed"
+  },
+  {
     "name": "user_plane_probe_interface_receive_bytes_per_second_30s",
     "query": "sum by (anchor, path) (rate(user_plane_probe_interface_receive_bytes_total[30s]))"
   },
