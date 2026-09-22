@@ -92,7 +92,7 @@
         - name: USER_PLANE_PROBE_COLLECTION_INTERVAL_SECONDS
           value: "{{ upf_data_plane_probe_collection_interval_seconds | string }}"
         - name: USER_PLANE_PROBE_NETWORK_STATUS_JSON
-          value: "{{ pod_network_status }}"
+          value: "{{ pod_network_status | to_json if pod_network_status is not string else pod_network_status }}"
         - name: USER_PLANE_PROBE_N3_NETWORK_NAMES
           value: "{{ upf_data_plane_probe_n3_network_names_effective | to_json }}"
         - name: USER_PLANE_PROBE_N3_INTERFACE
