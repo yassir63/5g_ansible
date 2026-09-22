@@ -9,7 +9,7 @@
 
 - name: Force inventory booleans to real booleans
   set_fact:
-    "{{ item }}": "{{ hostvars[inventory_hostname][item] | bool }}"
+    "{{ item }}": "{{ hostvars[inventory_hostname].get(item, false) | bool }}"
   loop: "{{ inventory_booleans }}"
 
 - name: Debug normalized booleans
