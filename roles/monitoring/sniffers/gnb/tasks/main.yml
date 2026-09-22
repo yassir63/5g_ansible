@@ -28,14 +28,7 @@
 
 - name: Select N3 network names for the gNB probe
   ansible.builtin.set_fact:
-    gnb_data_plane_probe_n3_network_names_effective: >-
-      {{
-        gnb_data_plane_probe_n3_network_names
-        if (gnb_data_plane_probe_n3_network_names | length > 0)
-        else gnb_data_plane_probe_default_n3_network_names_by_ran[
-          ran | default('') | lower
-        ] | default([])
-      }}
+    gnb_data_plane_probe_n3_network_names_effective: "{{ gnb_data_plane_probe_n3_network_names }}"
 
 - name: Validate gNB data-plane probe settings
   ansible.builtin.assert:
@@ -54,6 +47,31 @@
     fail_msg: >-
       Build and select a gNB data-plane probe image, then provide valid
       metrics, interval, and target-label settings before enabling the probe.
+
+- name: Validate automatic gNB N3 attachment selection
+  vars:
+    pod_network_status: "{{ (item.metadata.annotations | default({}))['k8s.v1.cni.cncf.io/network-status'] | default('') }}"
+    pod_network_status_records: "{{ pod_network_status if pod_network_status is not string else ((pod_network_status | from_json) if pod_network_status | length > 0 else []) }}"
+    pod_secondary_networks: >-
+      {{
+        (
+          (pod_network_status_records | rejectattr('default', 'defined') | list)
+          + (pod_network_status_records | selectattr('default', 'defined') | rejectattr('default') | list)
+        ) | selectattr('interface') | selectattr('name') | list
+      }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        (gnb_data_plane_probe_n3_interface | length > 0) or
+        (gnb_data_plane_probe_n3_network_names_effective | length > 0) or
+        (pod_secondary_networks | length == 1)
+    fail_msg: >-
+      Cannot select N3 for {{ item.metadata.name }}: expected exactly one
+      non-default Multus attachment. Set gnb_data_plane_probe_n3_network_names
+      or gnb_data_plane_probe_n3_interface for a multi-network gNB.
+  loop: "{{ gnb_data_plane_probe_pods }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
 
 - name: Render gNB data-plane probe metrics Service
   ansible.builtin.template:
@@ -88,6 +106,15 @@
     existing_ephemeral: "{{ item.spec.ephemeralContainers | default([]) }}"
     existing_ephemeral_names: "{{ existing_ephemeral | map(attribute='name') | list }}"
     pod_network_status: "{{ (item.metadata.annotations | default({}))['k8s.v1.cni.cncf.io/network-status'] | default('') }}"
+    pod_network_status_records: "{{ pod_network_status if pod_network_status is not string else ((pod_network_status | from_json) if pod_network_status | length > 0 else []) }}"
+    pod_secondary_networks: >-
+      {{
+        (
+          (pod_network_status_records | rejectattr('default', 'defined') | list)
+          + (pod_network_status_records | selectattr('default', 'defined') | rejectattr('default') | list)
+        ) | selectattr('interface') | selectattr('name') | list
+      }}
+    pod_n3_network_names: "{{ gnb_data_plane_probe_n3_network_names_effective if gnb_data_plane_probe_n3_network_names_effective | length > 0 else ([pod_secondary_networks[0].name] if pod_secondary_networks | length == 1 else []) }}"
     gnb_probe_ephemeral_container:
       name: gnb-data-plane-probe
       image: "{{ gnb_data_plane_probe_image }}"
@@ -104,7 +131,7 @@
         - name: USER_PLANE_PROBE_NETWORK_STATUS_JSON
           value: "{{ pod_network_status | to_json if pod_network_status is not string else pod_network_status }}"
         - name: USER_PLANE_PROBE_N3_NETWORK_NAMES
-          value: "{{ gnb_data_plane_probe_n3_network_names_effective | to_json }}"
+          value: "{{ pod_n3_network_names | to_json }}"
         - name: USER_PLANE_PROBE_N3_INTERFACE
           value: "{{ gnb_data_plane_probe_n3_interface }}"
       targetContainerName: "{{ target_container_name }}"

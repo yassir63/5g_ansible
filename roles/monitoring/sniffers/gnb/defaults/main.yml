@@ -11,16 +11,8 @@ gnb_data_plane_probe_namespace: "{{ ran_ns | default(core) }}"
 # An explicit interface always takes precedence over automated discovery.
 gnb_data_plane_probe_n3_interface: ""
 
-# Set this list to override the profile default for a deployment with a custom
-# Multus N3 NetworkAttachmentDefinition name.
+# Optional explicit selection when a pod has multiple non-default attachments.
 gnb_data_plane_probe_n3_network_names: []
-gnb_data_plane_probe_default_n3_network_names_by_ran:
-  srsran:
-    - n3network
-  oai:
-    - oai-gnb-n3
-  ueransim:
-    - n3network
 
 # Pod names are used only to find candidate gNBs. Selected pods receive a
 # dedicated label, which the probe metrics Service uses for discovery.

@@ -5,7 +5,8 @@ import sys
 import tempfile
 import unittest
 
-from jinja2 import Environment
+from jinja2 import Environment, StrictUndefined
+from jinja2.nativetypes import NativeEnvironment
 from prometheus_client import CollectorRegistry, generate_latest
 from prometheus_client.parser import text_string_to_metric_families
 import yaml
@@ -134,15 +135,7 @@ class IntegrationTests(unittest.TestCase):
         service = yaml.safe_load(template.render(gnb_data_plane_probe_namespace="open5gs", gnb_data_plane_probe_metrics_port=9103, gnb_data_plane_probe_target_label_key="monitoring.5g.example/gnb-data-plane-probe", gnb_data_plane_probe_target_label_value="enabled"))
         tasks = (ROOT / "roles/monitoring/sniffers/gnb/tasks/main.yml").read_text()
         self.assertFalse(defaults["gnb_data_plane_probe_enabled"])
-        self.assertEqual(defaults["gnb_data_plane_probe_default_n3_network_names_by_ran"]["srsran"], ["n3network"])
-        self.assertEqual(defaults["gnb_data_plane_probe_default_n3_network_names_by_ran"]["oai"], ["oai-gnb-n3"])
-        self.assertEqual(
-            probe.discover_n3_interface(
-                json.dumps([{"name": "open5gs/oai-gnb-n3", "interface": "n3"}]),
-                defaults["gnb_data_plane_probe_default_n3_network_names_by_ran"]["oai"],
-            ),
-            probe.PathDiscovery("n3", "network_status"),
-        )
+        self.assertEqual(defaults["gnb_data_plane_probe_n3_network_names"], [])
         self.assertIn("user-plane-path-probe", defaults["gnb_data_plane_probe_image"])
         self.assertEqual(service["spec"]["clusterIP"], "None")
         self.assertEqual(service["spec"]["selector"], {"monitoring.5g.example/gnb-data-plane-probe": "enabled"})
@@ -151,6 +144,29 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn('value: "false"', tasks)
         self.assertNotIn("USER_PLANE_PROBE_N6_INTERFACE", tasks)
         self.assertIn("NET_RAW", tasks)
+
+    def test_gnb_network_name_is_selected_from_each_pod(self):
+        tasks = yaml.safe_load((ROOT / "roles/monitoring/sniffers/gnb/tasks/main.yml").read_text())
+        injection = next(task for task in tasks if task["name"] == "Inject gNB data-plane probe ephemeral container")
+        variables = injection["vars"]
+        environment = NativeEnvironment(undefined=StrictUndefined)
+        environment.filters["from_json"] = json.loads
+
+        def selected_names(attachments, configured=None):
+            context = {
+                "item": {"metadata": {"annotations": {"k8s.v1.cni.cncf.io/network-status": json.dumps(attachments)}}},
+                "gnb_data_plane_probe_n3_network_names_effective": configured or [],
+            }
+            for name in ("pod_network_status", "pod_network_status_records", "pod_secondary_networks", "pod_n3_network_names"):
+                context[name] = environment.from_string(variables[name]).render(**context)
+            return context["pod_n3_network_names"]
+
+        primary = {"name": "cbr0", "interface": "eth0", "default": True}
+        self.assertEqual(selected_names([primary, {"name": "open5gs/oai-gnb-n3", "interface": "n3"}]), ["open5gs/oai-gnb-n3"])
+        self.assertEqual(selected_names([primary, {"name": "open5gs/n3network", "interface": "n3"}]), ["open5gs/n3network"])
+        multiple = [primary, {"name": "n2", "interface": "n2"}, {"name": "n3", "interface": "n3"}]
+        self.assertEqual(selected_names(multiple), [])
+        self.assertEqual(selected_names(multiple, ["n3"]), ["n3"])
 
     def test_dockerfile_artifacts_and_deploy_wiring_are_present(self):
         dockerfile = (ROOT / "probes/user_plane_path/Dockerfile").read_text()

@@ -5,11 +5,12 @@ does not enter, patch, or otherwise modify the network-function process or its
 source code. It sees the pod network namespace and exports low-cardinality
 Prometheus metrics at `/metrics`.
 
-The probe resolves the N3 interface from the pod's Multus `network-status`
-annotation after matching a configured network name. An explicit N3 override
-is available for an unusual deployment. At a UPF, it additionally resolves N6
-as the single default route in the pod network namespace; a gNB observes N3
-only.
+The deployment role reads the pod's Multus `network-status` annotation. For a
+gNB with exactly one non-default attachment, it passes that attachment's name
+to the probe for N3 discovery. If there are several, selection fails closed
+unless a network name or interface is explicitly configured. At a UPF, N3 is
+selected by a configured network name and N6 by the single default route in
+the pod network namespace.
 
 It exports Linux `/proc/net/dev` counters for each resolved path: receive and
 transmit bytes, packets, errors, and drops. It also opens a passive raw socket
@@ -42,10 +43,9 @@ gnb_data_plane_probe_enabled: true
 gnb_data_plane_probe_image: REGISTRY/user-plane-path-probe:TAG
 ```
 
-The current Open5GS, free5GC, srsRAN, OAI, and UERANSIM profiles use the
-`n3network` Multus name. Each role discovers the actual interface from the
-live pod annotation; it does not assume that the interface is named `n3`.
-Override the network name or interface only for a deployment that differs:
+The gNB role does not use vendor-specific network names. Override the network
+name or interface when the gNB has multiple non-default attachments. The UPF
+role still needs an N3 network name when several secondary networks exist:
 
 ```yaml
 upf_data_plane_probe_n3_network_names: ["my-n3-network"]
