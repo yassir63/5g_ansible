@@ -108,6 +108,7 @@ nodeExporter:
 
 prometheus-node-exporter:
   extraArgs:
+    - --no-collector.cpufreq
     - --collector.pressure
     - --collector.schedstat
     - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
