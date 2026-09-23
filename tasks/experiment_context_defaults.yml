@@ -31,10 +31,10 @@
       - experiment_collect_config.ue_context.enabled | default(false) is boolean
       - experiment_setup_hosts is sequence and experiment_setup_hosts is not string and experiment_setup_hosts is not mapping
       - experiment_setup_hosts | select('string') | list | length == experiment_setup_hosts | length
-      - experiment_context_interval is number and experiment_context_interval >= 0.1 and experiment_context_interval <= 3600
-      - experiment_context_timeout is integer and experiment_context_timeout >= 1 and experiment_context_timeout <= 60
-      - experiment_context_max_seconds is integer and experiment_context_max_seconds >= 1
-      - experiment_context_limit is integer and experiment_context_limit >= 1
+      - (experiment_collect_config.ue_context.interval_seconds | default(2)) is number and (experiment_collect_config.ue_context.interval_seconds | default(2)) >= 0.1 and (experiment_collect_config.ue_context.interval_seconds | default(2)) <= 3600
+      - (experiment_collect_config.ue_context.timeout_seconds | default(5)) is integer and (experiment_collect_config.ue_context.timeout_seconds | default(5)) >= 1 and (experiment_collect_config.ue_context.timeout_seconds | default(5)) <= 60
+      - (experiment_collect_config.ue_context.max_seconds | default(7200)) is integer and (experiment_collect_config.ue_context.max_seconds | default(7200)) >= 1
+      - (experiment_collect_config.ue_context.limit | default(5000)) is integer and (experiment_collect_config.ue_context.limit | default(5000)) >= 1
       - experiment_context_control_host is string and experiment_context_control_host | length > 0
       - experiment_context_namespace is string and experiment_context_namespace | length > 0
       - experiment_context_service is string and experiment_context_service | length > 0
