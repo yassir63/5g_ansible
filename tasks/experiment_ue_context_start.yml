@@ -50,6 +50,6 @@
         timeout: "{{ experiment_context_timeout | int + 15 }}"
 
   delegate_to: "{{ experiment_context_control_host }}"
-  remote_user: "{{ hostvars[experiment_context_control_host].ansible_user | default('root') }}"
+  remote_user: "{{ hostvars[hostvars['localhost'].experiment_context_control_host].ansible_user | default('root') }}"
   vars:
-    ansible_connection: "{{ hostvars[experiment_context_control_host].ansible_connection | default('local' if experiment_context_control_host in ['localhost', '127.0.0.1'] else 'ssh') }}"
+    ansible_connection: "{{ hostvars[hostvars['localhost'].experiment_context_control_host].ansible_connection | default('local' if hostvars['localhost'].experiment_context_control_host in ['localhost', '127.0.0.1'] else 'ssh') }}"
