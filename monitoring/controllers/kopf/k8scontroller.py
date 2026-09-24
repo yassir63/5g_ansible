@@ -46,11 +46,12 @@ def configure(settings: kopf.OperatorSettings, **_):
 # UE-MAPPER helpers
 # -------------------------
 
-def fingerprint_teids(teids: str) -> str:
-    """Short stable fingerprint of TEIDS string."""
-    if not teids:
+def fingerprint_inventory(inventory: list[dict]) -> str:
+    """Short stable fingerprint of probe TEIDs and their UE metadata."""
+    if not inventory:
         return ""
-    return hashlib.sha256(teids.encode()).hexdigest()[:12]
+    payload = json.dumps(inventory, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()[:12]
 
 
 def fetch_all_teids_from_ue_mapper(logger) -> tuple[str, str]:
@@ -69,14 +70,30 @@ def fetch_all_teids_from_ue_mapper(logger) -> tuple[str, str]:
 
     ues = j.get("ues", []) or []
     teids = []
+    inventory = []
     for ue in ues:
         arg = (ue.get("teid_args") or "").strip()
         if arg:
             teids.append(arg)
+            inventory.append({
+                "teid_args": arg,
+                "imsi": ue.get("imsi") or "unknown",
+                "ue_ip": ue.get("ue_ip") or "unknown",
+                "slice_id": ue.get("slice_id") or "unknown",
+            })
 
     teids = sorted(set(teids))
+    inventory = sorted(
+        inventory,
+        key=lambda item: (
+            item["teid_args"],
+            item["imsi"],
+            item["ue_ip"],
+            item["slice_id"],
+        ),
+    )
     teids_str = " ".join(teids).strip()
-    return teids_str, fingerprint_teids(teids_str)
+    return teids_str, fingerprint_inventory(inventory)
 
 
 # -------------------------
