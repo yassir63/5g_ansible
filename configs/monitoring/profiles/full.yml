@@ -1,0 +1,4 @@
+---
+monitoring_components:
+  stack: true    # Prometheus, Grafana, and derived 5G KPI calculators
+  latency: true  # AMF/SMF sniffers, Redis/UE mapper, controller, and probes

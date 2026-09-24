@@ -7,6 +7,17 @@
 
   tasks:
 
+    - name: Validate monitoring component profile
+      ansible.builtin.assert:
+        that:
+          - monitoring_components is mapping
+          - (monitoring_components.keys() | list | difference(['stack', 'latency'])) | length == 0
+          - not (monitoring_components.latency | default(true) | bool) or (monitoring_components.stack | default(true) | bool)
+        fail_msg: "Invalid monitoring_components profile: latency needs stack=true so Prometheus can collect the probe metrics. Use monitoring_enabled=false to disable all monitoring."
+      when:
+        - monitoring_enabled | default(false) | bool
+        - monitoring_components is defined
+
     - name: Show used inventory
       debug:
         msg: "Used inventory for run_pos playbook : {{ original_inventory }}"
@@ -172,7 +183,7 @@
   hosts: monitor_node
   roles:
     - role: monitoring/prometheus_grafana
-      when: monitoring_enabled | bool
+      when: monitoring_enabled | bool and (monitoring_components.stack | default(true) | bool)
 
 
 - name: Add NoSchedule taint on Monitor node (core/ran pods should not run on monitor_node)
@@ -307,12 +318,12 @@
   gather_facts: false
   roles:
     - role: monitoring/sniffers/amf
-      when: monitoring_enabled
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
       vars:
         # redis_host: redis
         redis_host: "redis.{{ monitoring_namespace | default('monitoring') }}.svc.cluster.local"
     - role: monitoring/sniffers/smf
-      when: monitoring_enabled
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
       vars:
         # redis_host: redis
         redis_host: "redis.{{ monitoring_namespace | default('monitoring') }}.svc.cluster.local"
@@ -335,12 +346,14 @@
       register: legacy_sliceawareness_cleanup
       changed_when: "'deleted' in legacy_sliceawareness_cleanup.stdout or 'deleted' in legacy_sliceawareness_cleanup.stderr"
       failed_when: false
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
     - name: Render Redis manifest for cleanup
       ansible.builtin.template:
         src: ../roles/monitoring/sliceawareness/templates/redis.yaml.j2
         dest: /tmp/redis.yaml
         mode: "0644"
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
     - name: Delete Redis resources if present
       ansible.builtin.command: >
@@ -348,12 +361,14 @@
       register: redis_cleanup
       changed_when: "'deleted' in redis_cleanup.stdout or 'deleted' in redis_cleanup.stderr"
       failed_when: false
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
     - name: Render UE Mapper manifest for cleanup
       ansible.builtin.template:
         src: ../roles/monitoring/sliceawareness/templates/ue-mapper.yaml.j2
         dest: /tmp/ue-mapper.yaml
         mode: "0644"
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
     - name: Delete UE Mapper resources if present
       ansible.builtin.command: >
@@ -361,10 +376,11 @@
       register: ue_mapper_cleanup
       changed_when: "'deleted' in ue_mapper_cleanup.stdout or 'deleted' in ue_mapper_cleanup.stderr"
       failed_when: false
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
   roles:
     - role: monitoring/sliceawareness
-      when: monitoring_enabled
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
       vars:
         core_ns: "{{ core }}"
         sliceawareness_namespace: "{{ monitoring_namespace | default('monitoring') }}"
@@ -410,7 +426,7 @@
         src: ../roles/monitoring/controller/templates/kopf-controller.yaml.j2
         dest: /tmp/kopf-controller.yaml
         mode: "0644"
-      when: monitoring_enabled | bool
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
     - name: Delete legacy controller resources from core namespace
       ansible.builtin.command: >
@@ -420,7 +436,7 @@
       register: legacy_controller_cleanup
       changed_when: "'deleted' in legacy_controller_cleanup.stdout or 'deleted' in legacy_controller_cleanup.stderr"
       failed_when: false
-      when: monitoring_enabled | bool
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
     - name: Delete existing controller resources if present
       ansible.builtin.command: >
@@ -428,12 +444,12 @@
       register: cleanup_result
       changed_when: "'deleted' in cleanup_result.stdout"
       failed_when: false
-      when: monitoring_enabled | bool
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
     - name: Run monitoring controller role
       ansible.builtin.include_role:
         name: monitoring/controller
-      when: monitoring_enabled | bool
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
 
 
 
@@ -509,7 +525,7 @@
   gather_facts: false
   roles:
     - role: monitoring/kpi_calculators
-      when: monitoring_enabled | bool
+      when: monitoring_enabled | bool and (monitoring_components.stack | default(true) | bool)
       vars:
         monitoring_core_namespace: "{{ core }}"
         monitoring_ran_namespace: "{{ ran_ns | default(core) }}"

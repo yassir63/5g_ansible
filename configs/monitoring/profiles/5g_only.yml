@@ -1,0 +1,4 @@
+---
+monitoring_components:
+  stack: true    # 5G metrics and dashboards without per-UE latency probes
+  latency: false
