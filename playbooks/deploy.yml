@@ -287,7 +287,7 @@
       when: core == 'oai' or ran == 'oai'
 
 - name: Deploy OAI CN
-  hosts: core_node
+  hosts: ran_node
   pre_tasks:
     - name: Load 5G profile
       include_vars:
@@ -385,18 +385,6 @@
         core_ns: "{{ core }}"
         sliceawareness_namespace: "{{ monitoring_namespace | default('monitoring') }}"
 
-############################################################################
-# Move this block where you want to restart with start-at-task=RESTART_HERE"
-#
-- hosts: localhost,core_node,ran_node
-  gather_facts: false
-  tasks:
-    - name: RESTART_HERE
-      ansible.builtin.meta: noop
-
-    - import_tasks: ../tasks/reload_booleans.yml
-#
-############################################################################
 
 - name: Deploy Kopf Controller and eBPF Probes
   hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"

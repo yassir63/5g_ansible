@@ -296,16 +296,18 @@
   become: true
   when: core_node_name == ran_node_name and core == "open5gs"
 
-- name: Wait for OVS resource registration on Node (optional for FHI72)
+- name: Wait for ovs-cni to register the OVS bridges on the node
   ansible.builtin.shell: |
-    kubectl get node {{ inventory_hostname }} -o json | grep -q "ovs-cni.network.kubevirt.io/n3br"
+    kubectl get node {{ inventory_hostname }} -o json \
+      | grep -q "ovs-cni.network.kubevirt.io/n3br"
   register: ovs_res_check
   until: ovs_res_check.rc == 0
-  retries: 10
+  retries: 30  # let ovs-cni-marker discover the bridges created just above (~2.5 min)
   delay: 5
   changed_when: false
-  failed_when: false
-  when: core_node_name == ran_node_name and core == "open5gs" and fhi72
+  # Hard gate. Root cause: the NFs attached ~2s after ovs-cni started, before the
+  # marker had registered n3br, so the OVS veth was never wired into the AMF pod.
+  when: core_node_name == ran_node_name and core == "open5gs"
 
 - name: Warn if OVS resources not available (FHI72 only)
   ansible.builtin.debug:
@@ -333,17 +335,28 @@
     (nf_pod.resources[0].status.containerStatuses is defined) and
     (nf_pod.resources[0].status.containerStatuses[0].ready | default(false))
   loop: "{{ nfs }}"
-  retries: 40
+  retries: 100
   delay: 5
 
-- name: Verify Multus N3 interface inside AMF pod
+- name: Ensure AMF has its N3 interface (recreate NFs once if the OVS attach was missed)
   ansible.builtin.shell: |
-    AMF_POD=$(kubectl get pods -n {{ open5gs_ns }} -l nf=amf -o jsonpath='{.items[0].metadata.name}')
-    kubectl exec -n {{ open5gs_ns }} $AMF_POD -- ip addr show n3 | grep "inet 10.10.3.200"
+    set -e
+    check_n3() {
+      pod=$(kubectl get pods -n {{ open5gs_ns }} -l nf=amf -o jsonpath='{.items[0].metadata.name}')
+      kubectl exec -n {{ open5gs_ns }} "$pod" -c amf -- ip addr show n3 2>/dev/null \
+        | grep -q "inet 10.10.3.200"
+    }
+    if check_n3; then echo "n3 present"; exit 0; fi
+    echo "n3 missing on AMF -> recreating Open5GS NF pods for a clean OVS attach" >&2
+    kubectl delete pod -n {{ open5gs_ns }} -l app=open5gs
+    kubectl wait -n {{ open5gs_ns }} --for=condition=Ready pod -l nf=amf --timeout=180s
+    check_n3
+  args:
+    executable: /bin/bash
   register: amf_n3_check
   until: amf_n3_check.rc == 0
-  retries: 15
-  delay: 5
+  retries: 3
+  delay: 10
   when: core == "open5gs"
   changed_when: false
 

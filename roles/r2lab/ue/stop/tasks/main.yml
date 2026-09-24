@@ -58,23 +58,12 @@
   ignore_errors: true
 
 # ---------------------------------------------------------------------------
-# MBIM stop
+# Stop UE: stop.sh v1.1.3 handles both paths (mbim -> radio off, qmi -> AT detach
+# via ci_ctl_qtel.py). --mode is passed explicitly so the role's ue_mode wins
+# over /run/ue-mode (which is lost on UE reboot, /run being tmpfs).
 # ---------------------------------------------------------------------------
-- name: "MBIM: stop UE {{ ue }} via jump host"
-  shell: ssh root@{{ ue }} 'stop.sh'
+- name: "Stop UE {{ ue }} ({{ ue_mode }}) via jump host"
+  shell: ssh root@{{ ue }} 'stop.sh --mode={{ ue_mode }}'
   delegate_to: faraday.inria.fr
-  when:
-    - not is_phone
-    - ue_mode == 'mbim'
-  ignore_errors: true
-
-# ---------------------------------------------------------------------------
-# QMI stop: detach the modem (AT port /dev/ttyUSB2), independent of quectel-CM.
-# ---------------------------------------------------------------------------
-- name: "QMI: detach UE {{ ue }} via jump host"
-  shell: ssh root@{{ ue }} 'python3 /usr/local/bin/ci_ctl_qtel.py /dev/ttyUSB2 detach'
-  delegate_to: faraday.inria.fr
-  when:
-    - not is_phone
-    - ue_mode == 'qmi'
+  when: not is_phone
   ignore_errors: true

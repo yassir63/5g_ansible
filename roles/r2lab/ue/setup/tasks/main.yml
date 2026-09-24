@@ -90,6 +90,10 @@
   ignore_errors: true
   loop: "{{ reachable_ues }}"
 
+- name: Keep only SSH-reachable UEs
+  set_fact:
+    reachable_ues: "{{ ssh_results.results | reject('failed') | map(attribute='item') | list }}"
+
 - name: Compute failed UEs
   set_fact:
     failed_ues: "{{ all_ues | difference(reachable_ues) }}"
@@ -99,11 +103,13 @@
     msg: "UEs not reachable after boot: {{ failed_ues }}"
   when: failed_ues | length > 0
 
-- name: Prepare qhat-init command
+- name: Show qhat-init command per UE
   vars:
     ue_slice_info: "{{ slices | selectattr('name', 'equalto', ues[item].slice) | first }}"
+    # Must stay identical to the vars of "Init UEs" below
+    ue_mode_opt: "{{ ('--mode=' ~ hostvars[item].mode) if hostvars[item].mode is defined else '' }}"
     qhat_command: >-
-      qhat-init --mode={{ hostvars[item].mode | default('default') }}
+      qhat-init {{ ue_mode_opt }}
       --dnn="{{ ue_slice_info.dnn }}"
       --nssai="{{ ue_slice_info.sst }}.{{ ue_slice_info.sd }}"
   debug:
@@ -120,10 +126,20 @@
   loop: "{{ reachable_ues }}"
   when: rru in ['benetel1', 'benetel2']
 
-- name: Init UEs (qhat-init only, parallel)
+- name: Init UEs (qhat-init with profile options, parallel)
   shell: >
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ item }}
-    'qhat-init'
+    '{{ qhat_command }}'
+  vars:
+    # Slice parameters come from the active 5G profile (ues[<host>].slice -> slices[])
+    ue_slice_info: "{{ slices | selectattr('name', 'equalto', ues[item].slice) | first }}"
+    # Only pass --mode when explicitly set in inventory; otherwise qhat-init
+    # picks it per model (RG255C -> qmi, others -> mbim)
+    ue_mode_opt: "{{ ('--mode=' ~ hostvars[item].mode) if hostvars[item].mode is defined else '' }}"
+    qhat_command: >-
+      qhat-init {{ ue_mode_opt }}
+      --dnn="{{ ue_slice_info.dnn }}"
+      --nssai="{{ ue_slice_info.sst }}.{{ ue_slice_info.sd }}"
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0
@@ -139,21 +155,12 @@
   retries: 20
   delay: 10
 
-# Mode-aware stop, run as its own parallel async batch.
-# Best-effort: a stop failure must NOT abort the setup (unlike qhat-init).
-#   mbim -> stop.sh   |   qmi -> ci_ctl_qtel.py <at_port> detach
-# at_port defaults to /dev/ttyUSB3 (AT port after qhat-init's QMI switch);
-# override per node in the inventory with at_port=/dev/ttyUSBx if needed.
+# stop.sh picks mbim/qmi from /run/ue-mode (written by qhat-init);
+# the QMI path detaches via ci_ctl_qtel.py. Best-effort.
 - name: Stop UEs after init (parallel, best-effort)
   shell: >
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ item }}
-    '{{ ue_stop_cmd }}'
-  vars:
-    ue_stop_cmd: >-
-      {{ 'stop.sh'
-         if (hostvars[item].mode | default('mbim', true)) == 'mbim'
-         else 'python3 /usr/local/bin/ci_ctl_qtel.py '
-              ~ (hostvars[item].at_port | default('/dev/ttyUSB3')) ~ ' detach' }}
+    'stop.sh'
   delegate_to: faraday.inria.fr
   async: 300
   poll: 0
