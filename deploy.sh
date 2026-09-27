@@ -1928,8 +1928,6 @@ reserve_r2lab() {
 
 deploy() {
 
-    local r2lab_deploy_pid=""
-    local r2lab_deploy_status=0
     local main_deploy_status=0
     local monitoring_deploy_status=0
 
@@ -1960,11 +1958,9 @@ deploy() {
 
     if [[ "$platform" == "r2lab" ]]; then
       echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy_r2lab.yml &"
-      run_logged_cmd "${DIR_LOGS}/logs-r2lab.txt" \
-        ansible-playbook -i "$INVENTORY" \
+      run_cmd ansible-playbook -i "$INVENTORY" \
         "${ANSIBLE_EXTRA_ARGS[@]}" \
-        playbooks/deploy_r2lab.yml &
-      r2lab_deploy_pid=$!
+        playbooks/deploy_r2lab.yml 2>&1 | tee "${DIR_LOGS}/logs-r2lab.txt" &
     fi
 
     echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy.yml"
@@ -1982,13 +1978,8 @@ deploy() {
         playbooks/deploy_monitoring.yml || monitoring_deploy_status=$?
     fi
 
-    if [[ -n "$r2lab_deploy_pid" ]]; then
-      echo "Waiting for R2Lab UE and RRU setup to complete..."
-      wait "$r2lab_deploy_pid" || r2lab_deploy_status=$?
-    fi
-
-    if [[ "$main_deploy_status" -ne 0 || "$monitoring_deploy_status" -ne 0 || "$r2lab_deploy_status" -ne 0 ]]; then
-      echo "Deployment failed: main=${main_deploy_status} monitoring=${monitoring_deploy_status} r2lab=${r2lab_deploy_status}" >&2
+    if [[ "$main_deploy_status" -ne 0 || "$monitoring_deploy_status" -ne 0 ]]; then
+      echo "Deployment failed: main=${main_deploy_status} monitoring=${monitoring_deploy_status}" >&2
       return 1
     fi
 
