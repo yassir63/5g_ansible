@@ -90,29 +90,31 @@
         | list
       }}
 
-- name: SSH check (real login, parallel over UEs, ~4 min max per UE)
-  # Each attempt is capped by `timeout`: a server that accepts TCP but stalls
-  # (banner/kex/auth) cannot block the loop. Worst case 12 x (10s + 10s) = 240s,
-  # below async 300 so the job always ends by itself.
+- name: SSH check (real login, parallel over UEs)
+  # At most 5 authenticated login attempts per UE, spaced by 10s. Each attempt is
+  # capped at 12s so a stalled sshd cannot block the loop.
+  # Worst case per UE: 5 x 12s + 4 x 10s = 100s < async 110s.
   shell: >
-    for i in $(seq 1 12); do
-    timeout 10 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-    -o BatchMode=yes -o ConnectTimeout=5 root@{{ item }} true && exit 0;
-    sleep 10; done; exit 1
+    for i in 1 2 3 4 5; do
+    timeout 12 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 root@{{ item }} true && exit 0;
+    [ $i -lt 5 ] && sleep 10; done; exit 1
   delegate_to: faraday.inria.fr
-  async: 300
+  async: 110
   poll: 0
   changed_when: false
   loop: "{{ reachable_ues }}"
   register: ssh_jobs
 
-- name: Wait SSH check completion
+- name: Wait SSH check completion (bounded by async 110s)
+  # Jobs run in parallel and are killed by async after 110s at most,
+  # so the whole wait stays under 2 minutes whatever the number of UEs.
   async_status:
     jid: "{{ item.ansible_job_id }}"
   delegate_to: faraday.inria.fr
   register: ssh_results
   until: ssh_results.finished
-  retries: 24          # 24 x 5s = 120s, matches async
+  retries: 24
   delay: 5
   failed_when: false   # a dead UE must be excluded, not abort the play
   changed_when: false
