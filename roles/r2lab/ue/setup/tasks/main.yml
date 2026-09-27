@@ -19,9 +19,12 @@
 - name: Power OFF QHAT UEs
   shell: rhubarbe pdu off "{{ item }}"
   delegate_to: faraday.inria.fr
+  async: 1800
+  poll: 0
   failed_when: false
   changed_when: false
   loop: "{{ groups['qhats'] | default([]) }}"
+  register: qhat_off_jobs
 
 - name: Power OFF QFIT UEs
   shell: qfit off {{ groups['qfits'] | join(' ') }}
@@ -36,7 +39,19 @@
 - name: Power ON QHAT UEs
   shell: rhubarbe pdu on "{{ item }}"
   delegate_to: faraday.inria.fr
+  async: 1800
+  poll: 0
   loop: "{{ groups['qhats'] | default([]) }}"
+  register: qhat_on_jobs
+
+- name: Wait QHAT ON completion
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: qhat_on_status
+  until: qhat_on_status.finished
+  retries: 12
+  delay: 5
+  loop: "{{ qhat_on_jobs.results }}"
 
 - name: Power ON QFIT UEs
   shell: qfit on {{ groups['qfits'] | join(' ') }}
