@@ -1931,6 +1931,7 @@ deploy() {
     local r2lab_deploy_pid=""
     local r2lab_deploy_status=0
     local main_deploy_status=0
+    local monitoring_deploy_status=0
 
     ANSIBLE_EXTRA_ARGS=(-e "fiveg_profile=${PROFILE_5G}")
     if [[ -n "$REQUESTED_MONITORING_PROFILE" ]]; then
@@ -1973,13 +1974,21 @@ deploy() {
       "${ANSIBLE_EXTRA_ARGS[@]}" \
       playbooks/deploy.yml || main_deploy_status=$?
 
+    if [[ "$main_deploy_status" -eq 0 && "${monitoring_enabled:-false}" == true ]]; then
+      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy_monitoring.yml"
+      run_logged_cmd "${DIR_LOGS}/logs-monitoring.txt" \
+        ansible-playbook -i "$INVENTORY" \
+        "${ANSIBLE_EXTRA_ARGS[@]}" \
+        playbooks/deploy_monitoring.yml || monitoring_deploy_status=$?
+    fi
+
     if [[ -n "$r2lab_deploy_pid" ]]; then
       echo "Waiting for R2Lab UE and RRU setup to complete..."
       wait "$r2lab_deploy_pid" || r2lab_deploy_status=$?
     fi
 
-    if [[ "$main_deploy_status" -ne 0 || "$r2lab_deploy_status" -ne 0 ]]; then
-      echo "Deployment failed: main=${main_deploy_status} r2lab=${r2lab_deploy_status}" >&2
+    if [[ "$main_deploy_status" -ne 0 || "$monitoring_deploy_status" -ne 0 || "$r2lab_deploy_status" -ne 0 ]]; then
+      echo "Deployment failed: main=${main_deploy_status} monitoring=${monitoring_deploy_status} r2lab=${r2lab_deploy_status}" >&2
       return 1
     fi
 

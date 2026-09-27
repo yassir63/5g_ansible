@@ -353,6 +353,16 @@ ues:
 
 Monitoring has two layers. The **5G metrics stack** deploys Prometheus, Grafana, Loki/Promtail by default, and KPI calculators that expose derived core/RAN metrics such as slice throughput. The **latency pipeline** adds AMF and SMF sniffers, Redis and the UE mapper, the Kopf controller, and eBPF latency probes. The sniffers provide UE/session context to the mapper; the controller reads the resulting TEIDs and manages probes on matching gNB pods. Prometheus scrapes the metrics produced by these components, and Grafana displays them. Prometheus/Grafana alone do not measure per-UE latency.
 
+The infrastructure and 5G workloads are defined in `playbooks/deploy.yml`; monitoring is defined separately in `playbooks/deploy_monitoring.yml`. The normal `./deploy.sh` workflow runs them in that order whenever monitoring is enabled. To redeploy only monitoring against an existing 5G deployment, run:
+
+```bash
+ansible-playbook -i ./inventory/default/hosts.ini \
+  -e fiveg_profile=default \
+  -e monitoring_enabled=true \
+  -e @configs/monitoring/profiles/full.yml \
+  playbooks/deploy_monitoring.yml
+```
+
 When monitoring is enabled, `./deploy.sh` defaults to both layers. To choose a profile, use `--monitoring-profile` with a profile name or YAML path:
 
 ```bash
