@@ -1928,6 +1928,11 @@ reserve_r2lab() {
 
 deploy() {
 
+    local r2lab_deploy_pid=""
+    local r2lab_deploy_status=0
+    local main_deploy_status=0
+    local monitoring_deploy_status=0
+
     ANSIBLE_EXTRA_ARGS=(-e "fiveg_profile=${PROFILE_5G}")
     if [[ -n "$REQUESTED_MONITORING_PROFILE" ]]; then
       local monitoring_profile_file="$REQUESTED_MONITORING_PROFILE"
@@ -1955,16 +1960,37 @@ deploy() {
 
     if [[ "$platform" == "r2lab" ]]; then
       echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy_r2lab.yml &"
-      run_cmd ansible-playbook -i "$INVENTORY" \
+      run_logged_cmd "${DIR_LOGS}/logs-r2lab.txt" \
+        ansible-playbook -i "$INVENTORY" \
         "${ANSIBLE_EXTRA_ARGS[@]}" \
-        playbooks/deploy_r2lab.yml 2>&1 | tee ${DIR_LOGS}/logs-r2lab.txt &
+        playbooks/deploy_r2lab.yml &
+      r2lab_deploy_pid=$!
     fi
 
     echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[@]} playbooks/deploy.yml"
 
-    run_cmd ansible-playbook -i "$INVENTORY" \
+    run_logged_cmd "${DIR_LOGS}/logs.txt" \
+      ansible-playbook -i "$INVENTORY" \
       "${ANSIBLE_EXTRA_ARGS[@]}" \
-      playbooks/deploy.yml 2>&1 | tee ${DIR_LOGS}/logs.txt
+      playbooks/deploy.yml || main_deploy_status=$?
+
+    if [[ "$main_deploy_status" -eq 0 && "${monitoring_enabled:-false}" == true ]]; then
+      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy_monitoring.yml"
+      run_logged_cmd "${DIR_LOGS}/logs-monitoring.txt" \
+        ansible-playbook -i "$INVENTORY" \
+        "${ANSIBLE_EXTRA_ARGS[@]}" \
+        playbooks/deploy_monitoring.yml || monitoring_deploy_status=$?
+    fi
+
+    if [[ -n "$r2lab_deploy_pid" ]]; then
+      echo "Waiting for R2Lab UE and RRU setup to complete..."
+      wait "$r2lab_deploy_pid" || r2lab_deploy_status=$?
+    fi
+
+    if [[ "$main_deploy_status" -ne 0 || "$monitoring_deploy_status" -ne 0 || "$r2lab_deploy_status" -ne 0 ]]; then
+      echo "Deployment failed: main=${main_deploy_status} monitoring=${monitoring_deploy_status} r2lab=${r2lab_deploy_status}" >&2
+      return 1
+    fi
 
 
     echo ""
@@ -2252,7 +2278,10 @@ else
   if [[ "$SCENARIO_ONLY" == true ]]; then
     echo "Scenario-only mode selected: skipping reservation and deployment."
   else
-    deploy
+    if ! deploy; then
+      echo "❌ Deployment did not complete successfully; the scenario will not be started." >&2
+      exit 1
+    fi
   fi
 fi
 SCENARIO_STATUS=0
