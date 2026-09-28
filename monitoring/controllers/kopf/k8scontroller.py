@@ -6,6 +6,10 @@ import logging
 import subprocess
 import hashlib
 import requests
+import time
+import fnmatch
+
+
 # -------------------------
 # Config (from env / Ansible)
 # -------------------------
@@ -16,7 +20,26 @@ MONITORING_NS = os.getenv("MONITORING_NS", "monitoring")
 DEFAULT_IFACE = "n3" if CORE_NS == "open5gs" else "n2"
 PROBE_IFACE = os.getenv("PROBE_IFACE", DEFAULT_IFACE)
 
-EXPORTER_PORT = os.getenv("EXPORTER_PORT", "9100")
+PROBE_MODE = os.getenv("PROBE_MODE", "gnb").strip().lower()
+MATCH_DEBUG = os.getenv("MATCH_DEBUG", "0")
+PACKET_PAIRING = os.getenv("PACKET_PAIRING", os.getenv("PACKET_CORRELATION", "0")).strip()
+
+# Probe targeting is intentionally hardcoded so the deployment only exposes
+# the high-level PROBE_MODE knob: gnb, upf, or both.
+PROBE_APP_LABEL_KEY = "app"
+
+GNB_APP_LABELS = ["*gnb*"]
+GNB_POD_NAME_PATTERNS = ["*gnb*"]
+GNB_TARGET_CONTAINER = "*gnb*"
+GNB_LATENCY_MODE = os.getenv("GNB_LATENCY_MODE", "BOTH")
+
+UPF_APP_LABELS = ["*upf*"]
+UPF_POD_NAME_PATTERNS = ["*upf*"]
+UPF_TARGET_CONTAINER = "*upf*"
+UPF_PROBE_IFACE = "n3"
+UPF_LATENCY_MODE = os.getenv("UPF_LATENCY_MODE", "BOTH")
+
+
 EXPORTER_PATH = os.getenv("EXPORTER_PATH", "/latency")
 
 ALERT_FILE = "/tmp/alert.json"
@@ -29,16 +52,76 @@ PROBE_IMAGE = os.getenv("PROBE_IMAGE", "r2labuser/ebpf-latency-probe:2026")
 DEFAULT_UE_MAPPER_URL = f"http://ue-mapper-api.{MONITORING_NS}.svc.cluster.local"
 UE_MAPPER_URL = os.getenv("UE_MAPPER_URL", DEFAULT_UE_MAPPER_URL)
 
+# Base values for first managed probe
+BASE_HANDLE = int(os.getenv("BASE_HANDLE", "1"))
+BASE_PRIO = int(os.getenv("BASE_PRIO", "1"))
+BASE_EXPORTER_PORT = int(os.getenv("BASE_EXPORTER_PORT", "9100"))
+
+PROBE_NAME_PREFIX = os.getenv("PROBE_NAME_PREFIX", "ebpf-latency-probe")
+PACKET_PAIRER_IMAGE = os.getenv("PACKET_PAIRER_IMAGE", PROBE_IMAGE)
+PACKET_PAIRER_NAME = os.getenv("PACKET_PAIRER_NAME", f"{PROBE_NAME_PREFIX}-pairer")
+PACKET_PAIRER_SERVICE_NAME = os.getenv("PACKET_PAIRER_SERVICE_NAME", PACKET_PAIRER_NAME)
+PACKET_PAIRER_METRICS_PORT = int(os.getenv("PACKET_PAIRER_METRICS_PORT", os.getenv("PACKET_CORRELATION_METRICS_PORT", "9200")))
+PACKET_PAIRER_METRICS_PATH = os.getenv("PACKET_PAIRER_METRICS_PATH", os.getenv("PACKET_CORRELATION_METRICS_PATH", "/metrics"))
+PACKET_PAIRER_PORT = int(os.getenv("PACKET_PAIRER_PORT", os.getenv("PACKET_COLLECTOR_PORT", "9201")))
+
+RECONCILE_INTERVAL = float(os.getenv("RECONCILE_INTERVAL", "5.0"))
+UE_MAPPING_STABLE_CYCLES = max(1, int(os.getenv("UE_MAPPING_STABLE_CYCLES", "3")))
+UE_MAPPING_SETTLE_SECONDS = max(0.0, float(os.getenv("UE_MAPPING_SETTLE_SECONDS", "15.0")))
+UE_MAPPING_MIN_COMPLETE_UES = max(1, int(os.getenv("UE_MAPPING_MIN_COMPLETE_UES", "1")))
+UE_MAPPING_REQUIRE_COMPLETE = int(os.getenv("UE_MAPPING_REQUIRE_COMPLETE", "1"))
+CLEANUP_WAIT_SECONDS = max(1.0, float(os.getenv("CLEANUP_WAIT_SECONDS", "20.0")))
+CLEANUP_POLL_SECONDS = max(0.5, float(os.getenv("CLEANUP_POLL_SECONDS", "1.0")))
+
+mapping_stability = {}
+
+
+def env_flag(value: str) -> bool:
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+PACKET_PAIRING_ENABLED = env_flag(PACKET_PAIRING)
+
+
+def packet_pairer_host(namespace: str) -> str:
+    return f"{PACKET_PAIRER_SERVICE_NAME}.{namespace}.svc.cluster.local"
+
+
 @kopf.on.startup()
 def configure(settings: kopf.OperatorSettings, **_):
     print("✅ KOPF startup hook triggered")
+    print(
+        "Probe targeting: "
+        f"probe_mode={PROBE_MODE} gnb_labels={GNB_APP_LABELS} "
+        f"gnb_mode={GNB_LATENCY_MODE} gnb_iface={PROBE_IFACE} "
+        f"upf_labels={UPF_APP_LABELS} "
+        f"upf_mode={UPF_LATENCY_MODE} upf_iface={UPF_PROBE_IFACE} "
+        f"match_debug={MATCH_DEBUG} packet_pairing={PACKET_PAIRING_ENABLED}"
+    )
+    if PACKET_PAIRING_ENABLED:
+        print(
+            "Same-packet pairer: "
+            f"name={PACKET_PAIRER_NAME} service={PACKET_PAIRER_SERVICE_NAME} "
+            f"image={PACKET_PAIRER_IMAGE} metrics_port={PACKET_PAIRER_METRICS_PORT} "
+            f"udp_port={PACKET_PAIRER_PORT} metrics_path={PACKET_PAIRER_METRICS_PATH}"
+        )
+    print(
+        "UE mapping stabilization: "
+        f"interval={RECONCILE_INTERVAL}s stable_cycles={UE_MAPPING_STABLE_CYCLES} "
+        f"settle_seconds={UE_MAPPING_SETTLE_SECONDS}s "
+        f"min_complete_ues={UE_MAPPING_MIN_COMPLETE_UES} "
+        f"require_complete={UE_MAPPING_REQUIRE_COMPLETE}"
+    )
+    print(
+        "Probe cleanup: "
+        f"wait_seconds={CLEANUP_WAIT_SECONDS}s poll_seconds={CLEANUP_POLL_SECONDS}s"
+    )
     try:
         kubernetes.config.load_incluster_config()
     except Exception:
         kubernetes.config.load_kube_config()
 
     settings.posting.level = logging.INFO
-    # Watch only the namespace provided by Ansible/env
     settings.watching.namespaces = [CORE_NS]
 
 
@@ -46,18 +129,204 @@ def configure(settings: kopf.OperatorSettings, **_):
 # UE-MAPPER helpers
 # -------------------------
 
-def fingerprint_inventory(inventory: list[dict]) -> str:
-    """Short stable fingerprint of probe TEIDs and their UE metadata."""
-    if not inventory:
+def fingerprint_teids(teids: str) -> str:
+    """Short stable fingerprint of TEIDS string."""
+    if not teids:
         return ""
-    payload = json.dumps(inventory, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode()).hexdigest()[:12]
+    return hashlib.sha256(teids.encode()).hexdigest()[:12]
 
 
-def fetch_all_teids_from_ue_mapper(logger) -> tuple[str, str]:
+def fingerprint_probe_config(teids_fp: str, ue_map_fp: str, target: dict) -> str:
+    material = {
+        "teids_fp": teids_fp,
+        "ue_map_fp": ue_map_fp,
+        "iface": target["iface"],
+        "latency_mode": target["latency_mode"],
+        "probe_role": target["role"],
+        "target_container": target["target_container"],
+        "match_debug": MATCH_DEBUG,
+        "packet_pairing": PACKET_PAIRING_ENABLED,
+        "packet_pairer_host": packet_pairer_host(CORE_NS) if PACKET_PAIRING_ENABLED else "",
+        "packet_pairer_port": PACKET_PAIRER_PORT if PACKET_PAIRING_ENABLED else 0,
+        "probe_image": PROBE_IMAGE,
+        "exporter_path": EXPORTER_PATH,
+        "base_exporter_port": target.get("base_exporter_port", BASE_EXPORTER_PORT),
+    }
+    return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()[:12]
+
+
+def matches_any_pattern(value: str, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatchcase(value or "", pattern) for pattern in patterns)
+
+
+def pod_matches(name: str, labels: dict, app_labels: list[str], pod_name_patterns: list[str]) -> bool:
+    app_value = labels.get(PROBE_APP_LABEL_KEY, "")
+    if matches_any_pattern(app_value, app_labels):
+        return True
+    return matches_any_pattern(name, pod_name_patterns)
+
+
+def resolve_probe_target(name: str, labels: dict):
+    if PROBE_MODE in ("gnb", "both") and pod_matches(name, labels, GNB_APP_LABELS, GNB_POD_NAME_PATTERNS):
+        return {
+            "role": "gnb",
+            "latency_mode": GNB_LATENCY_MODE,
+            "iface": PROBE_IFACE,
+            "target_container": GNB_TARGET_CONTAINER,
+        }
+
+    if PROBE_MODE in ("upf", "both") and pod_matches(name, labels, UPF_APP_LABELS, UPF_POD_NAME_PATTERNS):
+        return {
+            "role": "upf",
+            "latency_mode": UPF_LATENCY_MODE,
+            "iface": UPF_PROBE_IFACE,
+            "target_container": UPF_TARGET_CONTAINER,
+        }
+
+    return None
+
+
+def target_matches_role(name: str, labels: dict, role: str) -> bool:
+    if role == "gnb":
+        return pod_matches(name, labels, GNB_APP_LABELS, GNB_POD_NAME_PATTERNS)
+    if role == "upf":
+        return pod_matches(name, labels, UPF_APP_LABELS, UPF_POD_NAME_PATTERNS)
+    return False
+
+
+def assign_exporter_port_to_target(name: str, namespace: str, target: dict, logger) -> dict:
+    target = dict(target)
+    core_api = kubernetes.client.CoreV1Api()
+
+    try:
+        pods = core_api.list_namespaced_pod(namespace=namespace).items
+    except Exception as e:
+        logger.warning(
+            f"⚠️ Could not list pods in ns={namespace} to assign exporter port. "
+            f"Using base port {BASE_EXPORTER_PORT}: {e}"
+        )
+        target["base_exporter_port"] = BASE_EXPORTER_PORT
+        return target
+
+    role_pods = []
+    for pod in pods:
+        pod_name = pod.metadata.name
+        pod_labels = pod.metadata.labels or {}
+
+        if pod.metadata.deletion_timestamp:
+            continue
+        if target_matches_role(pod_name, pod_labels, target["role"]):
+            role_pods.append(pod_name)
+
+    role_pods = sorted(set(role_pods))
+    try:
+        offset = role_pods.index(name)
+    except ValueError:
+        offset = 0
+
+    target["base_exporter_port"] = BASE_EXPORTER_PORT + offset
+    logger.info(
+        f"📡 Exporter port base for {target['role']} pod {name}: "
+        f"{target['base_exporter_port']} (role pods={role_pods})"
+    )
+    return target
+
+
+def resolve_target_container(pod, target: dict, logger) -> dict:
+    target = dict(target)
+    requested = target["target_container"]
+    container_names = [c.name for c in (pod.spec.containers or [])]
+
+    if not any(ch in requested for ch in "*?["):
+        if requested not in container_names:
+            logger.warning(
+                f"⚠️ Requested target container '{requested}' was not found in pod containers {container_names}"
+            )
+        return target
+
+    matches = [name for name in container_names if fnmatch.fnmatchcase(name, requested)]
+    if not matches:
+        raise ValueError(
+            f"No pod container matched target pattern '{requested}'. Available containers: {container_names}"
+        )
+
+    if len(matches) > 1:
+        logger.warning(
+            f"⚠️ Multiple containers matched pattern '{requested}' in pod {pod.metadata.name}: {matches}. "
+            f"Using {matches[0]}."
+        )
+
+    target["target_container"] = matches[0]
+    return target
+
+
+def normalize_teid(value) -> str:
+    if value is None:
+        return ""
+    try:
+        return f"0x{int(str(value).strip(), 0):08x}"
+    except Exception:
+        return ""
+
+
+def parse_teids_from_arg(teid_arg: str) -> tuple[str, str]:
+    teid_pair = (teid_arg or "").strip().split("@", 1)[0]
+    if not teid_pair:
+        return "", ""
+
+    if ":" in teid_pair:
+        ul, dl = teid_pair.split(":", 1)
+        return normalize_teid(ul), normalize_teid(dl)
+
+    return normalize_teid(teid_pair), ""
+
+
+def extract_ue_teids(ue: dict) -> tuple[str, str]:
+    teid_arg = (ue.get("teid_args") or "").strip()
+    parsed_ul, parsed_dl = parse_teids_from_arg(teid_arg)
+    ul_teid = normalize_teid(ue.get("ul_teid")) or parsed_ul
+    dl_teid = normalize_teid(ue.get("dl_teid")) or parsed_dl
+    return ul_teid, dl_teid
+
+
+def ue_mapping_is_complete(ue: dict) -> bool:
+    ul_teid, dl_teid = extract_ue_teids(ue)
+    return bool(
+        (ue.get("teid_args") or "").strip()
+        and ul_teid
+        and dl_teid
+        and str(ue.get("ue_ip") or "").strip()
+        and str(ue.get("slice_id") or "").strip()
+    )
+
+
+def build_teid_ue_map(ues: list[dict]) -> dict:
+    teid_ue_map = {}
+
+    for ue in ues:
+        ul_teid, dl_teid = extract_ue_teids(ue)
+
+        base = {
+            "imsi": str(ue.get("imsi") or ""),
+            "ue_ip": str(ue.get("ue_ip") or ""),
+            "ran_ue_id": str(ue.get("ran_ue_id") or ""),
+            "slice_id": str(ue.get("slice_id") or ""),
+            "sst": str(ue.get("sst") or ""),
+            "sd": str(ue.get("sd") or ""),
+        }
+
+        if ul_teid:
+            teid_ue_map[ul_teid] = {**base, "teid_direction": "ul"}
+        if dl_teid:
+            teid_ue_map[dl_teid] = {**base, "teid_direction": "dl"}
+
+    return teid_ue_map
+
+
+def fetch_all_teids_from_ue_mapper(logger) -> tuple[str, str, str, str, dict]:
     """
-    Returns (teids_string, fingerprint).
-    Uses /inventory/ues and joins each ue["teid_args"].
+    Returns (teids_string, teids_fingerprint, teid_ue_map_json, ue_map_fingerprint).
+    Uses /inventory/ues for both BPF TEID args and Prometheus UE labels.
     """
     url = f"{UE_MAPPER_URL}/inventory/ues"
     try:
@@ -66,83 +335,430 @@ def fetch_all_teids_from_ue_mapper(logger) -> tuple[str, str]:
         j = r.json()
     except Exception as e:
         logger.error(f"❌ Failed to fetch UE inventory from ue-mapper ({url}): {e}")
-        return "", ""
+        return "", "", "{}", "", {
+            "mapper_ues": 0,
+            "complete_ues": 0,
+            "incomplete_ues": 0,
+            "teid_args": 0,
+            "teid_metadata": 0,
+        }
 
     ues = j.get("ues", []) or []
     teids = []
-    inventory = []
     for ue in ues:
         arg = (ue.get("teid_args") or "").strip()
+        if not ue_mapping_is_complete(ue):
+            continue
+
         if arg:
             teids.append(arg)
-            inventory.append({
-                "teid_args": arg,
-                "imsi": ue.get("imsi") or "unknown",
-                "ue_ip": ue.get("ue_ip") or "unknown",
-                "slice_id": ue.get("slice_id") or "unknown",
-            })
 
     teids = sorted(set(teids))
-    inventory = sorted(
-        inventory,
-        key=lambda item: (
-            item["teid_args"],
-            item["imsi"],
-            item["ue_ip"],
-            item["slice_id"],
-        ),
-    )
     teids_str = " ".join(teids).strip()
-    return teids_str, fingerprint_inventory(inventory)
+    complete_ues = [ue for ue in ues if ue_mapping_is_complete(ue)]
+    incomplete_ues = len(ues) - len(complete_ues)
+    teid_ue_map = build_teid_ue_map(complete_ues)
+    teid_ue_map_json = json.dumps(teid_ue_map, sort_keys=True, separators=(",", ":"))
+    stats = {
+        "mapper_ues": len(ues),
+        "complete_ues": len(complete_ues),
+        "incomplete_ues": incomplete_ues,
+        "teid_args": len(teids),
+        "teid_metadata": len(teid_ue_map),
+    }
+    logger.info(
+        f"📚 UE mapper inventory -> ues={stats['mapper_ues']} "
+        f"complete={stats['complete_ues']} incomplete={stats['incomplete_ues']} "
+        f"teid_args={stats['teid_args']} teid_metadata={stats['teid_metadata']}"
+    )
+    return (
+        teids_str,
+        fingerprint_teids(teids_str),
+        teid_ue_map_json,
+        fingerprint_teids(teid_ue_map_json),
+        stats,
+    )
+
+
+# -------------------------
+# Generic ephemeral helpers
+# -------------------------
+
+def env_list_to_dict(env_list) -> dict:
+    out = {}
+    for item in (env_list or []):
+        try:
+            name = item.name if hasattr(item, "name") else item.get("name")
+            value = item.value if hasattr(item, "value") else item.get("value")
+            if name:
+                out[name] = value or ""
+        except Exception:
+            continue
+    return out
+
+
+def safe_int(v, default=None):
+    try:
+        return int(str(v))
+    except Exception:
+        return default
+
+
+def get_running_ephemeral_info(pod) -> list[dict]:
+    """
+    Return info for running ephemeral containers:
+    [
+      {
+        "name": ...,
+        "env": {...},
+        "state": "running"
+      },
+      ...
+    ]
+    """
+    ecs = pod.spec.ephemeral_containers or []
+    statuses = {s.name: s for s in (pod.status.ephemeral_container_statuses or [])}
+
+    out = []
+    for c in ecs:
+        st = statuses.get(c.name)
+        if not st or not st.state or not st.state.running:
+            continue
+        out.append({
+            "name": c.name,
+            "env": env_list_to_dict(c.env or []),
+            "state": "running",
+        })
+    return out
+
+
+def compute_next_runtime_resources(pod, logger, base_exporter_port=None) -> dict:
+    """
+    Scan all running ephemeral containers in the pod and choose the next free:
+      - HANDLE
+      - PRIO
+      - EXPORTER_PORT
+
+    This lets us coexist with future probe types as long as they expose these envs.
+    """
+    running_infos = get_running_ephemeral_info(pod)
+
+    used_handles = set()
+    used_prios = set()
+    used_ports = set()
+
+    for info in running_infos:
+        env = info["env"]
+        h = safe_int(env.get("HANDLE"))
+        p = safe_int(env.get("PRIO"))
+        port = safe_int(env.get("EXPORTER_PORT"))
+
+        if h is not None:
+            used_handles.add(h)
+        if p is not None:
+            used_prios.add(p)
+        if port is not None:
+            used_ports.add(port)
+
+    next_handle = BASE_HANDLE
+    while next_handle in used_handles:
+        next_handle += 1
+
+    next_prio = BASE_PRIO
+    while next_prio in used_prios:
+        next_prio += 1
+
+    next_port = base_exporter_port if base_exporter_port is not None else BASE_EXPORTER_PORT
+    while next_port in used_ports:
+        next_port += 1
+
+    logger.info(
+        f"📦 Runtime allocation -> HANDLE={next_handle} PRIO={next_prio} EXPORTER_PORT={next_port} "
+        f"(used handles={sorted(used_handles)}, prios={sorted(used_prios)}, ports={sorted(used_ports)})"
+    )
+
+    return {
+        "HANDLE": str(next_handle),
+        "PRIO": str(next_prio),
+        "EXPORTER_PORT": str(next_port),
+    }
+
+
+def mapping_stability_key(namespace: str, pod_name: str, target: dict) -> str:
+    return f"{namespace}/{pod_name}/{target['role']}"
+
+
+def mapping_is_stable(namespace: str, pod_name: str, target: dict, config_fp: str, stats: dict, logger) -> bool:
+    if stats.get("complete_ues", 0) < UE_MAPPING_MIN_COMPLETE_UES:
+        logger.info(
+            f"⏳ Waiting for UE mapper: complete UEs={stats.get('complete_ues', 0)} "
+            f"< required {UE_MAPPING_MIN_COMPLETE_UES}"
+        )
+        return False
+
+    if UE_MAPPING_REQUIRE_COMPLETE and stats.get("incomplete_ues", 0) > 0:
+        logger.info(
+            f"⏳ Waiting for UE mapper completeness: incomplete UEs={stats.get('incomplete_ues', 0)}"
+        )
+        return False
+
+    key = mapping_stability_key(namespace, pod_name, target)
+    now = time.time()
+    state = mapping_stability.get(key)
+
+    if not state or state.get("config_fp") != config_fp:
+        state = {
+            "config_fp": config_fp,
+            "first_seen": now,
+            "last_seen": now,
+            "observations": 1,
+        }
+        mapping_stability[key] = state
+    else:
+        state["observations"] += 1
+        state["last_seen"] = now
+
+    age = now - state["first_seen"]
+    if state["observations"] < UE_MAPPING_STABLE_CYCLES or age < UE_MAPPING_SETTLE_SECONDS:
+        logger.info(
+            f"⏳ Waiting for stable UE mapping for {key}: "
+            f"observations={state['observations']}/{UE_MAPPING_STABLE_CYCLES}, "
+            f"age={age:.1f}/{UE_MAPPING_SETTLE_SECONDS:.1f}s, config_fp={config_fp}"
+        )
+        return False
+
+    logger.info(
+        f"✅ UE mapping stable for {key}: "
+        f"observations={state['observations']}, age={age:.1f}s, config_fp={config_fp}"
+    )
+    return True
+
+
+def build_pairer_labels() -> dict:
+    return {
+        "app": PACKET_PAIRER_NAME,
+        "component": "same-packet-pairer",
+        "managed-by": "kopf-ebpf-controller",
+    }
+
+
+def ensure_same_packet_pairer(namespace: str, teid_ue_map: str, logger) -> None:
+    if not PACKET_PAIRING_ENABLED:
+        return
+    if DRY_RUN:
+        logger.warning(
+            f"🟡 DRY_RUN=1 -> would ensure same-packet pairer Deployment/Service "
+            f"{PACKET_PAIRER_NAME}/{PACKET_PAIRER_SERVICE_NAME} in ns={namespace}"
+        )
+        return
+
+    apps_api = kubernetes.client.AppsV1Api()
+    core_api = kubernetes.client.CoreV1Api()
+    labels = build_pairer_labels()
+
+    service_body = {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": PACKET_PAIRER_SERVICE_NAME,
+            "namespace": namespace,
+            "labels": labels,
+            "annotations": {
+                "prometheus.io/scrape": "true",
+                "prometheus.io/scheme": "http",
+                "prometheus.io/path": PACKET_PAIRER_METRICS_PATH,
+                "prometheus.io/port": str(PACKET_PAIRER_METRICS_PORT),
+            },
+        },
+        "spec": {
+            "selector": labels,
+            "ports": [
+                {
+                    "name": "metrics",
+                    "port": PACKET_PAIRER_METRICS_PORT,
+                    "targetPort": PACKET_PAIRER_METRICS_PORT,
+                    "protocol": "TCP",
+                },
+                {
+                    "name": "samples",
+                    "port": PACKET_PAIRER_PORT,
+                    "targetPort": PACKET_PAIRER_PORT,
+                    "protocol": "UDP",
+                },
+            ],
+        },
+    }
+
+    deployment_body = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": PACKET_PAIRER_NAME,
+            "namespace": namespace,
+            "labels": labels,
+        },
+        "spec": {
+            "replicas": 1,
+            "selector": {
+                "matchLabels": labels,
+            },
+            "template": {
+                "metadata": {
+                    "labels": labels,
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "same-packet-pairer",
+                            "image": PACKET_PAIRER_IMAGE,
+                            "imagePullPolicy": "Always",
+                            "command": ["/app/entrypoint-same-packet-pairer.sh"],
+                            "env": [
+                                {"name": "TEID_UE_MAP", "value": teid_ue_map},
+                                {"name": "PACKET_PAIRER_METRICS_PORT", "value": str(PACKET_PAIRER_METRICS_PORT)},
+                                {"name": "PACKET_PAIRER_METRICS_PATH", "value": PACKET_PAIRER_METRICS_PATH},
+                                {"name": "PACKET_PAIRER_PORT", "value": str(PACKET_PAIRER_PORT)},
+                            ],
+                            "ports": [
+                                {
+                                    "name": "metrics",
+                                    "containerPort": PACKET_PAIRER_METRICS_PORT,
+                                    "protocol": "TCP",
+                                },
+                                {
+                                    "name": "samples",
+                                    "containerPort": PACKET_PAIRER_PORT,
+                                    "protocol": "UDP",
+                                },
+                            ],
+                        }
+                    ]
+                },
+            },
+        },
+    }
+
+    try:
+        core_api.read_namespaced_service(name=PACKET_PAIRER_SERVICE_NAME, namespace=namespace)
+        core_api.patch_namespaced_service(name=PACKET_PAIRER_SERVICE_NAME, namespace=namespace, body=service_body)
+        logger.info(f"🔁 Updated same-packet pairer Service {PACKET_PAIRER_SERVICE_NAME} in ns={namespace}")
+    except kubernetes.client.exceptions.ApiException as exc:
+        if exc.status == 404:
+            core_api.create_namespaced_service(namespace=namespace, body=service_body)
+            logger.info(f"✅ Created same-packet pairer Service {PACKET_PAIRER_SERVICE_NAME} in ns={namespace}")
+        else:
+            raise
+
+    try:
+        apps_api.read_namespaced_deployment(name=PACKET_PAIRER_NAME, namespace=namespace)
+        apps_api.patch_namespaced_deployment(name=PACKET_PAIRER_NAME, namespace=namespace, body=deployment_body)
+        logger.info(f"🔁 Updated same-packet pairer Deployment {PACKET_PAIRER_NAME} in ns={namespace}")
+    except kubernetes.client.exceptions.ApiException as exc:
+        if exc.status == 404:
+            apps_api.create_namespaced_deployment(namespace=namespace, body=deployment_body)
+            logger.info(f"✅ Created same-packet pairer Deployment {PACKET_PAIRER_NAME} in ns={namespace}")
+        else:
+            raise
 
 
 # -------------------------
 # Timer reconcile (always-on)
 # -------------------------
 
-@kopf.timer('v1', 'pods', interval=15.0)
+@kopf.timer('v1', 'pods', interval=RECONCILE_INTERVAL)
 def reconcile_probe_always_on(name, namespace, labels, logger, **kwargs):
-    logger.info(f"⏱ Timer running for pod: {name} in ns={namespace} (labels: {labels})")
-
-    if labels.get("app") != "oai-gnb":
-        logger.info(f"⛔ Skipping pod {name}: app label is not 'oai-gnb' (got: {labels.get('app')})")
+    if namespace != CORE_NS:
         return
 
-    teids, teids_fp = fetch_all_teids_from_ue_mapper(logger)
+    logger.info(f"⏱ Timer running for pod: {name} in ns={namespace} (labels: {labels})")
+
+    if PACKET_PAIRING_ENABLED:
+        try:
+            _, _, teid_ue_map, _, _ = fetch_all_teids_from_ue_mapper(logger)
+            ensure_same_packet_pairer(namespace, teid_ue_map, logger)
+        except Exception as e:
+            logger.error(f"❌ Failed to reconcile same-packet pairer in ns={namespace}: {e}")
+            return
+
+    target = resolve_probe_target(name, labels)
+    if not target:
+        logger.info(
+            f"⛔ Skipping pod {name}: no enabled probe target matched "
+            f"({PROBE_APP_LABEL_KEY}={labels.get(PROBE_APP_LABEL_KEY)})"
+        )
+        return
+    target = assign_exporter_port_to_target(name, namespace, target, logger)
+
+    teids, teids_fp, teid_ue_map, ue_map_fp, ue_stats = fetch_all_teids_from_ue_mapper(logger)
+
     if not teids:
         logger.warning("⚠️ UE-mapper returned no TEIDS yet. Will not inject probe.")
         return
 
-    logger.info(f"📌 Desired TEIDS fingerprint: {teids_fp} (len={len(teids)})")
-    logger.info(f"📌 Probe IFACE selected: {PROBE_IFACE} (CORE_NS={CORE_NS})")
+    logger.info(f"📌 Desired TEIDS fingerprint: {teids_fp} (chars={len(teids)})")
+    logger.info(f"📌 Desired UE map fingerprint: {ue_map_fp} (bytes={len(teid_ue_map)})")
+    config_fp = fingerprint_probe_config(teids_fp, ue_map_fp, target)
+    logger.info(
+        f"📌 Probe target: role={target['role']} mode={target['latency_mode']} "
+        f"iface={target['iface']} target_container={target['target_container']} "
+        f"config_fp={config_fp} (CORE_NS={CORE_NS})"
+    )
     logger.info(f"📌 UE_MAPPER_URL: {UE_MAPPER_URL}")
 
-    if probe_running_with_fingerprint(name, namespace, teids_fp, logger):
-        logger.info("✅ Probe already running with matching TEIDS. No action.")
+    if probe_running_with_config(name, namespace, teids_fp, config_fp, logger):
+        logger.info("✅ Probe already running or starting with matching TEIDS and config. No action.")
         return
 
-    logger.info("🔁 TEIDS changed or no healthy probe. Refreshing probe...")
+    if not mapping_is_stable(namespace, name, target, config_fp, ue_stats, logger):
+        return
+
+    logger.info("🔁 TEIDS/config changed or no healthy probe. Refreshing probe...")
 
     if DRY_RUN:
         logger.warning("🟡 DRY_RUN=1 -> Will NOT kill or inject. Printing what would happen.")
         _ = kill_probe_container(name, namespace, logger)
-        dump_injection_request(name, namespace, logger, teids, teids_fp)
+        dump_injection_request(name, namespace, logger, teids, teids_fp, teid_ue_map, ue_map_fp, config_fp, target)
         return
 
-    kill_probe_container(name, namespace, logger)
-    inject_ephemeral_probe(name, namespace, logger, teids, teids_fp)
+    cleanup_ok = kill_probe_container(name, namespace, logger)
+    if not cleanup_ok:
+        logger.warning(
+            f"⚠️ Cleanup failed for {name}; will NOT inject a replacement probe on this cycle."
+        )
+        return
+
+    deadline = time.time() + CLEANUP_WAIT_SECONDS
+    remaining = list_active_probe_containers(name, namespace, logger)
+    while remaining and time.time() < deadline:
+        time.sleep(CLEANUP_POLL_SECONDS)
+        remaining = list_active_probe_containers(name, namespace, logger)
+
+    if remaining:
+        logger.warning(
+            f"⚠️ Managed probes are still active in {name} after cleanup; "
+            f"will NOT inject another probe yet. Remaining: {remaining}"
+        )
+        return
+
+    inject_ephemeral_probe(name, namespace, logger, teids, teids_fp, teid_ue_map, ue_map_fp, config_fp, target)
 
 
 # -------------------------
 # Kubernetes helpers
 # -------------------------
 
-def probe_running_with_fingerprint(pod_name, namespace, desired_fp: str, logger) -> bool:
+def probe_running_with_config(pod_name, namespace, desired_teids_fp: str, desired_config_fp: str, logger) -> bool:
     """
-    Return True if there is an existing probe container:
-      - name starts with ebpf-latency-probe
-      - status is running (not terminated)
+    Return True if the desired probe is running or already injected and starting,
+    and no stale managed probes are still active. Kubernetes keeps old ephemeral
+    containers in pod specs, so terminated stale probes are harmless; non-terminated
+    stale probes must be cleaned or allowed to finish before another injection.
+
+    Desired probe means:
+      - name starts with PROBE_NAME_PREFIX
+      - status is running or starting (not terminated)
       - env TEIDS_FP matches desired_fp
+      - env PROBE_CONFIG_FP matches desired_config_fp
     """
     try:
         core_api = kubernetes.client.CoreV1Api()
@@ -154,37 +770,105 @@ def probe_running_with_fingerprint(pod_name, namespace, desired_fp: str, logger)
     ecs = pod.spec.ephemeral_containers or []
     statuses = {s.name: s for s in (pod.status.ephemeral_container_statuses or [])}
 
+    desired_active = []
+    stale_active = []
+
     for c in ecs:
-        if not c.name.startswith("ebpf-latency-probe"):
-            continue
-
-        fp = ""
-        try:
-            for env in (c.env or []):
-                if env.name == "TEIDS_FP":
-                    fp = env.value or ""
-                    break
-        except Exception:
-            fp = ""
-
-        if fp != desired_fp:
+        if not c.name.startswith(PROBE_NAME_PREFIX):
             continue
 
         st = statuses.get(c.name)
-        if st and st.state:
-            if st.state.running:
-                return True
-            if st.state.terminated:
-                continue
+        state = probe_container_state(st)
+        if state == "terminated":
+            continue
 
-    return False
+        env = env_list_to_dict(c.env or [])
+        teids_fp = env.get("TEIDS_FP", "")
+        config_fp = env.get("PROBE_CONFIG_FP", "")
+        info = {
+            "name": c.name,
+            "state": state,
+            "teids_fp": teids_fp,
+            "config_fp": config_fp,
+        }
+
+        if teids_fp == desired_teids_fp and config_fp == desired_config_fp:
+            desired_active.append(info)
+        else:
+            stale_active.append(info)
+
+    if stale_active:
+        logger.info(f"♻️ Stale active probe containers found in {pod_name}: {stale_active}")
+        return False
+
+    if len(desired_active) > 1:
+        logger.info(f"♻️ Duplicate desired active probes found in {pod_name}: {desired_active}")
+        return False
+
+    if not desired_active:
+        return False
+
+    desired = desired_active[0]
+    if desired["state"] != "running":
+        logger.info(f"⏳ Desired probe already injected but not running yet in {pod_name}: {desired}")
+
+    return True
+
+
+def probe_container_state(status) -> str:
+    if not status or not status.state:
+        return "pending"
+    if status.state.running:
+        return "running"
+    if status.state.waiting:
+        return "waiting"
+    if status.state.terminated:
+        return "terminated"
+    return "unknown"
+
+
+def list_active_probe_containers(pod_name, namespace, logger) -> list[dict]:
+    core_api = kubernetes.client.CoreV1Api()
+
+    try:
+        pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace)
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to read pod {pod_name} in ns={namespace}: {e}")
+        return []
+
+    ephemerals = pod.spec.ephemeral_containers or []
+    status_map = {s.name: s for s in (pod.status.ephemeral_container_statuses or [])}
+
+    active = []
+    for c in ephemerals:
+        if not c.name.startswith(PROBE_NAME_PREFIX):
+            continue
+
+        st = status_map.get(c.name)
+        state = probe_container_state(st)
+        if state == "terminated":
+            continue
+
+        env = env_list_to_dict(c.env or [])
+        active.append({
+            "name": c.name,
+            "state": state,
+            "iface": env.get("IFACE", PROBE_IFACE),
+            "prio": env.get("PRIO", str(BASE_PRIO)),
+            "port": env.get("EXPORTER_PORT", str(BASE_EXPORTER_PORT)),
+            "teids_fp": env.get("TEIDS_FP", ""),
+            "config_fp": env.get("PROBE_CONFIG_FP", ""),
+        })
+
+    return active
 
 
 def kill_probe_container(pod_name, namespace, logger):
     """
     Safer kill:
       - Only attempts kubectl exec if pod is Running
-      - Targets only ephemeral containers named ebpf-latency-probe*
+      - Targets only ephemeral containers named PROBE_NAME_PREFIX*
+      - Uses each container's actual IFACE/PRIO/EXPORTER_PORT
       - In DRY_RUN: does not exec, only logs what it would kill
     """
     core_api = kubernetes.client.CoreV1Api()
@@ -201,80 +885,139 @@ def kill_probe_container(pod_name, namespace, logger):
         return False
 
     ephemerals = pod.spec.ephemeral_containers or []
-    target_names = [c.name for c in ephemerals if c.name.startswith("ebpf-latency-probe")]
-    if not target_names:
-        logger.info(f"ℹ️ No ephemeral probe containers to kill in {pod_name}")
+    status_map = {s.name: s for s in (pod.status.ephemeral_container_statuses or [])}
+
+    targets = []
+    for c in ephemerals:
+        if not c.name.startswith(PROBE_NAME_PREFIX):
+            continue
+
+        st = status_map.get(c.name)
+        if st and st.state and st.state.running:
+            env = env_list_to_dict(c.env or [])
+            targets.append({
+                "name": c.name,
+                "iface": env.get("IFACE", PROBE_IFACE),
+                "handle": env.get("HANDLE", str(BASE_HANDLE)),
+                "prio": env.get("PRIO", str(BASE_PRIO)),
+                "port": env.get("EXPORTER_PORT", str(BASE_EXPORTER_PORT)),
+            })
+
+    if not targets:
+        logger.info(f"ℹ️ No running ephemeral probe containers to kill in {pod_name}")
         return True
 
-    running = set()
-    for st in (pod.status.ephemeral_container_statuses or []):
-        if st.name in target_names and st.state and st.state.running:
-            running.add(st.name)
-
-    if running:
-        target_names = [n for n in target_names if n in running]
-    else:
-        logger.info("ℹ️ No probe statuses reported running; will attempt kill anyway (unless DRY_RUN).")
-
-    logger.info(f"🧹 Kill targets in {pod_name}: {target_names}")
+    logger.info(f"🧹 Kill targets in {pod_name}: {targets}")
 
     if DRY_RUN:
         logger.warning("🟡 DRY_RUN=1 -> Skipping kubectl exec kill commands.")
         return True
 
     ok = True
-    for cname in target_names:
+    for target in targets:
+        cname = target["name"]
         command = [
             "kubectl", "exec", "-n", namespace, pod_name,
             "-c", cname, "--",
             "/bin/sh", "-c",
-            "pkill -f entrypoint-latency.sh || true; pkill -f gtp_latency_user || true"
+            "pkill -TERM -f '[e]ntrypoint-latency.sh'"
         ]
         try:
-            subprocess.run(command, check=True)
-            logger.info(f"🧹 Killed probe container {cname} in pod {pod_name}")
-        except subprocess.CalledProcessError as e:
-            logger.warning(f"⚠️ Could not kill container {cname} in pod {pod_name}: {e}")
+            result = subprocess.run(command, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode != 0:
+                logger.warning(
+                    f"⚠️ Cleanup exec for {cname} in pod {pod_name} returned {result.returncode}. "
+                    f"stdout={result.stdout!r} stderr={result.stderr!r}"
+                )
+                ok = False
+            else:
+                logger.info(f"🧹 Cleanup signal sent to probe supervisor {cname} in pod {pod_name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not run cleanup command in container {cname} in pod {pod_name}: {e}")
             ok = False
 
     return ok
 
 
 def compute_next_probe_name(existing_ecs) -> str:
-    probe_names = [c.name for c in existing_ecs if c.name.startswith("ebpf-latency-probe")]
+    probe_names = [c.name for c in existing_ecs if c.name.startswith(PROBE_NAME_PREFIX)]
     i = 1
-    base_name = "ebpf-latency-probe"
     while True:
-        cname = base_name if i == 1 else f"{base_name}{i}"
+        cname = PROBE_NAME_PREFIX if i == 1 else f"{PROBE_NAME_PREFIX}{i}"
         if cname not in probe_names:
             return cname
         i += 1
 
 
-def build_ephemeral_patch_body(pod_name, namespace, logger, teids: str, teids_fp: str):
+def build_ephemeral_patch_body(
+    pod_name,
+    namespace,
+    logger,
+    teids: str,
+    teids_fp: str,
+    teid_ue_map: str,
+    ue_map_fp: str,
+    config_fp: str,
+    target: dict,
+):
     core_api = kubernetes.client.CoreV1Api()
     pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace)
+    target = resolve_target_container(pod, target, logger)
     existing_ecs = pod.spec.ephemeral_containers or []
 
     cname = compute_next_probe_name(existing_ecs)
-    logger.info(f"🚀 Would inject probe: {cname} (TEIDS_FP={teids_fp}, IFACE={PROBE_IFACE})")
+    runtime = compute_next_runtime_resources(
+        pod,
+        logger,
+        target.get("base_exporter_port", BASE_EXPORTER_PORT),
+    )
+
+    logger.info(
+        f"🚀 Probe env -> IFACE={target['iface']} HANDLE={runtime['HANDLE']} "
+        f"PRIO={runtime['PRIO']} PORT={runtime['EXPORTER_PORT']} "
+        f"LATENCY_MODE={target['latency_mode']} PROBE_ROLE={target['role']} "
+        f"MATCH_DEBUG={MATCH_DEBUG} PROBE_IMAGE={PROBE_IMAGE} "
+        f"PACKET_PAIRING={PACKET_PAIRING_ENABLED} "
+        f"TARGET_CONTAINER={target['target_container']} "
+        f"IMAGE_PULL_POLICY=Always TEIDS_FP={teids_fp} "
+        f"UE_MAP_FP={ue_map_fp} PROBE_CONFIG_FP={config_fp}"
+    )
+
+    env = [
+        {"name": "IFACE", "value": target["iface"]},
+        {"name": "HANDLE", "value": runtime["HANDLE"]},
+        {"name": "PRIO", "value": runtime["PRIO"]},
+        {"name": "TEIDS", "value": teids},
+        {"name": "TEIDS_FP", "value": teids_fp},
+        {"name": "TEID_UE_MAP", "value": teid_ue_map},
+        {"name": "UE_MAP_FP", "value": ue_map_fp},
+        {"name": "PROBE_CONFIG_FP", "value": config_fp},
+        {"name": "EXPORTER_PORT", "value": runtime["EXPORTER_PORT"]},
+        {"name": "EXPORTER_PATH", "value": EXPORTER_PATH},
+        {"name": "LATENCY_MODE", "value": target["latency_mode"]},
+        {"name": "PROBE_ROLE", "value": target["role"]},
+        {"name": "PROBE_POD", "value": pod_name},
+        {"name": "PROBE_NODE", "value": pod.spec.node_name or ""},
+        {"name": "PROBE_TARGET", "value": target["target_container"]},
+        {"name": "MATCH_DEBUG", "value": MATCH_DEBUG},
+    ]
+
+    if PACKET_PAIRING_ENABLED:
+        env.extend([
+            {"name": "PACKET_PAIRING", "value": "1"},
+            {"name": "PACKET_PAIRER_HOST", "value": packet_pairer_host(namespace)},
+            {"name": "PACKET_PAIRER_PORT", "value": str(PACKET_PAIRER_PORT)},
+        ])
 
     new_container = {
         "name": cname,
         "image": PROBE_IMAGE,
+        "imagePullPolicy": "Always",
         "command": ["./entrypoint-latency.sh"],
-        "env": [
-            {"name": "IFACE", "value": PROBE_IFACE},
-            {"name": "HANDLE", "value": "1"},
-            {"name": "PRIO", "value": "1"},
-            {"name": "TEIDS", "value": teids},
-            {"name": "TEIDS_FP", "value": teids_fp},
-            {"name": "EXPORTER_PORT", "value": "9100"},
-            {"name": "EXPORTER_PATH", "value": "/latency"},
-        ],
+        "env": env,
         "stdin": True,
         "tty": True,
-        "targetContainerName": "gnb",
+        "targetContainerName": target["target_container"],
         "securityContext": {
             "privileged": True,
             "capabilities": {"add": ["SYS_ADMIN", "SYS_RESOURCE", "NET_ADMIN"]}
@@ -291,9 +1034,21 @@ def build_ephemeral_patch_body(pod_name, namespace, logger, teids: str, teids_fp
     return cname, patch_body
 
 
-def dump_injection_request(pod_name, namespace, logger, teids: str, teids_fp: str):
+def dump_injection_request(
+    pod_name,
+    namespace,
+    logger,
+    teids: str,
+    teids_fp: str,
+    teid_ue_map: str,
+    ue_map_fp: str,
+    config_fp: str,
+    target: dict,
+):
     try:
-        cname, patch_body = build_ephemeral_patch_body(pod_name, namespace, logger, teids, teids_fp)
+        cname, patch_body = build_ephemeral_patch_body(
+            pod_name, namespace, logger, teids, teids_fp, teid_ue_map, ue_map_fp, config_fp, target
+        )
     except Exception as e:
         logger.error(f"❌ Could not build patch body for injection: {e}")
         return
@@ -304,15 +1059,28 @@ def dump_injection_request(pod_name, namespace, logger, teids: str, teids_fp: st
     logger.warning(f"  URL:    {endpoint}")
     logger.warning("  HEADER: Content-Type=application/strategic-merge-patch+json")
     logger.warning(f"  Would inject container name: {cname}")
+    logger.warning(f"  Target role/mode: {target['role']}/{target['latency_mode']}")
     logger.warning("  PATCH BODY JSON:")
     logger.warning(json.dumps(patch_body, indent=2))
 
 
-def inject_ephemeral_probe(pod_name, namespace, logger, teids: str, teids_fp: str):
+def inject_ephemeral_probe(
+    pod_name,
+    namespace,
+    logger,
+    teids: str,
+    teids_fp: str,
+    teid_ue_map: str,
+    ue_map_fp: str,
+    config_fp: str,
+    target: dict,
+):
     api_client = kubernetes.client.ApiClient()
 
     try:
-        cname, patch_body = build_ephemeral_patch_body(pod_name, namespace, logger, teids, teids_fp)
+        cname, patch_body = build_ephemeral_patch_body(
+            pod_name, namespace, logger, teids, teids_fp, teid_ue_map, ue_map_fp, config_fp, target
+        )
     except Exception as e:
         logger.error(f"❌ Failed to build injection payload: {e}")
         return
@@ -327,204 +1095,6 @@ def inject_ephemeral_probe(pod_name, namespace, logger, teids: str, teids_fp: st
             response_type="object",
             _preload_content=False
         )
-        logger.info(f"✅ Successfully injected {cname} into {pod_name}")
+        logger.info(f"✅ Successfully injected {cname} ({target['role']}/{target['latency_mode']}) into {pod_name}")
     except Exception as e:
         logger.error(f"❌ Failed to inject probe {cname}: {e}")
-
-# import kopf
-# import kubernetes
-# import json
-# import os
-# import logging
-# import subprocess
-
-# NAMESPACE = "oail1"
-# ALERT_FILE = "/tmp/alert.json"
-
-# @kopf.on.startup()
-# def configure(settings: kopf.OperatorSettings, **_):
-#     print("✅ KOPF startup hook triggered")
-#     try:
-#         kubernetes.config.load_incluster_config()
-#     except:
-#         kubernetes.config.load_kube_config()
-
-#     settings.posting.level = logging.INFO
-#     settings.watching.namespaces = [NAMESPACE]
-
-# @kopf.timer('v1', 'pods', interval=15.0)
-# def inject_probe_if_alert_firing(name, namespace, labels, logger, **kwargs):
-#     logger.info(f"⏱ Timer running for pod: {name} (labels: {labels})")
-
-#     if labels.get("app") != "oai-gnb":
-#         logger.info(f"⛔ Skipping pod {name}: app label is not 'oai-gnb' (got: {labels.get('app')})")
-#         return
-
-#     if not os.path.exists(ALERT_FILE):
-#         logger.info("❌ No alert file found at /tmp/alert.json.")
-#         return
-
-#     try:
-#         with open(ALERT_FILE, "r") as f:
-#             alert_data = json.load(f)
-#         logger.info(f"📦 Alert data loaded: {json.dumps(alert_data, indent=2)}")
-#     except Exception as e:
-#         logger.error(f"❌ Failed to read or parse alert file: {e}")
-#         return
-
-#     firing_alert = None
-#     for alert in alert_data.get("alerts", []):
-#         if alert.get("status") == "firing" and alert.get("labels", {}).get("alertname") == "LowGTPThroughput":
-#             firing_alert = alert
-#             break
-
-#     if firing_alert:
-#         logger.info(f"🚀 Matched LowGTPThroughput alert. Injecting into pod {name}")
-#         inject_ephemeral_probe(name, namespace, logger)
-#     else:
-#         logger.info(f"🛑 No matching alert firing. Killing probe in pod {name}")
-#         kill_probe_container(name, logger)
-
-# # @kopf.on.cleanup()
-# # def on_cleanup(logger, **_):
-# #     logger.info("🔻 Cleanup triggered. Saving logs from namespace before teardown.")
-# #     collect_logs_before_deletion(namespace=NAMESPACE, logger=logger)
-
-# from kubernetes.client.rest import ApiException
-# from kubernetes.client import ApiClient
-# from kubernetes.client import V1Capabilities, V1SecurityContext
-
-# # from datetime import datetime
-# # import os
-# # import kubernetes
-
-# # def collect_logs_before_deletion(namespace, logger):
-# #     core_api = kubernetes.client.CoreV1Api()
-# #     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-# #     log_dir = f"/tmp/pod_logs/{namespace}_{timestamp}"
-# #     os.makedirs(log_dir, exist_ok=True)
-
-# #     try:
-# #         pods = core_api.list_namespaced_pod(namespace=namespace).items
-# #     except Exception as e:
-# #         logger.error(f"❌ Failed to list pods: {e}")
-# #         return
-
-# #     for pod in pods:
-# #         pod_name = pod.metadata.name
-# #         try:
-# #             log = core_api.read_namespaced_pod_log(name=pod_name, namespace=namespace)
-# #             with open(f"{log_dir}/{pod_name}.log", "w") as f:
-# #                 f.write(log)
-# #             logger.info(f"📝 Saved logs for pod {pod_name}")
-# #         except Exception as e:
-# #             logger.warning(f"⚠️ Could not get logs from pod {pod_name}: {e}")
-
-
-# def kill_probe_container(pod_name, logger):
-#     namespace = NAMESPACE
-#     try:
-#         core_api = kubernetes.client.CoreV1Api()
-#         pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace)
-#         ephemerals = pod.spec.ephemeral_containers or []
-#         target_names = [c.name for c in ephemerals if c.name.startswith("ebpf-latency-probe")]
-#     except Exception as e:
-#         logger.warning(f"⚠️ Failed to read ephemeral containers from pod {pod_name}: {e}")
-#         return
-
-#     if not target_names:
-#         logger.info(f"ℹ️ No ephemeral probe containers to kill in {pod_name}")
-#         return
-
-#     for cname in target_names:
-#         command = [
-#             "kubectl", "exec", "-n", namespace, pod_name,
-#             "-c", cname, "--",
-#             "/bin/sh", "-c", "pkill -f entrypoint-latency.sh"
-#         ]
-#         try:
-#             subprocess.run(command, check=True)
-#             logger.info(f"🧹 Killed probe container {cname} in pod {pod_name}")
-#         except subprocess.CalledProcessError as e:
-#             logger.warning(f"⚠️ Could not kill container {cname} in pod {pod_name}: {e}")
-
-
-
-# def inject_ephemeral_probe(pod_name, namespace, logger):
-#     core_api = kubernetes.client.CoreV1Api()
-#     api_client = kubernetes.client.ApiClient()
-
-#     try:
-#         pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace)
-#     except Exception as e:
-#         logger.error(f"❌ Failed to read pod {pod_name}: {e}")
-#         return
-
-#     existing_ecs = pod.spec.ephemeral_containers or []
-#     existing_statuses = {s.name: s for s in (pod.status.ephemeral_container_statuses or [])}
-
-#     # Check if a probe is already injected and healthy
-#     probe_names = [c.name for c in existing_ecs if c.name.startswith("ebpf-latency-probe")]
-#     for name in probe_names:
-#         status = existing_statuses.get(name)
-#         if status and status.state and status.state.terminated:
-#             reason = status.state.terminated.reason
-#             if reason == "Error":
-#                 logger.warning(f"⚠️ Existing probe {name} is in error state, will inject new one.")
-#                 continue  # Skip this one and inject a new version
-#         else:
-#             logger.info(f"✅ Probe {name} already running and healthy.")
-#             return  # A healthy probe is already running, no action needed
-
-#     # Pick a new name: ebpf-latency-probe, ebpf-latency-probe2, etc.
-#     i = 1
-#     base_name = "ebpf-latency-probe"
-#     while True:
-#         name = base_name if i == 1 else f"{base_name}{i}"
-#         if name not in probe_names:
-#             break
-#         i += 1
-
-#     logger.info(f"🚀 Injecting new probe: {name}")
-
-#     new_container = {
-#         "name": name,
-#         "image": "r2labuser/ebpf-latency-probe:cleanup",
-#         "command": ["./entrypoint-latency.sh"],
-#         "env": [
-#             {"name": "IFACE", "value": "n2"},
-#             {"name": "HANDLE", "value": "4"},
-#             {"name": "PRIO", "value": "4"},
-#             {"name": "TEIDS", "value": "0x00000001:0x08a5a1ce@1 0x00000002:0xdd90069c@2"},
-#             {"name": "EXPORTER_PORT", "value": "9100"},
-#             {"name": "EXPORTER_PATH", "value": "/latency"},
-#         ],
-#         "stdin": True,
-#         "tty": True,
-#         "targetContainerName": "gnb",
-#         "securityContext": {
-#             "privileged": True,
-#             "capabilities": {"add": ["SYS_ADMIN", "SYS_RESOURCE", "NET_ADMIN"]}
-#         },
-#     }
-
-#     updated_containers = [ec.to_dict() for ec in existing_ecs] + [new_container]
-
-#     patch_body = {
-#         "metadata": {"name": pod_name},
-#         "spec": {"ephemeralContainers": updated_containers}
-#     }
-
-#     try:
-#         api_client.call_api(
-#             f"/api/v1/namespaces/{namespace}/pods/{pod_name}/ephemeralcontainers",
-#             "PATCH",
-#             body=patch_body,
-#             auth_settings=["BearerToken"],
-#             header_params={"Content-Type": "application/strategic-merge-patch+json"},
-#             response_type="object",
-#             _preload_content=False
-#         )
-#         logger.info(f"✅ Successfully injected {name} into {pod_name}")
-#     except Exception as e:
-#         logger.error(f"❌ Failed to inject probe {name}: {e}")
