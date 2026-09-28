@@ -151,6 +151,7 @@
     qhat_command: >-
       qhat-init {{ ue_mode_opt }}
       --dnn="{{ ue_slice_info.dnn }}"
+      {{ ue_nssai_opt }}
   debug:
     msg: "UE {{ item }} command: {{ qhat_command }}"
   loop: "{{ reachable_ues }}"
@@ -186,6 +187,7 @@
     qhat_command: >-
       qhat-init {{ ue_mode_opt }}
       --dnn="{{ ue_slice_info.dnn }}"
+      {{ ue_nssai_opt }}
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0

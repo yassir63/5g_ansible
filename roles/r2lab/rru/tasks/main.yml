@@ -3,9 +3,9 @@
   shell: rhubarbe pdu on "{{ rru }}"
   delegate_to: faraday.inria.fr
 
-- name: Wait 210 seconds for the "{{ rru }}" RRU to be ready
+- name: Wait 120 seconds for the "{{ rru }}" RRU to be ready
   pause:
-    seconds: 210
+    seconds: 120
   when: rru in ['benetel1', 'benetel2'] and ran in ['srsRAN', 'oai']
 
 - name: "Prepare {{ rru }} RRU (switch on, load conf, reboot)"
