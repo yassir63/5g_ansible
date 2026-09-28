@@ -90,15 +90,39 @@
         | list
       }}
 
-- name: SSH check
-  wait_for:
-    host: "{{ item }}"
-    port: 22
-    timeout: 20
+- name: SSH check (real login, parallel over UEs)
+  # At most 5 authenticated login attempts per UE, spaced by 10s. Each attempt is
+  # capped at 12s so a stalled sshd cannot block the loop.
+  # Worst case per UE: 5 x 12s + 4 x 10s = 100s < async 110s.
+  shell: >
+    for i in 1 2 3 4 5; do
+    timeout 12 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 root@{{ item }} true && exit 0;
+    [ $i -lt 5 ] && sleep 10; done; exit 1
+  delegate_to: faraday.inria.fr
+  async: 110
+  poll: 0
+  changed_when: false
+  loop: "{{ reachable_ues }}"
+  register: ssh_jobs
+
+- name: Wait SSH check completion (bounded by async 110s)
+  # Jobs run in parallel and are killed by async after 110s at most,
+  # so the whole wait stays under 2 minutes whatever the number of UEs.
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
   delegate_to: faraday.inria.fr
   register: ssh_results
-  ignore_errors: true
-  loop: "{{ reachable_ues }}"
+  until: ssh_results.finished
+  retries: 24
+  delay: 5
+  failed_when: false   # a dead UE must be excluded, not abort the play
+  changed_when: false
+  loop: "{{ ssh_jobs.results }}"
+
+- name: Keep only SSH-reachable UEs
+  set_fact:
+    reachable_ues: "{{ ssh_results.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | map(attribute='item.item') | list }}"
 
 - name: Compute failed UEs
   set_fact:
@@ -109,13 +133,24 @@
     msg: "UEs not reachable after boot: {{ failed_ues }}"
   when: failed_ues | length > 0
 
-- name: Prepare qhat-init command
+- name: Show qhat-init command per UE
   vars:
+    # Slice parameters come from the active 5G profile (ues[<host>].slice -> slices[])
     ue_slice_info: "{{ slices | selectattr('name', 'equalto', ues[item].slice) | first }}"
+    # Only pass --mode when explicitly set in inventory; otherwise qhat-init
+    # picks it per model (RG255C -> qmi, others -> mbim)
+    ue_mode_opt: "{{ ('--mode=' ~ hostvars[item].mode) if hostvars[item].mode is defined else '' }}"
+    # sd "EMPTY" means no SD: omit --nssai so qhat-init takes its
+    # "no specific NSSAI" path ("1.EMPTY" is not a valid S-NSSAI)
+    ue_nssai_opt: >-
+      {{ ('--nssai=' ~ ue_slice_info.sst ~ '.' ~ ue_slice_info.sd)
+         if ue_slice_info.sd != 'EMPTY' else '' }}
+    # No --nssai: as every subscriber has a single default slice, CID 1 without
+    # S-NSSAI gets the right slice. Creating the extra CID 2 with S-NSSAI makes
+    # some modems (seen on qhat03) auto-activate it and reject start.sh's connect.
     qhat_command: >-
-      qhat-init --mode={{ hostvars[item].mode | default('default') }}
+      qhat-init {{ ue_mode_opt }}
       --dnn="{{ ue_slice_info.dnn }}"
-      --nssai="{{ ue_slice_info.sst }}.{{ ue_slice_info.sd }}"
   debug:
     msg: "UE {{ item }} command: {{ qhat_command }}"
   loop: "{{ reachable_ues }}"
@@ -130,10 +165,27 @@
   loop: "{{ reachable_ues }}"
   when: rru in ['benetel1', 'benetel2']
 
-- name: Init UEs (qhat-init only, parallel)
+- name: Init UEs (qhat-init with profile options, parallel)
   shell: >
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ item }}
-    'qhat-init'
+    '{{ qhat_command }}'
+  vars:
+    # Slice parameters come from the active 5G profile (ues[<host>].slice -> slices[])
+    ue_slice_info: "{{ slices | selectattr('name', 'equalto', ues[item].slice) | first }}"
+    # Only pass --mode when explicitly set in inventory; otherwise qhat-init
+    # picks it per model (RG255C -> qmi, others -> mbim)
+    ue_mode_opt: "{{ ('--mode=' ~ hostvars[item].mode) if hostvars[item].mode is defined else '' }}"
+    # sd "EMPTY" means no SD: omit --nssai so qhat-init takes its
+    # "no specific NSSAI" path ("1.EMPTY" is not a valid S-NSSAI)
+    ue_nssai_opt: >-
+      {{ ('--nssai=' ~ ue_slice_info.sst ~ '.' ~ ue_slice_info.sd)
+         if ue_slice_info.sd != 'EMPTY' else '' }}
+    # No --nssai: as every subscriber has a single default slice, CID 1 without
+    # S-NSSAI gets the right slice. Creating the extra CID 2 with S-NSSAI makes
+    # some modems (seen on qhat03) auto-activate it and reject start.sh's connect.
+    qhat_command: >-
+      qhat-init {{ ue_mode_opt }}
+      --dnn="{{ ue_slice_info.dnn }}"
   delegate_to: faraday.inria.fr
   async: 1800
   poll: 0
@@ -149,21 +201,12 @@
   retries: 20
   delay: 10
 
-# Mode-aware stop, run as its own parallel async batch.
-# Best-effort: a stop failure must NOT abort the setup (unlike qhat-init).
-#   mbim -> stop.sh   |   qmi -> ci_ctl_qtel.py <at_port> detach
-# at_port defaults to /dev/ttyUSB3 (AT port after qhat-init's QMI switch);
-# override per node in the inventory with at_port=/dev/ttyUSBx if needed.
+# stop.sh picks mbim/qmi from /run/ue-mode (written by qhat-init);
+# the QMI path detaches via ci_ctl_qtel.py. Best-effort.
 - name: Stop UEs after init (parallel, best-effort)
   shell: >
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ item }}
-    '{{ ue_stop_cmd }}'
-  vars:
-    ue_stop_cmd: >-
-      {{ 'stop.sh'
-         if (hostvars[item].mode | default('mbim', true)) == 'mbim'
-         else 'python3 /usr/local/bin/ci_ctl_qtel.py '
-              ~ (hostvars[item].at_port | default('/dev/ttyUSB3')) ~ ' detach' }}
+    'stop.sh'
   delegate_to: faraday.inria.fr
   async: 300
   poll: 0
@@ -191,9 +234,7 @@
 
 - name: Display qhat-check
   debug:
-    msg:
-      - "UE: {{ item.item }}"
-      - "{{ item.stdout_lines }}"
+    msg: "{{ item.stdout }}"
   loop: "{{ check_results.results }}"
   loop_control:
     label: "{{ item.item }}"
