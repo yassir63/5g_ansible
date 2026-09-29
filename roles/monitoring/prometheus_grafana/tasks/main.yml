@@ -172,53 +172,18 @@
     wait: true
     wait_timeout: 10m
 
-- name: Initialize Loki deployment status
-  ansible.builtin.set_fact:
-    monitoring_loki_install_succeeded: false
-
-- name: Install optional Loki stack
+- name: Install Loki stack
+  kubernetes.core.helm:
+    name: "{{ monitoring_loki_release }}"
+    chart_ref: grafana/loki-stack
+    chart_version: "{{ monitoring_loki_stack_chart_version }}"
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    values_files:
+      - /tmp/monitoring-loki-values.yml
+    wait: true
+    wait_timeout: 10m
   when: monitoring_loki_enabled | bool
-  block:
-    - name: Install Loki stack with Helm
-      kubernetes.core.helm:
-        name: "{{ monitoring_loki_release }}"
-        chart_ref: grafana/loki-stack
-        chart_version: "{{ monitoring_loki_stack_chart_version }}"
-        release_namespace: "{{ monitoring_namespace }}"
-        create_namespace: true
-        values_files:
-          - /tmp/monitoring-loki-values.yml
-        wait: true
-        wait_timeout: 10m
-
-    - name: Record successful Loki installation
-      ansible.builtin.set_fact:
-        monitoring_loki_install_succeeded: true
-
-  rescue:
-    - name: Capture monitoring resources after Loki installation failure
-      ansible.builtin.command: >
-        kubectl -n {{ monitoring_namespace }} get
-        pods,pvc,statefulset,daemonset -o wide
-      register: monitoring_loki_failure_resources
-      changed_when: false
-      failed_when: false
-
-    - name: Capture monitoring events after Loki installation failure
-      ansible.builtin.command: >
-        kubectl -n {{ monitoring_namespace }} get events
-        --sort-by=.metadata.creationTimestamp
-      register: monitoring_loki_failure_events
-      changed_when: false
-      failed_when: false
-
-    - name: Warn that Loki failed without blocking latency monitoring
-      ansible.builtin.debug:
-        msg:
-          - "Loki did not become ready and log collection is unavailable for this deployment."
-          - "Prometheus, Grafana, sniffers, and latency probes will continue to deploy."
-          - "Resources: {{ monitoring_loki_failure_resources.stdout_lines | default([]) }}"
-          - "Recent events: {{ (monitoring_loki_failure_events.stdout_lines | default([]))[-30:] }}"
 
 - name: Install Grafana
   kubernetes.core.helm:
@@ -256,7 +221,6 @@
   changed_when: false
   when:
     - monitoring_loki_enabled | bool
-    - monitoring_loki_install_succeeded | default(false) | bool
     - monitoring_loki_promtail_enabled | bool
 
 - name: Show monitoring access details
@@ -264,7 +228,7 @@
     msg:
       - "Prometheus NodePort: {{ monitoring_prometheus_node_port }}"
       - "Grafana NodePort: {{ monitoring_grafana_node_port }}"
-      - "Loki NodePort: {{ monitoring_loki_node_port if (monitoring_loki_install_succeeded | default(false) | bool) else ('installation failed' if (monitoring_loki_enabled | bool) else 'disabled') }}"
+      - "Loki NodePort: {{ monitoring_loki_node_port if (monitoring_loki_enabled | bool) else 'disabled' }}"
       - "Grafana username: {{ monitoring_grafana_admin_user }}"
       - "Grafana password: {{ monitoring_grafana_admin_password }}"
-      - "Grafana Loki datasource: {{ 'enabled' if (monitoring_loki_install_succeeded | default(false) | bool) else ('configured but unavailable' if (monitoring_loki_enabled | bool) else 'disabled') }}"
+      - "Grafana Loki datasource: {{ 'enabled' if (monitoring_loki_enabled | bool) else 'disabled' }}"
