@@ -30,6 +30,10 @@ prometheus:
       - key: "node-role.kubernetes.io/control-plane"
         operator: "Exists"
         effect: "NoSchedule"
+      - key: "test-eviction"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
 {% if monitoring_persistence_enabled | bool %}
     storageSpec:
       volumeClaimTemplate:
