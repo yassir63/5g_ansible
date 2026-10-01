@@ -192,9 +192,9 @@
           - exec
           - deployment/ue-mapper-api
           - --
-          - curl
-          - -fsS
-          - http://localhost:8080/inventory/ues
+          - python
+          - -c
+          - "from urllib.request import urlopen; print(urlopen('http://localhost:8080/inventory/ues', timeout=5).read().decode())"
       register: ue_mapper_health
       until: ue_mapper_health.rc == 0
       retries: 30
