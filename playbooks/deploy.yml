@@ -82,6 +82,7 @@
 # so it can't be the first task of the playbook
 - hosts: localhost,sopnodes
   gather_facts: true
+  tags: always
   tasks:
     - name: Normalize booleans at playbook start
       import_tasks: ../tasks/reload_booleans.yml
@@ -289,6 +290,7 @@
       when: ran == 'oai'
     - role: 5g/oai/csi_logging
       when: ran == 'oai' and oai_csi_logging_enabled | default(false)
+  tags: ran_stage
 
 - name: Deploy srsRAN
   hosts: ran_node
@@ -307,6 +309,7 @@
       when: 
         - ran == 'srsRAN'
         - csi_logger_enabled | default(false)
+  tags: ran_stage
 
 - name: Deploy ueransim for oai core
   hosts: ran_node
@@ -325,6 +328,7 @@
       when:
         - ran == 'ueransim'
         - core == 'oai'
+  tags: ran_stage
 
 - name: Deploy ueransim for other 5G cores than oai
   hosts: core_node
@@ -343,3 +347,4 @@
       when:
         - ran == 'ueransim'
         - core != 'oai'
+  tags: ran_stage
