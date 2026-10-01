@@ -370,7 +370,7 @@ ues:
 
 Monitoring has two layers. The **5G metrics stack** deploys Prometheus, Grafana, Loki/Promtail by default, and KPI calculators that expose derived core/RAN metrics such as slice throughput. The **latency pipeline** adds AMF and SMF sniffers, Redis and the UE mapper, the Kopf controller, and eBPF latency probes. The sniffers provide UE/session context to the mapper; the controller reads the resulting TEIDs and manages probes on matching gNB pods. Prometheus scrapes the metrics produced by these components, and Grafana displays them. Prometheus/Grafana alone do not measure per-UE latency.
 
-The infrastructure and 5G workloads are defined in `playbooks/deploy.yml`; monitoring is defined separately in `playbooks/deploy_monitoring.yml`. With monitoring enabled, `./deploy.sh` runs cluster and core setup first, waits for monitoring and the AMF/SMF sniffers, then deploys the RAN and sets up R2Lab UEs. Without monitoring, it runs `playbooks/deploy.yml` in one pass. To redeploy only monitoring against an existing 5G deployment, run:
+The infrastructure and 5G workloads are defined in `playbooks/deploy.yml`; monitoring is defined separately in `playbooks/deploy_monitoring.yml`. `./deploy.sh` runs cluster and core setup first, then monitoring and the AMF/SMF sniffers when enabled, prepares R2Lab UEs with `qhat-init`, and deploys the RAN. The selected scenario connects UEs afterward. With monitoring disabled, only the monitoring stage is skipped. To redeploy only monitoring against an existing 5G deployment, run:
 
 ```bash
 ansible-playbook -i ./inventory/default/hosts.ini \

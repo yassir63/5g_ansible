@@ -1970,19 +1970,11 @@ deploy() {
       r2lab_deploy_pid=$!
     fi
 
-    if [[ "${monitoring_enabled:-false}" == true ]]; then
-      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml --skip-tags ran_stage"
-      run_logged_cmd "${DIR_LOGS}/logs.txt" \
-        ansible-playbook -i "$INVENTORY" \
-        "${ANSIBLE_EXTRA_ARGS[@]}" \
-        playbooks/deploy.yml --skip-tags ran_stage || main_deploy_status=$?
-    else
-      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml"
-      run_logged_cmd "${DIR_LOGS}/logs.txt" \
-        ansible-playbook -i "$INVENTORY" \
-        "${ANSIBLE_EXTRA_ARGS[@]}" \
-        playbooks/deploy.yml || main_deploy_status=$?
-    fi
+    echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml --skip-tags ran_stage"
+    run_logged_cmd "${DIR_LOGS}/logs.txt" \
+      ansible-playbook -i "$INVENTORY" \
+      "${ANSIBLE_EXTRA_ARGS[@]}" \
+      playbooks/deploy.yml --skip-tags ran_stage || main_deploy_status=$?
 
     if [[ -n "$r2lab_deploy_pid" ]]; then
       wait "$r2lab_deploy_pid" || r2lab_deploy_status=$?
@@ -2001,18 +1993,6 @@ deploy() {
       return 1
     fi
 
-    if [[ "${monitoring_enabled:-false}" == true ]]; then
-      echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml --tags ran_stage"
-      run_logged_cmd "${DIR_LOGS}/logs-ran.txt" \
-        ansible-playbook -i "$INVENTORY" \
-        "${ANSIBLE_EXTRA_ARGS[@]}" \
-        playbooks/deploy.yml --tags ran_stage || ran_deploy_status=$?
-      if [[ "$ran_deploy_status" -ne 0 ]]; then
-        echo "RAN deployment failed with exit code ${ran_deploy_status}" >&2
-        return "$ran_deploy_status"
-      fi
-    fi
-
     if [[ "$platform" == "r2lab" ]]; then
       echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy_r2lab_ues.yml"
       run_logged_cmd "${DIR_LOGS}/logs-r2lab-ues.txt" \
@@ -2023,6 +2003,16 @@ deploy() {
         echo "UE setup failed with exit code ${ue_setup_status}" >&2
         return "$ue_setup_status"
       fi
+    fi
+
+    echo "ansible-playbook -i $INVENTORY ${ANSIBLE_EXTRA_ARGS[*]} playbooks/deploy.yml --tags ran_stage"
+    run_logged_cmd "${DIR_LOGS}/logs-ran.txt" \
+      ansible-playbook -i "$INVENTORY" \
+      "${ANSIBLE_EXTRA_ARGS[@]}" \
+      playbooks/deploy.yml --tags ran_stage || ran_deploy_status=$?
+    if [[ "$ran_deploy_status" -ne 0 ]]; then
+      echo "RAN deployment failed with exit code ${ran_deploy_status}" >&2
+      return "$ran_deploy_status"
     fi
 
 
