@@ -1,0 +1,5 @@
+---
+- name: Setup UEs on R2Lab after monitoring is ready
+  hosts: faraday
+  roles:
+    - role: r2lab/ue/setup

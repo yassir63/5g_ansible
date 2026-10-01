@@ -14,3 +14,4 @@
   hosts: faraday
   roles:
     - role: r2lab/ue/setup
+      when: r2lab_setup_ues | default(true) | bool

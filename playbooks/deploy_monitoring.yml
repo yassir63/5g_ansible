@@ -161,3 +161,78 @@
         - (monitor_node_name | default('')) | length > 0
         - core_node_name != ran_node_name
         - core_node_name != (monitor_node_name | default(''))
+
+- name: Wait for latency mapping services before UE setup
+  hosts: "{{ (groups['monitor_node'] | default([]) | length > 0) | ternary('monitor_node', 'core_node') }}"
+  gather_facts: false
+  tasks:
+    - name: Wait for Redis, UE mapper, and controller deployments
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - -n
+          - "{{ monitoring_namespace | default('monitoring') }}"
+          - rollout
+          - status
+          - "deployment/{{ item }}"
+          - --timeout=300s
+      loop:
+        - redis
+        - ue-mapper-api
+        - kopf-controller
+      changed_when: false
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
+
+    - name: Wait for UE inventory API to answer
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - -n
+          - "{{ monitoring_namespace | default('monitoring') }}"
+          - exec
+          - deployment/ue-mapper-api
+          - --
+          - curl
+          - -fsS
+          - http://localhost:8080/inventory/ues
+      register: ue_mapper_health
+      until: ue_mapper_health.rc == 0
+      retries: 30
+      delay: 2
+      changed_when: false
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
+
+- name: Wait for AMF and SMF sniffers before UE setup
+  hosts: core_node
+  gather_facts: false
+  vars:
+    monitoring_sniffer_targets: >-
+      {{ ((amf_pod_list | default([])) | map(attribute='metadata.name') | product(['amf-sniffer']) | list)
+         + ((smf_pod_list | default([])) | map(attribute='metadata.name') | product(['smf-sniffer']) | list) }}
+  tasks:
+    - name: Require AMF and SMF sniffer targets
+      ansible.builtin.assert:
+        that:
+          - (amf_pod_list | default([]) | length) > 0
+          - (smf_pod_list | default([]) | length) > 0
+        fail_msg: "AMF and SMF sniffers must be present before R2Lab UEs are set up."
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
+
+    - name: Wait for each sniffer container to run
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ core }}"
+        name: "{{ item.0 }}"
+      register: sniffer_pod
+      until: >-
+        sniffer_pod.resources | length == 1 and
+        (sniffer_pod.resources[0].status.ephemeralContainerStatuses | default([])
+         | selectattr('name', 'equalto', item.1)
+         | selectattr('state.running', 'defined') | list | length) == 1
+      retries: 60
+      delay: 5
+      loop: "{{ monitoring_sniffer_targets }}"
+      loop_control:
+        label: "{{ item.0 }}:{{ item.1 }}"
+      when: monitoring_enabled | bool and (monitoring_components.latency | default(true) | bool)
