@@ -402,6 +402,20 @@ Setting a layer to `false` **skips it during that deployment**; it does not unin
 
 ---
 
+## Restarting R2Lab UEs
+
+To reconnect R2Lab modem UEs without redeploying the network, run `playbooks/restart_r2lab_ues.yml` from the repository root with the same inventory and 5G profile used for deployment. Set `ue_targets` to a single UE, a comma-separated list, or `all` (all qhats/qfits in that inventory). For example:
+
+```bash
+ansible-playbook -i ./inventory/default/hosts.ini -e fiveg_profile=default -e ue_targets=qhat02 playbooks/restart_r2lab_ues.yml
+ansible-playbook -i ./inventory/default/hosts.ini -e fiveg_profile=default -e ue_targets=qhat01,qhat03 playbooks/restart_r2lab_ues.yml
+ansible-playbook -i ./inventory/default/hosts.ini -e fiveg_profile=default -e ue_targets=all playbooks/restart_r2lab_ues.yml
+```
+
+Each UE is disconnected, reconnected, and checked against its slice UPF before the next UE starts. MBIM modems use `stop.sh`/`start.sh`; QMI modems use their existing QMI reconnect procedure. Phones are excluded because they reconnect through airplane mode.
+
+---
+
 ## Monitoring Dashboard Access
 
 After deployment, instructions will be printed to your terminal with the SSH command required to access the **Grafana monitoring dashboard**.

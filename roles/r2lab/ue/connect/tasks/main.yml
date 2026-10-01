@@ -179,7 +179,7 @@
           when:
             - ue_mode == 'mbim'
             - current_dnn is defined
-            - not wwan0_up
+            - not wwan0_up or force_reconnect | default(false) | bool
           ignore_errors: "{{ ignore_task_errors | default(true) }}"
 
         # -----------------------------------------------------------------
@@ -188,7 +188,7 @@
         - name: "QMI bring-up for {{ ue_item }}"
           when:
             - ue_mode == 'qmi'
-            - not wwan0_up
+            - not wwan0_up or force_reconnect | default(false) | bool
           ignore_errors: "{{ ignore_task_errors | default(true) }}"
           block:
             - name: "QMI: ensure quectel-CM is running on {{ ue_item }}"

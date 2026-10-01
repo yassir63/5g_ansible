@@ -1,0 +1,40 @@
+---
+- name: Stop {{ ue_item }}
+  ansible.builtin.include_role:
+    name: r2lab/ue/stop
+  vars:
+    ue: "{{ ue_item }}"
+
+- name: Reconnect {{ ue_item }}
+  ansible.builtin.include_role:
+    name: r2lab/ue/connect
+  vars:
+    force_reconnect: true
+    ignore_task_errors: false
+
+- name: Verify {{ ue_item }} can reach its UPF over wwan0
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -o
+      - ConnectTimeout=5
+      - -o
+      - BatchMode=yes
+      - -o
+      - StrictHostKeyChecking=no
+      - -o
+      - UserKnownHostsFile=/dev/null
+      - "root@{{ ue_item }}"
+      - ping
+      - -I
+      - wwan0
+      - -c
+      - "1"
+      - -W
+      - "3"
+      - "{{ (fiveg.slices | selectattr('name', 'equalto', fiveg.ues[ue_item].slice) | first).ip_prefix }}.1"
+  register: ue_restart_ping
+  until: ue_restart_ping.rc == 0
+  retries: 15
+  delay: 4
+  changed_when: false

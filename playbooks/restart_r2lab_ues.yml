@@ -1,0 +1,49 @@
+---
+- name: Restart selected R2Lab modem UEs
+  hosts: faraday
+  gather_facts: false
+  tasks:
+    - name: Require an explicit UE selection
+      ansible.builtin.assert:
+        that:
+          - ue_targets is defined
+          - ue_targets is string or ue_targets is sequence
+        fail_msg: "Set ue_targets to one UE, a comma-separated list, or all."
+
+    - name: Load active 5G profile
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/5g_profile_{{ fiveg_profile | default('default') }}.yaml"
+        name: fiveg
+
+    - name: Resolve requested modem UEs
+      ansible.builtin.set_fact:
+        ue_restart_available: "{{ (groups['qhats'] | default([])) + (groups['qfits'] | default([])) }}"
+        ue_restart_requested: >-
+          {{ ((groups['qhats'] | default([])) + (groups['qfits'] | default([])))
+             if ue_targets == 'all' else
+             (ue_targets.split(',') if ue_targets is string else ue_targets) }}
+
+    - name: Normalize UE selection
+      ansible.builtin.set_fact:
+        ue_restart_selected: "{{ ue_restart_requested | map('trim') | reject('equalto', '') | unique | list }}"
+
+    - name: Validate selected UEs
+      ansible.builtin.assert:
+        that:
+          - ue_restart_selected | length > 0
+          - ue_restart_selected | difference(ue_restart_available) | length == 0
+          - ue_restart_selected | difference(fiveg.ues.keys() | list) | length == 0
+        fail_msg: >-
+          Select qhat/qfit UEs present in both the inventory and 5G profile.
+          Selected={{ ue_restart_selected }} available={{ ue_restart_available }}.
+
+    - name: Stop and reconnect each UE
+      ansible.builtin.include_tasks: ../tasks/restart_r2lab_ue.yml
+      loop: "{{ ue_restart_selected }}"
+      loop_control:
+        loop_var: ue_item
+        label: "{{ ue_item }}"
+
+    - name: Report restarted UEs
+      ansible.builtin.debug:
+        msg: "Restarted and verified: {{ ue_restart_selected | join(', ') }}"
