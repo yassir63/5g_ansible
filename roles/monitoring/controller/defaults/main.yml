@@ -11,6 +11,7 @@ exporter_port: "9100"
 exporter_path: "/latency"
 
 ue_mapper_limit: "2000"
+ue_mapping_partial_grace_seconds: "60"
 ue_mapper_url: "http://ue-mapper-api.{{ monitoring_namespace | default('monitoring') }}.svc.cluster.local"
 probe_iface: ""        # optional override
 latency_mode: "BOTH" # CORE | RAN | BOTH

@@ -70,10 +70,12 @@ UE_MAPPING_STABLE_CYCLES = max(1, int(os.getenv("UE_MAPPING_STABLE_CYCLES", "3")
 UE_MAPPING_SETTLE_SECONDS = max(0.0, float(os.getenv("UE_MAPPING_SETTLE_SECONDS", "15.0")))
 UE_MAPPING_MIN_COMPLETE_UES = max(1, int(os.getenv("UE_MAPPING_MIN_COMPLETE_UES", "1")))
 UE_MAPPING_REQUIRE_COMPLETE = int(os.getenv("UE_MAPPING_REQUIRE_COMPLETE", "1"))
+UE_MAPPING_PARTIAL_GRACE_SECONDS = max(0.0, float(os.getenv("UE_MAPPING_PARTIAL_GRACE_SECONDS", "60.0")))
 CLEANUP_WAIT_SECONDS = max(1.0, float(os.getenv("CLEANUP_WAIT_SECONDS", "20.0")))
 CLEANUP_POLL_SECONDS = max(0.5, float(os.getenv("CLEANUP_POLL_SECONDS", "1.0")))
 
 mapping_stability = {}
+partial_mapping_since = {}
 
 
 def env_flag(value: str) -> bool:
@@ -110,7 +112,8 @@ def configure(settings: kopf.OperatorSettings, **_):
         f"interval={RECONCILE_INTERVAL}s stable_cycles={UE_MAPPING_STABLE_CYCLES} "
         f"settle_seconds={UE_MAPPING_SETTLE_SECONDS}s "
         f"min_complete_ues={UE_MAPPING_MIN_COMPLETE_UES} "
-        f"require_complete={UE_MAPPING_REQUIRE_COMPLETE}"
+        f"require_complete={UE_MAPPING_REQUIRE_COMPLETE} "
+        f"partial_grace_seconds={UE_MAPPING_PARTIAL_GRACE_SECONDS}"
     )
     print(
         "Probe cleanup: "
@@ -291,13 +294,28 @@ def extract_ue_teids(ue: dict) -> tuple[str, str]:
 
 def ue_mapping_is_complete(ue: dict) -> bool:
     ul_teid, dl_teid = extract_ue_teids(ue)
+    imsi = str(ue.get("imsi") or "").strip()
     return bool(
         (ue.get("teid_args") or "").strip()
         and ul_teid
         and dl_teid
+        and ul_teid != dl_teid
+        and imsi
+        and imsi.lower() not in {"unknown", "null", "none", "-"}
         and str(ue.get("ue_ip") or "").strip()
         and str(ue.get("slice_id") or "").strip()
     )
+
+
+def filter_conflicting_ue_teids(ues: list[dict]) -> tuple[list[dict], int]:
+    owners = {}
+    conflicts = set()
+    for index, ue in enumerate(ues):
+        for teid in extract_ue_teids(ue):
+            previous = owners.setdefault(teid, index)
+            if previous != index:
+                conflicts.update((previous, index))
+    return [ue for index, ue in enumerate(ues) if index not in conflicts], len(conflicts)
 
 
 def build_teid_ue_map(ues: list[dict]) -> dict:
@@ -339,23 +357,22 @@ def fetch_all_teids_from_ue_mapper(logger) -> tuple[str, str, str, str, dict]:
             "mapper_ues": 0,
             "complete_ues": 0,
             "incomplete_ues": 0,
+            "conflicting_ues": 0,
             "teid_args": 0,
             "teid_metadata": 0,
         }
 
     ues = j.get("ues", []) or []
+    candidates = [ue for ue in ues if ue_mapping_is_complete(ue)]
+    complete_ues, conflicting_ues = filter_conflicting_ue_teids(candidates)
     teids = []
-    for ue in ues:
+    for ue in complete_ues:
         arg = (ue.get("teid_args") or "").strip()
-        if not ue_mapping_is_complete(ue):
-            continue
-
         if arg:
             teids.append(arg)
 
     teids = sorted(set(teids))
     teids_str = " ".join(teids).strip()
-    complete_ues = [ue for ue in ues if ue_mapping_is_complete(ue)]
     incomplete_ues = len(ues) - len(complete_ues)
     teid_ue_map = build_teid_ue_map(complete_ues)
     teid_ue_map_json = json.dumps(teid_ue_map, sort_keys=True, separators=(",", ":"))
@@ -363,12 +380,14 @@ def fetch_all_teids_from_ue_mapper(logger) -> tuple[str, str, str, str, dict]:
         "mapper_ues": len(ues),
         "complete_ues": len(complete_ues),
         "incomplete_ues": incomplete_ues,
+        "conflicting_ues": conflicting_ues,
         "teid_args": len(teids),
         "teid_metadata": len(teid_ue_map),
     }
     logger.info(
         f"📚 UE mapper inventory -> ues={stats['mapper_ues']} "
         f"complete={stats['complete_ues']} incomplete={stats['incomplete_ues']} "
+        f"conflicting={stats['conflicting_ues']} "
         f"teid_args={stats['teid_args']} teid_metadata={stats['teid_metadata']}"
     )
     return (
@@ -489,20 +508,16 @@ def mapping_stability_key(namespace: str, pod_name: str, target: dict) -> str:
 
 
 def mapping_is_stable(namespace: str, pod_name: str, target: dict, config_fp: str, stats: dict, logger) -> bool:
+    key = mapping_stability_key(namespace, pod_name, target)
     if stats.get("complete_ues", 0) < UE_MAPPING_MIN_COMPLETE_UES:
+        mapping_stability.pop(key, None)
+        partial_mapping_since.pop(key, None)
         logger.info(
             f"⏳ Waiting for UE mapper: complete UEs={stats.get('complete_ues', 0)} "
             f"< required {UE_MAPPING_MIN_COMPLETE_UES}"
         )
         return False
 
-    if UE_MAPPING_REQUIRE_COMPLETE and stats.get("incomplete_ues", 0) > 0:
-        logger.info(
-            f"⏳ Waiting for UE mapper completeness: incomplete UEs={stats.get('incomplete_ues', 0)}"
-        )
-        return False
-
-    key = mapping_stability_key(namespace, pod_name, target)
     now = time.time()
     state = mapping_stability.get(key)
 
@@ -518,6 +533,11 @@ def mapping_is_stable(namespace: str, pod_name: str, target: dict, config_fp: st
         state["observations"] += 1
         state["last_seen"] = now
 
+    if stats.get("incomplete_ues", 0) > 0:
+        partial_mapping_since.setdefault(key, now)
+    else:
+        partial_mapping_since.pop(key, None)
+
     age = now - state["first_seen"]
     if state["observations"] < UE_MAPPING_STABLE_CYCLES or age < UE_MAPPING_SETTLE_SECONDS:
         logger.info(
@@ -526,6 +546,19 @@ def mapping_is_stable(namespace: str, pod_name: str, target: dict, config_fp: st
             f"age={age:.1f}/{UE_MAPPING_SETTLE_SECONDS:.1f}s, config_fp={config_fp}"
         )
         return False
+
+    if UE_MAPPING_REQUIRE_COMPLETE and stats.get("incomplete_ues", 0) > 0:
+        partial_age = now - partial_mapping_since[key]
+        if partial_age < UE_MAPPING_PARTIAL_GRACE_SECONDS:
+            logger.info(
+                f"⏳ Waiting for UE mapper completeness: incomplete UEs={stats['incomplete_ues']}, "
+                f"grace={partial_age:.1f}/{UE_MAPPING_PARTIAL_GRACE_SECONDS:.1f}s"
+            )
+            return False
+        logger.warning(
+            f"⚠️ UE mapper grace elapsed; injecting for {stats['complete_ues']} complete UEs "
+            f"while {stats['incomplete_ues']} remain incomplete"
+        )
 
     logger.info(
         f"✅ UE mapping stable for {key}: "
@@ -692,6 +725,9 @@ def reconcile_probe_always_on(name, namespace, labels, logger, **kwargs):
     teids, teids_fp, teid_ue_map, ue_map_fp, ue_stats = fetch_all_teids_from_ue_mapper(logger)
 
     if not teids:
+        key = mapping_stability_key(namespace, name, target)
+        mapping_stability.pop(key, None)
+        partial_mapping_since.pop(key, None)
         logger.warning("⚠️ UE-mapper returned no TEIDS yet. Will not inject probe.")
         return
 
@@ -705,11 +741,13 @@ def reconcile_probe_always_on(name, namespace, labels, logger, **kwargs):
     )
     logger.info(f"📌 UE_MAPPER_URL: {UE_MAPPER_URL}")
 
+    mapping_ready = mapping_is_stable(namespace, name, target, config_fp, ue_stats, logger)
+
     if probe_running_with_config(name, namespace, teids_fp, config_fp, logger):
         logger.info("✅ Probe already running or starting with matching TEIDS and config. No action.")
         return
 
-    if not mapping_is_stable(namespace, name, target, config_fp, ue_stats, logger):
+    if not mapping_ready:
         return
 
     logger.info("🔁 TEIDS/config changed or no healthy probe. Refreshing probe...")

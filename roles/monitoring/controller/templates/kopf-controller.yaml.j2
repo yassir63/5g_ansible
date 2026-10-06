@@ -77,6 +77,8 @@ spec:
               value: "{{ controller_namespace }}"
             - name: UE_MAPPER_LIMIT
               value: "{{ ue_mapper_limit | default('2000') }}"
+            - name: UE_MAPPING_PARTIAL_GRACE_SECONDS
+              value: "{{ ue_mapping_partial_grace_seconds | default('60') }}"
             - name: PROBE_IMAGE
               value: "{{ probe_image }}"
             - name: EXPORTER_PORT
