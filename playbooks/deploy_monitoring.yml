@@ -94,7 +94,7 @@
   vars:
     core_ns: "{{ core }}"
     controller_namespace: "{{ monitoring_namespace | default('monitoring') }}"
-    kopf_image: "r2labuser/kopf-controller:2026e2eLatest"
+    kopf_image: "r2labuser/kopf-controller:2026w40-p1"
     probe_image: "r2labuser/ebpf-latency-probe:2026e2eLatestDebug"
     image_pull_policy: "Always"
     exporter_port: "9100"

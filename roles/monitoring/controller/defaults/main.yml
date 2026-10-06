@@ -3,7 +3,7 @@ monitoring_namespace: monitoring
 controller_namespace: "{{ monitoring_namespace | default('monitoring') }}"
 # core_type: open5gs
 
-kopf_image: "r2labuser/kopf-controller:2026w10"
+kopf_image: "r2labuser/kopf-controller:2026w40-p1"
 image_pull_policy: Always
 
 probe_image: "r2labuser/ebpf-latency-probe:2026"

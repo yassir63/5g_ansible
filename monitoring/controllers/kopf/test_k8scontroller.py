@@ -35,6 +35,21 @@ def ue(imsi, ul, dl, ran_id):
 
 
 class ControllerMappingTests(unittest.TestCase):
+    def test_injection_uses_supported_ephemeral_container_api(self):
+        controller = load_controller()
+        patch_body = {"spec": {"ephemeralContainers": [{"name": "ebpf-latency-probe"}]}}
+        controller.kubernetes.client = SimpleNamespace(CoreV1Api=Mock())
+        api = controller.kubernetes.client.CoreV1Api.return_value
+        with patch.object(controller, "build_ephemeral_patch_body", return_value=("ebpf-latency-probe", patch_body)):
+            controller.inject_ephemeral_probe(
+                "gnb-1", "oai", Mock(), "teids", "teids-fp", "{}", "map-fp",
+                "config-fp", {"role": "gnb", "latency_mode": "BOTH"},
+            )
+        api.patch_namespaced_pod_ephemeralcontainers.assert_called_once_with(
+            name="gnb-1", namespace="oai", body=patch_body,
+            _content_type="application/strategic-merge-patch+json",
+        )
+
     def test_inventory_uses_only_complete_nonconflicting_ues(self):
         controller = load_controller()
         rows = [

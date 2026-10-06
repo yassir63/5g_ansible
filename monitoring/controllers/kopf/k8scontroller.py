@@ -1113,8 +1113,6 @@ def inject_ephemeral_probe(
     config_fp: str,
     target: dict,
 ):
-    api_client = kubernetes.client.ApiClient()
-
     try:
         cname, patch_body = build_ephemeral_patch_body(
             pod_name, namespace, logger, teids, teids_fp, teid_ue_map, ue_map_fp, config_fp, target
@@ -1124,14 +1122,11 @@ def inject_ephemeral_probe(
         return
 
     try:
-        api_client.call_api(
-            f"/api/v1/namespaces/{namespace}/pods/{pod_name}/ephemeralcontainers",
-            "PATCH",
+        kubernetes.client.CoreV1Api().patch_namespaced_pod_ephemeralcontainers(
+            name=pod_name,
+            namespace=namespace,
             body=patch_body,
-            auth_settings=["BearerToken"],
-            header_params={"Content-Type": "application/strategic-merge-patch+json"},
-            response_type="object",
-            _preload_content=False
+            _content_type="application/strategic-merge-patch+json",
         )
         logger.info(f"✅ Successfully injected {cname} ({target['role']}/{target['latency_mode']}) into {pod_name}")
     except Exception as e:
