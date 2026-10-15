@@ -928,7 +928,7 @@
         {
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "mac_throughput{direction=\"downlink\"} > 0",
+          "expr": "oai_gnb_mac_dl_goodput_mbps * 1e6 > 0",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "interval": "",
@@ -1026,7 +1026,7 @@
         {
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "mac_throughput{direction=\"uplink\"} > 0",
+          "expr": "oai_gnb_mac_ul_goodput_mbps * 1e6 > 0",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "legendFormat": "ue_rnti={{rnti}}",
@@ -1036,6 +1036,52 @@
         }
       ],
       "title": "MAC Uplink Throughput from gNB",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "monitoring-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "dB"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 40
+      },
+      "id": 45,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "oai_gnb_mac_ph{rnti!=\"\"}",
+          "legendFormat": "ue_rnti={{rnti}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Power Headroom per RNTI",
       "type": "timeseries"
     },
     {
@@ -1094,7 +1140,7 @@
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "saturation_percentage > 0",
+          "expr": "oai_gnb_mac_nprb * on(rnti) group_left oai_gnb_mac_lcid_active{lcid=\"4\"} / scalar(oai_gnb_l1_total_prbs) * 100 > 0",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": true,
@@ -1163,7 +1209,7 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "number_ues",
+          "expr": "count(oai_gnb_mac_lcid_active{lcid=\"4\"}) or vector(0)",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "legendFormat": "__auto",
